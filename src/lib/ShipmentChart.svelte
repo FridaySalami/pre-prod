@@ -1,4 +1,4 @@
-<script lang="ts">
+`<script lang="ts">
 	import { onMount, tick } from "svelte";
 	import { supabase } from "./supabaseClient";
 
@@ -723,4 +723,4 @@
   .add-comment:hover {
     background: #5a6268;
   }
-</style>
+</style>`
