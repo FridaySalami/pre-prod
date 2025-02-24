@@ -1,10 +1,11 @@
 import adapter from '@sveltejs/adapter-netlify';
 
-/** @type {import('@sveltejs/kit').Config} */
-const config = {
-	kit: {
-		adapter: adapter()
-	}
+export default {
+  kit: {
+    adapter: adapter(),
+    // if your site is served from a subfolder (like /parkers), you can specify it:
+    paths: {
+      base: '/parkers'
+    }
+  }
 };
-
-export default config;
