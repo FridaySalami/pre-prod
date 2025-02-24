@@ -1,4 +1,4 @@
-`<script lang="ts">
+<script lang="ts">
 	import { onMount, tick } from "svelte";
 	import { supabase } from "./supabaseClient";
 
@@ -70,6 +70,14 @@
 	// Helper: format a number to 2 decimal places only when needed.
 	function formatNumber(num: number): string {
 		return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
+	}
+
+	// Helper: get the week number of the year (first week of January is week 1).
+	function getWeekNumber(date: Date): number {
+		const start = new Date(date.getFullYear(), 0, 1);
+		// Calculate difference in days between date and January 1
+		const diff = Math.floor((date.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+		return Math.ceil((diff + 1) / 7);
 	}
 
 	$: displayedMonday = (() => {
@@ -231,7 +239,6 @@
 	function openNotesModal(metricIndex: number, dayIndex: number) {
 		selectedMetricIndex = metricIndex;
 		selectedDayIndex = dayIndex; // -1 for total cell
-		// Use key based on date if not total; for total, use "total"
 		const key = dayIndex === -1 ? `${metricIndex}-total` : `${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`;
 		if (notesMap[key]) {
 			noteTitle = notesMap[key].title;
@@ -323,6 +330,7 @@
 		<thead>
 			<tr class="table-header">
 				<th>Metrics</th>
+				<th>Week {getWeekNumber(displayedMonday)}</th>
 				{#each weekDates as date}
 					<th class="small-header">
 						{date.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
@@ -333,6 +341,7 @@
 				<th>WoW % Change</th>
 			</tr>
 			<tr class="table-header">
+				<th></th>
 				<th></th>
 				{#each weekDates as date}
 					<th>{date.toLocaleDateString(undefined, { weekday: "long" })}</th>
@@ -346,6 +355,7 @@
 			{#each metrics as metric, metricIndex}
 				<tr>
 					<td>{metric.name}</td>
+					<!-- Week column for week number is only in header -->
 					{#each metric.values as value, dayIndex}
 						<td>
 							{#if metricFields[metricIndex] !== null}
@@ -357,21 +367,36 @@
 									class="cell-value"
 								/>
 							{:else}
-								<span class="cell-value computed-cell" on:click={() => openNotesModal(metricIndex, dayIndex)} style="cursor: pointer;">
+								<span
+									role="button"
+									tabindex="0"
+									class="cell-value computed-cell"
+									on:click={() => openNotesModal(metricIndex, dayIndex)}
+									on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotesModal(metricIndex, dayIndex); } }}
+									style="cursor: pointer;"
+								>
 									{formatNumber(value)}
 									{#if notesMap[`${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`]}
-										<div class="note-indicator"></div>
+										<div class="note-indicator" role="presentation"></div>
 									{/if}
 								</span>
 							{/if}
 						</td>
 					{/each}
 					<!-- Total cell: clickable -->
-					<td on:click={() => openNotesModal(metricIndex, -1)} style="cursor: pointer;">
-						<strong>{computeWeeklyTotal(metric, metricIndex)}</strong>
-						{#if notesMap[`${metricIndex}-total`]}
-							<div class="note-indicator"></div>
-						{/if}
+					<td>
+						<span
+							role="button"
+							tabindex="0"
+							on:click={() => openNotesModal(metricIndex, -1)}
+							on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotesModal(metricIndex, -1); } }}
+							style="cursor: pointer;"
+						>
+							<strong>{computeWeeklyTotal(metric, metricIndex)}</strong>
+							{#if notesMap[`${metricIndex}-total`]}
+								<div class="note-indicator" role="presentation"></div>
+							{/if}
+						</span>
 					</td>
 					<td>
 						<em class="prev-total">
@@ -398,329 +423,329 @@
 
 <!-- Notes Modal -->
 {#if showNotesModal}
-  <div class="modal-overlay" on:click={closeNotesModal}>
-    <div class="modal-content" on:click|stopPropagation>
-      {#if noteEditMode}
-        <h2>Edit Note for {metrics[selectedMetricIndex].name} Total</h2>
-        <p>Total: <strong>{computeWeeklyTotal(metrics[selectedMetricIndex], selectedMetricIndex)}</strong></p>
-        <label>
-          Title:
-          <input type="text" bind:value={noteTitle} />
-        </label>
-        <label>
-          Root Cause:
-          <input type="text" bind:value={noteRootCause} />
-        </label>
-        <label>
-          Details:
-          <textarea bind:value={noteDetails}></textarea>
-        </label>
-        <label>
-          Action Plan:
-          <textarea bind:value={noteActionPlan}></textarea>
-        </label>
-        <div class="modal-buttons">
-          <button on:click={saveNote}>Save Note</button>
-          <button on:click={closeNotesModal}>Cancel</button>
-        </div>
-      {:else}
-        <h2>Note for {metrics[selectedMetricIndex].name} Total</h2>
-        <p><strong>Title:</strong> {noteTitle}</p>
-        <p><strong>Root Cause:</strong> {noteRootCause}</p>
-        <p><strong>Details:</strong> {noteDetails}</p>
-        <p><strong>Action Plan:</strong> {noteActionPlan}</p>
-        <!-- Comment Section -->
-        <div class="comments-section">
-          <h3>Comments</h3>
-          {#if notesMap[`${selectedMetricIndex}-total`]?.comments?.length}
-            <ul class="comments-list">
-              {#each notesMap[`${selectedMetricIndex}-total`].comments as comment}
-                <li>{comment}</li>
-              {/each}
-            </ul>
-          {:else}
-            <p>No comments yet.</p>
-          {/if}
-          <label>
-            Add Comment:
-            <input type="text" bind:value={newComment} placeholder="Type your comment..." />
-          </label>
-          <button class="add-comment" on:click={addComment}>Add Comment</button>
-        </div>
-        <div class="modal-buttons">
-          <button on:click={toggleEditMode} title="Edit Note">
-            <!-- Pen icon -->
-            <svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h6m2 2a2 2 0 012 2v6a2 2 0 01-2 2h-6a2 2 0 01-2-2v-6a2 2 0 012-2h6z" />
-            </svg>
-            Edit Note
-          </button>
-          <button on:click={closeNotesModal}>Close</button>
-        </div>
-      {/if}
-    </div>
-  </div>
+	<div class="modal-overlay" on:click={closeNotesModal}>
+		<div class="modal-content" on:click|stopPropagation>
+			{#if noteEditMode}
+				<h2>Edit Note for {metrics[selectedMetricIndex].name} Total</h2>
+				<p>Total: <strong>{computeWeeklyTotal(metrics[selectedMetricIndex], selectedMetricIndex)}</strong></p>
+				<label>
+					Title:
+					<input type="text" bind:value={noteTitle} />
+				</label>
+				<label>
+					Root Cause:
+					<input type="text" bind:value={noteRootCause} />
+				</label>
+				<label>
+					Details:
+					<textarea bind:value={noteDetails}></textarea>
+				</label>
+				<label>
+					Action Plan:
+					<textarea bind:value={noteActionPlan}></textarea>
+				</label>
+				<div class="modal-buttons">
+					<button on:click={saveNote}>Save Note</button>
+					<button on:click={closeNotesModal}>Cancel</button>
+				</div>
+			{:else}
+				<h2>Note for {metrics[selectedMetricIndex].name} Total</h2>
+				<p><strong>Title:</strong> {noteTitle}</p>
+				<p><strong>Root Cause:</strong> {noteRootCause}</p>
+				<p><strong>Details:</strong> {noteDetails}</p>
+				<p><strong>Action Plan:</strong> {noteActionPlan}</p>
+				<!-- Comment Section -->
+				<div class="comments-section">
+					<h3>Comments</h3>
+					{#if notesMap[`${selectedMetricIndex}-total`]?.comments?.length}
+						<ul class="comments-list">
+							{#each notesMap[`${selectedMetricIndex}-total`].comments as comment}
+								<li>{comment}</li>
+							{/each}
+						</ul>
+					{:else}
+						<p>No comments yet.</p>
+					{/if}
+					<label>
+						Add Comment:
+						<input type="text" bind:value={newComment} placeholder="Type your comment..." />
+					</label>
+					<button class="add-comment" on:click={addComment}>Add Comment</button>
+				</div>
+				<div class="modal-buttons">
+					<button on:click={toggleEditMode} title="Edit Note">
+						<!-- Pen icon -->
+						<svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h6m2 2a2 2 0 012 2v6a2 2 0 01-2 2h-6a2 2 0 01-2-2v-6a2 2 0 012-2h6z" />
+						</svg>
+						Edit Note
+					</button>
+					<button on:click={closeNotesModal}>Close</button>
+				</div>
+			{/if}
+		</div>
+	</div>
 {/if}
 
 <style>
-  :global(body) {
-    font-family: 'Roboto', sans-serif;
-    background-color: #f5f5f5;
-    margin: 0;
-    padding: 0;
-  }
+	:global(body) {
+		font-family: 'Roboto', sans-serif;
+		background-color: #f5f5f5;
+		margin: 0;
+		padding: 0;
+	}
 
-  /* Week Navigation styling */
-  .week-navigation {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    margin-bottom: 16px;
-    gap: 8px;
-    padding: 0 24px;
-  }
+	/* Week Navigation styling */
+	.week-navigation {
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+		margin-bottom: 16px;
+		gap: 8px;
+		padding: 0 24px;
+	}
 
-  .week-navigation button {
-    background: #6c757d;
-    border: none;
-    color: white;
-    padding: 6px 14px;
-    font-size: 0.9em;
-    font-weight: bold;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.2s ease;
-  }
+	.week-navigation button {
+		background: #6c757d;
+		border: none;
+		color: white;
+		padding: 6px 14px;
+		font-size: 0.9em;
+		font-weight: bold;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: background 0.2s ease;
+	}
 
-  .week-navigation button:hover {
-    background: #5a6268;
-  }
+	.week-navigation button:hover {
+		background: #5a6268;
+	}
 
-  .week-range {
-    font-size: 0.9em;
-    color: #555;
-  }
+	.week-range {
+		font-size: 0.9em;
+		color: #555;
+	}
 
-  /* Table Header Styling */
-  .table-header {
-    background: #e2eaf2;
-    color: #334a66;
-  }
+	/* Table Header Styling */
+	.table-header {
+		background: #e2eaf2;
+		color: #334a66;
+	}
 
-  .cell-value {
-    display: inline-block;
-    width: 80px;
-    padding: 4px;
-    text-align: center;
-    font-family: inherit;
-    font-size: 0.9em;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
+	.cell-value {
+		display: inline-block;
+		width: 80px;
+		padding: 4px;
+		text-align: center;
+		font-family: inherit;
+		font-size: 0.9em;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+	}
 
-  input.cell-value:focus {
-    outline: none;
-    border-color: #007bff;
-  }
+	input.cell-value:focus {
+		outline: none;
+		border-color: #007bff;
+	}
 
-  .computed-cell {
-    border: none;
-    background-color: #eaeaea;
-    cursor: default;
-    position: relative;
-  }
+	.computed-cell {
+		border: none;
+		background-color: #eaeaea;
+		cursor: default;
+		position: relative;
+	}
 
-  .note-indicator {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 0;
-    height: 0;
-    border-top: 8px solid red;
-    border-right: 8px solid transparent;
-  }
+	.note-indicator {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 0;
+		height: 0;
+		border-top: 8px solid red;
+		border-right: 8px solid transparent;
+	}
 
-  .dashboard-container {
-    width: 100%;
-    overflow-x: auto;
-    margin: 0;
-    padding: 0;
-  }
+	.dashboard-container {
+		width: 100%;
+		overflow-x: auto;
+		margin: 0;
+		padding: 0;
+	}
 
-  table {
-    width: 100%;
-    min-width: 900px;
-    border-collapse: collapse;
-    margin: 0;
-  }
+	table {
+		width: 100%;
+		min-width: 900px;
+		border-collapse: collapse;
+		margin: 0;
+	}
 
-  th,
-  td {
-    padding: 12px;
-    text-align: center;
-    border-bottom: 1px solid #ddd;
-  }
+	th,
+	td {
+		padding: 12px;
+		text-align: center;
+		border-bottom: 1px solid #ddd;
+	}
 
-  th {
-    font-weight: bold;
-  }
+	th {
+		font-weight: bold;
+	}
 
-  tr:nth-child(even) {
-    background: #f8f9fa;
-  }
+	tr:nth-child(even) {
+		background: #f8f9fa;
+	}
 
-  .global-save-container {
-    text-align: right;
-    margin-top: 20px;
-    padding: 0 24px;
-  }
+	.global-save-container {
+		text-align: right;
+		margin-top: 20px;
+		padding: 0 24px;
+	}
 
-  .global-save-container button {
-    background: #6c757d;
-    border: none;
-    color: white;
-    padding: 6px 14px;
-    font-size: 0.9em;
-    font-weight: bold;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.2s ease;
-  }
+	.global-save-container button {
+		background: #6c757d;
+		border: none;
+		color: white;
+		padding: 6px 14px;
+		font-size: 0.9em;
+		font-weight: bold;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: background 0.2s ease;
+	}
 
-  .global-save-container button:hover {
-    background: #5a6268;
-  }
+	.global-save-container button:hover {
+		background: #5a6268;
+	}
 
-  input[type="number"] {
-    width: 80px;
-    padding: 4px;
-    text-align: center;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
+	input[type="number"] {
+		width: 80px;
+		padding: 4px;
+		text-align: center;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+	}
 
-  /* Styling for previous totals and WoW change columns */
-  .prev-total, .wow-change {
-    font-style: italic;
-    color: #6B7280;
-    font-size: 0.9em;
-  }
+	/* Styling for previous totals and WoW change columns */
+	.prev-total, .wow-change {
+		font-style: italic;
+		color: #6B7280;
+		font-size: 0.9em;
+	}
 
-  /* Modal Styles */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
+	/* Modal Styles */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0,0,0,0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+	}
 
-  .modal-content {
-    background: #fff;
-    padding: 24px;
-    border-radius: 8px;
-    width: 90%;
-    max-width: 600px;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-  }
+	.modal-content {
+		background: #fff;
+		padding: 24px;
+		border-radius: 8px;
+		width: 90%;
+		max-width: 600px;
+		max-height: 80vh;
+		overflow-y: auto;
+		box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+	}
 
-  .modal-content h2 {
-    margin-top: 0;
-  }
+	.modal-content h2 {
+		margin-top: 0;
+	}
 
-  .modal-content label {
-    display: block;
-    margin: 12px 0 4px;
-    font-size: 0.9em;
-    color: #555;
-  }
+	.modal-content label {
+		display: block;
+		margin: 12px 0 4px;
+		font-size: 0.9em;
+		color: #555;
+	}
 
-  .modal-content input[type="text"],
-  .modal-content textarea {
-    width: 100%;
-    padding: 8px;
-    font-size: 0.9em;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    margin-bottom: 8px;
-  }
+	.modal-content input[type="text"],
+	.modal-content textarea {
+		width: 100%;
+		padding: 8px;
+		font-size: 0.9em;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		margin-bottom: 8px;
+	}
 
-  .modal-content textarea {
-    resize: vertical;
-    min-height: 80px;
-  }
+	.modal-content textarea {
+		resize: vertical;
+		min-height: 80px;
+	}
 
-  .modal-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
+	.modal-buttons {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+	}
 
-  .modal-buttons button {
-    background: #6c757d;
-    border: none;
-    color: white;
-    padding: 6px 12px;
-    font-size: 0.9em;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.2s ease;
-  }
+	.modal-buttons button {
+		background: #6c757d;
+		border: none;
+		color: white;
+		padding: 6px 12px;
+		font-size: 0.9em;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: background 0.2s ease;
+	}
 
-  .modal-buttons button:hover {
-    background: #5a6268;
-  }
+	.modal-buttons button:hover {
+		background: #5a6268;
+	}
 
-  /* Additional styling for the comments section in view mode */
-  .comments-section {
-    margin-top: 16px;
-    font-size: 0.9em;
-    color: #555;
-  }
+	/* Additional styling for the comments section in view mode */
+	.comments-section {
+		margin-top: 16px;
+		font-size: 0.9em;
+		color: #555;
+	}
 
-  .comments-section h3 {
-    margin: 0 0 8px;
-    font-size: 1em;
-  }
+	.comments-section h3 {
+		margin: 0 0 8px;
+		font-size: 1em;
+	}
 
-  .comments-list {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 8px;
-    max-height: 150px;
-    overflow-y: auto;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
+	.comments-list {
+		list-style: none;
+		padding: 0;
+		margin: 0 0 8px;
+		max-height: 150px;
+		overflow-y: auto;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+	}
 
-  .comments-list li {
-    padding: 4px 8px;
-    border-bottom: 1px solid #eee;
-  }
+	.comments-list li {
+		padding: 4px 8px;
+		border-bottom: 1px solid #eee;
+	}
 
-  .comments-list li:last-child {
-    border-bottom: none;
-  }
+	.comments-list li:last-child {
+		border-bottom: none;
+	}
 
-  .add-comment {
-    background: #6c757d;
-    border: none;
-    color: white;
-    padding: 6px 12px;
-    font-size: 0.9em;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.2s ease;
-  }
+	.add-comment {
+		background: #6c757d;
+		border: none;
+		color: white;
+		padding: 6px 12px;
+		font-size: 0.9em;
+		cursor: pointer;
+		border-radius: 4px;
+		transition: background 0.2s ease;
+	}
 
-  .add-comment:hover {
-    background: #5a6268;
-  }
-</style>`
+	.add-comment:hover {
+		background: #5a6268;
+	}
+</style>
