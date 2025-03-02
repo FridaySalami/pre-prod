@@ -20,36 +20,33 @@
 	// Mapping of metrics to database columns.
 	// For computed rows (indices 2, 4, and 5) we use null.
 	const metricFields: (string | null)[] = [
-		"shipments",       // Shipments Packed
-		"hours_worked",    // Hours Worked
-		null,              // Shipments Per Hour (computed)
-		"defects",         // Defects
-		null,              // Defects DPMO (computed)
-		null               // Order Accuracy (%) (computed)
+		"shipments",
+		"hours_worked",
+		null, // computed: Shipments Per Hour
+		"defects",
+		null, // computed: Defects DPMO
+		null  // computed: Order Accuracy (%)
 	];
 
 	let weekOffset: number = 0;
 	const msPerDay = 24 * 60 * 60 * 1000;
 	let loading = false;
 
-	// Variables for previous week totals and WoW change.
+	// Variables for previous week totals.
 	let previousTotals: number[] = metrics.map(() => 0);
-	let previousWeekDates: Date[] = [];
+	// Store previous week daily values per metric (an array of 7 numbers for each metric)
+	let previousWeekMetrics: number[][] = metrics.map(() => Array(7).fill(0));
 
-	// Variables for Notes Modal.
+	// Notes Modal variables.
 	let showNotesModal = false;
 	let selectedMetricIndex: number = -1;
-	// selectedDayIndex = -1 indicates the "Total" cell note.
-	let selectedDayIndex: number = -1;
+	let selectedDayIndex: number = -1; // -1 indicates "Total" cell note.
 	let noteTitle = "";
 	let noteRootCause = "";
 	let noteDetails = "";
 	let noteActionPlan = "";
-	// New flag: if false, display in view mode; if true, show edit mode.
 	let noteEditMode = false;
-	// We'll also store comments for each note.
 	let newComment = "";
-	// notesMap keyed by "metricIndex-date" (for totals, key = `${metricIndex}-total`)
 	type NoteData = {
 		title: string;
 		rootCause: string;
@@ -59,49 +56,27 @@
 	};
 	let notesMap: Record<string, NoteData> = {};
 
-	// Helper: get the Monday for a given date.
+	// Helpers.
 	function getMonday(date: Date): Date {
 		const d = new Date(date);
 		const day = d.getDay();
 		const diff = d.getDate() - day + (day === 0 ? -6 : 1);
 		return new Date(d.setDate(diff));
 	}
-
-	// Helper: format a number to 2 decimal places only when needed.
 	function formatNumber(num: number): string {
 		return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
 	}
-
-	// Helper: get the week number of the year (first week of January is week 1).
 	function getWeekNumber(date: Date): number {
 		const start = new Date(date.getFullYear(), 0, 1);
-		// Calculate difference in days between date and January 1
 		const diff = Math.floor((date.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 		return Math.ceil((diff + 1) / 7);
 	}
-
-	$: displayedMonday = (() => {
-		const currentMonday = getMonday(new Date());
-		return new Date(currentMonday.getTime() + weekOffset * 7 * msPerDay);
-	})();
-
-	$: weekDates = (() => {
-		const dates: Date[] = [];
-		for (let i = 0; i < 7; i++) {
-			dates.push(new Date(displayedMonday.getTime() + i * msPerDay));
-		}
-		return dates;
-	})();
-
-	$: previousWeekDates = (() => {
-		const prevMonday = new Date(displayedMonday.getTime() - 7 * msPerDay);
-		const dates: Date[] = [];
-		for (let i = 0; i < 7; i++) {
-			dates.push(new Date(prevMonday.getTime() + i * msPerDay));
-		}
-		return dates;
-	})();
-
+	function isToday(date: Date): boolean {
+		const today = new Date();
+		return date.getFullYear() === today.getFullYear() &&
+		       date.getMonth() === today.getMonth() &&
+		       date.getDate() === today.getDate();
+	}
 	async function loadMetricsForDate(dateStr: string) {
 		const { data, error } = await supabase
 			.from("daily_metrics")
@@ -114,16 +89,126 @@
 		}
 		return data;
 	}
-
-	async function saveMetricsForDate(dateStr: string, metricsData: any) {
-		const { error } = await supabase
-			.from("daily_metrics")
-			.upsert({ date: dateStr, ...metricsData }, { onConflict: "date" });
-		if (error) {
-			console.error("Error saving metrics for date " + dateStr, error);
-		}
+	function getWowColor(changeStr: string): string {
+		if (changeStr === "N/A") return "#6B7280";
+		const num = parseFloat(changeStr);
+		if (isNaN(num)) return "#6B7280";
+		if (num > 0) return "#28a745";
+		if (num < 0) return "#dc3545";
+		return "#6B7280";
 	}
 
+	// NEW HELPER FUNCTIONS FOR PREVIOUS WEEK COMPUTED VALUES
+
+	// For Shipments Per Hour: use previous week's shipments (index 0) and hours worked (index 1).
+	function computePrevShipmentsPerHour(): number {
+		const end = currentDayIndex >= 0 ? currentDayIndex : 6;
+		const shipments = previousWeekMetrics[0].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		const hours = previousWeekMetrics[1].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		return hours > 0 ? shipments / hours : 0;
+	}
+	// For Defects DPMO: use previous week's defects (index 3) and shipments (index 0).
+	function computePrevDefectsDPMO(): number {
+		const end = currentDayIndex >= 0 ? currentDayIndex : 6;
+		const defects = previousWeekMetrics[3].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		const shipments = previousWeekMetrics[0].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		return shipments > 0 ? (defects / shipments) * 1000000 : 0;
+	}
+	// For Order Accuracy (%): use previous week's shipments (index 0) and defects (index 3).
+	function computePrevOrderAccuracy(): number {
+		const end = currentDayIndex >= 0 ? currentDayIndex : 6;
+		const shipments = previousWeekMetrics[0].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		const defects = previousWeekMetrics[3].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		return shipments > 0 ? ((shipments - defects) / shipments) * 100 : 0;
+	}
+
+	// Reactive calculations.
+	$: displayedMonday = (() => {
+		const currentMonday = getMonday(new Date());
+		return new Date(currentMonday.getTime() + weekOffset * 7 * msPerDay);
+	})();
+	$: isCurrentWeek = getMonday(new Date()).toISOString() === getMonday(new Date(displayedMonday)).toISOString();
+	$: weekDates = (() => {
+		const dates: Date[] = [];
+		for (let i = 0; i < 7; i++) {
+			dates.push(new Date(displayedMonday.getTime() + i * msPerDay));
+		}
+		return dates;
+	})();
+	$: previousWeekDates = (() => {
+		const prevMonday = new Date(displayedMonday.getTime() - 7 * msPerDay);
+		const dates: Date[] = [];
+		for (let i = 0; i < 7; i++) {
+			dates.push(new Date(prevMonday.getTime() + i * msPerDay));
+		}
+		return dates;
+	})();
+	// For morning review, we use the previous day's data.
+	$: currentDayIndex = isCurrentWeek ? Math.max(weekDates.findIndex(date => isToday(date)) - 1, 0) : 6;
+
+	async function loadPreviousWeekTotals() {
+		let totals = metrics.map(() => 0);
+		previousWeekMetrics = metrics.map(() => Array(7).fill(0));
+		for (let i = 0; i < previousWeekDates.length; i++) {
+			const dateStr = previousWeekDates[i].toISOString().split("T")[0];
+			const data = await loadMetricsForDate(dateStr);
+			if (data) {
+				metricFields.forEach((field, idx) => {
+					if (field !== null) {
+						const val = data[field] ?? 0;
+						previousWeekMetrics[idx][i] = val;
+						totals[idx] += val;
+					}
+				});
+			}
+		}
+		previousTotals = totals;
+	}
+
+	// Compute current totals (partial if current week).
+	$: currentTotals = metrics.map(metric => {
+		if (isCurrentWeek) {
+			const end = currentDayIndex >= 0 ? currentDayIndex : 6;
+			return metric.values.slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		} else {
+			return metric.values.reduce((acc, v) => acc + v, 0);
+		}
+	});
+	// Compute partial previous totals for non-computed metrics if current week.
+	$: partialPreviousTotals = metrics.map((_, idx) => {
+		if (isCurrentWeek) {
+			const end = currentDayIndex >= 0 ? currentDayIndex : 6;
+			return previousWeekMetrics[idx].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+		} else {
+			return previousTotals[idx];
+		}
+	});
+	// Compute WoW change.
+	$: wowChange = metrics.map((_, idx) => {
+  if (isCurrentWeek && metricFields[idx] === null) {
+    // For computed metrics, use the average from days 0..currentDayIndex.
+    let currVal = 0, prevVal = 0;
+    const validValues = metrics[idx].values.slice(0, currentDayIndex + 1).filter(v => Number(v) > 0);
+    currVal = validValues.length ? validValues.reduce((acc, v) => acc + Number(v), 0) / validValues.length : 0;
+    if (idx === 2) {
+      prevVal = computePrevShipmentsPerHour();
+    } else if (idx === 4) {
+      prevVal = computePrevDefectsDPMO();
+    } else if (idx === 5) {
+      prevVal = computePrevOrderAccuracy();
+    }
+    if (prevVal === 0) return "N/A";
+    const change = ((currVal - prevVal) / prevVal) * 100;
+    return change % 1 === 0 ? change.toFixed(0) + "%" : change.toFixed(2) + "%";
+  } else {
+    // For non-computed metrics, use the sums.
+    const curr = currentTotals[idx];
+    const prev = isCurrentWeek ? partialPreviousTotals[idx] : previousTotals[idx];
+    if (prev === 0) return "N/A";
+    const change = ((curr - prev) / prev) * 100;
+    return change % 1 === 0 ? change.toFixed(0) + "%" : change.toFixed(2) + "%";
+  }
+});
 	async function loadMetrics() {
 		if (typeof window === "undefined") return;
 		loading = true;
@@ -158,40 +243,13 @@
 		loading = false;
 	}
 
-	async function loadPreviousWeekTotals() {
-		let totals = metrics.map(() => 0);
-		for (let i = 0; i < previousWeekDates.length; i++) {
-			const dateStr = previousWeekDates[i].toISOString().split("T")[0];
-			const data = await loadMetricsForDate(dateStr);
-			if (data) {
-				metricFields.forEach((field, idx) => {
-					if (field !== null) {
-						totals[idx] += data[field] ?? 0;
-					}
-				});
-			}
+	async function saveMetricsForDate(dateStr: string, metricsData: any) {
+		const { error } = await supabase
+			.from("daily_metrics")
+			.upsert({ date: dateStr, ...metricsData }, { onConflict: "date" });
+		if (error) {
+			console.error("Error saving metrics for date " + dateStr, error);
 		}
-		previousTotals = totals;
-	}
-
-	$: currentTotals = metrics.map(metric =>
-		metric.values.reduce((acc, v) => acc + v, 0)
-	);
-
-	$: wowChange = currentTotals.map((curr, idx) => {
-		const prev = previousTotals[idx] ?? 0;
-		if (prev === 0) return "N/A";
-		const change = ((curr - prev) / prev) * 100;
-		return change % 1 === 0 ? change.toFixed(0) + "%" : change.toFixed(2) + "%";
-	});
-
-	function getWowColor(changeStr: string): string {
-		if (changeStr === "N/A") return "#6B7280";
-		const num = parseFloat(changeStr);
-		if (isNaN(num)) return "#6B7280";
-		if (num > 0) return "#28a745"; // green
-		if (num < 0) return "#dc3545"; // red
-		return "#6B7280";
 	}
 
 	async function saveMetricsForDay(dayIndex: number) {
@@ -224,22 +282,36 @@
 	}
 
 	function computeWeeklyTotal(metric: Metric, metricIndex: number): string {
+		// For non-computed metrics and for Order Accuracy (index 5)
 		if (metricIndex === 5) {
 			const totalShipments = metrics[0].values.reduce((acc, v) => acc + v, 0);
 			const totalDefects = metrics[3].values.reduce((acc, v) => acc + v, 0);
 			const accuracy = totalShipments > 0 ? ((totalShipments - totalDefects) / totalShipments) * 100 : 0;
 			return accuracy % 1 === 0 ? accuracy.toFixed(0) + "%" : accuracy.toFixed(2) + "%";
+		} else if (metricIndex === 2) {
+			// For Shipments Per Hour, average non-zero values.
+			const validValues = metric.values.filter(val => Number(val) > 0);
+			const sum = validValues.reduce((acc, num) => acc + Number(num), 0);
+			const average = validValues.length > 0 ? sum / validValues.length : 0;
+			return average % 1 === 0 ? average.toFixed(0) : average.toFixed(2);
+		} else if (metricIndex === 4) {
+			// For Defects DPMO, average non-zero values.
+			const validValues = metric.values.filter(val => Number(val) > 0);
+			const sum = validValues.reduce((acc, num) => acc + Number(num), 0);
+			const average = validValues.length > 0 ? sum / validValues.length : 0;
+			return average % 1 === 0 ? average.toFixed(0) : average.toFixed(2);
 		} else {
 			const total = metric.values.reduce((acc, num) => acc + (Number(num) || 0), 0);
 			return total % 1 === 0 ? total.toFixed(0) : total.toFixed(2);
 		}
 	}
 
-	// Only allow notes for total cells (dayIndex === -1).
 	function openNotesModal(metricIndex: number, dayIndex: number) {
 		selectedMetricIndex = metricIndex;
-		selectedDayIndex = dayIndex; // -1 for total cell
-		const key = dayIndex === -1 ? `${metricIndex}-total` : `${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`;
+		selectedDayIndex = dayIndex;
+		const key = dayIndex === -1
+			? `${metricIndex}-total`
+			: `${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`;
 		if (notesMap[key]) {
 			noteTitle = notesMap[key].title;
 			noteRootCause = notesMap[key].rootCause;
@@ -251,7 +323,6 @@
 			noteDetails = "";
 			noteActionPlan = "";
 		}
-		// If a note exists, start in view mode; else, edit mode.
 		noteEditMode = notesMap[key] ? false : true;
 		showNotesModal = true;
 	}
@@ -259,7 +330,12 @@
 	function closeNotesModal() {
 		showNotesModal = false;
 	}
-
+	function getCalculationExplanation(metricIndex: number): string {
+  if (metricIndex === 2) return "Calculated as:\nShipments Packed ÷ Hours Worked";
+  if (metricIndex === 4) return "Calculated as:\n(Defects ÷ Shipments Packed) × 1,000,000";
+  if (metricIndex === 5) return "Calculated as:\n((Shipments Packed - Defects) ÷ Shipments Packed) × 100";
+  return "";
+}
 	function saveNote() {
 		const key = selectedDayIndex === -1
 			? `${selectedMetricIndex}-total`
@@ -275,7 +351,6 @@
 		closeNotesModal();
 	}
 
-	// For adding a new comment.
 	function addComment() {
 		const key = `${selectedMetricIndex}-total`;
 		if (!notesMap[key]) return;
@@ -324,106 +399,153 @@
 	<button on:click={nextWeek}>Next Week</button>
 </div>
 
-<!-- Dashboard Table -->
-<div class="dashboard-container">
-	<table>
-		<thead>
-			<tr class="table-header">
-				<th>Metrics</th>
-				<th>Week {getWeekNumber(displayedMonday)}</th>
-				{#each weekDates as date}
-					<th class="small-header">
-						{date.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
-					</th>
-				{/each}
-				<th>Total</th>
-				<th>Prev Week</th>
-				<th>WoW % Change</th>
-			</tr>
-			<tr class="table-header">
-				<th></th>
-				<th></th>
-				{#each weekDates as date}
-					<th>{date.toLocaleDateString(undefined, { weekday: "long" })}</th>
-				{/each}
-				<th></th>
-				<th></th>
-				<th></th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each metrics as metric, metricIndex}
-				<tr>
-					<td>{metric.name}</td>
-					<!-- Week column for week number is only in header -->
-					{#each metric.values as value, dayIndex}
-						<td>
-							{#if metricFields[metricIndex] !== null}
-								<input
-									type="number"
-									bind:value={metrics[metricIndex].values[dayIndex]}
-									on:blur={() => handleInputChange(metricIndex, dayIndex)}
-									on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex)}
-									class="cell-value"
-								/>
-							{:else}
-								<span
-									role="button"
-									tabindex="0"
-									class="cell-value computed-cell"
-									on:click={() => openNotesModal(metricIndex, dayIndex)}
-									on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotesModal(metricIndex, dayIndex); } }}
-									style="cursor: pointer;"
-								>
-									{formatNumber(value)}
-									{#if notesMap[`${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`]}
-										<div class="note-indicator" role="presentation"></div>
-									{/if}
-								</span>
-							{/if}
-						</td>
+<!-- Card Container for Dashboard Table -->
+<div class="card">
+	<div class="dashboard-container">
+		<table>
+			<thead>
+				<tr class="table-header">
+					<th class="metric-name-header">Week {getWeekNumber(displayedMonday)}</th>
+					{#each weekDates as date, i}
+						<th class="small-header" class:current-day={isCurrentWeek && i === currentDayIndex}>
+							{date.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
+						</th>
 					{/each}
-					<!-- Total cell: clickable -->
-					<td>
-						<span
-							role="button"
-							tabindex="0"
-							on:click={() => openNotesModal(metricIndex, -1)}
-							on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotesModal(metricIndex, -1); } }}
-							style="cursor: pointer;"
-						>
-							<strong>{computeWeeklyTotal(metric, metricIndex)}</strong>
-							{#if notesMap[`${metricIndex}-total`]}
-								<div class="note-indicator" role="presentation"></div>
-							{/if}
-						</span>
-					</td>
-					<td>
-						<em class="prev-total">
-							{metricFields[metricIndex] !== null
-								? previousTotals[metricIndex] % 1 === 0
-									? previousTotals[metricIndex].toFixed(0)
-									: previousTotals[metricIndex].toFixed(2)
-								: '-'}
-						</em>
-					</td>
-					<td style="color: {getWowColor(wowChange[metricIndex])};">
-						<em class="wow-change">{wowChange[metricIndex]}</em>
-					</td>
+					<th>Current Week Total</th>
+					<th>By This Time Last Week</th>
+					<th>WoW % Change</th>
+					<th class="prev-week-col">Previous Week Total</th>
 				</tr>
-			{/each}
-		</tbody>
-	</table>
+				<tr class="table-header sub-header">
+					<th></th>
+					{#each weekDates as date, i}
+						<th class:current-day={isCurrentWeek && i === currentDayIndex}>
+							{date.toLocaleDateString(undefined, { weekday: "long" })}
+						</th>
+					{/each}
+					<th></th>
+					<th></th>
+					<th></th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each metrics as metric, metricIndex}
+					<tr>
+						<td class="metric-name">
+							{metric.name}
+							{#if metricFields[metricIndex] === null}
+							  <div class="calc-info-container">
+								<span class="calc-info">?</span>
+								<div class="calc-tooltip">{getCalculationExplanation(metricIndex)}</div>
+							  </div>
+							{/if}
+						  </td>
+						  						  						{#each metric.values as value, dayIndex}
+							<td class:current-day={isCurrentWeek && dayIndex === currentDayIndex}>
+								{#if metricFields[metricIndex] !== null}
+									<input
+										type="number"
+										bind:value={metrics[metricIndex].values[dayIndex]}
+										on:blur={() => handleInputChange(metricIndex, dayIndex)}
+										on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex)}
+										class="cell-value"
+									/>
+								{:else}
+									<span
+										role="button"
+										tabindex="0"
+										class="cell-value computed-cell"
+										on:click={() => openNotesModal(metricIndex, dayIndex)}
+										on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotesModal(metricIndex, dayIndex); } }}
+									>
+										{formatNumber(value)}
+										{#if notesMap[`${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`]}
+											<div class="note-indicator" role="presentation"></div>
+										{/if}
+									</span>
+								{/if}
+							</td>
+						{/each}
+						<!-- Current Week Total cell -->
+						<td>
+							<span
+								role="button"
+								tabindex="0"
+								on:click={() => openNotesModal(metricIndex, -1)}
+								on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotesModal(metricIndex, -1); } }}
+							>
+								<strong>{computeWeeklyTotal(metric, metricIndex)}</strong>
+								{#if notesMap[`${metricIndex}-total`]}
+									<div class="note-indicator" role="presentation"></div>
+								{/if}
+							</span>
+						</td>
+						<!-- By This Time Last Week cell -->
+						<td>
+							<em class="by-this-time">
+								{#if metricFields[metricIndex] !== null}
+									{isCurrentWeek 
+										? (partialPreviousTotals[metricIndex] % 1 === 0 
+											? partialPreviousTotals[metricIndex].toFixed(0) 
+											: partialPreviousTotals[metricIndex].toFixed(2))
+										: (previousTotals[metricIndex] % 1 === 0 
+											? previousTotals[metricIndex].toFixed(0) 
+											: previousTotals[metricIndex].toFixed(2))
+									}
+								{:else}
+									{#if metricIndex === 2}
+										{(() => {
+											const val = computePrevShipmentsPerHour();
+											return val % 1 === 0 ? val.toFixed(0) : val.toFixed(2);
+										})()}
+									{:else if metricIndex === 4}
+										{(() => {
+											const val = computePrevDefectsDPMO();
+											return val % 1 === 0 ? val.toFixed(0) : val.toFixed(2);
+										})()}
+									{:else if metricIndex === 5}
+										{(() => {
+											const val = computePrevOrderAccuracy();
+											return val % 1 === 0 ? val.toFixed(0) + "%" : val.toFixed(2) + "%";
+										})()}
+									{/if}
+								{/if}
+							</em>
+						</td>
+						<!-- WoW % Change cell -->
+						<td style="color: {getWowColor(wowChange[metricIndex])};">
+							<em class="wow-change">{wowChange[metricIndex]}</em>
+						</td>
+						<!-- Previous Week Total cell -->
+						<td class="prev-week-col">
+							<em class="prev-total">
+								{metricFields[metricIndex] !== null
+									? previousTotals[metricIndex] % 1 === 0
+										? previousTotals[metricIndex].toFixed(0)
+										: previousTotals[metricIndex].toFixed(2)
+									: '-'}
+							</em>
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 </div>
 
-<!-- Global Save Button -->
 <div class="global-save-container">
 	<button on:click={saveAllMetrics}>Save All Metrics</button>
 </div>
 
-<!-- Notes Modal -->
 {#if showNotesModal}
-	<div class="modal-overlay" on:click={closeNotesModal}>
+	<div 
+		class="modal-overlay" 
+		on:click={closeNotesModal} 
+		role="button" 
+		tabindex="0" 
+		on:keydown={(e) => { if(e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); closeNotesModal(); } }}
+	>
 		<div class="modal-content" on:click|stopPropagation>
 			{#if noteEditMode}
 				<h2>Edit Note for {metrics[selectedMetricIndex].name} Total</h2>
@@ -454,7 +576,6 @@
 				<p><strong>Root Cause:</strong> {noteRootCause}</p>
 				<p><strong>Details:</strong> {noteDetails}</p>
 				<p><strong>Action Plan:</strong> {noteActionPlan}</p>
-				<!-- Comment Section -->
 				<div class="comments-section">
 					<h3>Comments</h3>
 					{#if notesMap[`${selectedMetricIndex}-total`]?.comments?.length}
@@ -474,7 +595,6 @@
 				</div>
 				<div class="modal-buttons">
 					<button on:click={toggleEditMode} title="Edit Note">
-						<!-- Pen icon -->
 						<svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h6m2 2a2 2 0 012 2v6a2 2 0 01-2 2h-6a2 2 0 01-2-2v-6a2 2 0 012-2h6z" />
 						</svg>
@@ -490,147 +610,214 @@
 <style>
 	:global(body) {
 		font-family: 'Roboto', sans-serif;
-		background-color: #f5f5f5;
+		background-color: #F9FAFB;
 		margin: 0;
 		padding: 0;
+		color: #333;
 	}
+	/* Remove spinner arrows in WebKit browsers */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.calc-info-container {
+  position: relative;
+  display: inline-block;
+  margin-left: 4px;
+}
 
-	/* Week Navigation styling */
+.calc-info {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 0.75em;
+  color: #fff;
+  background-color: #004225;
+  border-radius: 50%;
+  cursor: help;
+}
+
+.calc-tooltip {
+  visibility: hidden;
+  position: absolute;
+  bottom: 125%; /* Position above the icon */
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #fff;
+  color: #333;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  white-space: nowrap;
+  font-size: 0.75em;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.calc-info-container:hover .calc-tooltip {
+  visibility: visible;
+}
+/* Remove spinner arrows in Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+}
+	/* Week Navigation */
 	.week-navigation {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		justify-content: flex-start;
-		margin-bottom: 16px;
-		gap: 8px;
-		padding: 0 24px;
+		padding: 16px 24px;
 	}
-
 	.week-navigation button {
-		background: #6c757d;
+		background: transparent;
 		border: none;
-		color: white;
-		padding: 6px 14px;
-		font-size: 0.9em;
+		color: #004225;
 		font-weight: bold;
 		cursor: pointer;
-		border-radius: 4px;
-		transition: background 0.2s ease;
+		font-size: 1em;
+		transition: color 0.2s ease;
 	}
-
 	.week-navigation button:hover {
-		background: #5a6268;
+		color: #35b07b;
 	}
-
 	.week-range {
-		font-size: 0.9em;
-		color: #555;
+		font-size: 1em;
+		font-weight: 500;
 	}
-
-	/* Table Header Styling */
-	.table-header {
-		background: #e2eaf2;
-		color: #334a66;
+	/* Card Container */
+	.card {
+		background-color: #fff;
+		border-radius: 12px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+		margin: 24px;
+		overflow: hidden;
 	}
-
-	.cell-value {
-		display: inline-block;
-		width: 80px;
-		padding: 4px;
-		text-align: center;
-		font-family: inherit;
-		font-size: 0.9em;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-	}
-
-	input.cell-value:focus {
-		outline: none;
-		border-color: #007bff;
-	}
-
-	.computed-cell {
-		border: none;
-		background-color: #eaeaea;
-		cursor: default;
-		position: relative;
-	}
-
-	.note-indicator {
-		position: absolute;
-		top: 2px;
-		left: 2px;
-		width: 0;
-		height: 0;
-		border-top: 8px solid red;
-		border-right: 8px solid transparent;
-	}
-
+	/* Dashboard Container */
 	.dashboard-container {
 		width: 100%;
 		overflow-x: auto;
-		margin: 0;
-		padding: 0;
 	}
-
 	table {
 		width: 100%;
-		min-width: 900px;
 		border-collapse: collapse;
-		margin: 0;
+		table-layout: fixed;
 	}
-
 	th,
 	td {
-		padding: 12px;
+		padding: 12px 1px;
 		text-align: center;
-		border-bottom: 1px solid #ddd;
+		border-bottom: 1px solid #E5E7EB;
+		border-right: 1px solid #E5E7EB;
 	}
-
+	th:last-child,
+	td:last-child {
+		border-right: none;
+	}
 	th {
-		font-weight: bold;
-	}
-
-	tr:nth-child(even) {
-		background: #f8f9fa;
-	}
-
-	.global-save-container {
-		text-align: right;
-		margin-top: 20px;
-		padding: 0 24px;
-	}
-
-	.global-save-container button {
-		background: #6c757d;
-		border: none;
-		color: white;
-		padding: 6px 14px;
+		font-weight: 600;
 		font-size: 0.9em;
-		font-weight: bold;
-		cursor: pointer;
-		border-radius: 4px;
-		transition: background 0.2s ease;
+		letter-spacing: 0.03em;
 	}
-
-	.global-save-container button:hover {
-		background: #5a6268;
+	/* Increase metric name column width and decrease font size */
+	.metric-name,
+	.metric-name-header {
+		width: 200px;
+		font-size: 0.8em;
+		text-align: left;
+		padding-left: 24px;
 	}
-
-	input[type="number"] {
+	.small-header {
+		width: 100px;
+	}
+	/* Header Rows with Subtle Gradient */
+	.table-header {
+		background: linear-gradient(180deg, #f5f7fa, #eaeef3);
+	}
+	.sub-header {
+		background-color: #f9fafb;
+		font-size: 0.71em;
+		color: #555;
+	}
+	.cell-value {
+		display: inline-block;
 		width: 80px;
-		padding: 4px;
+		padding: 8px;
 		text-align: center;
-		border: 1px solid #ccc;
-		border-radius: 4px;
+		font-size: 0.95em;
+		border: 1px solid #E5E7EB;
+		border-radius: 6px;
+		transition: border-color 0.2s ease;
+		background-color: #fff;
 	}
-
-	/* Styling for previous totals and WoW change columns */
-	.prev-total, .wow-change {
+	input.cell-value {
+		width: 80px;
+		padding: 8px;
+		border: 1px solid #E5E7EB;
+		border-radius: 6px;
+		font-size: 0.95em;
+	}
+	input.cell-value:focus {
+		outline: none;
+		border-color: #004225;
+		box-shadow: 0 0 0 2px rgba(0, 66, 37, 0.2);
+	}
+	.prev-week-col em {
+		font-weight: bold;
+	}
+	.computed-cell {
+		background-color: #F5F7FA;
+		cursor: pointer;
+		position: relative;
+	}
+	.note-indicator {
+		position: absolute;
+		top: 4px;
+		left: 4px;
+		width: 0;
+		height: 0;
+		border-top: 8px solid #ff4d4f;
+		border-right: 8px solid transparent;
+	}
+	.prev-total,
+	.wow-change {
 		font-style: italic;
 		color: #6B7280;
 		font-size: 0.9em;
 	}
-
+	/* Current Day Highlighting: Soft Blue Accent with vertical borders */
+	.current-day {
+		background-color: #DDEAFB;
+		border-left: 2px solid #0056B3;
+		border-right: 2px solid #0056B3;
+	}
+	/* Previous Week Total Highlight */
+	.prev-week-col {
+		background-color: rgba(0, 66, 37, 0.05);
+		border-left: 1px solid #004225;
+		border-right: 1px solid #004225;
+	}
+	/* Global Save Button */
+	.global-save-container {
+		text-align: right;
+		margin: 16px 24px;
+	}
+	.global-save-container button {
+		background: #004225;
+		border: none;
+		color: #fff;
+		padding: 10px 20px;
+		font-size: 1em;
+		font-weight: bold;
+		cursor: pointer;
+		border-radius: 8px;
+		transition: background 0.2s ease;
+	}
+	.global-save-container button:hover {
+		background: #35b07b;
+	}
 	/* Modal Styles */
 	.modal-overlay {
 		position: fixed;
@@ -638,114 +825,100 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background-color: rgba(0,0,0,0.5);
+		background-color: rgba(0, 0, 0, 0.4);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		z-index: 1000;
 	}
-
 	.modal-content {
 		background: #fff;
 		padding: 24px;
-		border-radius: 8px;
+		border-radius: 12px;
 		width: 90%;
 		max-width: 600px;
 		max-height: 80vh;
 		overflow-y: auto;
-		box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 	}
-
 	.modal-content h2 {
 		margin-top: 0;
+		font-size: 1.5em;
 	}
-
 	.modal-content label {
 		display: block;
 		margin: 12px 0 4px;
 		font-size: 0.9em;
 		color: #555;
 	}
-
 	.modal-content input[type="text"],
 	.modal-content textarea {
 		width: 100%;
-		padding: 8px;
-		font-size: 0.9em;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		margin-bottom: 8px;
+		padding: 10px;
+		font-size: 0.95em;
+		border: 1px solid #E5E7EB;
+		border-radius: 6px;
+		margin-bottom: 12px;
 	}
-
 	.modal-content textarea {
 		resize: vertical;
 		min-height: 80px;
 	}
-
 	.modal-buttons {
 		display: flex;
 		justify-content: flex-end;
-		gap: 8px;
+		gap: 12px;
 	}
-
 	.modal-buttons button {
-		background: #6c757d;
+		background: #004225;
 		border: none;
-		color: white;
-		padding: 6px 12px;
-		font-size: 0.9em;
+		color: #fff;
+		padding: 8px 16px;
+		font-size: 0.95em;
 		cursor: pointer;
-		border-radius: 4px;
+		border-radius: 6px;
 		transition: background 0.2s ease;
 	}
-
 	.modal-buttons button:hover {
-		background: #5a6268;
+		background: #35b07b;
 	}
-
-	/* Additional styling for the comments section in view mode */
+	/* Comments Section */
 	.comments-section {
 		margin-top: 16px;
 		font-size: 0.9em;
 		color: #555;
 	}
-
 	.comments-section h3 {
 		margin: 0 0 8px;
 		font-size: 1em;
 	}
-
 	.comments-list {
 		list-style: none;
 		padding: 0;
 		margin: 0 0 8px;
 		max-height: 150px;
 		overflow-y: auto;
-		border: 1px solid #ccc;
-		border-radius: 4px;
+		border: 1px solid #E5E7EB;
+		border-radius: 6px;
 	}
-
 	.comments-list li {
-		padding: 4px 8px;
-		border-bottom: 1px solid #eee;
+		padding: 6px 12px;
+		border-bottom: 1px solid #f0f0f0;
 	}
-
 	.comments-list li:last-child {
 		border-bottom: none;
 	}
-
 	.add-comment {
-		background: #6c757d;
+		background: #004225;
 		border: none;
-		color: white;
-		padding: 6px 12px;
+		color: #fff;
+		padding: 8px 16px;
 		font-size: 0.9em;
 		cursor: pointer;
-		border-radius: 4px;
+		border-radius: 6px;
 		transition: background 0.2s ease;
 	}
-
 	.add-comment:hover {
-		background: #5a6268;
+		background: #35b07b;
 	}
 </style>
