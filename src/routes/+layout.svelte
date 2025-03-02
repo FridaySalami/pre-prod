@@ -4,7 +4,7 @@
   
   <header class="site-header">
     <div class="header-left">
-      <h1>Parkers Foodservice Operational Dashboard</h1>
+      <h1>Operational Dashboard</h1>
     </div>
     <div class="header-right">
       <span class="user-info">Logged in as <em>jackweston@gmail.com</em></span>
