@@ -1,4 +1,5 @@
 <script>
+    import "../global.css";
   // Global layout logic if needed.
   // Removed unused supabaseClient import.
   function handleLogout(event) {
