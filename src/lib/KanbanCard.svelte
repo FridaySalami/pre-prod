@@ -1,6 +1,6 @@
 <script context="module" lang="ts">
   export type Project = {
-    id: string; // id as string
+    id: string;
     title: string;
     category: string;
     submitted_by: string;
@@ -22,7 +22,6 @@
 
   const dispatch = createEventDispatcher();
   
-  // State to track whether the card is expanded.
   let expanded = false;
 
   function toggleExpand(event: MouseEvent) {
@@ -38,13 +37,21 @@
     event.dataTransfer?.setData('text/plain', project.id);
   }
 
+  // Mapping of categories to colors.
+  const categoryColors: Record<string, string> = {
+    "5s & organization": "#e0f7fa",                      // Light blue/turquoise
+    "inventory accuracy & cycle counting": "#e8f5e9",    // Light green
+    "equipment maintenance & reliability": "#fff3e0",    // Light orange
+    "layout & space optimization": "#d1c4e9",            // Light purple
+    "safety & ergonomics": "#ffcdd2",                    // Soft red
+    "process efficiency & workflow": "#fff9c4",          // Light yellow
+    "quality improvement": "#b2dfdb",                    // Soft teal
+    "technology & automation": "#b2ebf2"                 // Light cyan
+  };
+
   function categoryColor(category: string): string {
-    switch (category.toLowerCase()) {
-      case '5s': return '#e0f7fa';
-      case 'mechanical': return '#fff3e0';
-      case 'lean': return '#e8f5e9';
-      default: return '#f0f0f0';
-    }
+    const normalized = category.toLowerCase();
+    return categoryColors[normalized] || "#f0f0f0";
   }
 </script>
 
@@ -66,7 +73,7 @@
   </div>
   <p class="category">{project.category}</p>
   {#if expanded}
-    <p class="submitted">Submitted by: {project.submitted_by}</p>
+    <p class="submitted">By: {project.submitted_by}</p>
     <p class="brief">{project.brief_description}</p>
   {/if}
   {#if project.thumbs_up_count}
@@ -79,17 +86,18 @@
 
 <style>
   .kanban-card {
-    padding: 12px;
+    padding: 8px;
     border: 1px solid #ddd;
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     position: relative;
+    font-size: 0.85em;
   }
 
   .kanban-card:hover {
     transform: scale(1.02);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   }
 
   .card-header {
@@ -100,43 +108,43 @@
 
   h3 {
     margin: 0;
-    font-size: 1.1em;
+    font-size: 1em;
   }
 
   .toggle-button {
     background: none;
     border: none;
-    font-size: 1.5em;
+    font-size: 1.2em;
     cursor: pointer;
-    width: 30px;
-    height: 30px;
-    line-height: 30px;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
     text-align: center;
     padding: 0;
   }
 
   .category {
-    font-size: 0.9em;
-    margin: 4px 0;
+    font-size: 0.8em;
+    margin: 2px 0;
     font-weight: bold;
   }
 
   .submitted,
   .brief {
-    font-size: 0.85em;
-    margin: 4px 0;
+    font-size: 0.75em;
+    margin: 2px 0;
   }
 
   .reactions {
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 0.85em;
-    margin-top: 8px;
+    font-size: 0.75em;
+    margin-top: 4px;
   }
 
   .thumbs-up {
-    font-size: 1.2em;
+    font-size: 1em;
   }
 
   .count {
