@@ -168,7 +168,7 @@ export let previousTotal: string;
       padding: 8px;
       text-align: center;
       font-size: 0.95em;
-      border: 1px solid #E5E7EB;
+      border: 1px solid #E5ddE7EB;
       border-radius: 6px;
       background-color: #fff;
       transition: border-color 0.2s ease;
