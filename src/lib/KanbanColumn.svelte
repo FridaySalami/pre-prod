@@ -53,11 +53,11 @@
      on:dragleave={handleDragLeave}
      on:drop={handleDrop}>
   <div class="column-header">
-    <h2>{title} <span class="item-count">({projects.length} ideas)</span></h2>
+    <h2>{title} <span class="item-count">({projects.length})</span></h2>
   </div>
   <div class="cards">
     {#if projects.length === 0}
-      <p class="empty-message">No ideas here. Add one!</p>
+      <p class="empty-message">No projects here. Add one!</p>
     {:else}
       {#each projects as project (project.id)}
         <KanbanCard {project} on:open={(e) => dispatch('open', e.detail)} />

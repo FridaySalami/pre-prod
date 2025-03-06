@@ -32,7 +32,7 @@
 
   let editMode = false;
 
-  // Local copies for editing
+  // Local editable copies for the project fields.
   let editedTitle = "";
   let editedCategory = "";
   let editedBrief = "";
@@ -78,7 +78,7 @@
   }
 
   function handleDelete() {
-    if (confirm("Are you sure you want to delete this idea?")) {
+    if (confirm("Are you sure you want to delete this submission?")) {
       dispatch("delete", { projectId: project.id });
     }
   }
@@ -97,7 +97,7 @@
         <h2>{project.title}</h2>
         <button class="action-button edit-button" on:click={enterEditMode}>Edit</button>
       {:else}
-        <h2>Edit Idea</h2>
+        <h2>Edit Submission</h2>
         <div class="edit-actions">
           <button class="action-button save-button" on:click={handleSave}>Save</button>
           <button class="action-button cancel-button" on:click={cancelEditMode}>Cancel</button>
@@ -107,7 +107,6 @@
     </div>
 
     <div class="project-info">
-      <!-- Title -->
       <div class="field-group">
         {#if !editMode}
           <strong>Title:</strong>
@@ -118,7 +117,6 @@
         {/if}
       </div>
 
-      <!-- Category -->
       <div class="field-group">
         {#if !editMode}
           <strong>Category:</strong>
@@ -138,13 +136,11 @@
         {/if}
       </div>
 
-      <!-- Submitted By (read-only) -->
       <div class="field-group">
         <strong>Submitted By:</strong>
         <p class="field-value read-only">{project.submitted_by}</p>
       </div>
 
-      <!-- Brief Description -->
       <div class="field-group">
         {#if !editMode}
           <strong>Brief Description:</strong>
@@ -155,7 +151,6 @@
         {/if}
       </div>
 
-      <!-- Detailed Description -->
       <div class="field-group">
         {#if !editMode}
           <strong>Detailed Description:</strong>
@@ -166,7 +161,6 @@
         {/if}
       </div>
 
-      <!-- Due Date -->
       <div class="field-group">
         {#if !editMode}
           <strong>Due Date:</strong>
@@ -179,7 +173,6 @@
         {/if}
       </div>
 
-      <!-- Owner -->
       <div class="field-group">
         {#if !editMode}
           <strong>Owner:</strong>
@@ -212,7 +205,7 @@
     </div>
     
     <div class="delete-section">
-      <button class="action-button delete-button" on:click={handleDelete} type="button">Delete Idea</button>
+      <button class="action-button delete-button" on:click={handleDelete} type="button">Delete Submission</button>
     </div>
   </div>
 </div>
@@ -235,7 +228,7 @@
     width: 33%;
     min-width: 300px;
     height: 100%;
-    padding: 4px; /* Reduced overall padding */
+    padding: 4px; /* Further reduced panel padding */
     overflow-y: auto;
     box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
     position: relative;
@@ -247,8 +240,8 @@
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid #ccc;
-    padding: 2px 4px; /* Reduced padding */
-    margin-bottom: 4px; /* Reduced margin */
+    padding: 2px 4px;
+    margin-bottom: 4px;
   }
 
   .panel-header h2 {
@@ -256,7 +249,6 @@
     font-size: 1.1em;
   }
 
-  /* Make the action buttons more prominent */
   .action-button {
     background-color: #004225;
     color: #fff;
@@ -283,23 +275,23 @@
   .project-info {
     display: flex;
     flex-direction: column;
-    gap: 2px; /* Reduced gap between field groups */
+    gap: 2px;
   }
 
   .field-group {
     display: flex;
     flex-direction: column;
-    margin-bottom: 2px; /* Reduced margin */
+    margin-bottom: 2px;
   }
 
   .field-group label {
     font-weight: bold;
-    margin-bottom: 1px; /* Reduced margin */
+    margin-bottom: 1px;
     font-size: 0.9em;
   }
 
   .field-value {
-    padding: 2px 4px; /* Reduced padding */
+    padding: 2px 4px;
     border: 1px solid #eee;
     border-radius: 4px;
     background: #f7f7f7;
@@ -313,7 +305,7 @@
   input[type="date"],
   select,
   textarea {
-    padding: 2px 4px; /* Reduced padding */
+    padding: 2px 4px;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 0.85em;
@@ -322,7 +314,7 @@
   .reactions-comments {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     margin-top: 4px;
   }
 
@@ -333,7 +325,7 @@
   }
 
   .thumbs-up-button {
-    padding: 2px 4px; /* Reduced padding */
+    padding: 2px 4px;
     font-size: 0.85em;
   }
 
@@ -363,7 +355,7 @@
   }
 
   .delete-button {
-    padding: 4px 8px; /* Reduced padding */
+    padding: 4px 8px;
     font-size: 0.85em;
   }
 </style>

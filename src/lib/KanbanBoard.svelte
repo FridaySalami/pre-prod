@@ -5,7 +5,6 @@
   import NewProjectPanel from '$lib/NewProjectPanel.svelte';
   import { supabase } from '$lib/supabaseClient';
 
-  // Update the Project type: id is a string (UUID)
   type Project = {
     id: string;
     title: string;
@@ -40,13 +39,11 @@
     await loadProjects();
   });
 
-  // Reactive filtering into columns.
   $: newSuggestions = projects.filter(p => p.status === 'new');
   $: underReview = projects.filter(p => p.status === 'under_review');
   $: inProgress = projects.filter(p => p.status === 'in_progress');
   $: completed = projects.filter(p => p.status === 'completed');
 
-  // Drop handler: remove Number conversion, compare string id.
   async function handleDrop(event: CustomEvent, targetStatus: Project["status"]) {
     const dragEvent: DragEvent = event.detail;
     dragEvent.preventDefault();
@@ -56,7 +53,7 @@
       const project = projects.find(p => p.id === id);
       if (project) {
         project.status = targetStatus;
-        projects = [...projects]; // Force reactivity.
+        projects = [...projects];
         const { data, error } = await supabase
           .from("kaizen_projects")
           .update({ status: targetStatus, updated_at: new Date().toISOString() })
@@ -70,7 +67,6 @@
     }
   }
 
-  // Handle opening a project detail.
   let selectedProject: Project | null = null;
   function handleOpen(event: CustomEvent) {
     selectedProject = event.detail.project;
@@ -79,7 +75,6 @@
     selectedProject = null;
   }
 
-  // New project submission panel state.
   let showNewProjectPanel = false;
   function openNewProjectForm() {
     showNewProjectPanel = true;
@@ -109,7 +104,6 @@
     }
   }
 
-  // Handle deletion of a project.
   async function handleDelete(event: CustomEvent) {
     const projectId = event.detail.projectId;
     const { error } = await supabase
@@ -169,7 +163,7 @@
     }}
     on:thumbsUp={(e: CustomEvent) => {
       console.log("Thumbs up", e.detail);
-      // TODO: Update thumbs up count in Supabase.
+      // TODO: Update thumbs-up count in Supabase.
     }}
     on:delete={handleDelete}
   />
@@ -184,21 +178,22 @@
 
 <style>
   .kanban-board {
-    padding: 16px;
+    padding: 8px; /* Reduced overall padding */
   }
   
   .new-project-button {
     background-color: #004225;
     color: #fff;
     border: none;
-    padding: 10px 20px;
-    border-radius: 8px;
+    padding: 8px 16px;  /* Reduced button padding */
+    border-radius: 6px;
     cursor: pointer;
-    margin-bottom: 16px;
+    margin-bottom: 8px; /* Reduced margin */
+    font-size: 0.9em;   /* Smaller font */
   }
   
   .kanban-columns {
     display: flex;
-    gap: 16px;
+    gap: 8px; /* Reduced gap between columns */
   }
 </style>

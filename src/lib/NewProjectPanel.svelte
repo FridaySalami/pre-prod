@@ -43,7 +43,7 @@
 <div class="overlay" on:click={handleClose} role="button" tabindex="0" on:keydown={handleKeyDown}>
   <div class="new-project-panel" role="dialog" aria-modal="true" on:click|stopPropagation>
     <button class="close-button" on:click={handleClose} aria-label="Close">×</button>
-    <h2>Submit New Idea</h2>
+    <h2>Submit New</h2>
     <form on:submit|preventDefault={handleSubmit}>
       <label>
         Title:
@@ -101,7 +101,7 @@
     overflow-y: auto;
     box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
     position: relative;
-    font-size: 0.9em;
+    font-size: 0.9rem;
   }
   
   .close-button {
