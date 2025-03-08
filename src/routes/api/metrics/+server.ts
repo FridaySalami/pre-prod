@@ -1,7 +1,16 @@
 import type { RequestHandler } from '@sveltejs/kit';
+import { createClient } from '@supabase/supabase-js';
 
-// In-memory store for demonstration (data is lost when the server restarts)
-let metricsData: Record<string, Record<string, number>> = {};
+// Retrieve the Supabase URL and the service role key from environment variables.
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
+
+if (!supabaseUrl || !serviceRole) {
+	throw new Error('Missing Supabase configuration in environment variables');
+}
+
+// Create an admin Supabase client using the service role key.
+const supabaseAdmin = createClient(supabaseUrl, serviceRole);
 
 /**
  * GET /api/metrics?date=YYYY-MM-DD
@@ -12,13 +21,18 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (!date) {
 		return new Response(JSON.stringify({ error: 'Missing date parameter' }), { status: 400 });
 	}
-	const data = metricsData[date] || {
-		shipments: 0,
-		defects: 0,
-		dpmo: 0,
-		orderAccuracy: 0
-	};
-	return new Response(JSON.stringify(data), {
+
+	const { data, error } = await supabaseAdmin
+		.from('daily_metrics')
+		.select('*')
+		.eq('date', date)
+		.maybeSingle();
+
+	if (error) {
+		return new Response(JSON.stringify({ error: error.message }), { status: 400 });
+	}
+
+	return new Response(JSON.stringify(data || {}), {
 		headers: { 'Content-Type': 'application/json' }
 	});
 };
@@ -26,7 +40,7 @@ export const GET: RequestHandler = async ({ url }) => {
 /**
  * POST /api/metrics
  * Body: { date: 'YYYY-MM-DD', data: { shipments, defects, dpmo, orderAccuracy } }
- * Saves the metrics for the given date.
+ * Saves (or upserts) the metrics for the given date.
  */
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
@@ -34,7 +48,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!date || !data) {
 		return new Response(JSON.stringify({ error: 'Missing date or data' }), { status: 400 });
 	}
-	metricsData[date] = data;
+
+	const { error } = await supabaseAdmin
+		.from('daily_metrics')
+		.upsert({ date, ...data }, { onConflict: 'date' });
+
+	if (error) {
+		return new Response(JSON.stringify({ error: error.message }), { status: 400 });
+	}
+
 	return new Response(JSON.stringify({ success: true }), {
 		headers: { 'Content-Type': 'application/json' }
 	});

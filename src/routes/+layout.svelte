@@ -1,7 +1,26 @@
-<script>
+<script lang="ts">
   import "../global.css";
-  function handleLogout(event) {
+  import { onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { userSession } from '$lib/sessionStore';
+  import { browser } from '$app/environment';
+
+  // Subscribe to the session store.
+  let session: any = null;
+  const unsubscribe = userSession.subscribe((s) => {
+    session = s;
+    if (browser && !session) {
+      goto('/login');
+    }
+  });
+
+  onDestroy(() => {
+    unsubscribe();
+  });
+
+  function handleLogout(event: Event) {
     event.preventDefault();
+    // Your logout logic here (for example, supabase.auth.signOut())
     console.log("Logout clicked");
   }
 </script>
@@ -12,7 +31,7 @@
   </div>
   <div class="header-right">
     <span class="user-info">
-      Logged in as <em>jackweston@gmail.com</em>
+      Logged in as <em>{session ? session.user.email : "Not logged in"}</em>
     </span>
   </div>
 </header>
@@ -94,9 +113,9 @@
     background-color: #F9FAFB;
   }
   
-  /* Header */
+  /* Header with gradient background */
   .site-header {
-    background-color: #fff;
+    background: linear-gradient(90deg, #004225 0%, #006644 100%);
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     padding: 16px 24px;
     display: flex;
@@ -104,27 +123,28 @@
     align-items: center;
     border-bottom: 1px solid #E5E7EB;
     height: 70px;
+    color: #fff;
   }
   
   .header-left h1 {
     margin: 0;
-    font-size: 2em;
-    color: #343434;
+    font-size: 1.8em;
+    color: #fff;
   }
   
   .header-right .user-info {
     font-size: 0.8em;
     font-style: italic;
-    color: #6B7280;
+    color: #E0F2F1;
   }
   
   /* Collapsible Sidebar */
   .sidebar {
     position: fixed;
-    top: 70px; /* Start below header */
+    top: 70px;
     bottom: 0;
     left: 0;
-    width: 60px; /* Collapsed width */
+    width: 60px;
     background-color: #fff;
     border-right: 1px solid #E5E7EB;
     overflow: hidden;
@@ -203,9 +223,9 @@
   /* Main Content */
   .site-main {
     flex: 1;
-    margin-left: 60px; /* Reserve collapsed sidebar width */
+    margin-left: 60px;
     padding: 24px;
-    padding-top: 90px; /* Ensure content is below header */
+    padding-top: 90px;
     background-color: #F9FAFB;
     transition: margin-left 0.3s ease;
   }

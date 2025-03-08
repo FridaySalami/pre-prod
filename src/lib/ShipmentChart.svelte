@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount, tick } from "svelte";
-	import { supabase } from "./supabaseClient"; // Adjust path if needed
+	import { supabase } from "./supabaseClient";
 	import { getMonday, formatNumber, getWeekNumber, isToday } from "./utils";
 	import MetricRow from "./MetricRow.svelte";
-	import NotesModal from "./NotesModal.svelte"; // Ensure this file exists in src/lib
+	import MetricsSidePanel from "$lib/MetricsSidePanel.svelte";
   
 	// Define the metric type.
 	type Metric = {
@@ -11,7 +11,6 @@
 	  values: number[];
 	};
   
-	// Instead of an enum, use a constant object.
 	const MetricIndex = {
 	  SHIPMENTS: 0,
 	  HOURS_WORKED: 1,
@@ -22,16 +21,14 @@
 	} as const;
   
 	let metrics: Metric[] = [
-	  { name: "Shipments Packed", values: Array(7).fill(0) },
-	  { name: "Hours Worked", values: Array(7).fill(0) },
-	  { name: "Shipments Per Hour", values: Array(7).fill(0) },  // computed
-	  { name: "Defects", values: Array(7).fill(0) },
-	  { name: "Defects DPMO", values: Array(7).fill(0) },          // computed
-	  { name: "Order Accuracy (%)", values: Array(7).fill(0) },    // computed
-	];
-  
+  { name: "1.1 Shipments Packed", values: Array(7).fill(0) },
+  { name: "1.2 Hours Worked", values: Array(7).fill(0) },
+  { name: "1.3 Shipments Per Hour", values: Array(7).fill(0) },
+  { name: "1.4 Defects", values: Array(7).fill(0) },
+  { name: "1.5 Defects DPMO", values: Array(7).fill(0) },
+  { name: "1.6 Order Accuracy (%)", values: Array(7).fill(0) }
+];  
 	// Mapping of metrics to database columns.
-	// For computed metrics, use null.
 	const metricFields: (string | null)[] = [
 	  "shipments",
 	  "hours_worked",
@@ -49,16 +46,10 @@
 	let previousTotals: number[] = metrics.map(() => 0);
 	let previousWeekMetrics: number[][] = metrics.map(() => Array(7).fill(0));
   
-	// Notes Modal variables.
-	let showNotesModal = false;
-	let selectedMetricIndex: number = -1;
-	let selectedDayIndex: number = -1; // -1 indicates "Total" cell note.
-	let noteTitle = "";
-	let noteRootCause = "";
-	let noteDetails = "";
-	let noteActionPlan = "";
-	let noteEditMode = false;
-	let newComment = "";
+	// ----- Metrics Side Panel Variables -----
+	let showMetricsPanel = false;
+	let selectedMetricIndex = -1;
+	let selectedDayIndex = -1; // -1 indicates the total cell
 	type NoteData = {
 	  title: string;
 	  rootCause: string;
@@ -66,6 +57,9 @@
 	  actionPlan: string;
 	  comments: string[];
 	};
+	let panelNoteData: NoteData = { title: "", rootCause: "", details: "", actionPlan: "", comments: [] };
+	
+	// Notes stored by a key (e.g. "2-2025-03-06" or "2-total")
 	let notesMap: Record<string, NoteData> = {};
   
 	// Reactive date calculations.
@@ -92,7 +86,7 @@
 	})();
 	$: currentDayIndex = isCurrentWeek ? Math.max(weekDates.findIndex(date => isToday(date)) - 1, 0) : 6;
   
-	// --- Derived Value Functions for current week ---
+	// Derived Value Functions for current week.
 	function computeShipmentsPerHour(dayIndex: number): number {
 	  const shipments = metrics[MetricIndex.SHIPMENTS].values[dayIndex];
 	  const hours = metrics[MetricIndex.HOURS_WORKED].values[dayIndex];
@@ -108,9 +102,7 @@
 	  const defects = metrics[MetricIndex.DEFECTS].values[dayIndex];
 	  return shipments > 0 ? Math.round(((shipments - defects) / shipments) * 10000) / 100 : 0;
 	}
-	// --- End Derived Value Functions ---
-  
-	// --- Derived Value Functions for previous week totals ---
+	// Derived Functions for previous week totals.
 	function computePrevShipmentsPerHour(): number {
 	  const end = currentDayIndex >= 0 ? currentDayIndex : 6;
 	  const shipments = previousWeekMetrics[0].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
@@ -129,9 +121,7 @@
 	  const defects = previousWeekMetrics[3].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
 	  return shipments > 0 ? ((shipments - defects) / shipments) * 100 : 0;
 	}
-	// --- End Previous Week Derived Functions ---
   
-	// Load current week metrics.
 	async function loadMetricsForDate(dateStr: string) {
 	  const { data, error } = await supabase
 		.from("daily_metrics")
@@ -145,7 +135,6 @@
 	  return data;
 	}
   
-	// Load previous week metrics (base values only).
 	async function loadPreviousWeekTotals() {
 	  let totals = metrics.map(() => 0);
 	  previousWeekMetrics = metrics.map(() => Array(7).fill(0));
@@ -165,7 +154,6 @@
 	  previousTotals = totals;
 	}
   
-	// Compute computedMetrics array: for computed rows, use derived functions; else use base values.
 	$: computedMetrics = metrics.map((metric, idx) => {
 	  if (metricFields[idx] === null) {
 		if (idx === MetricIndex.SHIPMENTS_PER_HOUR) {
@@ -182,14 +170,12 @@
 	  }
 	});
   
-	// Compute current week totals using computedMetrics for computed rows.
 	$: currentTotals = metrics.map((_, idx) => {
 	  const arr = metricFields[idx] === null ? computedMetrics[idx] : metrics[idx].values;
 	  const end = isCurrentWeek ? (currentDayIndex >= 0 ? currentDayIndex : 6) : arr.length - 1;
 	  return arr.slice(0, end + 1).reduce((acc, v) => acc + v, 0);
 	});
   
-	// For previous week totals, for computed rows, use the derived functions.
 	$: previousTotalsComputed = metrics.map((_, idx) => {
 	  if (metricFields[idx] !== null) {
 		return previousTotals[idx];
@@ -201,8 +187,6 @@
 	  }
 	});
   
-	// For "By This Time Last Week" totals (partial), use the partial slice of previousWeekMetrics for base rows,
-	// and for computed rows use the derived functions.
 	$: partialPreviousTotalsComputed = metrics.map((_, idx) => {
 	  if (metricFields[idx] !== null) {
 		const arr = previousWeekMetrics[idx];
@@ -216,7 +200,6 @@
 	  }
 	});
   
-	// Compute WoW change (remains similar).
 	$: wowChange = metrics.map((_, idx) => {
 	  if (isCurrentWeek && metricFields[idx] === null) {
 		let currVal = 0, prevVal = 0;
@@ -245,9 +228,7 @@
 	  }
 	});
   
-	// Compute weekly total for display.
 	function computeWeeklyTotal(metric: Metric, metricIndex: number): string {
-	  // Use computedMetrics for computed rows.
 	  const arr = metricFields[metricIndex] === null ? computedMetrics[metricIndex] : metric.values;
 	  if (metricIndex === MetricIndex.ORDER_ACCURACY) {
 		const totalShipments = computedMetrics[MetricIndex.SHIPMENTS].reduce((acc, v) => acc + v, 0);
@@ -326,8 +307,8 @@
 	  loadPreviousWeekTotals();
 	}
   
-	// Note modal functions.
-	function openNotesModal(metricIndex: number, dayIndex: number) {
+	// ----- Metrics Side Panel functions -----
+	function openMetricsPanel(metricIndex: number, dayIndex: number) {
 	  selectedMetricIndex = metricIndex;
 	  selectedDayIndex = dayIndex;
 	  const key =
@@ -335,71 +316,19 @@
 		  ? `${metricIndex}-total`
 		  : `${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`;
 	  if (notesMap[key]) {
-		noteTitle = notesMap[key].title;
-		noteRootCause = notesMap[key].rootCause;
-		noteDetails = notesMap[key].details;
-		noteActionPlan = notesMap[key].actionPlan;
+		panelNoteData = { ...notesMap[key] };
 	  } else {
-		noteTitle = "";
-		noteRootCause = "";
-		noteDetails = "";
-		noteActionPlan = "";
+		panelNoteData = { title: "", rootCause: "", details: "", actionPlan: "", comments: [] };
 	  }
-	  noteEditMode = notesMap[key] ? false : true;
-	  showNotesModal = true;
+	  showMetricsPanel = true;
 	}
-	function closeNotesModal() {
-	  showNotesModal = false;
+	function closeMetricsPanel() {
+	  showMetricsPanel = false;
 	}
-	function getCalculationExplanation(metricIndex: number): string {
-	  if (metricIndex === MetricIndex.SHIPMENTS_PER_HOUR)
-		return "Calculated as:\nShipments Packed ÷ Hours Worked";
-	  if (metricIndex === MetricIndex.DEFECTS_DPMO)
-		return "Calculated as:\n(Defects ÷ Shipments Packed) × 1,000,000";
-	  if (metricIndex === MetricIndex.ORDER_ACCURACY)
-		return "Calculated as:\n((Shipments Packed - Defects) ÷ Shipments Packed) × 100";
-	  return "";
-	}
-	function saveNote() {
-	  const key =
-		selectedDayIndex === -1
-		  ? `${selectedMetricIndex}-total`
-		  : `${selectedMetricIndex}-${weekDates[selectedDayIndex].toISOString().split("T")[0]}`;
-	  notesMap[key] = {
-		title: noteTitle,
-		rootCause: noteRootCause,
-		details: noteDetails,
-		actionPlan: noteActionPlan,
-		comments: notesMap[key]?.comments || [],
-	  };
-	  console.log("Note saved for", key, notesMap[key]);
-	  closeNotesModal();
-	}
-	function addComment() {
-	  const key = `${selectedMetricIndex}-total`;
-	  if (!notesMap[key]) return;
-	  if (newComment.trim()) {
-		notesMap[key].comments.push(newComment.trim());
-		newComment = "";
-	  }
-	}
-	function toggleEditMode() {
-	  noteEditMode = !noteEditMode;
-	}
+	// ----- End Metrics Side Panel functions -----
+  
 	function handleInputChange(metricIndex: number, dayIndex: number) {
 	  saveMetricsForDay(dayIndex);
-	}
-	async function previousWeek() {
-	  weekOffset -= 1;
-	  await tick();
-	  loadMetrics();
-	  loadPreviousWeekTotals();
-	}
-	async function nextWeek() {
-	  weekOffset += 1;
-	  await tick();
-	  loadMetrics();
-	  loadPreviousWeekTotals();
 	}
   
 	onMount(() => {
@@ -410,13 +339,13 @@
   
   <!-- Week Navigation -->
   <div class="week-navigation">
-	<button on:click={previousWeek}>Previous Week</button>
+	<button on:click={() => { weekOffset--; tick(); loadMetrics(); loadPreviousWeekTotals(); }}>Previous Week</button>
 	<span class="week-range">
 	  {#if weekDates.length === 7}
 		{weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
 	  {/if}
 	</span>
-	<button on:click={nextWeek}>Next Week</button>
+	<button on:click={() => { weekOffset++; tick(); loadMetrics(); loadPreviousWeekTotals(); }}>Next Week</button>
   </div>
   
   <!-- Card Container for Dashboard Table -->
@@ -451,28 +380,28 @@
 		</thead>
 		<tbody>
 		  {#each metrics as metric, metricIndex}
-		  <MetricRow
-		  name={metric.name}
-		  values={computedMetrics[metricIndex]}
-		  {metricIndex}
-		  {weekDates}
-		  {currentDayIndex}
-		  {isCurrentWeek}
-		  {notesMap}
-		  metricField={metricFields[metricIndex]}
-		  wowChange={wowChange[metricIndex]}
-		  {handleInputChange}
-		  {openNotesModal}
-		  computeWeeklyTotal={computeWeeklyTotal}
-		  currentTotal={formatNumber(currentTotals[metricIndex])}
-		  byThisTimeLastWeek={
-			isCurrentWeek
-			  ? formatNumber(partialPreviousTotalsComputed[metricIndex])
-			  : formatNumber(previousTotalsComputed[metricIndex])
-		  }
-		  previousTotal={formatNumber(previousTotalsComputed[metricIndex])}
-		/>
-						  {/each}
+			<MetricRow
+			  name={metric.name}
+			  values={computedMetrics[metricIndex]}
+			  {metricIndex}
+			  {weekDates}
+			  {currentDayIndex}
+			  {isCurrentWeek}
+			  {notesMap}
+			  metricField={metricFields[metricIndex]}
+			  wowChange={wowChange[metricIndex]}
+			  {handleInputChange}
+			  openNotes={openMetricsPanel}
+			  computeWeeklyTotal={computeWeeklyTotal}
+			  currentTotal={formatNumber(currentTotals[metricIndex])}
+			  byThisTimeLastWeek={
+				isCurrentWeek
+				  ? formatNumber(partialPreviousTotalsComputed[metricIndex])
+				  : formatNumber(previousTotalsComputed[metricIndex])
+			  }
+			  previousTotal={formatNumber(previousTotalsComputed[metricIndex])}
+			/>
+		  {/each}
 		</tbody>
 	  </table>
 	</div>
@@ -482,31 +411,27 @@
 	<button on:click={saveAllMetrics}>Save All Metrics</button>
   </div>
   
-  <!-- Render the Notes Modal component -->
-  <NotesModal
-	showModal={showNotesModal}
-	metricName={selectedMetricIndex >= 0 ? metrics[selectedMetricIndex].name : ""}
-	noteData={
-	  notesMap[selectedMetricIndex + "-total"] || {
-		title: "",
-		rootCause: "",
-		details: "",
-		actionPlan: "",
-		comments: [],
-	  }
-	}
-	isEditMode={noteEditMode}
-	on:save={(e: CustomEvent) => {
-	  noteTitle = e.detail.title;
-	  noteRootCause = e.detail.rootCause;
-	  noteDetails = e.detail.details;
-	  noteActionPlan = e.detail.actionPlan;
-	  saveNote();
-	}}
-	on:addComment={(e: CustomEvent) => addComment()}
-	on:toggleEditMode={() => toggleEditMode()}
-	on:close={() => closeNotesModal()}
-  />
+  <!-- Render the Metrics Side Panel with overlay -->
+  {#if showMetricsPanel}
+	<div class="overlay" on:click={closeMetricsPanel}>
+	  <div on:click|stopPropagation>
+		<MetricsSidePanel
+		  noteData={panelNoteData}
+		  on:close={(e) => {
+			e.stopPropagation();
+			closeMetricsPanel();
+		  }}
+		  on:updateNote={(e: CustomEvent) => {
+			const key = selectedDayIndex === -1 
+			  ? `${selectedMetricIndex}-total`
+			  : `${selectedMetricIndex}-${weekDates[selectedDayIndex].toISOString().split("T")[0]}`;
+			notesMap[key] = e.detail.updatedNote;
+			closeMetricsPanel();
+		  }}
+		/>
+	  </div>
+	</div>
+  {/if}
   
   <style>
 	.week-navigation {
@@ -531,10 +456,12 @@
 	  font-size: 1em;
 	  font-weight: 500;
 	}
+	/* Updated metrics deck (card) styles: combination of border and box shadow */
 	.card {
 	  background-color: #fff;
-	  border-radius: 12px;
-	  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+	  border: 1px solid #E5E7EB;
+	  border-radius: 6px;
+	  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 	  margin: 24px;
 	  overflow: hidden;
 	}
@@ -592,5 +519,14 @@
 	}
 	.global-save-container button:hover {
 	  background: #35b07b;
+	}
+	.overlay {
+	  position: fixed;
+	  top: 0;
+	  left: 0;
+	  width: 100%;
+	  height: 100%;
+	  background: rgba(0, 0, 0, 0.4);
+	  z-index: 1090;
 	}
   </style>

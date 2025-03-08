@@ -32,13 +32,15 @@
 
   let editMode = false;
 
-  // Local editable copies for the project fields.
+  // Local editable copies for project fields.
   let editedTitle = "";
   let editedCategory = "";
   let editedBrief = "";
   let editedDetailed = "";
   let editedDeadline = "";
   let editedOwner = "";
+
+  let newComment = "";
 
   function enterEditMode() {
     editMode = true;
@@ -65,6 +67,7 @@
       owner: editedOwner,
       updated_at: new Date().toISOString()
     };
+    console.log("Dispatching update:", updatedProject);
     dispatch("update", { updatedProject });
     editMode = false;
   }
@@ -80,6 +83,13 @@
   function handleDelete() {
     if (confirm("Are you sure you want to delete this submission?")) {
       dispatch("delete", { projectId: project.id });
+    }
+  }
+
+  function handleAddComment() {
+    if (newComment.trim()) {
+      dispatch("addComment", { projectId: project.id, comment: newComment.trim() });
+      newComment = "";
     }
   }
 
@@ -201,6 +211,10 @@
         {:else}
           <p>No comments yet.</p>
         {/if}
+        <div class="new-comment">
+          <input type="text" placeholder="Add a comment..." bind:value={newComment} />
+          <button class="action-button" on:click={handleAddComment}>Add</button>
+        </div>
       </div>
     </div>
     
@@ -228,7 +242,7 @@
     width: 33%;
     min-width: 300px;
     height: 100%;
-    padding: 4px; /* Further reduced panel padding */
+    padding: 4px;
     overflow-y: auto;
     box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
     position: relative;
@@ -292,13 +306,16 @@
 
   .field-value {
     padding: 2px 4px;
-    border: 1px solid #eee;
+    border: 1px solid #ddd;
     border-radius: 4px;
-    background: #f7f7f7;
+    background: inherit;
   }
 
   .read-only {
-    opacity: 0.6;
+    opacity: 1;
+    color: #000;
+    background: #fff;
+    border: 1px solid #ddd;
   }
 
   input[type="text"],
@@ -344,13 +361,27 @@
   }
 
   .comments-section li {
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid #ddd;
     padding: 2px 0;
     font-size: 0.8em;
   }
 
-  .delete-section {
+  .new-comment {
+    display: flex;
+    gap: 4px;
     margin-top: 4px;
+  }
+
+  .new-comment input {
+    flex: 1;
+    padding: 2px 4px;
+    font-size: 0.85em;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+
+  .delete-section {
+    margin-top: 2px;
     text-align: center;
   }
 
