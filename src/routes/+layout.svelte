@@ -4,8 +4,8 @@
   import { goto } from '$app/navigation';
   import { userSession } from '$lib/sessionStore';
   import { browser } from '$app/environment';
+  import { supabase } from '$lib/supabaseClient';
 
-  // Subscribe to the session store.
   let session: any = null;
   const unsubscribe = userSession.subscribe((s) => {
     session = s;
@@ -18,10 +18,26 @@
     unsubscribe();
   });
 
-  function handleLogout(event: Event) {
+  async function handleLogout(event: Event) {
     event.preventDefault();
-    // Your logout logic here (for example, supabase.auth.signOut())
     console.log("Logout clicked");
+    
+    // Call Supabase sign-out method.
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Error signing out:", error);
+    }
+    
+    // Clear the session cookie by calling our delete endpoint.
+    const response = await fetch('/api/auth/delete-cookie', {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      console.error("Failed to delete cookie");
+    }
+    
+    // Redirect to login.
+    goto('/login');
   }
 </script>
 
