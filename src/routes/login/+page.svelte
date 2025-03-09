@@ -1,9 +1,7 @@
 <!-- src/routes/login/+page.svelte -->
 <script lang="ts">
   import { supabase } from '$lib/supabaseClient';
-  import { goto } from '$app/navigation';
-  import { userSession } from '$lib/sessionStore';
-
+  // Optionally, you can import goto, though using window.location.href works well to force a full reload.
   let email = '';
   let password = '';
   let errorMessage = '';
@@ -21,8 +19,8 @@
       return;
     }
     
-    // Update the session store automatically via Supabase's onAuthStateChange.
-    // Force a full page reload to ensure all pages pick up the new session.
+    // Supabase automatically persists the session in localStorage.
+    // Force a full reload to ensure the new session is applied.
     window.location.href = '/dashboard';
   }
 </script>
