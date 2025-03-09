@@ -1,3 +1,4 @@
+// src/lib/sessionStore.ts
 import { writable } from 'svelte/store';
 import { supabase } from '$lib/supabaseClient';
 

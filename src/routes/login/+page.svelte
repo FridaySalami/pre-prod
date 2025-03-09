@@ -2,67 +2,50 @@
 <script lang="ts">
   import { supabase } from '$lib/supabaseClient';
   import { goto } from '$app/navigation';
+  import { userSession } from '$lib/sessionStore';
 
-  let email = "";
-  let password = "";
-  let errorMessage = "";
+  let email = '';
+  let password = '';
+  let errorMessage = '';
+  let loading = false;
 
   async function handleLogin(event: Event) {
     event.preventDefault();
-    errorMessage = "";
-    console.log("Attempting login with:", email);
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-    console.log("Login response:", data, error);
-
-    if (error) {
-      errorMessage = error.message;
-      console.error('Login error:', error);
+    errorMessage = '';
+    loading = true;
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    
+    if (error || !data.session) {
+      errorMessage = error ? error.message : 'No session returned';
+      loading = false;
       return;
     }
     
-    if (data.session) {
-      console.log("Session token:", data.session.access_token);
-      // Send the access token to our API endpoint to set a secure cookie.
-      const response = await fetch('/api/auth/set-cookie', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ access_token: data.session.access_token })
-      });
-      const respText = await response.text();
-      console.log("Set-cookie response:", response.status, respText);
-      if (!response.ok) {
-        errorMessage = "Failed to set session cookie.";
-        console.error("Failed to set session cookie, response:", respText);
-        return;
-      }
-      console.log("Cookie set successfully. Redirecting to dashboard...");
-      goto('/dashboard');
-    } else {
-      errorMessage = "Login failed: No session was returned.";
-      console.error("Login failed: No session was returned.");
-    }
+    // Update the session store automatically via Supabase's onAuthStateChange.
+    // Force a full page reload to ensure all pages pick up the new session.
+    window.location.href = '/dashboard';
   }
 </script>
 
-<form on:submit|preventDefault={handleLogin} class="login-container">
-  <h1>Login</h1>
-  {#if errorMessage}
-    <p class="error">{errorMessage}</p>
-  {/if}
-  <label for="email">Email:</label>
-  <input id="email" type="email" bind:value={email} placeholder="you@example.com" required />
+{#if loading}
+  <div class="spinner-container">
+    <div class="spinner"></div>
+  </div>
+{:else}
+  <form on:submit|preventDefault={handleLogin} class="login-container">
+    <h1>Login</h1>
+    {#if errorMessage}
+      <p class="error">{errorMessage}</p>
+    {/if}
+    <label for="email">Email:</label>
+    <input id="email" type="email" bind:value={email} placeholder="you@example.com" required />
 
-  <label for="password">Password:</label>
-  <input id="password" type="password" bind:value={password} placeholder="Your password" required />
+    <label for="password">Password:</label>
+    <input id="password" type="password" bind:value={password} placeholder="Your password" required />
 
-  <button type="submit">Login</button>
-</form>
+    <button type="submit">Login</button>
+  </form>
+{/if}
 
 <style>
   .login-container {
@@ -96,5 +79,23 @@
   .error {
     color: red;
     margin-bottom: 1rem;
+  }
+  .spinner-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 300px;
+  }
+  .spinner {
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #004225;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
 </style>

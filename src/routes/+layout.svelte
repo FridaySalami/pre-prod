@@ -7,9 +7,12 @@
   import { supabase } from '$lib/supabaseClient';
 
   let session: any = null;
+  let loggingOut = false;
+  
   const unsubscribe = userSession.subscribe((s) => {
     session = s;
-    if (browser && !session) {
+    // If on client, and no session (and not in the process of logging out), redirect.
+    if (browser && !session && !loggingOut) {
       goto('/login');
     }
   });
@@ -20,24 +23,21 @@
 
   async function handleLogout(event: Event) {
     event.preventDefault();
+    loggingOut = true;
     console.log("Logout clicked");
-    
-    // Call Supabase sign-out method.
+
+    // Sign out using Supabase.
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error signing out:", error);
+      loggingOut = false;
+      return;
     }
     
-    // Clear the session cookie by calling our delete endpoint.
-    const response = await fetch('/api/auth/delete-cookie', {
-      method: 'POST'
-    });
-    if (!response.ok) {
-      console.error("Failed to delete cookie");
-    }
-    
-    // Redirect to login.
-    goto('/login');
+    // Wait one second to show the logout spinner, then force a full reload.
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 1000);
   }
 </script>
 
@@ -101,12 +101,14 @@
         </li>
       </ul>
     </nav>
-    <div class="sidebar-logout">
-      <button on:click={handleLogout} type="button" class="logout-button">
-        <i class="material-icons menu-icon">logout</i>
-        <span class="label">Logout</span>
-      </button>
-    </div>
+    {#if session}
+      <div class="sidebar-logout">
+        <button on:click={handleLogout} type="button" class="logout-button">
+          <i class="material-icons menu-icon">logout</i>
+          <span class="label">Logout</span>
+        </button>
+      </div>
+    {/if}
   </aside>
 
   <main class="site-main">
@@ -115,8 +117,15 @@
 </div>
 
 <footer class="site-footer">
-  <p>Created by Jack Weston | <a href="/" class="footer-link">Release notes</a></p>
+  <p>Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a></p>
 </footer>
+
+{#if loggingOut}
+  <div class="logout-overlay">
+    <div class="logout-spinner"></div>
+    <p>Logging out...</p>
+  </div>
+{/if}
 
 <style>
   :global(*) {
@@ -275,5 +284,40 @@
   
   .footer-link:hover {
     text-decoration: underline;
+  }
+  
+  /* Logout overlay styles */
+  .logout-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+  }
+  
+  .logout-spinner {
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #004225;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .logout-overlay p {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+    color: #004225;
   }
 </style>
