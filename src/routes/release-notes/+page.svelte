@@ -20,7 +20,7 @@
         <li>Implemented an operational dashboard for tracking shipments, hours worked, and computed metrics.</li>
         <li>Integrated Supabase for persistent data storage and real‑time updates.</li>
         <li>Added editable notes functionality with inline comments via a side panel.</li>
-        <li>UI enhancements including tighter spacing and improved responsiveness.</li>
+        <li>UI enhancements including tighter spacing and improved responsiveness. test</li>
       </ul>
     </section>
     
