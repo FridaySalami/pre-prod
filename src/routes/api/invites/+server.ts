@@ -1,15 +1,15 @@
+// src/routes/invites/+server.ts
+
 import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
-export const ssr = false;
+import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+import { SUPABASE_SERVICE_ROLE } from '$env/static/private';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
-
-if (!supabaseUrl || !serviceRole) {
+if (!PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
   throw new Error('Missing Supabase configuration in environment variables');
 }
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRole);
+const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE);
 
 export const POST: RequestHandler = async ({ request }) => {
   const { email, expires_at } = await request.json();
