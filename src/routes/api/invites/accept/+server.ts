@@ -1,14 +1,13 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
+import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+import { SUPABASE_SERVICE_ROLE } from '$env/static/private';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
-
-if (!supabaseUrl || !serviceRole) {
+if (!PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
   throw new Error('Missing Supabase configuration in environment variables');
 }
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRole);
+const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE);
 
 export const POST: RequestHandler = async ({ request }) => {
   const { token, fullName, password } = await request.json();
@@ -53,7 +52,7 @@ export const POST: RequestHandler = async ({ request }) => {
     return new Response(JSON.stringify({ error: updateError.message }), { status: 400 });
   }
 
-  // Optionally, you can insert/update a profile record here.
+  // Optionally, insert/update a profile record here.
   
   return new Response(JSON.stringify({ success: true, user: userData }), {
     headers: { 'Content-Type': 'application/json' }

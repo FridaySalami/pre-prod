@@ -1,40 +1,37 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
+import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+import { SUPABASE_SERVICE_ROLE } from '$env/static/private';
 
-// Retrieve the Supabase URL and the service role key from environment variables.
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
-
-if (!supabaseUrl || !serviceRole) {
-	throw new Error('Missing Supabase configuration in environment variables');
+if (!PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+  throw new Error('Missing Supabase configuration in environment variables');
 }
 
-// Create an admin Supabase client using the service role key.
-const supabaseAdmin = createClient(supabaseUrl, serviceRole);
+const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE);
 
 /**
  * GET /api/metrics?date=YYYY-MM-DD
  * Returns the metrics stored for the given date.
  */
 export const GET: RequestHandler = async ({ url }) => {
-	const date = url.searchParams.get('date');
-	if (!date) {
-		return new Response(JSON.stringify({ error: 'Missing date parameter' }), { status: 400 });
-	}
+  const date = url.searchParams.get('date');
+  if (!date) {
+    return new Response(JSON.stringify({ error: 'Missing date parameter' }), { status: 400 });
+  }
 
-	const { data, error } = await supabaseAdmin
-		.from('daily_metrics')
-		.select('*')
-		.eq('date', date)
-		.maybeSingle();
+  const { data, error } = await supabaseAdmin
+    .from('daily_metrics')
+    .select('*')
+    .eq('date', date)
+    .maybeSingle();
 
-	if (error) {
-		return new Response(JSON.stringify({ error: error.message }), { status: 400 });
-	}
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 400 });
+  }
 
-	return new Response(JSON.stringify(data || {}), {
-		headers: { 'Content-Type': 'application/json' }
-	});
+  return new Response(JSON.stringify(data || {}), {
+    headers: { 'Content-Type': 'application/json' }
+  });
 };
 
 /**
@@ -43,21 +40,21 @@ export const GET: RequestHandler = async ({ url }) => {
  * Saves (or upserts) the metrics for the given date.
  */
 export const POST: RequestHandler = async ({ request }) => {
-	const body = await request.json();
-	const { date, data } = body;
-	if (!date || !data) {
-		return new Response(JSON.stringify({ error: 'Missing date or data' }), { status: 400 });
-	}
+  const body = await request.json();
+  const { date, data } = body;
+  if (!date || !data) {
+    return new Response(JSON.stringify({ error: 'Missing date or data' }), { status: 400 });
+  }
 
-	const { error } = await supabaseAdmin
-		.from('daily_metrics')
-		.upsert({ date, ...data }, { onConflict: 'date' });
+  const { error } = await supabaseAdmin
+    .from('daily_metrics')
+    .upsert({ date, ...data }, { onConflict: 'date' });
 
-	if (error) {
-		return new Response(JSON.stringify({ error: error.message }), { status: 400 });
-	}
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 400 });
+  }
 
-	return new Response(JSON.stringify({ success: true }), {
-		headers: { 'Content-Type': 'application/json' }
-	});
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
 };
