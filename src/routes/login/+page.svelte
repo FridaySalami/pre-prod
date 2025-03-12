@@ -1,4 +1,7 @@
-<!-- src/routes/login/+page.svelte -->
+<script context="module">
+  export const ssr = false;
+</script>
+
 <script lang="ts">
   import { supabase } from '$lib/supabaseClient';
   // Optionally, you can import goto, though using window.location.href works well to force a full reload.

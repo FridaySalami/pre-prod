@@ -1,5 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
+export const ssr = false;
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
