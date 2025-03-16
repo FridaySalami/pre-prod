@@ -49,6 +49,11 @@
       dispatch("updateNote", { updatedNote: editedNote });
     }
   }
+  
+  // Error handler for user photo image
+  function handleImageError(e: Event) {
+    (e.currentTarget as HTMLImageElement).src = defaultPhoto;
+  }
 </script>
 
 <div class="side-panel">
@@ -92,9 +97,9 @@
           <h3>{editedNote.title}</h3>
           <img 
             src={userPhotoUrl || defaultPhoto} 
-            alt="User Photo" 
+            alt=""
             class="user-photo" 
-            on:error={(e) => e.currentTarget.src = defaultPhoto} />
+            on:error={handleImageError} />
         </div>
         <p><strong>Root Cause:</strong> {editedNote.rootCause}</p>
         <p><strong>Details:</strong></p>
@@ -192,7 +197,7 @@
   /* Triple default height for Details and Action Plan textareas */
   #note-details,
   #note-actionPlan {
-    min-height: 140px;
+    min-height: 120px;
   }
 
   /* Styles for view mode */
