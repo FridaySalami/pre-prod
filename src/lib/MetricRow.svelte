@@ -89,37 +89,36 @@
     </td>
   {/each}
 
-  <!-- Current Week Total cell -->
-  <td>
-    <span
-      role="button"
-      tabindex="0"
-      on:click={() => openNotes(metricIndex, -1)}
-      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, -1); } }}
-    >
-      <strong>{currentTotal}</strong>
-      {#if notesMap[`${metricIndex}-total`]}
-        <div class="note-indicator" role="presentation"></div>
-      {/if}
-    </span>
-  </td>
+<!-- Current Week Total cell -->
+<td class="totals-cell">
+  <span
+    role="button"
+    tabindex="0"
+    on:click={() => openNotes(metricIndex, -1)}
+    on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, -1); } }}
+  >
+    <strong>{currentTotal}</strong>
+    {#if notesMap[`${metricIndex}-total`]}
+      <div class="note-indicator" role="presentation"></div>
+    {/if}
+  </span>
+</td>
 
-  <!-- By This Time Last Week cell -->
-  <td>
-    <em>{byThisTimeLastWeek}</em>
-  </td>
+<!-- By This Time Last Week cell -->
+<td class="totals-cell">
+  <em>{byThisTimeLastWeek}</em>
+</td>
 
-  <!-- WoW % Change cell -->
-  <td style="color: {getWowColor(wowChange)};">
-    <em class="wow-change">{wowChange}</em>
-  </td>
+<!-- WoW % Change cell -->
+<td class="totals-cell" style="color: {getWowColor(wowChange)};">
+  <em class="wow-change">{wowChange}</em>
+</td>
 
-  <!-- Previous Week Total cell -->
-  <td class="prev-week-col">
-    <em>{previousTotal}</em>
-  </td>
+<!-- Previous Week Total cell -->
+<td class="totals-cell prev-week-col">
+  <em>{previousTotal}</em>
+</td>
 </tr>
-
 <style>
   .metric-name {
     width: 200px;
@@ -217,4 +216,12 @@
   .prev-week-col {
     background-color: rgba(0, 66, 37, 0.05);
   }
+  td {
+  border: 0.5px solid #ddd; /* Light border for all cells */
+}
+
+/* Center the content of totals cells */
+.totals-cell {
+  text-align: center;
+}
 </style>
