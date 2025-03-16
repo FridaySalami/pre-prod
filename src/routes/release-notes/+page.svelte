@@ -20,7 +20,13 @@
         <li>Implemented an operational dashboard for tracking shipments, hours worked, and computed metrics.</li>
         <li>Integrated Supabase for persistent data storage and real‑time updates.</li>
         <li>Added editable notes functionality with inline comments via a side panel.</li>
-        <li>UI enhancements including tighter spacing and improved responsiveness. test</li>
+        <li>UI enhancements including tighter spacing and improved responsiveness.</li>
+        <!-- New release notes -->
+        <li>Switched computed metrics (Shipments Per Hour, Defects DPMO, Order Accuracy) from summing to averaging values (with configurable options to ignore zeros and exclude Sundays).</li>
+        <li>Updated previous week totals to calculate averages from previous week data, ensuring accurate week-over-week (WoW) % changes.</li>
+        <li>Implemented inversion logic in WoW calculation for metrics where a decrease is positive (e.g. Hours Worked and Defects), with corresponding color adjustments.</li>
+        <li>Refactored data structures to enforce consistent type definitions (always-defined values and metricField), eliminating TypeScript errors.</li>
+        <li>Enhanced week navigation logic to correctly reload previous week data when cycling between weeks.</li>
       </ul>
     </section>
     
