@@ -33,8 +33,9 @@
   export let previousTotal: string;
 
   // Callback functions passed as props:
-  export let handleInputChange: (metricIndex: number, dayIndex: number) => void;
-  // New callback for computed cell click:
+  // Updated signature to accept an optional new value.
+  export let handleInputChange: (metricIndex: number, dayIndex: number, newValue?: number) => void;
+  // Callback for computed cell click:
   export let openNotes: (metricIndex: number, dayIndex: number) => void;
   export let computeWeeklyTotal: (metric: { name: string; values: number[] }, metricIndex: number) => string;
 
@@ -70,8 +71,8 @@
         <input
           type="number"
           bind:value={values[dayIndex]}
-          on:blur={() => handleInputChange(metricIndex, dayIndex)}
-          on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex)}
+          on:blur={() => handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
+          on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
           class="cell-value"
         />
       {:else}
