@@ -47,9 +47,11 @@
     <h1>Parkers Foodservice Operational Dashboard</h1>
   </div>
   <div class="header-right">
-    <span class="user-info">
-      Logged in as <em>{session ? session.user.email : "Not logged in"}</em>
-    </span>
+    {#if session}
+      <span class="user-info">
+        Logged in as <em>{session.user.email}</em>
+      </span>
+    {/if}
   </div>
 </header>
 
