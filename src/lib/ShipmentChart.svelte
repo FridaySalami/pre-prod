@@ -35,7 +35,7 @@
 	  null, // computed: Shipments Per Hour
 	  "defects",
 	  null, // computed: Defects DPMO
-	  null, // computed: Order Accuracy (%)
+	  null  // computed: Order Accuracy (%)
 	];
   
 	let weekOffset: number = 0;
@@ -300,11 +300,14 @@
 	  await saveMetricsForDate(dateStr, data);
 	}
   
+	// Updated saveAllMetrics refreshes data after saving while preserving the current week.
 	async function saveAllMetrics() {
 	  for (let i = 0; i < weekDates.length; i++) {
 		await saveMetricsForDay(i);
 	  }
-	  loadPreviousWeekTotals();
+	  await tick();
+	  await loadMetrics();
+	  await loadPreviousWeekTotals();
 	}
   
 	// ----- Metrics Side Panel functions -----
@@ -435,10 +438,25 @@
   
 <!-- Render the Metrics Side Panel with overlay -->
 {#if showMetricsPanel}
-	<div class="overlay" on:click={closeMetricsPanel}>
+	<div class="overlay" 
+	     role="button" 
+	     tabindex="0"
+	     on:click={closeMetricsPanel}
+	     on:keydown={(e) => { 
+            // Only close if the overlay itself (not a child) is focused
+            if(e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { 
+              e.preventDefault(); 
+              closeMetricsPanel(); 
+            } 
+         }}>
 	  <div role="button" tabindex="0" 
 	    on:click|stopPropagation 
-	    on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); } }}>
+	    on:keydown={(e) => { 
+            if(e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { 
+              e.preventDefault(); 
+              openMetricsPanel(selectedMetricIndex, selectedDayIndex); 
+            } 
+         }}>
 		<MetricsSidePanel
 		  noteData={panelNoteData}
 		  on:close={(e) => {
@@ -497,17 +515,6 @@
 	  width: 100%;
 	  border-collapse: collapse;
 	  table-layout: fixed;
-	}
-	th,
-	td {
-	  padding: 12px 1px;
-	  text-align: center;
-	  border-bottom: 1px solid #E5E7EB;
-	  border-right: 1px solid #E5E7EB;
-	}
-	th:last-child,
-	td:last-child {
-	  border-right: none;
 	}
 	.metric-name-header {
 	  width: 200px;
