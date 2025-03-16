@@ -6,13 +6,14 @@
   import { browser } from '$app/environment';
   import { supabase } from '$lib/supabaseClient';
 
-  let session: any = null;
+  // Initialize session as undefined
+  let session: any = undefined;
   let loggingOut = false;
   
   const unsubscribe = userSession.subscribe((s) => {
     session = s;
-    // If on client, and no session (and not in the process of logging out), redirect.
-    if (browser && !session && !loggingOut) {
+    // Only redirect if the session has been determined (i.e., explicitly null) and not when it's still undefined.
+    if (browser && session === null && !loggingOut) {
       goto('/login');
     }
   });
