@@ -496,6 +496,21 @@ $: previousTotalsComputed = metrics.map((metric, idx) => {
 	  padding: 16px 24px;
 	  gap: 16px;
 	}
+	table {
+  table-layout: fixed; /* Forces fixed layout */
+  width: 100%;         /* Ensure table spans available width */
+}
+
+table th,
+table td {
+  width: 80px;         /* All cells get a fixed width (adjust as needed) */
+  box-sizing: border-box;
+}
+
+/* If you want a wider first column (e.g. for metric names) */
+.metric-name-header {
+  width: 200px;
+}
 	.week-navigation button {
 	  background: transparent;
 	  border: none;
