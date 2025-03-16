@@ -5,67 +5,71 @@
 	import MetricRow from "./MetricRow.svelte";
 	import MetricsSidePanel from "$lib/MetricsSidePanel.svelte";
   
-	// Extended metric type allows header and spacer rows.
+	// Updated ExtendedMetric with required properties.
 	interface ExtendedMetric {
 	  name: string;
-	  values?: number[];
-	  metricField?: string | null;
+	  values: number[];
+	  metricField: string | null;
 	  isHeader?: boolean;
 	  isSpacer?: boolean;
 	}
   
 	const daysCount = 7;
-	
+  
 	/**
- * Computes an average from the given values and dates.
- * @param values - The array of numbers.
- * @param dates - The corresponding array of Date objects.
- * @param options - Options to ignore zeros or exclude Sundays.
- * @returns The computed average (or 0 if no values qualify).
- */
-function computeMetricAverage(
-  values: number[],
-  dates: Date[],
-  options: { ignoreZeros?: boolean; excludeSundays?: boolean } = {}
-): number {
-  const { ignoreZeros = false, excludeSundays = false } = options;
-  let total = 0;
-  let count = 0;
-  for (let i = 0; i < values.length; i++) {
-    // Exclude Sundays if requested (getDay() returns 0 for Sunday)
-    if (excludeSundays && dates[i].getDay() === 0) continue;
-    // For shipments per hour, we want to ignore any zeros
-    if (ignoreZeros && values[i] === 0) continue;
-    total += values[i];
-    count++;
-  }
-  return count > 0 ? total / count : 0;
-}
-function isExtendedMetric(metric: { name: string; values: number[] } | ExtendedMetric): metric is ExtendedMetric {
-  return 'metricField' in metric;
-}
-// Add this type guard at the top of your <script lang="ts"> block:
-	function hasMetricField(metric: ExtendedMetric): metric is ExtendedMetric & { metricField: string | null } {
-  return "metricField" in metric;
+	 * Computes an average from the given values and dates.
+	 * @param values - The array of numbers.
+	 * @param dates - The corresponding array of Date objects.
+	 * @param options - Options to ignore zeros or exclude Sundays.
+	 * @returns The computed average (or 0 if no values qualify).
+	 */
+	function computeMetricAverage(
+	  values: number[],
+	  dates: Date[],
+	  options: { ignoreZeros?: boolean; excludeSundays?: boolean } = {}
+	): number {
+	  const { ignoreZeros = false, excludeSundays = false } = options;
+	  let total = 0;
+	  let count = 0;
+	  for (let i = 0; i < values.length; i++) {
+		// Exclude Sundays if requested (getDay() returns 0 for Sunday)
+		if (excludeSundays && dates[i].getDay() === 0) continue;
+		// For shipments per hour, we want to ignore any zeros
+		if (ignoreZeros && values[i] === 0) continue;
+		total += values[i];
+		count++;
+	  }
+	  return count > 0 ? total / count : 0;
+	}
+
+
+function computeWoWChange(current: number, previous: number, invert: boolean = false): string {
+  if (previous === 0) return "N/A";
+  // If 'invert' is true, a decrease (current < previous) becomes a positive percentage.
+  let change = invert
+    ? ((previous - current) / previous) * 100
+    : ((current - previous) / previous) * 100;
+  return change.toFixed(2) + "%";
 }
 
 	// B2C Amazon Fulfilment section.
 	let b2cMetrics: ExtendedMetric[] = [
-	{ name: "B2C Amazon Fulfilment", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },  
-	{ name: "1.1 Shipments Packed", values: new Array(daysCount).fill(0), metricField: "shipments" },
-  	{ name: "1.2 Hours Worked", values: new Array(daysCount).fill(0), metricField: "hours_worked" },
-  	{ name: "1.3 Shipments Per Hour", values: new Array(daysCount).fill(0), metricField: null },
-  	{ name: "1.4 Defects", values: new Array(daysCount).fill(0), metricField: "defects" },
-  	{ name: "1.5 Defects DPMO", values: new Array(daysCount).fill(0), metricField: null },
-  	{ name: "1.6 Order Accuracy (%)", values: new Array(daysCount).fill(0), metricField: null }
-];
-
+	  { name: "B2C Amazon Fulfilment", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },
+	  { name: "1.1 Shipments Packed", values: new Array(daysCount).fill(0), metricField: "shipments" },
+	  { name: "1.2 Hours Worked", values: new Array(daysCount).fill(0), metricField: "hours_worked" },
+	  { name: "1.3 Shipments Per Hour", values: new Array(daysCount).fill(0), metricField: null },
+	  { name: "1.4 Defects", values: new Array(daysCount).fill(0), metricField: "defects" },
+	  { name: "1.5 Defects DPMO", values: new Array(daysCount).fill(0), metricField: null },
+	  { name: "1.6 Order Accuracy (%)", values: new Array(daysCount).fill(0), metricField: null }
+	];
+  
 	// Spacer row.
 	let spacer: ExtendedMetric = { name: "", isSpacer: true, values: new Array(daysCount).fill(0), metricField: null };
-
+  
 	// B2B Warehouse and On‑road section with fictional metrics.
 	let b2bMetrics: ExtendedMetric[] = [
-		{ name: "B2B Warehouse and On‑road", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },	  { name: "2.1 Inventory Accuracy (%)", values: new Array(daysCount).fill(0), metricField: "inventory_accuracy" },
+	  { name: "B2B Warehouse and On‑road", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },
+	  { name: "2.1 Inventory Accuracy (%)", values: new Array(daysCount).fill(0), metricField: "inventory_accuracy" },
 	  { name: "2.2 Order Picking Rate", values: new Array(daysCount).fill(0), metricField: "order_picking_rate" },
 	  { name: "2.3 Delivery Timeliness (%)", values: new Array(daysCount).fill(0), metricField: "delivery_timeliness" },
 	  { name: "2.4 Fuel Efficiency (MPG)", values: new Array(daysCount).fill(0), metricField: "fuel_efficiency" },
@@ -106,98 +110,106 @@ function isExtendedMetric(metric: { name: string; values: number[] } | ExtendedM
   
 	$: currentDayIndex = isCurrentWeek ? Math.max(weekDates.findIndex(date => isToday(date)) - 1, 0) : daysCount - 1;
   
-
-// Compute computed metrics by metric name.
-let computedMetrics: number[][] = [];
-$: computedMetrics = metrics.map((metric): number[] => {
-  if (!metric.values) return [];
-  if (metric.name === "1.3 Shipments Per Hour") {
-    const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
-    const hours = metrics.find(m => m.name === "1.2 Hours Worked")?.values ?? new Array(daysCount).fill(0);
-    return weekDates.map((_, i) =>
-      hours[i] > 0 ? Math.round((shipments[i] / hours[i]) * 100) / 100 : 0
-    );
-  } else if (metric.name === "1.5 Defects DPMO") {
-    const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
-    const defects = metrics.find(m => m.name === "1.4 Defects")?.values ?? new Array(daysCount).fill(0);
-    return weekDates.map((_, i) =>
-      shipments[i] > 0 ? Math.round((defects[i] / shipments[i]) * 1000000) : 0
-    );
-  } else if (metric.name === "1.6 Order Accuracy (%)") {
-    const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
-    const defects = metrics.find(m => m.name === "1.4 Defects")?.values ?? new Array(daysCount).fill(0);
-    return weekDates.map((_, i) =>
-      shipments[i] > 0 ? Math.round(((shipments[i] - defects[i]) / shipments[i]) * 10000) / 100 : 0
-    );
-  }
-  return metric.values ?? [];
-});
-
-// Compute current totals.
-$: currentTotals = metrics.map((metric, idx) => {
+	// Compute computed metrics by metric name.
+	let computedMetrics: number[][] = [];
+	$: computedMetrics = metrics.map((metric): number[] => {
+	  if (!metric.values) return [];
+	  if (metric.name === "1.3 Shipments Per Hour") {
+		const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
+		const hours = metrics.find(m => m.name === "1.2 Hours Worked")?.values ?? new Array(daysCount).fill(0);
+		return weekDates.map((_, i) =>
+		  hours[i] > 0 ? Math.round((shipments[i] / hours[i]) * 100) / 100 : 0
+		);
+	  } else if (metric.name === "1.5 Defects DPMO") {
+		const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
+		const defects = metrics.find(m => m.name === "1.4 Defects")?.values ?? new Array(daysCount).fill(0);
+		return weekDates.map((_, i) =>
+		  shipments[i] > 0 ? Math.round((defects[i] / shipments[i]) * 1000000) : 0
+		);
+	  } else if (metric.name === "1.6 Order Accuracy (%)") {
+		const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
+		const defects = metrics.find(m => m.name === "1.4 Defects")?.values ?? new Array(daysCount).fill(0);
+		return weekDates.map((_, i) =>
+		  shipments[i] > 0 ? Math.round(((shipments[i] - defects[i]) / shipments[i]) * 10000) / 100 : 0
+		);
+	  }
+	  return metric.values;
+	});
+  
+	// Compute current totals.
+	$: currentTotals = metrics.map((metric, idx) => {
   if (!metric.values) return 0;
-  // Use the type guard to determine if metricField exists
-  let arr: number[] =
-    (hasMetricField(metric) && metric.metricField === null)
-      ? (computedMetrics[idx] ?? [])
-      : (metric.values ?? []);
+  // Choose the source array: for computed metrics use computedMetrics; for others, use metric.values.
+  let arr: number[] = metric.metricField === null ? computedMetrics[idx] : metric.values;
   const end = isCurrentWeek ? (currentDayIndex >= 0 ? currentDayIndex : daysCount - 1) : arr.length - 1;
-  return arr.slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+  const currentSlice = arr.slice(0, end + 1);
+  if (metric.metricField === null) {
+    // For computed metrics, compute an average instead of summing.
+    if (metric.name === "1.3 Shipments Per Hour") {
+      return computeMetricAverage(currentSlice, weekDates.slice(0, end + 1), { ignoreZeros: true, excludeSundays: true });
+    } else if (metric.name === "1.5 Defects DPMO" || metric.name === "1.6 Order Accuracy (%)") {
+      return computeMetricAverage(currentSlice, weekDates.slice(0, end + 1), { ignoreZeros: false, excludeSundays: true });
+    } else {
+      return 0;
+    }
+  } else {
+    // For non-computed metrics, sum the values.
+    return currentSlice.reduce((acc, v) => acc + v, 0);
+  }
 });
 
-// Previous week totals.
-let previousTotals: number[] = metrics.map(metric => (metric.values ? 0 : 0));
-let previousWeekMetrics: number[][] = metrics.map(metric => (metric.values ? new Array(daysCount).fill(0) : []));
-async function loadPreviousWeekTotals() {
-  let totals = metrics.map(metric => (metric.values ? 0 : 0));
-  previousWeekMetrics = metrics.map(metric => (metric.values ? new Array(daysCount).fill(0) : []));
-  for (let i = 0; i < previousWeekDates.length; i++) {
-    const dateStr = previousWeekDates[i].toISOString().split("T")[0];
-    const data = await loadMetricsForDate(dateStr);
-    metrics.forEach((metric, idx) => {
-      if (metric.values && hasMetricField(metric) && metric.metricField !== null) {
-        const val = data ? (data[metric.metricField] ?? 0) : 0;
-        previousWeekMetrics[idx][i] = val;
-        totals[idx] += val;
-      }
-    });
-  }
-  previousTotals = totals;
-}
-
+	// Previous week totals.
+	let previousTotals: number[] = metrics.map(() => 0);
+	let previousWeekMetrics: number[][] = metrics.map(() => new Array(daysCount).fill(0));
+	async function loadPreviousWeekTotals() {
+	  let totals = metrics.map(() => 0);
+	  previousWeekMetrics = metrics.map(() => new Array(daysCount).fill(0));
+	  for (let i = 0; i < previousWeekDates.length; i++) {
+		const dateStr = previousWeekDates[i].toISOString().split("T")[0];
+		const data = await loadMetricsForDate(dateStr);
+		metrics.forEach((metric, idx) => {
+		  // For data rows (those with a non-null metricField), update the previous week values.
+		  if (metric.metricField !== null) {
+			const val = data ? (data[metric.metricField] ?? 0) : 0;
+			previousWeekMetrics[idx][i] = val;
+			totals[idx] += val;
+		  }
+		});
+	  }
+	  previousTotals = totals;
+	}
+  
 $: previousTotalsComputed = metrics.map((metric, idx) => {
   if (!metric.values) return 0;
-  // For computed metrics, calculate an average using previousWeekMetrics and previousWeekDates.
-  if (hasMetricField(metric) && metric.metricField === null) {
-    const values = previousWeekMetrics[idx] ?? [];
-    return computeMetricAverage(values, previousWeekDates, {
-      // For shipments per hour, ignore zeros; for the others, include zeros.
+  if (metric.metricField === null) {
+    // For computed metrics, average over all days of the previous week.
+    // (We assume the previous week metrics array is fully populated.)
+    return computeMetricAverage(previousWeekMetrics[idx], previousWeekDates, {
       ignoreZeros: metric.name === "1.3 Shipments Per Hour",
       excludeSundays: true
     });
   } else {
     // For non-computed metrics, sum the values.
-    return previousTotals[idx];
+    return previousWeekMetrics[idx].reduce((acc, v) => acc + v, 0);
   }
-});
-
-$: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
-  if (!metric.values) return 0;
-  let arr = previousWeekMetrics[idx] ?? [];
-  const end = isCurrentWeek
-    ? (currentDayIndex >= 0 ? currentDayIndex : daysCount - 1)
-    : arr.length - 1;
-  const slicedValues = arr.slice(0, end + 1);
-  const slicedDates = previousWeekDates.slice(0, end + 1);
-  if (hasMetricField(metric) && metric.metricField === null) {
-    return computeMetricAverage(slicedValues, slicedDates, {
-      ignoreZeros: metric.name === "1.3 Shipments Per Hour",
-      excludeSundays: true
-    });
-  } else {
-    return slicedValues.reduce((acc, v) => acc + v, 0);
-  }
-});
+});  
+	$: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
+	  let arr = previousWeekMetrics[idx];
+	  const end = isCurrentWeek
+		? (currentDayIndex >= 0 ? currentDayIndex : daysCount - 1)
+		: arr.length - 1;
+	  const slicedValues = arr.slice(0, end + 1);
+	  const slicedDates = previousWeekDates.slice(0, end + 1);
+	  if (metric.metricField === null) {
+		return computeMetricAverage(slicedValues, slicedDates, {
+		  ignoreZeros: metric.name === "1.3 Shipments Per Hour",
+		  excludeSundays: true
+		});
+	  } else {
+		return slicedValues.reduce((acc, v) => acc + v, 0);
+	  }
+	});
+  
 	async function loadMetricsForDate(dateStr: string) {
 	  const { data, error } = await supabase
 		.from("daily_metrics")
@@ -211,43 +223,43 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
 	  return data;
 	}
   
-async function loadMetrics() {
-  if (typeof window === "undefined") return;
-  loading = true;
-
-  // Reinitialize metrics for the new week to ensure no old data is carried over.
-  metrics = metrics.map(metric =>
-    metric.values
-      ? { ...metric, values: new Array(daysCount).fill(0) }
-      : metric
-  );
-
-  let updatedMetrics = metrics.map(metric => ({
-    ...metric,
-    values: metric.values ? [...metric.values] : undefined
-  }));
-
-  // Loop through the weekDates and fetch data for each date.
-  for (let i = 0; i < weekDates.length; i++) {
-    const dateStr = weekDates[i].toISOString().split("T")[0];
-    const data = await loadMetricsForDate(dateStr);
-    updatedMetrics = updatedMetrics.map(metric => {
-      if (metric.values && metric.metricField !== undefined && metric.metricField !== null) {
-        const field: string = metric.metricField;
-        return {
-          ...metric,
-          // Update only the current day's value.
-          values: metric.values.map((val, j) =>
-            j === i ? ((data as any)[field] ?? 0) : val
-          )
-        };
-      }
-      return metric;
-    });
-  }
-  metrics = updatedMetrics;
-  loading = false;
-}  
+	async function loadMetrics() {
+	  if (typeof window === "undefined") return;
+	  loading = true;
+  
+	  // Reinitialize metrics for the new week to ensure no old data is carried over.
+	  metrics = metrics.map(metric => ({
+		...metric,
+		values: new Array(daysCount).fill(0)
+	  }));
+  
+	  let updatedMetrics = metrics.map(metric => ({
+		...metric,
+		values: [...metric.values]
+	  }));
+  
+	  // Loop through the weekDates and fetch data for each date.
+	  for (let i = 0; i < weekDates.length; i++) {
+		const dateStr = weekDates[i].toISOString().split("T")[0];
+		const data = await loadMetricsForDate(dateStr);
+		updatedMetrics = updatedMetrics.map(metric => {
+		  if (metric.metricField !== null) {
+			const field: string = metric.metricField;
+			return {
+			  ...metric,
+			  // Update only the current day's value.
+			  values: metric.values.map((val, j) =>
+				j === i ? ((data as any)[field] ?? 0) : val
+			  )
+			};
+		  }
+		  return metric;
+		});
+	  }
+	  metrics = updatedMetrics;
+	  loading = false;
+	}
+  
 	async function saveMetricsForDate(dateStr: string, metricsData: any) {
 	  const { error } = await supabase
 		.from("daily_metrics")
@@ -261,7 +273,7 @@ async function loadMetrics() {
 	  const dateStr = weekDates[dayIndex].toISOString().split("T")[0];
 	  const data: Record<string, number> = {};
 	  metrics.forEach(metric => {
-		if (metric.values && metric.metricField !== undefined && metric.metricField !== null) {
+		if (metric.metricField !== null) {
 		  data[metric.metricField] = metric.values[dayIndex];
 		}
 	  });
@@ -280,7 +292,7 @@ async function loadMetrics() {
 	function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
 	  if (newValue === undefined) return;
 	  metrics = metrics.map((metric, idx) => {
-		if (idx === metricIndex && metric.values) {
+		if (idx === metricIndex) {
 		  const newValues = [...metric.values];
 		  newValues[dayIndex] = newValue;
 		  return { ...metric, values: newValues };
@@ -291,12 +303,13 @@ async function loadMetrics() {
 	}
   
 	async function changeWeek(offset: number) {
-	  weekOffset += offset;
-	  await tick();
-	  await new Promise(resolve => setTimeout(resolve, 100));
-	  await loadMetrics();
-	}
-  
+  weekOffset += offset;
+  await tick();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await loadMetrics();
+  await loadPreviousWeekTotals();  // Ensure previous week data is reloaded.
+}
+
 	// Side panel state.
 	let showMetricsPanel = false;
 	let selectedMetricIndex = -1;
@@ -323,25 +336,26 @@ async function loadMetrics() {
 	  showMetricsPanel = false;
 	}
   
-	function computeWeeklyTotal(metric: { name: string; values: number[] }, metricIndex: number): string {
-  let result: number;
-  // For computed metrics (ones with metricField === null), compute an average
-  if (metric.metricField === null) {
-    if (metric.name === "1.3 Shipments Per Hour") {
-      // Average ignoring zeros (non-operational days) and excluding Sundays
-      result = computeMetricAverage(metric.values, weekDates, { ignoreZeros: true, excludeSundays: true });
-    } else if (metric.name === "1.5 Defects DPMO" || metric.name === "1.6 Order Accuracy (%)") {
-      // Average including zeros but excluding Sundays
-      result = computeMetricAverage(metric.values, weekDates, { ignoreZeros: false, excludeSundays: true });
-    } else {
-      result = 0;
-    }
-  } else {
-    // For metrics that aren’t computed, we simply sum the values
-    result = metric.values.reduce((acc, v) => acc + v, 0);
-  }
-  return result % 1 === 0 ? result.toFixed(0) : result.toFixed(2);
-}  
+	function computeWeeklyTotal(metric: ExtendedMetric, metricIndex: number): string {
+	  let result: number;
+	  // For computed metrics (metricField === null), compute an average.
+	  if (metric.metricField === null) {
+		if (metric.name === "1.3 Shipments Per Hour") {
+		  // Average ignoring zeros and excluding Sundays.
+		  result = computeMetricAverage(metric.values, weekDates, { ignoreZeros: true, excludeSundays: true });
+		} else if (metric.name === "1.5 Defects DPMO" || metric.name === "1.6 Order Accuracy (%)") {
+		  // Average including zeros but excluding Sundays.
+		  result = computeMetricAverage(metric.values, weekDates, { ignoreZeros: false, excludeSundays: true });
+		} else {
+		  result = 0;
+		}
+	  } else {
+		// For non-computed metrics, simply sum the values.
+		result = metric.values.reduce((acc, v) => acc + v, 0);
+	  }
+	  return result % 1 === 0 ? result.toFixed(0) : result.toFixed(2);
+	}
+  
 	onMount(() => {
 	  loadMetrics();
 	  loadPreviousWeekTotals();
@@ -408,27 +422,23 @@ async function loadMetrics() {
 			{currentDayIndex}
 			{isCurrentWeek}
 			{notesMap}
-			metricField={metric.metricField ?? null}
+			metricField={metric.metricField}
 			wowChange={
-				(computedMetrics[metricIndex] ?? []).length > 0
-				  ? computeWeeklyTotal(
-					  { 
-						name: metric.name, 
-						values: computedMetrics[metricIndex] ?? [], 
-						metricField: metric.metricField ?? null 
-					  },
-					  metricIndex
-					)
-				  : ""
-			  }
+			  computeWoWChange(
+				currentTotals[metricIndex],
+				isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex],
+				metric.name === "1.2 Hours Worked" ||
+				metric.name === "1.4 Defects" ||
+				metric.name === "1.5 Defects DPMO"
+			  )
+			}
 			handleInputChange={handleInputChange}
 			openNotes={openMetricsPanel}
-			computeWeeklyTotal={computeWeeklyTotal}
 			currentTotal={formatNumber(currentTotals[metricIndex])}
 			byThisTimeLastWeek={formatNumber(isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex])}
 			previousTotal={formatNumber(previousTotalsComputed[metricIndex])}
 		  />
-		  			{/if}
+		  {/if}
 		  {/each}
 		</tbody>
 	  </table>
@@ -442,8 +452,8 @@ async function loadMetrics() {
   
   <!-- Metrics Side Panel Overlay -->
   {#if showMetricsPanel}
-	<div class="overlay" 
-		 role="button" 
+	<div class="overlay"
+		 role="button"
 		 tabindex="0"
 		 on:click={closeMetricsPanel}
 		 on:keydown={(e) => { 
@@ -452,8 +462,8 @@ async function loadMetrics() {
 			 closeMetricsPanel(); 
 		   } 
 		 }}>
-	  <div role="button" tabindex="0" 
-		   on:click|stopPropagation 
+	  <div role="button" tabindex="0"
+		   on:click|stopPropagation
 		   on:keydown={(e) => { 
 			 if(e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { 
 			   e.preventDefault(); 
