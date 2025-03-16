@@ -327,7 +327,19 @@
 	}
 	// ----- End Metrics Side Panel functions -----
   
-	function handleInputChange(metricIndex: number, dayIndex: number) {
+	// Updated handleInputChange now makes the new value optional.
+	function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
+	  if (newValue === undefined) return;
+	  // Update the local metrics state to trigger reactive recalculations
+	  metrics = metrics.map((metric, idx) => {
+		if (idx === metricIndex) {
+		  const newValues = [...metric.values];
+		  newValues[dayIndex] = newValue;
+		  return { ...metric, values: newValues };
+		}
+		return metric;
+	  });
+	  // Optionally, save the data to Supabase.
 	  saveMetricsForDay(dayIndex);
 	}
   
@@ -424,7 +436,9 @@
 <!-- Render the Metrics Side Panel with overlay -->
 {#if showMetricsPanel}
 	<div class="overlay" on:click={closeMetricsPanel}>
-	  <div on:click|stopPropagation>
+	  <div role="button" tabindex="0" 
+	    on:click|stopPropagation 
+	    on:keydown={(e) => { if(e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); } }}>
 		<MetricsSidePanel
 		  noteData={panelNoteData}
 		  on:close={(e) => {
