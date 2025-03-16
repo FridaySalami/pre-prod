@@ -20,7 +20,7 @@
     
     // Supabase automatically persists the session in localStorage.
     // Force a full reload to ensure the new session is applied.
-    window.location.href = '/dashboard';
+    window.location.href = '/release-notes';
   }
 </script>
 
