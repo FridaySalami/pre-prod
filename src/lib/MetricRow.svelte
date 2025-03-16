@@ -32,14 +32,11 @@
   export let byThisTimeLastWeek: string;
   export let previousTotal: string;
 
-  // Callback functions passed as props:
-  // Updated signature to accept an optional new value.
+  // Callback functions:
   export let handleInputChange: (metricIndex: number, dayIndex: number, newValue?: number) => void;
-  // Callback for computed cell click:
   export let openNotes: (metricIndex: number, dayIndex: number) => void;
-  export let computeWeeklyTotal: (metric: { name: string; values: number[] }, metricIndex: number) => string;
+  // Removed computeWeeklyTotal from exports because it's unused.
 
-  // Updated helper function: returns a one‑line explanation
   function getCalculationExplanation(): string {
     if (metricIndex === 2) {
       return "Shipments Packed ÷ Hours Worked";

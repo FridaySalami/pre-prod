@@ -5,64 +5,49 @@
 	import MetricRow from "./MetricRow.svelte";
 	import MetricsSidePanel from "$lib/MetricsSidePanel.svelte";
   
-	// Define the metric type.
-	type Metric = {
+	// Extended metric type allows header and spacer rows.
+	interface ExtendedMetric {
 	  name: string;
-	  values: number[];
-	};
+	  values?: number[];
+	  metricField?: string | null;
+	  isHeader?: boolean;
+	  isSpacer?: boolean;
+	}
   
-	const MetricIndex = {
-	  SHIPMENTS: 0,
-	  HOURS_WORKED: 1,
-	  SHIPMENTS_PER_HOUR: 2,
-	  DEFECTS: 3,
-	  DEFECTS_DPMO: 4,
-	  ORDER_ACCURACY: 5,
-	} as const;
-  
-	let metrics: Metric[] = [
-	  { name: "1.1 Shipments Packed", values: Array(7).fill(0) },
-	  { name: "1.2 Hours Worked", values: Array(7).fill(0) },
-	  { name: "1.3 Shipments Per Hour", values: Array(7).fill(0) },
-	  { name: "1.4 Defects", values: Array(7).fill(0) },
-	  { name: "1.5 Defects DPMO", values: Array(7).fill(0) },
-	  { name: "1.6 Order Accuracy (%)", values: Array(7).fill(0) }
-	];  
-	// Mapping of metrics to database columns.
-	const metricFields: (string | null)[] = [
-	  "shipments",
-	  "hours_worked",
-	  null, // computed: Shipments Per Hour
-	  "defects",
-	  null, // computed: Defects DPMO
-	  null  // computed: Order Accuracy (%)
+	const daysCount = 7;
+	
+	// B2C Amazon Fulfilment section.
+	let b2cMetrics: ExtendedMetric[] = [
+	  { name: "B2C Amazon Fulfilment", isHeader: true },
+	  { name: "1.1 Shipments Packed", values: new Array(daysCount).fill(0), metricField: "shipments" },
+	  { name: "1.2 Hours Worked", values: new Array(daysCount).fill(0), metricField: "hours_worked" },
+	  { name: "1.3 Shipments Per Hour", values: new Array(daysCount).fill(0), metricField: null },
+	  { name: "1.4 Defects", values: new Array(daysCount).fill(0), metricField: "defects" },
+	  { name: "1.5 Defects DPMO", values: new Array(daysCount).fill(0), metricField: null },
+	  { name: "1.6 Order Accuracy (%)", values: new Array(daysCount).fill(0), metricField: null }
 	];
   
+	// Spacer row.
+	let spacer: ExtendedMetric = { name: "", isSpacer: true };
+  
+	// B2B Warehouse and On‑road section with fictional metrics.
+	let b2bMetrics: ExtendedMetric[] = [
+	  { name: "B2B Warehouse and On‑road", isHeader: true },
+	  { name: "2.1 Inventory Accuracy (%)", values: new Array(daysCount).fill(0), metricField: "inventory_accuracy" },
+	  { name: "2.2 Order Picking Rate", values: new Array(daysCount).fill(0), metricField: "order_picking_rate" },
+	  { name: "2.3 Delivery Timeliness (%)", values: new Array(daysCount).fill(0), metricField: "delivery_timeliness" },
+	  { name: "2.4 Fuel Efficiency (MPG)", values: new Array(daysCount).fill(0), metricField: "fuel_efficiency" },
+	  { name: "2.5 Driver Utilization (%)", values: new Array(daysCount).fill(0), metricField: "driver_utilization" }
+	];
+  
+	// Combine both sections.
+	let metrics: ExtendedMetric[] = [...b2cMetrics, spacer, ...b2bMetrics];
+  
+	// Week navigation and date calculations.
 	let weekOffset: number = 0;
 	const msPerDay = 24 * 60 * 60 * 1000;
 	let loading = false;
   
-	// Variables for previous week totals.
-	let previousTotals: number[] = metrics.map(() => 0);
-	let previousWeekMetrics: number[][] = metrics.map(() => Array(7).fill(0));
-  
-	// ----- Metrics Side Panel Variables -----
-	let showMetricsPanel = false;
-	let selectedMetricIndex = -1;
-	let selectedDayIndex = -1; // -1 indicates the total cell
-	type NoteData = {
-	  title: string;
-	  rootCause: string;
-	  details: string;
-	  actionPlan: string;
-	  comments: string[];
-	};
-	let panelNoteData: NoteData = { title: "", rootCause: "", details: "", actionPlan: "", comments: [] };
-	
-	// Notes stored by a key (e.g. "2-2025-03-06" or "2-total")
-	let notesMap: Record<string, NoteData> = {};
-  
-	// Reactive date calculations.
 	$: displayedMonday = (() => {
 	  const currentMonday = getMonday(new Date());
 	  return new Date(currentMonday.getTime() + weekOffset * 7 * msPerDay);
@@ -71,7 +56,7 @@
 	  getMonday(new Date()).toISOString() === getMonday(new Date(displayedMonday)).toISOString();
 	$: weekDates = (() => {
 	  const dates: Date[] = [];
-	  for (let i = 0; i < 7; i++) {
+	  for (let i = 0; i < daysCount; i++) {
 		dates.push(new Date(displayedMonday.getTime() + i * msPerDay));
 	  }
 	  return dates;
@@ -79,48 +64,56 @@
 	$: previousWeekDates = (() => {
 	  const prevMonday = new Date(displayedMonday.getTime() - 7 * msPerDay);
 	  const dates: Date[] = [];
-	  for (let i = 0; i < 7; i++) {
+	  for (let i = 0; i < daysCount; i++) {
 		dates.push(new Date(prevMonday.getTime() + i * msPerDay));
 	  }
 	  return dates;
 	})();
-	$: currentDayIndex = isCurrentWeek ? Math.max(weekDates.findIndex(date => isToday(date)) - 1, 0) : 6;
+	$: currentDayIndex = isCurrentWeek ? Math.max(weekDates.findIndex(date => isToday(date)) - 1, 0) : daysCount - 1;
   
-	// Derived Value Functions for current week.
-	function computeShipmentsPerHour(dayIndex: number): number {
-	  const shipments = metrics[MetricIndex.SHIPMENTS].values[dayIndex];
-	  const hours = metrics[MetricIndex.HOURS_WORKED].values[dayIndex];
-	  return hours > 0 ? Math.round((shipments / hours) * 100) / 100 : 0;
-	}
-	function computeDefectsDPMO(dayIndex: number): number {
-	  const shipments = metrics[MetricIndex.SHIPMENTS].values[dayIndex];
-	  const defects = metrics[MetricIndex.DEFECTS].values[dayIndex];
-	  return shipments > 0 ? Math.round((defects / shipments) * 1000000) : 0;
-	}
-	function computeOrderAccuracy(dayIndex: number): number {
-	  const shipments = metrics[MetricIndex.SHIPMENTS].values[dayIndex];
-	  const defects = metrics[MetricIndex.DEFECTS].values[dayIndex];
-	  return shipments > 0 ? Math.round(((shipments - defects) / shipments) * 10000) / 100 : 0;
-	}
-	// Derived Functions for previous week totals.
-	function computePrevShipmentsPerHour(): number {
-	  const end = currentDayIndex >= 0 ? currentDayIndex : 6;
-	  const shipments = previousWeekMetrics[0].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	  const hours = previousWeekMetrics[1].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	  return hours > 0 ? shipments / hours : 0;
-	}
-	function computePrevDefectsDPMO(): number {
-	  const end = currentDayIndex >= 0 ? currentDayIndex : 6;
-	  const defects = previousWeekMetrics[3].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	  const shipments = previousWeekMetrics[0].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	  return shipments > 0 ? (defects / shipments) * 1000000 : 0;
-	}
-	function computePrevOrderAccuracy(): number {
-	  const end = currentDayIndex >= 0 ? currentDayIndex : 6;
-	  const shipments = previousWeekMetrics[0].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	  const defects = previousWeekMetrics[3].slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	  return shipments > 0 ? ((shipments - defects) / shipments) * 100 : 0;
-	}
+	// Declare computedMetrics variable.
+	let computedMetrics: number[][] = [];
+	$: computedMetrics = metrics.map((metric, idx): number[] => {
+	  if (!metric.values) return [];
+	  // Compute for B2C computed rows.
+	  if (idx === 3 && metric.name.includes("Shipments Per Hour")) {
+		const shipmentsArr = metrics[1].values || new Array(daysCount).fill(0);
+		const hoursArr = metrics[2].values || new Array(daysCount).fill(0);
+		return weekDates.map((_, i) => {
+		  let shipments = shipmentsArr[i];
+		  let hours = hoursArr[i];
+		  return hours > 0 ? Math.round((shipments / hours) * 100) / 100 : 0;
+		});
+	  } else if (idx === 5 && metric.name.includes("Defects DPMO")) {
+		const shipmentsArr = metrics[1].values || new Array(daysCount).fill(0);
+		const defectsArr = metrics[4].values || new Array(daysCount).fill(0);
+		return weekDates.map((_, i) => {
+		  let shipments = shipmentsArr[i];
+		  let defects = defectsArr[i];
+		  return shipments > 0 ? Math.round((defects / shipments) * 1000000) : 0;
+		});
+	  } else if (idx === 6 && metric.name.includes("Order Accuracy")) {
+		const shipmentsArr = metrics[1].values || new Array(daysCount).fill(0);
+		const defectsArr = metrics[4].values || new Array(daysCount).fill(0);
+		return weekDates.map((_, i) => {
+		  let shipments = shipmentsArr[i];
+		  let defects = defectsArr[i];
+		  return shipments > 0 ? Math.round(((shipments - defects) / shipments) * 10000) / 100 : 0;
+		});
+	  }
+	  return metric.values;
+	});
+  
+	// Example current totals.
+	$: currentTotals = metrics.map((metric, idx) => {
+	  if (!metric.values) return 0;
+	  let arr: number[] =
+		metric.metricField === undefined
+		  ? (computedMetrics[idx] || [])
+		  : (metric.values as number[]);
+	  const end = isCurrentWeek ? (currentDayIndex >= 0 ? currentDayIndex : daysCount - 1) : arr.length - 1;
+	  return arr.slice(0, end + 1).reduce((acc, v) => acc + v, 0);
+	});
   
 	async function loadMetricsForDate(dateStr: string) {
 	  const { data, error } = await supabase
@@ -135,146 +128,27 @@
 	  return data;
 	}
   
-	async function loadPreviousWeekTotals() {
-	  let totals = metrics.map(() => 0);
-	  previousWeekMetrics = metrics.map(() => Array(7).fill(0));
-	  for (let i = 0; i < previousWeekDates.length; i++) {
-		const dateStr = previousWeekDates[i].toISOString().split("T")[0];
-		const data = await loadMetricsForDate(dateStr);
-		if (data) {
-		  metricFields.forEach((field, idx) => {
-			if (field !== null) {
-			  const val = data[field] ?? 0;
-			  previousWeekMetrics[idx][i] = val;
-			  totals[idx] += val;
-			}
-		  });
-		}
-	  }
-	  previousTotals = totals;
-	}
-  
-	$: computedMetrics = metrics.map((metric, idx) => {
-	  if (metricFields[idx] === null) {
-		if (idx === MetricIndex.SHIPMENTS_PER_HOUR) {
-		  return weekDates.map((_, i) => computeShipmentsPerHour(i));
-		} else if (idx === MetricIndex.DEFECTS_DPMO) {
-		  return weekDates.map((_, i) => computeDefectsDPMO(i));
-		} else if (idx === MetricIndex.ORDER_ACCURACY) {
-		  return weekDates.map((_, i) => computeOrderAccuracy(i));
-		} else {
-		  return metric.values;
-		}
-	  } else {
-		return metric.values;
-	  }
-	});
-  
-	$: currentTotals = metrics.map((_, idx) => {
-	  const arr = metricFields[idx] === null ? computedMetrics[idx] : metrics[idx].values;
-	  const end = isCurrentWeek ? (currentDayIndex >= 0 ? currentDayIndex : 6) : arr.length - 1;
-	  return arr.slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	});
-  
-	$: previousTotalsComputed = metrics.map((_, idx) => {
-	  if (metricFields[idx] !== null) {
-		return previousTotals[idx];
-	  } else {
-		if (idx === MetricIndex.SHIPMENTS_PER_HOUR) return computePrevShipmentsPerHour();
-		if (idx === MetricIndex.DEFECTS_DPMO) return computePrevDefectsDPMO();
-		if (idx === MetricIndex.ORDER_ACCURACY) return computePrevOrderAccuracy();
-		return 0;
-	  }
-	});
-  
-	$: partialPreviousTotalsComputed = metrics.map((_, idx) => {
-	  if (metricFields[idx] !== null) {
-		const arr = previousWeekMetrics[idx];
-		const end = isCurrentWeek ? (currentDayIndex >= 0 ? currentDayIndex : 6) : arr.length - 1;
-		return arr.slice(0, end + 1).reduce((acc, v) => acc + v, 0);
-	  } else {
-		if (idx === MetricIndex.SHIPMENTS_PER_HOUR) return computePrevShipmentsPerHour();
-		if (idx === MetricIndex.DEFECTS_DPMO) return computePrevDefectsDPMO();
-		if (idx === MetricIndex.ORDER_ACCURACY) return computePrevOrderAccuracy();
-		return 0;
-	  }
-	});
-  
-	$: wowChange = metrics.map((_, idx) => {
-	  if (isCurrentWeek && metricFields[idx] === null) {
-		let currVal = 0, prevVal = 0;
-		if (idx === MetricIndex.SHIPMENTS_PER_HOUR) {
-		  const values = weekDates.map((_, i) => computeShipmentsPerHour(i)).filter(v => v > 0);
-		  currVal = values.length ? values.reduce((acc, v) => acc + v, 0) / values.length : 0;
-		  prevVal = computePrevShipmentsPerHour();
-		} else if (idx === MetricIndex.DEFECTS_DPMO) {
-		  const values = weekDates.map((_, i) => computeDefectsDPMO(i)).filter(v => v > 0);
-		  currVal = values.length ? values.reduce((acc, v) => acc + v, 0) / values.length : 0;
-		  prevVal = computePrevDefectsDPMO();
-		} else if (idx === MetricIndex.ORDER_ACCURACY) {
-		  const values = weekDates.map((_, i) => computeOrderAccuracy(i)).filter(v => v > 0);
-		  currVal = values.length ? values.reduce((acc, v) => acc + v, 0) / values.length : 0;
-		  prevVal = computePrevOrderAccuracy();
-		}
-		if (prevVal === 0) return "N/A";
-		const change = ((currVal - prevVal) / prevVal) * 100;
-		return change % 1 === 0 ? change.toFixed(0) + "%" : change.toFixed(2) + "%";
-	  } else {
-		const curr = currentTotals[idx];
-		const prev = isCurrentWeek ? partialPreviousTotalsComputed[idx] : previousTotalsComputed[idx];
-		if (prev === 0) return "N/A";
-		const change = ((curr - prev) / prev) * 100;
-		return change % 1 === 0 ? change.toFixed(0) + "%" : change.toFixed(2) + "%";
-	  }
-	});
-  
-	function computeWeeklyTotal(metric: Metric, metricIndex: number): string {
-	  const arr = metricFields[metricIndex] === null ? computedMetrics[metricIndex] : metric.values;
-	  if (metricIndex === MetricIndex.ORDER_ACCURACY) {
-		const totalShipments = computedMetrics[MetricIndex.SHIPMENTS].reduce((acc, v) => acc + v, 0);
-		const totalDefects = computedMetrics[MetricIndex.DEFECTS].reduce((acc, v) => acc + v, 0);
-		const accuracy = totalShipments > 0 ? ((totalShipments - totalDefects) / totalShipments) * 100 : 0;
-		return accuracy % 1 === 0 ? accuracy.toFixed(0) + "%" : accuracy.toFixed(2) + "%";
-	  } else if (metricFields[metricIndex] === null) {
-		const validValues = arr.filter(v => v > 0);
-		const sum = validValues.reduce((acc, v) => acc + v, 0);
-		const avg = validValues.length > 0 ? sum / validValues.length : 0;
-		return avg % 1 === 0 ? avg.toFixed(0) : avg.toFixed(2);
-	  } else {
-		const total = arr.reduce((acc, v) => acc + (Number(v) || 0), 0);
-		return total % 1 === 0 ? total.toFixed(0) : total.toFixed(2);
-	  }
-	}
-  
 	async function loadMetrics() {
 	  if (typeof window === "undefined") return;
 	  loading = true;
 	  let updatedMetrics = metrics.map(metric => ({
 		...metric,
-		values: [...metric.values],
+		values: metric.values ? [...metric.values] : undefined
 	  }));
 	  for (let i = 0; i < weekDates.length; i++) {
 		const dateStr = weekDates[i].toISOString().split("T")[0];
 		const data = await loadMetricsForDate(dateStr);
-		if (data) {
-		  updatedMetrics = updatedMetrics.map((metric, idx) => {
-			if (metricFields[idx] !== null) {
-			  return {
-				...metric,
-				values: metric.values.map((val, j) =>
-				  j === i ? data[metricFields[idx] as string] ?? 0 : val
-				),
-			  };
-			} else {
-			  return metric;
-			}
-		  });
-		} else {
-		  updatedMetrics = updatedMetrics.map(metric => ({
-			...metric,
-			values: metric.values.map((val, j) => (j === i ? 0 : val)),
-		  }));
-		}
+		updatedMetrics = updatedMetrics.map(metric => {
+		  if (metric.values && metric.metricField !== undefined && metric.metricField !== null) {
+			return {
+			  ...metric,
+			  values: metric.values.map((val, j) =>
+				j === i ? ((data as any)[metric.metricField!] ?? 0) : val
+			  )
+			};
+		  }
+		  return metric;
+		});
 	  }
 	  metrics = updatedMetrics;
 	  loading = false;
@@ -292,25 +166,49 @@
 	async function saveMetricsForDay(dayIndex: number) {
 	  const dateStr = weekDates[dayIndex].toISOString().split("T")[0];
 	  const data: Record<string, number> = {};
-	  metrics.forEach((metric, idx) => {
-		if (metricFields[idx] !== null) {
-		  data[metricFields[idx] as string] = metric.values[dayIndex];
+	  metrics.forEach(metric => {
+		if (metric.values && metric.metricField !== undefined && metric.metricField !== null) {
+		  data[metric.metricField] = metric.values[dayIndex];
 		}
 	  });
 	  await saveMetricsForDate(dateStr, data);
 	}
   
-	// Updated saveAllMetrics refreshes data after saving while preserving the current week.
 	async function saveAllMetrics() {
 	  for (let i = 0; i < weekDates.length; i++) {
 		await saveMetricsForDay(i);
 	  }
 	  await tick();
 	  await loadMetrics();
-	  await loadPreviousWeekTotals();
 	}
   
-	// ----- Metrics Side Panel functions -----
+	function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
+	  if (newValue === undefined) return;
+	  metrics = metrics.map((metric, idx) => {
+		if (idx === metricIndex && metric.values) {
+		  const newValues = [...metric.values];
+		  newValues[dayIndex] = newValue;
+		  return { ...metric, values: newValues };
+		}
+		return metric;
+	  });
+	  saveMetricsForDay(dayIndex);
+	}
+  
+	async function changeWeek(offset: number) {
+	  weekOffset += offset;
+	  await tick();
+	  await new Promise(resolve => setTimeout(resolve, 100));
+	  await loadMetrics();
+	}
+  
+	// Side panel state.
+	let showMetricsPanel = false;
+	let selectedMetricIndex = -1;
+	let selectedDayIndex = -1;
+	let panelNoteData: any = {};
+	let notesMap: Record<string, any> = {};
+  
 	function openMetricsPanel(metricIndex: number, dayIndex: number) {
 	  selectedMetricIndex = metricIndex;
 	  selectedDayIndex = dayIndex;
@@ -325,56 +223,34 @@
 	  }
 	  showMetricsPanel = true;
 	}
+  
 	function closeMetricsPanel() {
 	  showMetricsPanel = false;
 	}
-	// ----- End Metrics Side Panel functions -----
   
-	// Updated handleInputChange now makes the new value optional.
-	function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
-	  if (newValue === undefined) return;
-	  // Update the local metrics state to trigger reactive recalculations
-	  metrics = metrics.map((metric, idx) => {
-		if (idx === metricIndex) {
-		  const newValues = [...metric.values];
-		  newValues[dayIndex] = newValue;
-		  return { ...metric, values: newValues };
-		}
-		return metric;
-	  });
-	  // Optionally, save the data to Supabase.
-	  saveMetricsForDay(dayIndex);
-	}
-  
-	// New function to change weeks with a delay
-	async function changeWeek(offset: number) {
-	  weekOffset += offset;
-	  await tick();
-	  // Optional small delay (100ms) to let reactive updates settle
-	  await new Promise(resolve => setTimeout(resolve, 100));
-	  await loadMetrics();
-	  await loadPreviousWeekTotals();
+	function computeWeeklyTotal(metric: { name: string; values: number[] }, metricIndex: number): string {
+	  const total = metric.values.reduce((acc, v) => acc + v, 0);
+	  return total % 1 === 0 ? total.toFixed(0) : total.toFixed(2);
 	}
   
 	onMount(() => {
 	  loadMetrics();
-	  loadPreviousWeekTotals();
 	});
-</script>
+  </script>
   
-<!-- Week Navigation -->
-<div class="week-navigation">
+  <!-- Week Navigation -->
+  <div class="week-navigation">
 	<button on:click={() => changeWeek(-1)}>Previous Week</button>
 	<span class="week-range">
-	  {#if weekDates.length === 7}
-		{weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
+	  {#if weekDates.length === daysCount}
+		{weekDates[0].toLocaleDateString()} - {weekDates[daysCount - 1].toLocaleDateString()}
 	  {/if}
 	</span>
 	<button on:click={() => changeWeek(1)}>Next Week</button>
-</div>
+  </div>
   
-<!-- Card Container for Dashboard Table -->
-<div class="card">
+  <!-- Card Container for Dashboard Table -->
+  <div class="card">
 	<div class="dashboard-container">
 	  <table>
 		<thead>
@@ -405,58 +281,63 @@
 		</thead>
 		<tbody>
 		  {#each metrics as metric, metricIndex}
-			<MetricRow
-			  name={metric.name}
-			  values={computedMetrics[metricIndex]}
-			  {metricIndex}
-			  {weekDates}
-			  {currentDayIndex}
-			  {isCurrentWeek}
-			  {notesMap}
-			  metricField={metricFields[metricIndex]}
-			  wowChange={wowChange[metricIndex]}
-			  {handleInputChange}
-			  openNotes={openMetricsPanel}
-			  computeWeeklyTotal={computeWeeklyTotal}
-			  currentTotal={formatNumber(currentTotals[metricIndex])}
-			  byThisTimeLastWeek={
-				isCurrentWeek
-				  ? formatNumber(partialPreviousTotalsComputed[metricIndex])
-				  : formatNumber(previousTotalsComputed[metricIndex])
-			  }
-			  previousTotal={formatNumber(previousTotalsComputed[metricIndex])}
-			/>
+			{#if metric.isHeader}
+			  <tr class="section-header">
+				<td colspan="12">{metric.name}</td>
+			  </tr>
+			{:else if metric.isSpacer}
+			  <tr class="spacer-row">
+				<td colspan="12"></td>
+			  </tr>
+			{:else}
+			  <MetricRow
+				name={metric.name}
+				values={metric.values}
+				{metricIndex}
+				{weekDates}
+				{currentDayIndex}
+				{isCurrentWeek}
+				{notesMap}
+				metricField={metric.metricField ?? null}
+				wowChange={computedMetrics[metricIndex] ? computeWeeklyTotal({ name: metric.name, values: computedMetrics[metricIndex]! }, metricIndex) : ""}
+				handleInputChange={handleInputChange}
+				openNotes={openMetricsPanel}
+				computeWeeklyTotal={computeWeeklyTotal}
+				currentTotal={formatNumber(currentTotals[metricIndex])}
+				byThisTimeLastWeek={formatNumber(0)}
+				previousTotal={formatNumber(0)}
+			  />
+			{/if}
 		  {/each}
 		</tbody>
 	  </table>
 	</div>
-</div>
+  </div>
   
-<div class="global-save-container">
+  <div class="global-save-container">
 	<button on:click={saveAllMetrics}>Save All Metrics</button>
-</div>
+  </div>
   
-<!-- Render the Metrics Side Panel with overlay -->
-{#if showMetricsPanel}
+  <!-- Metrics Side Panel Overlay -->
+  {#if showMetricsPanel}
 	<div class="overlay" 
-	     role="button" 
-	     tabindex="0"
-	     on:click={closeMetricsPanel}
-	     on:keydown={(e) => { 
-            // Only close if the overlay itself (not a child) is focused
-            if(e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { 
-              e.preventDefault(); 
-              closeMetricsPanel(); 
-            } 
-         }}>
+		 role="button" 
+		 tabindex="0"
+		 on:click={closeMetricsPanel}
+		 on:keydown={(e) => { 
+		   if(e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { 
+			 e.preventDefault(); 
+			 closeMetricsPanel(); 
+		   } 
+		 }}>
 	  <div role="button" tabindex="0" 
-	    on:click|stopPropagation 
-	    on:keydown={(e) => { 
-            if(e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { 
-              e.preventDefault(); 
-              openMetricsPanel(selectedMetricIndex, selectedDayIndex); 
-            } 
-         }}>
+		   on:click|stopPropagation 
+		   on:keydown={(e) => { 
+			 if(e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { 
+			   e.preventDefault(); 
+			   openMetricsPanel(selectedMetricIndex, selectedDayIndex); 
+			 } 
+		   }}>
 		<MetricsSidePanel
 		  noteData={panelNoteData}
 		  on:close={(e) => {
@@ -473,9 +354,9 @@
 		/>
 	  </div>
 	</div>
-{/if}
+  {/if}
   
-<style>
+  <style>
 	.week-navigation {
 	  display: flex;
 	  justify-content: space-between;
@@ -498,7 +379,6 @@
 	  font-size: 1em;
 	  font-weight: 500;
 	}
-	/* Updated metrics deck (card) styles: combination of border and box shadow */
 	.card {
 	  background-color: #fff;
 	  border: 1px solid #E5E7EB;
@@ -510,11 +390,6 @@
 	.dashboard-container {
 	  width: 100%;
 	  overflow-x: auto;
-	}
-	table {
-	  width: 100%;
-	  border-collapse: collapse;
-	  table-layout: fixed;
 	}
 	.metric-name-header {
 	  width: 200px;
@@ -532,6 +407,17 @@
 	  background-color: #f9fafb;
 	  font-size: 0.71em;
 	  color: #555;
+	}
+	.section-header td {
+	  font-weight: bold;
+	  background-color: #e0f7ea;
+	  text-align: left;
+	  padding: 8px 16px;
+	  border: 1px solid #E5E7EB;
+	}
+	.spacer-row td {
+	  padding: 4px;
+	  background-color: #fff;
 	}
 	.global-save-container {
 	  text-align: right;
@@ -560,4 +446,4 @@
 	  background: rgba(0, 0, 0, 0.4);
 	  z-index: 1090;
 	}
-</style>
+  </style>
