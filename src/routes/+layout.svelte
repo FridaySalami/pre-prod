@@ -8,10 +8,10 @@
 
   let session: any = null;
   let loggingOut = false;
-  
+
   const unsubscribe = userSession.subscribe((s) => {
     session = s;
-    // If on client, and no session (and not in the process of logging out), redirect.
+    // When on the client, if there is no session and we’re not in the process of logging out, redirect to /login.
     if (browser && !session && !loggingOut) {
       goto('/login');
     }
@@ -26,7 +26,7 @@
     loggingOut = true;
     console.log("Logout clicked");
 
-    // Sign out using Supabase.
+    // Call Supabase sign-out.
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error signing out:", error);
@@ -34,7 +34,7 @@
       return;
     }
     
-    // Wait one second to show the logout spinner, then force a full reload.
+    // Force a full page reload after a delay.
     setTimeout(() => {
       window.location.href = '/login';
     }, 1000);
@@ -57,42 +57,36 @@
   <aside class="sidebar">
     <nav>
       <ul>
-        <!-- Dashboard Link -->
         <li>
           <a href="/dashboard">
             <i class="material-icons menu-icon">dashboard</i>
             <span class="label">Dashboard</span>
           </a>
         </li>
-        <!-- Kaizen Projects Link -->
         <li>
           <a href="/kaizen-projects">
             <i class="material-icons menu-icon">assignment</i>
             <span class="label">Kaizen Projects</span>
           </a>
         </li>
-        <!-- Reports Link -->
         <li>
           <a href="/reports">
             <i class="material-icons menu-icon">bar_chart</i>
             <span class="label">Reports</span>
           </a>
         </li>
-        <!-- Analytics Link -->
         <li>
           <a href="/analytics">
             <i class="material-icons menu-icon">analytics</i>
             <span class="label">Analytics</span>
           </a>
         </li>
-        <!-- Settings Link -->
         <li>
           <a href="/settings">
             <i class="material-icons menu-icon">settings</i>
             <span class="label">Settings</span>
           </a>
         </li>
-        <!-- Help Link -->
         <li>
           <a href="/help">
             <i class="material-icons menu-icon">help_outline</i>
@@ -138,7 +132,7 @@
     background-color: #F9FAFB;
   }
   
-  /* Header with gradient background */
+  /* Header */
   .site-header {
     background: linear-gradient(90deg, #004225 0%, #006644 100%);
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -163,7 +157,7 @@
     color: #E0F2F1;
   }
   
-  /* Collapsible Sidebar */
+  /* Sidebar */
   .sidebar {
     position: fixed;
     top: 70px;
