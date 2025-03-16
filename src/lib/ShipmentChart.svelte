@@ -21,13 +21,13 @@
 	} as const;
   
 	let metrics: Metric[] = [
-  { name: "1.1 Shipments Packed", values: Array(7).fill(0) },
-  { name: "1.2 Hours Worked", values: Array(7).fill(0) },
-  { name: "1.3 Shipments Per Hour", values: Array(7).fill(0) },
-  { name: "1.4 Defects", values: Array(7).fill(0) },
-  { name: "1.5 Defects DPMO", values: Array(7).fill(0) },
-  { name: "1.6 Order Accuracy (%)", values: Array(7).fill(0) }
-];  
+	  { name: "1.1 Shipments Packed", values: Array(7).fill(0) },
+	  { name: "1.2 Hours Worked", values: Array(7).fill(0) },
+	  { name: "1.3 Shipments Per Hour", values: Array(7).fill(0) },
+	  { name: "1.4 Defects", values: Array(7).fill(0) },
+	  { name: "1.5 Defects DPMO", values: Array(7).fill(0) },
+	  { name: "1.6 Order Accuracy (%)", values: Array(7).fill(0) }
+	];  
 	// Mapping of metrics to database columns.
 	const metricFields: (string | null)[] = [
 	  "shipments",
@@ -331,25 +331,35 @@
 	  saveMetricsForDay(dayIndex);
 	}
   
+	// New function to change weeks with a delay
+	async function changeWeek(offset: number) {
+	  weekOffset += offset;
+	  await tick();
+	  // Optional small delay (100ms) to let reactive updates settle
+	  await new Promise(resolve => setTimeout(resolve, 100));
+	  await loadMetrics();
+	  await loadPreviousWeekTotals();
+	}
+  
 	onMount(() => {
 	  loadMetrics();
 	  loadPreviousWeekTotals();
 	});
-  </script>
+</script>
   
-  <!-- Week Navigation -->
-  <div class="week-navigation">
-	<button on:click={() => { weekOffset--; tick(); loadMetrics(); loadPreviousWeekTotals(); }}>Previous Week</button>
+<!-- Week Navigation -->
+<div class="week-navigation">
+	<button on:click={() => changeWeek(-1)}>Previous Week</button>
 	<span class="week-range">
 	  {#if weekDates.length === 7}
 		{weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
 	  {/if}
 	</span>
-	<button on:click={() => { weekOffset++; tick(); loadMetrics(); loadPreviousWeekTotals(); }}>Next Week</button>
-  </div>
+	<button on:click={() => changeWeek(1)}>Next Week</button>
+</div>
   
-  <!-- Card Container for Dashboard Table -->
-  <div class="card">
+<!-- Card Container for Dashboard Table -->
+<div class="card">
 	<div class="dashboard-container">
 	  <table>
 		<thead>
@@ -405,14 +415,14 @@
 		</tbody>
 	  </table>
 	</div>
-  </div>
+</div>
   
-  <div class="global-save-container">
+<div class="global-save-container">
 	<button on:click={saveAllMetrics}>Save All Metrics</button>
-  </div>
+</div>
   
-  <!-- Render the Metrics Side Panel with overlay -->
-  {#if showMetricsPanel}
+<!-- Render the Metrics Side Panel with overlay -->
+{#if showMetricsPanel}
 	<div class="overlay" on:click={closeMetricsPanel}>
 	  <div on:click|stopPropagation>
 		<MetricsSidePanel
@@ -431,9 +441,9 @@
 		/>
 	  </div>
 	</div>
-  {/if}
+{/if}
   
-  <style>
+<style>
 	.week-navigation {
 	  display: flex;
 	  justify-content: space-between;
@@ -529,4 +539,4 @@
 	  background: rgba(0, 0, 0, 0.4);
 	  z-index: 1090;
 	}
-  </style>
+</style>
