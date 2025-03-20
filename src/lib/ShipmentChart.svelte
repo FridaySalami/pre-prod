@@ -649,6 +649,13 @@ table td:first-child {
   border: 1px solid #E5E7EB;
 }
 
+.chart-footer {
+  display: flex;
+  justify-content: flex-end; /* Align to the right */
+  padding: 12px 24px; /* Match the card's horizontal padding */
+  margin: 0 24px; /* Match the card's horizontal margin */
+}
+
 .chart-footer button {
   background: #004225;
   color: #fff;
