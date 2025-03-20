@@ -86,33 +86,43 @@
 
 <style>
   .kanban-card {
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
+    padding: 12px;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
     cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: all 0.2s ease;
     position: relative;
     font-size: 0.85em;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    margin-bottom: 8px;
   }
 
   .kanban-card:hover {
-    transform: scale(1.02);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .kanban-card:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   }
 
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-bottom: 6px;
   }
 
   h3 {
     margin: 0;
     font-size: 1em;
+    font-weight: 500; /* Medium weight instead of bold, consistent with other components */
+    color: #1f2937; /* Darker text for better contrast */
   }
 
   .toggle-button {
-    background: none;
+    background: rgba(0, 0, 0, 0.05);
     border: none;
     font-size: 1.2em;
     cursor: pointer;
@@ -121,18 +131,29 @@
     line-height: 24px;
     text-align: center;
     padding: 0;
+    border-radius: 12px;
+    color: #4B5563;
+    transition: all 0.2s ease;
+  }
+
+  .toggle-button:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #1F2937;
   }
 
   .category {
     font-size: 0.8em;
-    margin: 2px 0;
-    font-weight: bold;
+    margin: 2px 0 6px 0;
+    font-weight: 500; /* Medium weight instead of bold */
+    color: #4B5563;
   }
 
   .submitted,
   .brief {
     font-size: 0.75em;
-    margin: 2px 0;
+    margin: 4px 0;
+    line-height: 1.4;
+    color: #4B5563;
   }
 
   .reactions {
@@ -140,7 +161,11 @@
     align-items: center;
     gap: 4px;
     font-size: 0.75em;
-    margin-top: 4px;
+    margin-top: 8px;
+    background: rgba(0, 0, 0, 0.03);
+    padding: 4px 6px;
+    border-radius: 4px;
+    width: fit-content;
   }
 
   .thumbs-up {
@@ -148,6 +173,6 @@
   }
 
   .count {
-    font-weight: bold;
+    font-weight: 500; /* Medium weight instead of bold */
   }
 </style>
