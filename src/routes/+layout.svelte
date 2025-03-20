@@ -13,9 +13,12 @@
   
   const unsubscribe = userSession.subscribe((s) => {
     session = s;
+    console.log("Layout session updated:", session ? "session exists" : "no session or undefined");
+    
     // Only redirect if the session has been determined (i.e., explicitly null) and not when it's still undefined.
     if (browser && session === null && !loggingOut) {
-      goto('/login');
+      console.log("Session is null, redirecting to login page");
+      window.location.href = '/login'; // Use direct navigation instead of goto to ensure full page reload
     }
   });
 
@@ -33,38 +36,35 @@
     console.log("loggingOut state set to true");
 
     try {
-      console.log("Attempting to sign out with Supabase...");
-      const { error } = await supabase.auth.signOut();
-      
-      // Handle various error types from Supabase
-      if (error) {
-        console.error("Error signing out:", error);
-        
-        // Check if it's an AuthSessionMissingError or 403 Forbidden
-        if (
-          error.message?.includes("Auth session missing") || 
-          error.message?.includes("403") ||
-          error.code === 'session_not_found'
-        ) {
-          console.log("Session already invalid or expired, continuing with local logout");
-        } else {
-          // For other errors, we may want to stop the logout process
-          loggingOut = false;
-          return;
+      // More aggressive session clearing approach
+      // 1. Clear any local storage items related to Supabase
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes('supabase')) {
+          console.log(`Removing localStorage item: ${key}`);
+          localStorage.removeItem(key);
         }
-      } else {
-        console.log("Successfully signed out from Supabase");
       }
       
-      // Regardless of server-side logout success, perform local logout
-      localStorage.removeItem('supabase.auth.token'); // Remove the token if it exists
+      // 2. Clear all cookies (may include the auth cookie)
+      document.cookie.split(";").forEach(function(c) {
+        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+      
+      // 3. Set the session store to null
       userSession.set(null);
       console.log("userSession store set to null");
       
-      // Wait one second to show the logout spinner, then redirect
-      console.log("Setting timeout for redirect...");
+      // 4. Still try the Supabase signOut method (but don't depend on it)
+      console.log("Attempting to sign out with Supabase...");
+      await supabase.auth.signOut().catch(err => {
+        console.log("Error during Supabase signout, continuing anyway:", err);
+      });
+      
+      // 5. Force a full page reload to clear any in-memory state
+      console.log("Setting timeout for reload...");
       setTimeout(() => {
-        console.log("Redirecting to login page...");
+        console.log("Performing full page reload...");
         window.location.href = '/login';
       }, 1000);
     } catch (err) {
