@@ -50,74 +50,100 @@
 
 <style>
   .release-notes {
-    max-width: 800px;
-    margin: 1rem auto;
-    padding: 0.5rem;
-    font-family: sans-serif;
-    color: #333;
-    font-size: 0.9rem;
+    max-width: 1200px; /* Increased from 800px to 1000px */
+    margin: 2rem auto;
+    padding: 0 1rem;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #1f2937;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   
   .release-header {
     text-align: center;
-    margin-bottom: 1rem;
+    margin-bottom: 2rem;
   }
   
   h1 {
-    font-size: 1.8rem;
-    margin-bottom: 0.25rem;
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
     color: #004225;
+    font-weight: 500; /* Medium weight instead of bold */
+    letter-spacing: -0.02em; /* Apple-like letter spacing */
   }
   
   .global-release-date {
-    font-size: 0.8rem;
-    color: #555;
+    font-size: 0.9rem;
+    color: #6B7280;
+    font-weight: 400;
   }
   
   .release-container {
-    border: 1px solid #eee;
-    border-radius: 6px;
-    padding: 1rem;
-    background-color: #f9f9f9;
+    border: 1px solid #E5E7EB;
+    border-radius: 12px; /* More rounded corners like Apple */
+    padding: 1.5rem 2rem; /* Increased horizontal padding from 1.5rem to 2rem */
+    background-color: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.08);
   }
   
   .release-section {
-    margin-bottom: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #F3F4F6;
   }
   
   .release-section:last-child {
     margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
   }
   
   h2 {
-    font-size: 1.3rem;
-    margin-bottom: 0.25rem;
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
     color: #004225;
+    font-weight: 500; /* Medium weight instead of bold */
+    letter-spacing: -0.01em; /* Apple-like letter spacing */
   }
   
   .section-version {
-    font-size: 0.8rem;
-    color: #555;
-    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    color: #6B7280;
+    margin-bottom: 1rem;
     text-align: left;
   }
   
   ul {
-    list-style: disc;
-    padding-left: 1.5rem;
+    list-style: none;
+    padding-left: 0;
     margin: 0;
   }
   
   li {
-    margin-bottom: 0.25rem;
-    line-height: 1.3;
+    margin-bottom: 0.75rem;
+    line-height: 1.5;
+    position: relative;
+    padding-left: 1.75rem;
+  }
+  
+  li:before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5rem;
+    height: 0.5rem;
+    width: 0.5rem;
+    background-color: #35b07b;
+    border-radius: 50%;
   }
   
   .release-footer {
     text-align: right;
-    font-size: 0.75rem;
-    font-style: italic;
-    color: #666;
-    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #6B7280;
+    margin-top: 1rem;
+    font-weight: 400;
   }
 </style>
