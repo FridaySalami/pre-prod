@@ -25,7 +25,6 @@
 
   async function handleLogout(event: MouseEvent) {
     console.log("Logout function triggered");
-    // Prevent default if it's an event with preventDefault
     if (event && event.preventDefault) {
       event.preventDefault();
     }
@@ -37,13 +36,21 @@
       console.log("Attempting to sign out with Supabase...");
       const { error } = await supabase.auth.signOut();
       
-      if (error) {
+      // If we get a "session_not_found" error, we can still proceed with logout
+      // as the user is effectively already logged out on the server
+      if (error && error.code !== 'session_not_found') {
         console.error("Error signing out:", error);
         loggingOut = false;
         return;
       }
       
-      console.log("Successfully signed out from Supabase");
+      if (error && error.code === 'session_not_found') {
+        console.log("Session already expired or not found, continuing with logout");
+      } else {
+        console.log("Successfully signed out from Supabase");
+      }
+      
+      // Manually set the session to null
       userSession.set(null);
       console.log("userSession store set to null");
       
