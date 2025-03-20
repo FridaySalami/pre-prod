@@ -36,21 +36,28 @@
       console.log("Attempting to sign out with Supabase...");
       const { error } = await supabase.auth.signOut();
       
-      // If we get a "session_not_found" error, we can still proceed with logout
-      // as the user is effectively already logged out on the server
-      if (error && error.code !== 'session_not_found') {
+      // Handle various error types from Supabase
+      if (error) {
         console.error("Error signing out:", error);
-        loggingOut = false;
-        return;
-      }
-      
-      if (error && error.code === 'session_not_found') {
-        console.log("Session already expired or not found, continuing with logout");
+        
+        // Check if it's an AuthSessionMissingError or 403 Forbidden
+        if (
+          error.message?.includes("Auth session missing") || 
+          error.message?.includes("403") ||
+          error.code === 'session_not_found'
+        ) {
+          console.log("Session already invalid or expired, continuing with local logout");
+        } else {
+          // For other errors, we may want to stop the logout process
+          loggingOut = false;
+          return;
+        }
       } else {
         console.log("Successfully signed out from Supabase");
       }
       
-      // Manually set the session to null
+      // Regardless of server-side logout success, perform local logout
+      localStorage.removeItem('supabase.auth.token'); // Remove the token if it exists
       userSession.set(null);
       console.log("userSession store set to null");
       
