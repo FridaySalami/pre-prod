@@ -253,7 +253,7 @@
 
 <style>
   .kanban-board {
-    padding: 8px;
+    padding: 16px 24px; /* Match the card's horizontal padding from ShipmentChart */
   }
   
   .new-project-button {
@@ -263,12 +263,27 @@
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
     font-size: 0.9em;
+    font-weight: 500; /* Medium weight instead of bold, like in ShipmentChart */
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+  }
+  
+  .new-project-button:hover {
+    background: #006339; /* Slightly darker on hover for depth */
+    transform: translateY(-1px); /* Subtle lift effect */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  }
+  
+  .new-project-button:active {
+    transform: translateY(0); /* Press effect */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
   
   .kanban-columns {
     display: flex;
-    gap: 8px;
+    gap: 16px; /* Increased from 8px for more spacing between columns */
+    margin-bottom: 16px; /* Add bottom margin */
   }
 </style>
