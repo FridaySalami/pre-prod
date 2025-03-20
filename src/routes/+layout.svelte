@@ -113,22 +113,11 @@
   }
 </script>
 
-<header class="site-header">
-  <div class="header-left">
-    <h1>Parkers Foodservice Operational Dashboard</h1>
-  </div>
-  <div class="header-right">
-    {#if session}
-      <span class="user-info">
-        Logged in as <em>{session.user.email}</em>
-      </span>
-    {/if}
-  </div>
-</header>
-
-<div class="layout-wrapper">
-  <!-- Collapsible Sidebar -->
+<div class="app-container">
   <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="app-icon">P</span>
+    </div>
     <nav>
       <ul>
         <!-- Dashboard Link -->
@@ -188,14 +177,29 @@
     {/if}
   </aside>
 
-  <main class="site-main">
-    <slot />
-  </main>
-</div>
+  <div class="content-wrapper">
+    <header class="site-header">
+      <div class="header-left">
+        <h1>Parkers Foodservice Operational Dashboard</h1>
+      </div>
+      <div class="header-right">
+        {#if session}
+          <span class="user-info">
+            Logged in as <em>{session.user.email}</em>
+          </span>
+        {/if}
+      </div>
+    </header>
 
-<footer class="site-footer">
-  <p>Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a></p>
-</footer>
+    <main class="site-main">
+      <slot />
+    </main>
+    
+    <footer class="site-footer">
+      <p>Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a></p>
+    </footer>
+  </div>
+</div>
 
 {#if loggingOut}
   <div class="logout-overlay">
@@ -228,6 +232,10 @@
     border-bottom: 1px solid rgba(0,0,0,0.1);
     height: 64px; /* Slightly reduced from 70px */
     color: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    width: 100%; /* Make sure it extends full width */
   }
   
   .header-left h1 {
@@ -247,7 +255,7 @@
   /* Collapsible Sidebar */
   .sidebar {
     position: fixed;
-    top: 64px; /* Match reduced header height */
+    top: 0;
     bottom: 0;
     left: 0;
     width: 64px; /* Slightly increased from 60px */
@@ -256,11 +264,39 @@
     overflow: hidden;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Apple-like easing */
     z-index: 1000;
+    display: flex;
+    flex-direction: column;
   }
   
   .sidebar:hover {
     width: 220px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Add subtle shadow when expanded */
+  }
+  
+  .sidebar-logo {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #F3F4F6;
+  }
+
+  .app-icon {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(90deg, #004225 0%, #006644 100%);
+    color: white;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 500;
+    font-size: 18px;
+  }
+
+  .sidebar nav {
+    flex: 1;
+    overflow-y: auto;
   }
   
   .sidebar nav ul {
@@ -359,11 +395,11 @@
   /* Main Content */
   .site-main {
     flex: 1;
-    margin-left: 64px; /* Match sidebar width */
     padding: 20px;
     padding-top: 10px; /* Reduced top padding */
     background-color: #F9FAFB;
-    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 100%; /* Takes full width of content-wrapper */
+    margin-left: 0; /* Remove this as it's redundant with content-wrapper margin */
   }
   
   /* Footer */
@@ -373,15 +409,14 @@
     color: #6B7280;
     font-size: 0.8em;
     padding: 8px 24px;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 36px; /* Increased slightly for better tap targets */
+    height: 36px;
     display: flex;
     justify-content: flex-end;
     align-items: center;
     z-index: 999; /* Ensure it stays above content but below modals */
+    width: 100%; /* Make sure it extends full width */
+    position: sticky;
+    bottom: 0;
   }
   
   .site-footer p {
@@ -437,5 +472,19 @@
     font-size: 1rem; /* Slightly smaller */
     font-weight: 500; /* Medium weight */
     color: #004225;
+  }
+
+  .app-container {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  .content-wrapper {
+    flex: 1;
+    margin-left: 64px; /* Match sidebar width */
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    width: calc(100% - 64px); /* Ensure it takes up the remaining width */
   }
 </style>
