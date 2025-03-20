@@ -12,13 +12,21 @@
   let loggingOut = false;
   
   const unsubscribe = userSession.subscribe((s) => {
-    session = s;
-    console.log("Layout session updated:", session ? "session exists" : "no session or undefined");
+    console.log("Session subscription triggered with:", s);
     
-    // Only redirect if the session has been determined (i.e., explicitly null) and not when it's still undefined.
-    if (browser && session === null && !loggingOut) {
+    // If we're in the process of logging out, always treat the session as null
+    if (loggingOut) {
+      session = null;
+      console.log("In logout process, treating session as null");
+    } else {
+      session = s;
+      console.log("Layout session updated:", session ? "session exists" : "no session or undefined");
+    }
+    
+    // Redirect to login if session is null and we're not already logging out
+    if (browser && session === null && !loggingOut && !window.location.pathname.includes('/login')) {
       console.log("Session is null, redirecting to login page");
-      window.location.href = '/login'; // Use direct navigation instead of goto to ensure full page reload
+      window.location.replace('/login'); // Use replace to prevent history issues
     }
   });
 
@@ -36,36 +44,67 @@
     console.log("loggingOut state set to true");
 
     try {
-      // More aggressive session clearing approach
-      // 1. Clear any local storage items related to Supabase
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.includes('supabase')) {
-          console.log(`Removing localStorage item: ${key}`);
-          localStorage.removeItem(key);
+      // Create a flag to check if any auth operations succeeded
+      let authCleared = false;
+      
+      // 1. Try the Supabase signOut method first
+      console.log("Attempting to sign out with Supabase...");
+      try {
+        const { error } = await supabase.auth.signOut({
+          scope: 'global' // This will invalidate all sessions for this user
+        });
+        
+        if (!error) {
+          console.log("Successfully signed out from Supabase");
+          authCleared = true;
+        } else {
+          console.log("Error during Supabase signout:", error);
+        }
+      } catch (err) {
+        console.log("Exception during Supabase signout:", err);
+      }
+      
+      // 2. Clear all localStorage items related to Supabase
+      console.log("Clearing localStorage items...");
+      for (const key in localStorage) {
+        if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
+          if (key.includes('supabase') || key.includes('sb-')) {
+            console.log(`Removing localStorage item: ${key}`);
+            localStorage.removeItem(key);
+            authCleared = true;
+          }
         }
       }
       
-      // 2. Clear all cookies (may include the auth cookie)
+      // 3. Clear all cookies
+      console.log("Clearing cookies...");
       document.cookie.split(";").forEach(function(c) {
         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
       });
       
-      // 3. Set the session store to null
+      // 4. Explicitly set the session store to null
       userSession.set(null);
       console.log("userSession store set to null");
       
-      // 4. Still try the Supabase signOut method (but don't depend on it)
-      console.log("Attempting to sign out with Supabase...");
-      await supabase.auth.signOut().catch(err => {
-        console.log("Error during Supabase signout, continuing anyway:", err);
-      });
+      // 5. Try to refresh the Supabase client to clear its internal state
+      try {
+        // @ts-ignore - Using internal API to refresh client state
+        if (supabase.auth.refreshSession) {
+          await supabase.auth.refreshSession();
+          console.log("Refreshed Supabase session");
+        }
+      } catch (err) {
+        console.log("Error refreshing session, continuing:", err);
+      }
       
-      // 5. Force a full page reload to clear any in-memory state
+      // 6. Force a full page reload with a brief delay to allow for async operations to complete
       console.log("Setting timeout for reload...");
       setTimeout(() => {
+        // Use window.location.replace instead of href to prevent caching issues
         console.log("Performing full page reload...");
-        window.location.href = '/login';
+        
+        // Force browser to not use cache
+        window.location.replace('/login?t=' + new Date().getTime());
       }, 1000);
     } catch (err) {
       console.error("Unexpected error during logout:", err);
