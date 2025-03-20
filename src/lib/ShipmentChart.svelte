@@ -294,25 +294,39 @@ async function saveMetricsForDay(dayIndex: number) {
     const dateStr = weekDates[dayIndex].toISOString().split("T")[0];
     const data: Record<string, number> = {};
     
-    // Filter out null/undefined values
+    // Filter out null/undefined values and match column names exactly
     metrics.forEach(metric => {
       if (metric.metricField && metric.values[dayIndex] !== null && metric.values[dayIndex] !== undefined) {
-        data[metric.metricField] = metric.values[dayIndex];
+        // Only include fields that match your table columns
+        if (['shipments', 'defects', 'hours_worked', 'dpmo', 'order_accuracy'].includes(metric.metricField)) {
+          data[metric.metricField] = metric.values[dayIndex];
+        }
       }
     });
 
     // Only save if we have data
     if (Object.keys(data).length > 0) {
       console.log('Saving day data:', dateStr, data);
-      await supabase
-  .from('daily_metrics')
-  .insert(data)
-  .select();
+      const { error } = await supabase
+        .from('daily_metrics')
+        .upsert({ 
+          date: dateStr,  // Make sure to include the date
+          ...data 
+        }, {
+          onConflict: 'date'  // Specify which column handles conflicts
+        })
+        .select();
+
+      if (error) {
+        console.error('Error saving metrics:', error);
+        throw error;
+      }
     } else {
       console.warn('No data to save for day:', dateStr);
     }
   } catch (err) {
     console.error('Failed to save day:', dayIndex, err);
+    throw err;  // Rethrow to handle in the calling function
   }
 }
 
