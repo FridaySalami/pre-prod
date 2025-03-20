@@ -261,46 +261,102 @@ $: previousTotalsComputed = metrics.map((metric, idx) => {
 	}
   
 	async function saveMetricsForDate(dateStr: string, metricsData: any) {
-	  const { error } = await supabase
-		.from("daily_metrics")
-		.upsert({ date: dateStr, ...metricsData }, { onConflict: "date" });
-	  if (error) {
-		console.error("Error saving metrics for date " + dateStr, error);
-	  }
-	}
+  try {
+    console.log('Saving metrics for date:', dateStr, 'Data:', metricsData);
+    
+    const { data, error } = await supabase
+      .from("daily_metrics")
+      .upsert(
+        { 
+          date: dateStr, 
+          ...metricsData 
+        }, 
+        { 
+          onConflict: "date"
+        }
+      )
+      .select();  // Chain select() to get the returned data
+
+    if (error) {
+      console.error("Error saving metrics:", error);
+    }
+    
+    console.log('Metrics saved successfully');
+    return data;
+  } catch (err) {
+    console.error('Error in saveMetricsForDay:', err);
+    throw err;
+  }
+}
+
+async function saveMetricsForDay(dayIndex: number) {
+  try {
+    const dateStr = weekDates[dayIndex].toISOString().split("T")[0];
+    const data: Record<string, number> = {};
+    
+    // Filter out null/undefined values
+    metrics.forEach(metric => {
+      if (metric.metricField && metric.values[dayIndex] !== null && metric.values[dayIndex] !== undefined) {
+        data[metric.metricField] = metric.values[dayIndex];
+      }
+    });
+
+    // Only save if we have data
+    if (Object.keys(data).length > 0) {
+      console.log('Saving day data:', dateStr, data);
+      await supabase
+  .from('daily_metrics')
+  .insert(data)
+  .select();
+    } else {
+      console.warn('No data to save for day:', dateStr);
+    }
+  } catch (err) {
+    console.error('Failed to save day:', dayIndex, err);
+  }
+}
+
+async function saveAllMetrics() {
+  try {
+    console.log('Starting saveAllMetrics...');
+    
+    for (let i = 0; i < weekDates.length; i++) {
+      await saveMetricsForDay(i);
+    }
+    
+    await tick();
+    await loadMetrics();
+    await loadPreviousWeekTotals();
+    
+    console.log('saveAllMetrics completed successfully');
+  } catch (err) {
+    console.error('Failed to save all metrics:', err);
+  }
+}
+
+function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
+  if (newValue === undefined) return;
   
-	async function saveMetricsForDay(dayIndex: number) {
-	  const dateStr = weekDates[dayIndex].toISOString().split("T")[0];
-	  const data: Record<string, number> = {};
-	  metrics.forEach(metric => {
-		if (metric.metricField !== null) {
-		  data[metric.metricField] = metric.values[dayIndex];
-		}
-	  });
-	  await saveMetricsForDate(dateStr, data);
-	}
+  console.log('Input changed:', { metricIndex, dayIndex, newValue });
   
-	async function saveAllMetrics() {
-	  for (let i = 0; i < weekDates.length; i++) {
-		await saveMetricsForDay(i);
-	  }
-	  await tick();
-	  await loadMetrics();
-	  await loadPreviousWeekTotals();
-	}
+  metrics = metrics.map((metric, idx) => {
+    if (idx === metricIndex) {
+      const newValues = [...metric.values];
+      newValues[dayIndex] = newValue;
+      return { ...metric, values: newValues };
+    }
+    return metric;
+  });
   
-	function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
-	  if (newValue === undefined) return;
-	  metrics = metrics.map((metric, idx) => {
-		if (idx === metricIndex) {
-		  const newValues = [...metric.values];
-		  newValues[dayIndex] = newValue;
-		  return { ...metric, values: newValues };
-		}
-		return metric;
-	  });
-	  saveMetricsForDay(dayIndex);
-	}
+  // Wrap in async function and add error handling
+  (async () => {
+    try {
+      await saveMetricsForDay(dayIndex);
+    } catch (err) {
+      console.error('Failed to save after input change:', err);
+    }
+  })();
+}
   
 	async function changeWeek(offset: number) {
   weekOffset += offset;
@@ -447,8 +503,13 @@ $: previousTotalsComputed = metrics.map((metric, idx) => {
   
   <!-- Chart Footer: Save All Changes button aligned right -->
   <div class="chart-footer">
-	<button on:click={saveAllMetrics}>Save All Changes</button>
-  </div>
+  <button 
+    on:click={saveAllMetrics} 
+    disabled={loading}
+  >
+    {loading ? 'Saving...' : 'Save All Changes'}
+  </button>
+</div>
   
   <!-- Metrics Side Panel Overlay -->
   {#if showMetricsPanel}
