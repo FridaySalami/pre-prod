@@ -5,6 +5,7 @@
   import { userSession } from '$lib/sessionStore';
   import { browser } from '$app/environment';
   import { supabase } from '$lib/supabaseClient';
+  import type { Session } from '@supabase/supabase-js';
 
   // Initialize session as undefined
   let session: any = undefined;
@@ -22,25 +23,34 @@
     unsubscribe();
   });
 
-  async function handleLogout(event: Event) {
-    event.preventDefault();
+  async function handleLogout(event: MouseEvent) {
+    console.log("Logout function triggered");
+    // Prevent default if it's an event with preventDefault
+    if (event && event.preventDefault) {
+      event.preventDefault();
+    }
+    
     loggingOut = true;
-    console.log("Logout clicked");
+    console.log("loggingOut state set to true");
 
     try {
-      // Sign out using Supabase.
+      console.log("Attempting to sign out with Supabase...");
       const { error } = await supabase.auth.signOut();
+      
       if (error) {
         console.error("Error signing out:", error);
         loggingOut = false;
         return;
       }
       
-      // Clear the session state
+      console.log("Successfully signed out from Supabase");
       userSession.set(null);
+      console.log("userSession store set to null");
       
-      // Wait one second to show the logout spinner, then force a full reload.
+      // Wait one second to show the logout spinner, then redirect
+      console.log("Setting timeout for redirect...");
       setTimeout(() => {
+        console.log("Redirecting to login page...");
         window.location.href = '/login';
       }, 1000);
     } catch (err) {
@@ -114,7 +124,10 @@
     </nav>
     {#if session}
       <div class="sidebar-logout">
-        <button on:click={handleLogout} type="button" class="logout-button">
+        <button 
+          on:click={handleLogout} 
+          type="button" 
+          class="logout-button">
           <i class="material-icons menu-icon">logout</i>
           <span class="label">Logout</span>
         </button>
