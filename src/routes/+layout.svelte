@@ -27,18 +27,26 @@
     loggingOut = true;
     console.log("Logout clicked");
 
-    // Sign out using Supabase.
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("Error signing out:", error);
+    try {
+      // Sign out using Supabase.
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Error signing out:", error);
+        loggingOut = false;
+        return;
+      }
+      
+      // Clear the session state
+      userSession.set(null);
+      
+      // Wait one second to show the logout spinner, then force a full reload.
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 1000);
+    } catch (err) {
+      console.error("Unexpected error during logout:", err);
       loggingOut = false;
-      return;
     }
-    
-    // Wait one second to show the logout spinner, then force a full reload.
-    setTimeout(() => {
-      window.location.href = '/login';
-    }, 1000);
   }
 </script>
 
