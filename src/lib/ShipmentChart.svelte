@@ -565,109 +565,122 @@ function handleInputChange(metricIndex: number, dayIndex: number, newValue?: num
   
   <style>
 	.week-navigation {
-	  display: flex;
-	  justify-content: flex-start;
-	  align-items: center;
-	  padding: 16px 24px;
-	  gap: 16px;
-	}
-	table {
-  table-layout: fixed; /* Forces fixed layout */
-  width: 100%;         /* Ensure table spans available width */
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 8px 24px;
+  gap: 16px;
+  margin-bottom: 4px; /* Reduce space between navigation and card */
+}
+
+.week-navigation button {
+  background: transparent;
+  border: none;
+  color: #004225;
+  font-weight: 500; /* Apple uses medium weight instead of bold */
+  cursor: pointer;
+  font-size: 0.95em;
+  transition: all 0.2s ease;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.week-navigation button:hover {
+  color: #35b07b;
+  background-color: rgba(53, 176, 123, 0.1); /* Subtle background on hover */
+}
+
+.week-range {
+  font-size: 0.95em;
+  font-weight: 500;
+  color: #1f2937; /* Darker text for better contrast */
+}
+
+.card {
+  background-color: #fff;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px; /* Apple uses more rounded corners */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.08); /* More subtle, layered shadow */
+  margin: 8px 24px; /* Further reduced top margin */
+  overflow: hidden;
+}
+
+/* Table styling */
+table {
+  table-layout: fixed;
+  width: 100%;
+  border-spacing: 0;
+  font-size: 0.9em; /* Slightly smaller text */
 }
 
 table th,
 table td {
-  width: 80px;         /* All cells get a fixed width (adjust as needed) */
+  width: 80px;
   box-sizing: border-box;
+  padding: 10px 12px; /* Consistent padding */
 }
 
-/* If you want a wider first column (e.g. for metric names) */
-.metric-name-header {
-  width: 200px;
+/* Make the metric name column wider */
+.metric-name-header, 
+table th:first-child, 
+table td:first-child {
+  width: 180px; /* Increased from 80px to 180px */
+  min-width: 180px;
+  text-align: left;
 }
-	.week-navigation button {
-	  background: transparent;
-	  border: none;
-	  color: #004225;
-	  font-weight: bold;
-	  cursor: pointer;
-	  font-size: 1em;
-	  transition: color 0.2s ease;
-	}
-	.week-navigation button:hover {
-	  color: #35b07b;
-	}
-	.week-range {
-	  font-size: 1em;
-	  font-weight: 500;
-	}
-	.card {
-	  background-color: #fff;
-	  border: 1px solid #E5E7EB;
-	  border-radius: 6px;
-	  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-	  margin: 24px;
-	  overflow: hidden;
-	}
-	.dashboard-container {
-	  width: 100%;
-	  overflow-x: auto;
-	}
-	.metric-name-header {
-	  width: 200px;
-	  font-size: 0.8em;
-	  text-align: left;
-	  padding-left: 24px;
-	}
-	.small-header {
-	  width: 100px;
-	}
-	.table-header {
-	  background: linear-gradient(180deg, #f5f7fa, #eaeef3);
-	}
-	.sub-header {
-	  background-color: #f9fafb;
-	  font-size: 0.71em;
-	  color: #555;
-	}
-	.section-header td {
-	  font-weight: bold;
-	  background-color: #e0f7ea;
-	  text-align: left;
-	  padding: 8px 16px;
-	  border: 1px solid #E5E7EB;
-	}
-	.spacer-row td {
-	  padding: 4px;
-	  background-color: #fff;
-	}
-	.chart-footer {
-	  display: flex;
-	  justify-content: flex-end;
-	  padding: 8px 24px;
-	}
-	.chart-footer button {
-	  background: #004225;
-	  color: #fff;
-	  border: none;
-	  padding: 8px 12px;
-	  font-size: 1em;
-	  font-weight: bold;
-	  cursor: pointer;
-	  border-radius: 4px;
-	  transition: background 0.2s ease;
-	}
-	.chart-footer button:hover {
-	  background: #35b07b;
-	}
-	.overlay {
-	  position: fixed;
-	  top: 0;
-	  left: 0;
-	  width: 100%;
-	  height: 100%;
-	  background: rgba(0, 0, 0, 0.4);
-	  z-index: 1090;
-	}
+
+.table-header {
+  background: #F9FAFB; /* Lighter, flatter header background */
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.sub-header {
+  background-color: #F9FAFB;
+  font-size: 0.75em;
+  color: #6B7280; /* Slightly darker for better readability */
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.section-header td {
+  font-weight: 500; /* Medium weight instead of bold */
+  background-color: #e6f7f0; /* Slightly lighter, more subdued green */
+  text-align: left;
+  padding: 10px 16px;
+  border: 1px solid #E5E7EB;
+}
+
+.chart-footer button {
+  background: #004225;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  font-size: 0.9em;
+  font-weight: 500; /* Medium weight instead of bold */
+  cursor: pointer;
+  border-radius: 6px; /* More rounded corners */
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+}
+
+.chart-footer button:hover {
+  background: #006339; /* Slightly darker on hover for depth */
+  transform: translateY(-1px); /* Subtle lift effect */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.chart-footer button:active {
+  transform: translateY(0); /* Press effect */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Add subtle hover effect to table rows */
+tbody tr:not(.section-header):not(.spacer-row):hover {
+  background-color: #f9fafb;
+}
+
+/* For the current day highlight */
+.current-day {
+  background-color: rgba(53, 176, 123, 0.1);
+  font-weight: 500;
+}
   </style>

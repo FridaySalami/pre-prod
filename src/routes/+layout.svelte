@@ -251,9 +251,9 @@
   /* Main Content */
   .site-main {
     flex: 1;
-    margin-left: 60px;
-    padding: 24px;
-    padding-top: 90px;
+    margin-left: 40px;
+    padding: 14px;
+    padding-top: 10px;
     background-color: #F9FAFB;
     transition: margin-left 0.3s ease;
   }
