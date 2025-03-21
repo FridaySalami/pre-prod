@@ -35,7 +35,6 @@
   // Callback functions:
   export let handleInputChange: (metricIndex: number, dayIndex: number, newValue?: number) => void;
   export let openNotes: (metricIndex: number, dayIndex: number) => void;
-  // Removed computeWeeklyTotal from exports because it's unused.
 
   function getCalculationExplanation(): string {
     if (metricIndex === 2) {
@@ -49,7 +48,7 @@
   }
 </script>
 
-<tr>
+<tr class="metric-row">
   <td class="metric-name">
     {name}
     {#if metricField === null}
@@ -65,66 +64,73 @@
   {#each values as value, dayIndex}
     <td class:current-day={isCurrentWeek && dayIndex === currentDayIndex}>
       {#if metricField !== null}
-        <input
-          type="number"
-          bind:value={values[dayIndex]}
-          on:blur={() => handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
-          on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
-          class="cell-value"
-        />
+        <div class="input-container">
+          <input
+            type="number"
+            bind:value={values[dayIndex]}
+            on:blur={() => handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
+            on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
+            class="cell-value"
+          />
+          <!-- Add flag button -->
+        </div>
       {:else}
-        <span
-          role="button"
-          tabindex="0"
-          class="cell-value computed-cell"
-          on:click={() => openNotes(metricIndex, dayIndex)}
-          on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, dayIndex); } }}
-        >
-          {value}
-          {#if notesMap[`${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`]}
-            <div class="note-indicator" role="presentation"></div>
-          {/if}
-        </span>
+        <div class="value-container">
+          <span
+            role="button"
+            tabindex="0"
+            class="cell-value computed-cell"
+            on:click={() => openNotes(metricIndex, dayIndex)}
+            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, dayIndex); } }}
+          >
+            {value}
+            {#if notesMap[`${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`]}
+              <div class="note-indicator" role="presentation"></div>
+            {/if}
+          </span>
+          <!-- Add flag button -->
+        </div>
       {/if}
     </td>
   {/each}
 
-<!-- Current Week Total cell -->
-<td class="totals-cell">
-  <span
-    role="button"
-    tabindex="0"
-    on:click={() => openNotes(metricIndex, -1)}
-    on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, -1); } }}
-  >
-    <strong>{currentTotal}</strong>
-    {#if notesMap[`${metricIndex}-total`]}
-      <div class="note-indicator" role="presentation"></div>
-    {/if}
-  </span>
-</td>
+  <!-- Current Week Total cell -->
+  <td class="totals-cell">
+    <span
+      role="button"
+      tabindex="0"
+      on:click={() => openNotes(metricIndex, -1)}
+      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, -1); } }}
+    >
+      <strong>{currentTotal}</strong>
+      {#if notesMap[`${metricIndex}-total`]}
+        <div class="note-indicator" role="presentation"></div>
+      {/if}
+    </span>
+  </td>
 
-<!-- By This Time Last Week cell -->
-<td class="totals-cell">
-  <em>{byThisTimeLastWeek}</em>
-</td>
+  <!-- By This Time Last Week cell -->
+  <td class="totals-cell">
+    <em>{byThisTimeLastWeek}</em>
+  </td>
 
-<!-- WoW % Change cell -->
-<td class="totals-cell" style="color: {getWowColor(wowChange)};">
-  <em class="wow-change">{wowChange}</em>
-</td>
+  <!-- WoW % Change cell -->
+  <td class="totals-cell" style="color: {getWowColor(wowChange)};">
+    <em class="wow-change">{wowChange}</em>
+  </td>
 
-<!-- Previous Week Total cell -->
-<td class="totals-cell prev-week-col">
-  <em>{previousTotal}</em>
-</td>
+  <!-- Previous Week Total cell -->
+  <td class="totals-cell prev-week-col">
+    <em>{previousTotal}</em>
+  </td>
 </tr>
+
 <style>
   .metric-name {
-    width: 200px;
+    width: 160px; /* Reduced from 200px */
     font-size: 0.8em;
     text-align: left;
-    padding-left: 24px;
+    padding-left: 16px; /* Reduced from 24px */
   }
   .calc-info-container {
     position: relative;
@@ -165,8 +171,8 @@
   .cell-value {
     display: block;
     margin: 0 auto;
-    width: 80px;
-    padding: 8px;
+    width: 60px; /* Reduced from 80px */
+    padding: 6px; /* Reduced from 8px */
     text-align: center;
     font-size: 0.95em;
     border: 1px solid #E5E7EB;
@@ -177,8 +183,8 @@
   input.cell-value {
     display: block;
     margin: 0 auto;
-    width: 80px;
-    padding: 8px;
+    width: 60px; /* Reduced from 80px */
+    padding: 6px; /* Reduced from 8px */
     border: 1px solid #E5E7EB;
     border-radius: 6px;
     font-size: 0.95em;
@@ -192,8 +198,8 @@
   .computed-cell {
     display: block;
     margin: 0 auto;
-    width: 80px;
-    padding: 8px;
+    width: 60px; /* Reduced from 80px */
+    padding: 6px; /* Reduced from 8px */
     text-align: center;
     background-color: #F5F7FA;
     cursor: pointer;
@@ -217,11 +223,51 @@
     background-color: rgba(0, 66, 37, 0.05);
   }
   td {
-  border: 0.5px solid #ddd; /* Light border for all cells */
-}
+    border: 0.5px solid #ddd; /* Light border for all cells */
+    padding: 8px 10px; /* Reduced from 10px 12px */
+  }
 
-/* Center the content of totals cells */
-.totals-cell {
-  text-align: center;
-}
+  /* Center the content of totals cells */
+  .totals-cell {
+    text-align: center;
+  }
+
+  .metric-row {
+    border-bottom: 1px solid #E5E7EB;
+  }
+  
+  .metric-row:hover {
+    background-color: #F9FAFB;
+  }
+  
+  td {
+    padding: 8px 10px; /* Reduced from 10px 12px */
+    text-align: center;
+    font-size: 0.9em;
+  }
+  
+  td:first-child {
+    text-align: left;
+    font-weight: 500;
+  }
+  
+  .input-container, .value-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  
+  input {
+    width: 45px; /* Reduced from 50px */
+    text-align: center;
+    border: 1px solid #E5E7EB;
+    border-radius: 4px;
+    padding: 4px;
+  }
+  
+  .current-day {
+    background-color: rgba(53, 176, 123, 0.1);
+  }
+  
 </style>
