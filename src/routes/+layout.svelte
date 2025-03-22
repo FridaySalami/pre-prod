@@ -4,17 +4,47 @@
 
 <script lang="ts">
   import "../global.css";
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { userSession } from '$lib/sessionStore';
   import { browser } from '$app/environment';
   import { supabase } from '$lib/supabaseClient';
   import type { Session } from '@supabase/supabase-js';
+  import { toastStore } from '$lib/toastStore';
 
   // Initialize session as undefined
   let session: any = undefined;
   let loggingOut = false;
   
+  // Toast notification system
+  let toastVisible = false;
+  let toastMessage = "";
+  let toastType = "info"; // Can be: info, success, warning, error
+  let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+  
+  // Function to show toast
+  function showToast(message: string, type: string = "info", duration: number = 5000) {
+    // Clear any existing timeout
+    if (toastTimeout) clearTimeout(toastTimeout);
+    
+    // Set toast properties
+    toastMessage = message;
+    toastType = type;
+    toastVisible = true;
+    
+    // Auto-hide after duration
+    toastTimeout = setTimeout(() => {
+      toastVisible = false;
+    }, duration);
+  }
+
+  // Subscribe to the toast store
+  toastStore.subscribe(toast => {
+    toastVisible = toast.show;
+    toastMessage = toast.message;
+    toastType = toast.type;
+  });
+
   const unsubscribe = userSession.subscribe((s) => {
     console.log("Session subscription triggered with:", s);
     
@@ -115,6 +145,7 @@
       loggingOut = false;
     }
   }
+
 </script>
 
 <div class="app-container">
@@ -198,6 +229,7 @@
       </div>
     </header>
 
+    <!-- Add below header -->
     <main class="site-main">
       <slot />
     </main>
@@ -205,6 +237,16 @@
     <footer class="site-footer">
       <p>Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a></p>
     </footer>
+  </div>
+
+  <!-- Add Toast Container Here -->
+  <div id="toast-container" class:visible={toastVisible}>
+    <div class="toast {toastType}">
+      <span>{toastMessage}</span>
+      <button on:click={() => toastVisible = false}>
+        <i class="material-icons-outlined">close</i>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -370,10 +412,10 @@
     background-color: rgba(53, 176, 123, 0.1); /* More subtle hover color */
   }
   
- /* .sidebar nav ul li a.active {
-    border-left-color: #35b07b; Add indicator for active page 
-    background-color: rgba(53, 176, 123, 0.05);
-  }*/
+  .sidebar nav ul li a.active {
+    border-left-color: #004225;
+    background-color: rgba(0, 66, 37, 0.05);
+  }
   
   .menu-icon {
     font-size: 22px; /* Slightly smaller */
@@ -551,5 +593,66 @@
   /* Only show scrollbar on hover */
   .sidebar:not(:hover) nav::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Toast notification system */
+  #toast-container {
+    position: fixed;
+    bottom: 50px;
+    right: 20px;
+    z-index: 1500;
+    max-width: 400px;
+    min-width: 300px;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease;
+    pointer-events: none;
+  }
+
+  #toast-container.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+  }
+
+  .toast {
+    background-color: white;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.9em;
+    border-left: 4px solid #3B82F6; /* Default blue for info */
+  }
+
+  .toast.success {
+    border-left-color: #10B981; /* Green for success */
+  }
+
+  .toast.warning {
+    border-left-color: #F59E0B; /* Yellow for warning */
+  }
+
+  .toast.error {
+    border-left-color: #EF4444; /* Red for error */
+  }
+
+  .toast button {
+    background: transparent;
+    border: none;
+    color: #6B7280;
+    cursor: pointer;
+    padding: 4px;
+    margin-left: 16px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .toast button:hover {
+    background-color: #F3F4F6;
   }
 </style>
