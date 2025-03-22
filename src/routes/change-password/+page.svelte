@@ -33,17 +33,23 @@
   // Check if any field has an error
   $: hasErrors = Object.values(passwordErrors).some(error => error !== '');
   
+  function setRequirementMet(id: string, isMet: boolean): void {
+    const requirement = requirements.find(r => r.id === id);
+    if (requirement) {
+      requirement.met = isMet;
+    }
+  }
+
   // Check password strength in real-time
   $: {
     // Reset requirements
     requirements.forEach(req => req.met = false);
     
-    // Check if requirements are met
-    if (newPassword.length >= 8) requirements.find(r => r.id === 'length').met = true;
-    if (/[A-Z]/.test(newPassword)) requirements.find(r => r.id === 'uppercase').met = true;
-    if (/[a-z]/.test(newPassword)) requirements.find(r => r.id === 'lowercase').met = true;
-    if (/[0-9]/.test(newPassword)) requirements.find(r => r.id === 'number').met = true;
-    if (/[^A-Za-z0-9]/.test(newPassword)) requirements.find(r => r.id === 'special').met = true;
+    setRequirementMet('length', newPassword.length >= 8);
+    setRequirementMet('uppercase', /[A-Z]/.test(newPassword));
+    setRequirementMet('lowercase', /[a-z]/.test(newPassword));
+    setRequirementMet('number', /[0-9]/.test(newPassword));
+    setRequirementMet('special', /[^A-Za-z0-9]/.test(newPassword));
     
     // Calculate strength based on requirements met
     passwordStrength = requirements.filter(r => r.met).length;
