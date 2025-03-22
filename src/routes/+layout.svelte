@@ -1,3 +1,7 @@
+<svelte:head>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Icons+Outlined" rel="stylesheet">
+</svelte:head>
+
 <script lang="ts">
   import "../global.css";
   import { onDestroy } from 'svelte';
@@ -123,42 +127,42 @@
         <!-- Dashboard Link -->
         <li>
           <a href="/dashboard">
-            <i class="material-icons menu-icon">dashboard</i>
+            <i class="material-icons-outlined menu-icon">dashboard</i>
             <span class="label">Dashboard</span>
           </a>
         </li>
         <!-- Kaizen Projects Link -->
         <li>
           <a href="/kaizen-projects">
-            <i class="material-icons menu-icon">assignment</i>
+            <i class="material-icons-outlined menu-icon">assignment</i>
             <span class="label">Kaizen Projects</span>
           </a>
         </li>
         <!-- Reports Link -->
         <li>
           <a href="/reports">
-            <i class="material-icons menu-icon">bar_chart</i>
+            <i class="material-icons-outlined menu-icon">bar_chart</i>
             <span class="label">Reports</span>
           </a>
         </li>
         <!-- Analytics Link -->
         <li>
           <a href="/analytics">
-            <i class="material-icons menu-icon">analytics</i>
+            <i class="material-icons-outlined menu-icon">analytics</i>
             <span class="label">Analytics</span>
           </a>
         </li>
         <!-- Settings Link -->
         <li>
           <a href="/settings">
-            <i class="material-icons menu-icon">settings</i>
+            <i class="material-icons-outlined menu-icon">settings</i>
             <span class="label">Settings</span>
           </a>
         </li>
         <!-- Help Link -->
         <li>
           <a href="/help">
-            <i class="material-icons menu-icon">help_outline</i>
+            <i class="material-icons-outlined menu-icon">help_outline</i>
             <span class="label">Help</span>
           </a>
         </li>
@@ -170,7 +174,7 @@
           on:click={handleLogout} 
           type="button" 
           class="logout-button">
-          <i class="material-icons menu-icon">logout</i>
+          <i class="material-icons-outlined menu-icon">logout</i>
           <span class="label">Logout</span>
         </button>
       </div>
@@ -180,13 +184,16 @@
   <div class="content-wrapper">
     <header class="site-header">
       <div class="header-left">
-        <h1>Parkers Foodservice Operational Dashboard</h1>
+        <h1>Parkers Foodservice</h1>
+        <div class="header-divider"></div>
+        <span class="header-subtitle">Operations Dashboard</span>
       </div>
       <div class="header-right">
         {#if session}
-          <span class="user-info">
-            Logged in as <em>{session.user.email}</em>
-          </span>
+          <div class="user-badge">
+            <i class="material-icons-outlined user-icon">account_circle</i>
+            <span class="user-email">{session.user.email}</span>
+          </div>
         {/if}
       </div>
     </header>
@@ -223,45 +230,77 @@
   
   /* Header with gradient background */
   .site-header {
-    background: linear-gradient(90deg, #004225 0%, #006644 100%);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.06);
-    padding: 16px 24px;
+    background-color: white;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    padding: 0 24px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid rgba(0,0,0,0.1);
-    height: 64px; /* Slightly reduced from 70px */
-    color: #fff;
+    border-bottom: 1px solid #E5E7EB;
+    height: 64px;
+    color: #1F2937;
     position: sticky;
     top: 0;
     z-index: 999;
-    width: 100%; /* Make sure it extends full width */
+    width: 100%;
+  }
+  
+  .header-left {
+    display: flex;
+    align-items: center;
   }
   
   .header-left h1 {
     margin: 0;
-    font-size: 1.5em; /* Slightly smaller */
-    font-weight: 500; /* Medium weight instead of bold */
-    color: #fff;
-    letter-spacing: -0.02em; /* Apple-like letter spacing */
+    font-size: 1.25em;
+    font-weight: 600;
+    color: #004225;
+    letter-spacing: -0.01em;
   }
   
-  .header-right .user-info {
+  .header-divider {
+    height: 24px;
+    width: 1px;
+    background-color: #E5E7EB;
+    margin: 0 16px;
+  }
+  
+  .header-subtitle {
+    color: #6B7280;
+    font-size: 1.1em;
+    font-weight: 400;
+  }
+  
+  .user-badge {
+    display: flex;
+    align-items: center;
+    background-color: #F3F4F6;
+    padding: 8px 16px;
+    border-radius: 24px;
+    gap: 8px;
+  }
+  
+  .user-icon {
+    color: #4B5563;
+    font-size: 20px;
+  }
+  
+  .user-email {
     font-size: 0.85em;
-    font-style: normal; /* Apple typically doesn't use italics for UI */
-    color: rgba(255, 255, 255, 0.9);
+    color: #4B5563;
+    font-weight: 500;
   }
-  
+    
   /* Collapsible Sidebar */
   .sidebar {
     position: fixed;
     top: 0;
     bottom: 0;
     left: 0;
-    width: 64px; /* Slightly increased from 60px */
+    width: 64px;
     background-color: #fff;
     border-right: 1px solid #E5E7EB;
-    overflow: hidden;
+    /* Remove overflow: hidden; which is causing issues */
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Apple-like easing */
     z-index: 1000;
     display: flex;
@@ -284,19 +323,26 @@
   .app-icon {
     width: 32px;
     height: 32px;
-    background: linear-gradient(90deg, #004225 0%, #006644 100%);
+    background-color: #004225; /* Flat color instead of gradient */
     color: white;
-    border-radius: 8px;
+    border-radius: 10px; /* Slightly more rounded */
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 500;
+    font-weight: 600; /* Slightly bolder */
     font-size: 18px;
+    letter-spacing: 0.02em; /* Subtle letter spacing */
+    box-shadow: 0 2px 4px rgba(0, 66, 37, 0.2); /* Subtle shadow */
   }
 
   .sidebar nav {
     flex: 1;
-    overflow-y: auto;
+    /* Change from overflow-y: auto to overflow: hidden when collapsed */
+    overflow: hidden;
+  }
+  
+  .sidebar:hover nav {
+    overflow-y: auto; /* Show scrollbar only when needed and hovered */
   }
   
   .sidebar nav ul {
@@ -330,9 +376,9 @@
   }*/
   
   .menu-icon {
-    font-size: 24px; /* Reduced from 32px */
+    font-size: 22px; /* Slightly smaller */
     margin-right: 12px;
-    color: #4B5563; /* Subtle gray for icons */
+    color: #6B7280; /* Lighter gray for inactive */
     flex-shrink: 0;
   }
   
@@ -486,5 +532,24 @@
     flex-direction: column;
     min-height: 100vh;
     width: calc(100% - 64px); /* Ensure it takes up the remaining width */
+  }
+
+  /* Add these style tweaks to hide scrollbar when not needed */
+  .sidebar nav::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .sidebar nav::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar nav::-webkit-scrollbar-thumb {
+    background-color: rgba(107, 114, 128, 0.3);
+    border-radius: 4px;
+  }
+
+  /* Only show scrollbar on hover */
+  .sidebar:not(:hover) nav::-webkit-scrollbar {
+    display: none;
   }
 </style>

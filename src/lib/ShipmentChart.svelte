@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { supabase } from "./supabaseClient";
+  import ExportCsv from "$lib/ExportCsv.svelte";
   import { getMonday, formatNumber, getWeekNumber, isToday } from "./utils";
   import MetricRow from "./MetricRow.svelte";
   import { testDirectInsert } from '$lib/notesService';
@@ -65,8 +66,8 @@
     { name: "1.1 Shipments Packed", values: new Array(daysCount).fill(0), metricField: "shipments" },
     { name: "1.2 Hours Worked", values: new Array(daysCount).fill(0), metricField: "hours_worked" },
     { name: "1.3 Shipments Per Hour", values: new Array(daysCount).fill(0), metricField: null },
-    { name: "1.4 Defects", values: new Array(daysCount).fill(0), metricField: "defects" },
-    { name: "1.5 Defects DPMO", values: new Array(daysCount).fill(0), metricField: null },
+    { name: "1.4 Packing Errors", values: new Array(daysCount).fill(0), metricField: "defects" },
+    { name: "1.5 Packing Errors DPMO", values: new Array(daysCount).fill(0), metricField: null },
     { name: "1.6 Order Accuracy (%)", values: new Array(daysCount).fill(0), metricField: null }
   ];
 
@@ -127,15 +128,15 @@
       return weekDates.map((_, i) =>
         hours[i] > 0 ? Math.round((shipments[i] / hours[i]) * 100) / 100 : 0
       );
-    } else if (metric.name === "1.5 Defects DPMO") {
+    } else if (metric.name === "1.5 Packing Errors DPMO") { // Updated name
       const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
-      const defects = metrics.find(m => m.name === "1.4 Defects")?.values ?? new Array(daysCount).fill(0);
+      const defects = metrics.find(m => m.name === "1.4 Packing Errors")?.values ?? new Array(daysCount).fill(0); // Updated name
       return weekDates.map((_, i) =>
         shipments[i] > 0 ? Math.round((defects[i] / shipments[i]) * 1000000) : 0
       );
     } else if (metric.name === "1.6 Order Accuracy (%)") {
       const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
-      const defects = metrics.find(m => m.name === "1.4 Defects")?.values ?? new Array(daysCount).fill(0);
+      const defects = metrics.find(m => m.name === "1.4 Packing Errors")?.values ?? new Array(daysCount).fill(0); // Updated name
       return weekDates.map((_, i) =>
         shipments[i] > 0 ? Math.round(((shipments[i] - defects[i]) / shipments[i]) * 10000) / 100 : 0
       );
@@ -154,7 +155,7 @@
       // For computed metrics, compute an average instead of summing.
       if (metric.name === "1.3 Shipments Per Hour") {
         return computeMetricAverage(currentSlice, weekDates.slice(0, end + 1), { ignoreZeros: true, excludeSundays: true });
-      } else if (metric.name === "1.5 Defects DPMO" || metric.name === "1.6 Order Accuracy (%)") {
+      } else if (metric.name === "1.5 Packing Errors DPMO" || metric.name === "1.6 Order Accuracy (%)") { // FIXED NAME
         return computeMetricAverage(currentSlice, weekDates.slice(0, end + 1), { ignoreZeros: false, excludeSundays: true });
       } else {
         return 0;
@@ -432,17 +433,45 @@
   let activeNoteId: string | null = null;
   let activeMetricId: string | null = null;
   let activeDayId: string | null = null;
+
+  $: exportMetrics = metrics.map((metric, idx) => {
+    if (metric.isHeader || metric.isSpacer) {
+      return metric;
+    } else if (metric.metricField === null) {
+      // For computed metrics, replace values with the computed values
+      return {
+        ...metric,
+        values: computedMetrics[idx] || metric.values
+      };
+    } else {
+      return metric;
+    }
+  });
 </script>
 
-<!-- Week Navigation (aligned left) -->
-<div class="week-navigation">
-  <button on:click={() => changeWeek(-1)}>Previous Week</button>
-  <span class="week-range">
-    {#if weekDates.length === daysCount}
-      {weekDates[0].toLocaleDateString()} - {weekDates[daysCount - 1].toLocaleDateString()}
-    {/if}
-  </span>
-  <button on:click={() => changeWeek(1)}>Next Week</button>
+<!-- Week Navigation (aligned left) with Export button (aligned right) -->
+<div class="dashboard-header">
+  <div class="week-navigation">
+    <button on:click={() => changeWeek(-1)}>Previous Week</button>
+    <span class="week-range">
+      {#if weekDates.length === daysCount}
+        {weekDates[0].toLocaleDateString()} - {weekDates[daysCount - 1].toLocaleDateString()}
+      {/if}
+    </span>
+    <button on:click={() => changeWeek(1)}>Next Week</button>
+  </div>
+  
+  <div class="export-container">
+    <ExportCsv 
+      metrics={exportMetrics}
+      {weekDates}
+      currentTotals={currentTotals}
+      previousTotals={previousTotalsComputed}
+      weekNumber={getWeekNumber(displayedMonday)}
+      fileName="metrics_dashboard"
+      {computedMetrics}
+    />
+  </div>
 </div>
 
 <!-- Card Container for Dashboard Table -->
@@ -454,7 +483,7 @@
           <th class="metric-name-header">Week {getWeekNumber(displayedMonday)}</th>
           {#each weekDates as date, i}
             <th class="small-header" class:current-day={isCurrentWeek && i === currentDayIndex}>
-              {date.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
+              {date.toLocaleDateString(undefined, { weekday: "long" })}
             </th>
           {/each}
           <th>Current Week Total</th>
@@ -466,7 +495,7 @@
           <th></th>
           {#each weekDates as date, i}
             <th class:current-day={isCurrentWeek && i === currentDayIndex}>
-              {date.toLocaleDateString(undefined, { weekday: "long" })}
+              {date.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
             </th>
           {/each}
           <th></th>
@@ -499,8 +528,8 @@
                   currentTotals[metricIndex],
                   isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex],
                   metric.name === "1.2 Hours Worked" ||
-                  metric.name === "1.4 Defects" ||
-                  metric.name === "1.5 Defects DPMO"
+                  metric.name === "1.4 Packing Errors" || // Updated name
+                  metric.name === "1.5 Packing Errors DPMO" // Updated name
                 )
               }
               handleInputChange={handleInputChange}
@@ -528,14 +557,27 @@
 </div>
 
 <style>
-  .week-navigation {
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-    padding: 8px 24px;
-    gap: 16px;
-    margin-bottom: 4px; /* Reduce space between navigation and card */
-  }
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 24px;
+  margin-bottom: 0;
+}
+
+.export-container {
+  display: flex;
+  align-items: center;
+}
+
+.week-navigation {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 0; /* Remove bottom margin since it's in the dashboard header now */
+  padding: 0; /* Remove padding since it's in the dashboard header now */
+}
 
   .week-navigation button {
     background: transparent;
@@ -598,11 +640,20 @@
     border-bottom: 1px solid #E5E7EB;
   }
 
+  .table-header th {
+    font-weight: 500; /* Medium weight for the main header */
+  }
+
   .sub-header {
     background-color: #F9FAFB;
     font-size: 0.75em;
     color: #6B7280; /* Slightly darker for better readability */
     border-bottom: 1px solid #E5E7EB;
+  }
+
+  .sub-header th {
+    font-weight: 400; /* Lighter weight for the subheader */
+    padding-top: 4px; /* Less padding on top since it follows the main day name */
   }
 
   .section-header td {
