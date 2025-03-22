@@ -53,6 +53,17 @@
     const normalized = category.toLowerCase();
     return categoryColors[normalized] || "#f0f0f0";
   }
+  
+  // Format the date nicely for display
+  function formatDate(dateString: string): string {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  }
 </script>
 
 <div
@@ -74,6 +85,7 @@
   <p class="category">{project.category}</p>
   {#if expanded}
     <p class="submitted">By: {project.submitted_by}</p>
+    <p class="created-date">Created: {formatDate(project.created_at)}</p>
     <p class="brief">{project.brief_description}</p>
   {/if}
   {#if project.thumbs_up_count}
@@ -149,11 +161,17 @@
   }
 
   .submitted,
+  .created-date,
   .brief {
     font-size: 0.75em;
     margin: 4px 0;
     line-height: 1.4;
     color: #4B5563;
+  }
+  
+  .created-date {
+    font-style: italic;
+    color: #6B7280; /* Slightly lighter than other text */
   }
 
   .reactions {

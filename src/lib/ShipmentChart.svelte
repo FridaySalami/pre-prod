@@ -722,4 +722,19 @@
     font-weight: 500;
   }
   
+@media (max-width: 768px) {
+  .dashboard-container {
+    overflow-x: auto;
+  }
+  
+  table th, table td {
+    width: 60px;
+    padding: 6px 8px;
+  }
+  
+  .metric-name-header, table th:first-child, table td:first-child {
+    width: 140px;
+    min-width: 140px;
+  }
+}
 </style>
