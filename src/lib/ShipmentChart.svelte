@@ -5,6 +5,7 @@
   import { getMonday, formatNumber, getWeekNumber, isToday } from "./utils";
   import MetricRow from "./MetricRow.svelte";
   import { testDirectInsert } from '$lib/notesService';
+  import { showToast } from '$lib/toastStore'; // Add this import
 
   // Updated ExtendedMetric with required properties.
   interface ExtendedMetric {
@@ -328,8 +329,12 @@
 
         if (error) {
           console.error('Error saving metrics:', error);
+          showToast(`Failed to save data for ${dateStr}: ${error.message}`, 'error');
           throw error;
         }
+        
+        // Only show toast for single day saves (not during bulk save)
+        showToast(`Metrics for ${new Date(dateStr).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} updated`, 'success', 3000);
       } else {
         console.warn('No data to save for day:', dateStr);
       }
@@ -341,6 +346,7 @@
 
   async function saveAllMetrics() {
     try {
+      loading = true;
       console.log('Starting saveAllMetrics...');
       
       for (let i = 0; i < weekDates.length; i++) {
@@ -352,8 +358,12 @@
       await loadPreviousWeekTotals();
       
       console.log('saveAllMetrics completed successfully');
+      showToast('All metrics saved successfully', 'success');
+      loading = false;
     } catch (err) {
       console.error('Failed to save all metrics:', err);
+      showToast('Failed to save all metrics', 'error');
+      loading = false;
     }
   }
 
@@ -361,6 +371,10 @@
     if (newValue === undefined) return;
     
     console.log('Input changed:', { metricIndex, dayIndex, newValue });
+    
+    // Get metric name for better toast message
+    const metricName = metrics[metricIndex]?.name || '';
+    const dayDate = weekDates[dayIndex].toLocaleDateString(undefined, {weekday: 'long'});
     
     metrics = metrics.map((metric, idx) => {
       if (idx === metricIndex) {
@@ -375,8 +389,10 @@
     (async () => {
       try {
         await saveMetricsForDay(dayIndex);
+        // No need for additional toast here as saveMetricsForDay already shows one
       } catch (err) {
         console.error('Failed to save after input change:', err);
+        showToast(`Failed to update ${metricName} for ${dayDate}`, 'error');
       }
     })();
   }
