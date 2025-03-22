@@ -74,6 +74,26 @@
     </section>
 
     <section class="release-section">
+      <h2>Schedule Management</h2>
+      <ul class="feature-list">
+        <li>Created interactive employee scheduling system with monthly calendar view</li>
+        <li>Implemented weekly recurring schedule patterns with intuitive checkbox interface</li>
+        <li>Added role-based visual organization with color coding for different positions</li>
+        <li>Developed employee management system with add/remove functionality</li>
+        <li>Integrated real-time data persistence via Supabase database</li>
+        <li>Implemented dynamic employee count indicators showing staffing levels for each day</li>
+        <li>Created responsive, mobile-friendly calendar design that adapts to screen size</li>
+        <li>Added month navigation for easy historical and future schedule viewing</li>
+        <li>Implemented dual view system: Calendar View for visualization and Schedule Manager for pattern setup</li>
+        <li>Enhanced accessibility with proper ARIA attributes and keyboard navigation</li>
+        <li>Improved empty state handling with helpful prompts and clear user flow</li>
+        <li>Created role-based ordering on calendar to display employees by position hierarchy</li>
+        <li>Added error handling and loading states for smooth user experience</li>
+        <li>Secured route with proper authentication protection matching application standards</li>
+      </ul>
+    </section>
+
+    <section class="release-section">
       <h2>Performance & Security</h2>
       <ul class="feature-list">
         <li>Optimized database queries for faster dashboard loading</li>

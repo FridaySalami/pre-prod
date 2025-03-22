@@ -191,6 +191,7 @@
             <span class="label">Dashboard</span>
           </a>
         </li>
+        
         <!-- Kaizen Projects Link -->
         <li>
           <a href="/kaizen-projects" class:active={currentPath && currentPath.includes('/kaizen-projects')}>
@@ -198,7 +199,16 @@
             <span class="label">Kaizen Projects</span>
           </a>
         </li>
-        <!-- Remove the other navigation items you wanted to remove -->
+        
+        <!-- Schedules Link -->
+        <li>
+          <a href="/schedules" class:active={currentPath && currentPath.includes('/schedules')}>
+            <i class="material-icons-outlined menu-icon">calendar_today</i>
+            <span class="label">Schedules</span>
+          </a>
+        </li>
+        
+        <!-- Any other navigation items -->
       </ul>
     </nav>
   </aside>
