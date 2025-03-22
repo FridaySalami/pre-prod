@@ -27,6 +27,13 @@
         <li>Implemented inversion logic in WoW calculation for metrics where a decrease is positive (e.g. Hours Worked and Defects), with corresponding color adjustments.</li>
         <li>Refactored data structures to enforce consistent type definitions (always-defined values and metricField), eliminating TypeScript errors.</li>
         <li>Enhanced week navigation logic to correctly reload previous week data when cycling between weeks.</li>
+        <!-- New additions based on recent changes -->
+        <li>Removed note and flag functionality to streamline the interface and reduce visual clutter.</li>
+        <li>Reduced cell sizes throughout the dashboard for a more compact and efficient layout.</li>
+        <li>Added CSV export functionality with comprehensive data including calculated metrics and totals.</li>
+        <li>Fixed naming consistency for metrics (Packing Errors instead of Defects) across all calculations.</li>
+        <li>Improved header display with weekday names appearing above date formats for better readability.</li>
+        <li>Enhanced tooltips for calculated fields showing the exact formula used for computation.</li>
       </ul>
     </section>
     
