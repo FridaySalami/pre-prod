@@ -164,47 +164,49 @@
     try {
       loading = true;
       
-      // Get employees from Supabase
-      const { data: empData, error: empError } = await supabase
-        .from('employees')
-        .select('*');
-      
-      if (empError) throw empError;
-      employees = empData || [];
-      
-      // Generate calendar days
+      // Generate calendar days first for immediate rendering
       calendarDays = generateCalendar(currentYear, currentMonth);
       
       // Get start and end dates for the current month view
       const startDate = formatApiDate(calendarDays[0].date);
       const endDate = formatApiDate(calendarDays[calendarDays.length - 1].date);
       
-      // Get specific schedule assignments for the date range
-      const { data: scheduleData, error: scheduleError } = await supabase
-        .from('schedules')
-        .select('*, employees(id, name, role)')
-        .gte('date', startDate)
-        .lte('date', endDate);
+      // Fetch essential data first
+      const employeesPromise = supabase.from('employees').select('*');
       
-      if (scheduleError) throw scheduleError;
+      // Get employees first and start rendering
+      const { data: empData, error: empError } = await employeesPromise;
       
-      // Transform specific schedule data
-      scheduleItems = scheduleData?.map(item => ({
+      if (empError) throw empError;
+      employees = empData || [];
+      
+      // Only after employees are loaded, get schedules and patterns
+      const [scheduleResult, patternResult] = await Promise.all([
+        supabase
+          .from('schedules')
+          .select('*')
+          .gte('date', startDate)
+          .lte('date', endDate),
+        
+        supabase
+          .from('employee_schedules')
+          .select('*')
+      ]);
+      
+      if (scheduleResult.error) throw scheduleResult.error;
+      if (patternResult.error) throw patternResult.error;
+      
+      // Transform data
+      scheduleItems = scheduleResult.data?.map(item => ({
         id: item.id,
         employeeId: item.employee_id,
         date: item.date,
         shift: item.shift
       })) || [];
       
-      // Get the weekly patterns for all employees
-      const { data: patternData, error: patternError } = await supabase
-        .from('employee_schedules')
-        .select('*');
+      const weeklyPatterns: WeeklyPattern[] = patternResult.data || [];
       
-      if (patternError) throw patternError;
-      
-      // Process weekly patterns and populate the calendar
-      const weeklyPatterns: WeeklyPattern[] = patternData || [];
+      // Populate calendar
       populateCalendar(weeklyPatterns);
       
     } catch (err) {
@@ -238,6 +240,9 @@
     // First, populate based on weekly patterns
     if (weeklyPatterns.length > 0) {
       for (const day of calendarDays) {
+        // Skip Sundays entirely
+        if (day.date.getDay() === 0) continue;
+        
         // Get day of week (0 = Monday, 6 = Sunday in our data model)
         let dayOfWeek = day.date.getDay() - 1;
         if (dayOfWeek < 0) dayOfWeek = 6; // Convert Sunday from 0 to 6
@@ -493,6 +498,39 @@
   function hideAddScheduleForm() {
     showAddForm = false;
   }
+
+  // Add these variables to track viewport
+  let visibleMonthStart = 0;
+  let visibleMonthEnd = 5; // Show all weeks initially
+  let calendarViewport: HTMLElement;
+  
+  onMount(() => {
+    // Check if IntersectionObserver is available for optimization
+    if ('IntersectionObserver' in window) {
+      const options = {
+        root: calendarViewport,
+        rootMargin: '0px',
+        threshold: 0.1
+      };
+      
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          const weekIndex = parseInt(entry.target.getAttribute('data-week-index') || '0');
+          
+          if (entry.isIntersecting) {
+            // Week is visible, ensure it's rendered
+            if (weekIndex < visibleMonthStart) visibleMonthStart = weekIndex;
+            if (weekIndex > visibleMonthEnd) visibleMonthEnd = weekIndex;
+          }
+        });
+      }, options);
+      
+      // Observe all week elements
+      document.querySelectorAll('.calendar-week').forEach(week => {
+        observer.observe(week);
+      });
+    }
+  });
 </script>
 
 {#if session === undefined || loading}
@@ -632,60 +670,60 @@
             {/each}
           </div>
           
-          <div class="calendar-grid">
-            {#each Array(6) as _, weekIndex}
-              <div class="calendar-week">
-                {#each Array(7) as _, dayIndex}
-                  {@const calendarIndex = weekIndex * 7 + dayIndex}
-                  {@const day = calendarDays[calendarIndex] || { date: new Date(), isCurrentMonth: false, employees: [] }}
-                  {@const isToday = day.date.toDateString() === new Date().toDateString()}
-                  
-                  <div 
-                    class="calendar-day {day.isCurrentMonth ? 'current-month' : 'other-month'} {isToday ? 'current-day' : ''}" 
-                    on:click={() => showAddScheduleForm(day.date)}
-                    on:keydown={e => e.key === 'Enter' && showAddScheduleForm(day.date)}
-                    role="button"
-                    tabindex="0"
-                  >
-                    <div class="day-header">
-                      <span class="day-date">
-                        {day.date.getDate()}
-                      </span>
-                      <span class="day-name">
-                        {day.date.toLocaleDateString('en-US', { weekday: 'short' })}
-                      </span>
-                    </div>
+          <!-- Updated calendar grid with virtual scrolling optimization -->
+          <div class="calendar-grid" bind:this={calendarViewport}>
+            {#each Array(6) as _, weekIndex (weekIndex)}
+              <div class="calendar-week" data-week-index={weekIndex}>
+                <!-- Only render when in or near viewport -->
+                {#if Math.abs(weekIndex - visibleMonthStart) <= 2 || Math.abs(weekIndex - visibleMonthEnd) <= 2}
+                  {#each Array(7) as _, dayIndex (weekIndex * 7 + dayIndex)}
+                    {@const calendarIndex = weekIndex * 7 + dayIndex}
+                    {@const day = calendarDays[calendarIndex] || { date: new Date(), isCurrentMonth: false, employees: [] }}
+                    {@const isToday = day.date.toDateString() === new Date().toDateString()}
+                    {@const isSunday = day.date.getDay() === 0}
                     
-                    <div class="day-content">
-                      {#if day.employees.length === 0}
-                        <div class="no-schedule">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <path d="M12 6v6l4 2"></path>
-                          </svg>
-                          <span>Available</span>
-                        </div>
-                      {:else}
-                        <ul class="employee-list">
-                          {#each day.employees as employee}
-                            <li class="employee {getRoleClass(employee.role)}">
-                              {employee.name}
-                              <!-- Role indicator instead of shift -->
-                              <span class="role-indicator" title="{employee.role}">{getRoleBadge(employee.role)}</span>
-                            </li>
-                          {/each}
-                        </ul>
+                    <div 
+                      class="calendar-day {day.isCurrentMonth ? 'current-month' : 'other-month'} {isToday ? 'current-day' : ''} {isSunday ? 'closed-day' : ''}"
+                      on:click={() => !isSunday && showAddScheduleForm(day.date)}
+                      on:keydown={e => !isSunday && e.key === 'Enter' && showAddScheduleForm(day.date)}
+                      role={isSunday ? 'presentation' : 'button'}
+                      tabindex={isSunday ? -1 : 0}
+                    >
+                      <div class="day-header">
+                        <span class="day-date">{day.date.getDate()}</span>
+                        <span class="day-name">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][day.date.getDay()]}</span>
+                      </div>
+                      
+                      <div class="day-content">
+                        {#if isSunday}
+                          <div class="closed-notice">
+                            <span class="icon-closed"></span>
+                            <span>Closed</span>
+                          </div>
+                        {:else if day.employees.length === 0}
+                          <div class="no-schedule">Available</div>
+                        {:else}
+                          <!-- Always show the complete employee list -->
+                          <ul class="employee-list">
+                            {#each day.employees as employee (employee.id)}
+                              <li class="employee {getRoleClass(employee.role)}">
+                                {employee.name}
+                                <span class="role-indicator">{getRoleBadge(employee.role)}</span>
+                              </li>
+                            {/each}
+                          </ul>
+                        {/if}
+                      </div>
+                      
+                      {#if !isSunday && day.employees.length > 0}
+                        <div class="employee-count">{day.employees.length}</div>
                       {/if}
                     </div>
-                    
-                    <!-- Add this employee count badge -->
-                    {#if day.employees.length > 0}
-                      <div class="employee-count" title="{day.employees.length} employee{day.employees.length !== 1 ? 's' : ''} scheduled">
-                        {day.employees.length}
-                      </div>
-                    {/if}
-                  </div>
-                {/each}
+                  {/each}
+                {:else}
+                  <!-- Placeholder with correct height to maintain scroll position -->
+                  <div class="calendar-week-placeholder" style="height: {130}px;"></div>
+                {/if}
               </div>
             {/each}
           </div>
@@ -1010,6 +1048,9 @@
   .calendar-grid {
     display: flex;
     flex-direction: column;
+    will-change: transform; /* Hint to browser about animations */
+    transform: translateZ(0); /* Force hardware acceleration */
+    backface-visibility: hidden; /* Reduce composite layers */
   }
   
   .calendar-week {
@@ -1033,6 +1074,7 @@
     position: relative;
     overflow: hidden;
     gap: 6px; /* Add gap between day header and content */
+    contain: layout style; /* Containment hint to browser */
   }
   
   .calendar-day:last-child {
@@ -1058,12 +1100,12 @@
   }
   
   .current-day {
-    background-color: rgba(53, 176, 123, 0.15);
-    box-shadow: inset 0 0 0 2px rgba(53, 176, 123, 0.3);
+    background-color: rgba(79, 70, 229, 0.15) !important; /* Indigo color instead of green */
+    box-shadow: inset 0 0 0 2px rgba(79, 70, 229, 0.3);
   }
   
   .current-day .day-date {
-    color: #004225;
+    color: #4f46e5; /* Indigo instead of green */
     font-weight: 600;
   }
   
@@ -1136,13 +1178,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  }
-  
-  .employee:hover {
-    transform: translateX(2px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: none; /* Remove shadow completely */
   }
   
   .shift-indicator {
@@ -1566,27 +1602,70 @@
     gap: 6px; /* Add gap between day header and content */
   }
 
-  /* Make the employee count badge more elegant */
-  .employee-count {
-    position: absolute;
-    bottom: 6px;
-    right: 6px;
-    background: #004225;
-    color: white;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    min-width: 22px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-    transition: transform 0.2s ease;
-    padding: 0 6px;
+  .closed-day {
+    background-color: #f1f5f9 !important;
+    cursor: default !important;
+    user-select: none;
+    opacity: 0.9;
   }
 
-  .calendar-day:hover .employee-count {
-    transform: scale(1.05);
+  .closed-notice {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 0.9rem;
+    gap: 8px;
+    font-weight: 500;
+  }
+
+  .closed-day .day-header {
+    opacity: 0.7;
+  }
+
+  /* Simplified employee rendering for better performance */
+  .employee-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .employee-preview {
+    font-size: 0.85rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .employee-more {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #6b7280;
+    padding: 2px 0;
+  }
+
+  /* CSS icons instead of SVGs */
+  .icon-closed {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    position: relative;
+    border: 2px solid #94a3b8;
+    border-radius: 3px;
+  }
+  
+  .icon-closed::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #94a3b8;
   }
 </style>
