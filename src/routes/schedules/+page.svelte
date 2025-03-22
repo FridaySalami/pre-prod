@@ -1,7 +1,15 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import ScheduleManager from '$lib/ScheduleManager.svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { userSession } from '$lib/sessionStore';
   import { supabase } from '$lib/supabaseClient';
+  import ScheduleManager from '$lib/ScheduleManager.svelte';
+  
+  // Start with session as undefined (unknown)
+  let session: any = undefined;
+  const unsubscribe = userSession.subscribe((s) => {
+    session = s;
+  });
   
   // Define types for schedule data
   interface Employee {
@@ -378,11 +386,17 @@
   
   // Initialize
   onMount(() => {
-    try {
+    // Once we know the session, if it's null then redirect
+    if (session === null) {
+      goto('/login');
+    } else if (session) {
+      // Only fetch data if we have a valid session
       fetchData();
-    } catch (error) {
-      console.error('Error in onMount:', error);
     }
+  });
+
+  onDestroy(() => {
+    unsubscribe();
   });
 
   // Add these to your existing script section
@@ -481,315 +495,337 @@
   }
 </script>
 
-<div class="calendar-container">
-  <div class="dashboard-header">
-    <h1>Work Schedule</h1>
-    
-    <div class="month-navigation">
-      <button on:click={() => changeMonth(-1)}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6"></polyline>
-        </svg>
-        Previous
-      </button>
-      <span class="current-month">
-        {formatMonth(new Date(currentYear, currentMonth, 1))}
-      </span>
-      <button on:click={() => changeMonth(1)}>
-        Next
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"></polyline>
-        </svg>
-      </button>
-    </div>
-    
-    <div class="header-buttons">
-      <button class="add-button" on:click={() => showAddEmployeeModal()}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-          <circle cx="12" cy="7" r="4"></circle>
-        </svg>
-        Add Employee
-      </button>
+{#if session === undefined || loading}
+  <div class="loading">
+    <svg class="spinner" viewBox="0 0 50 50">
+      <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+    </svg>
+    <p>Loading...</p>
+  </div>
+{:else if session === null}
+  <!-- When session is null, onMount should have redirected already -->
+  <div>Redirecting to login...</div>
+{:else if error}
+  <div class="error">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <p>Error loading schedule: {error}</p>
+    <button on:click={fetchData}>Retry</button>
+  </div>
+{:else}
+  <!-- Your existing calendar container with schedule content -->
+  <div class="calendar-container">
+    <div class="dashboard-header">
+      <h1>Work Schedule</h1>
       
-      <button class="add-button" on:click={() => showAddScheduleForm()}>
+      <div class="month-navigation">
+        <button on:click={() => changeMonth(-1)}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          Previous
+        </button>
+        <span class="current-month">
+          {formatMonth(new Date(currentYear, currentMonth, 1))}
+        </span>
+        <button on:click={() => changeMonth(1)}>
+          Next
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+      
+      <div class="header-buttons">
+        <button class="add-button" on:click={() => showAddEmployeeModal()}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          Add Employee
+        </button>
+        
+        <button class="add-button" on:click={() => showAddScheduleForm()}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Add Schedule
+        </button>
+      </div>
+    </div>
+    
+    <div class="view-toggle">
+      <button 
+        class={!showManager ? 'active' : ''} 
+        on:click={() => showManager = false}
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
         </svg>
-        Add Schedule
+        Calendar View
+      </button>
+      <button 
+        class={showManager ? 'active' : ''} 
+        on:click={() => showManager = true}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+        Manage Schedule Patterns
       </button>
     </div>
-  </div>
-  
-  <div class="view-toggle">
-    <button 
-      class={!showManager ? 'active' : ''} 
-      on:click={() => showManager = false}
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-        <line x1="16" y1="2" x2="16" y2="6"></line>
-        <line x1="8" y1="2" x2="8" y2="6"></line>
-        <line x1="3" y1="10" x2="21" y2="10"></line>
-      </svg>
-      Calendar View
-    </button>
-    <button 
-      class={showManager ? 'active' : ''} 
-      on:click={() => showManager = true}
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="8" y1="6" x2="21" y2="6"></line>
-        <line x1="8" y1="12" x2="21" y2="12"></line>
-        <line x1="8" y1="18" x2="21" y2="18"></line>
-        <line x1="3" y1="6" x2="3.01" y2="6"></line>
-        <line x1="3" y1="12" x2="3.01" y2="12"></line>
-        <line x1="3" y1="18" x2="3.01" y2="18"></line>
-      </svg>
-      Manage Schedule Patterns
-    </button>
-  </div>
-  
-  {#if loading}
-    <div class="loading">
-      <svg class="spinner" viewBox="0 0 50 50">
-        <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
-      </svg>
-      <p>Loading schedule...</p>
-    </div>
-  {:else if error}
-    <div class="error">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
-      <p>Error loading schedule: {error}</p>
-      <button on:click={fetchData}>Retry</button>
-    </div>
-  {:else if showManager}
-    <!-- Show the Schedule Manager component -->
-    <ScheduleManager 
-      employees={employees} 
-      onScheduleUpdate={handleScheduleUpdate}
-    />
-  {:else if employees.length === 0}
-    <div class="card empty-state">
-      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-        <circle cx="9" cy="7" r="4"></circle>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-      </svg>
-      <h3>No Employees Yet</h3>
-      <p>Add employees to start creating schedules.</p>
-      <button class="add-button" on:click={showAddEmployeeModal}>Add Employee</button>
-    </div>
-  {:else}
-    <!-- Show your existing calendar -->
-    <div class="card">
-      <div class="calendar">
-        <div class="calendar-header">
-          {#each daysOfWeek as day}
-            <div class="weekday-header">{day}</div>
-          {/each}
-        </div>
-        
-        <div class="calendar-grid">
-          {#each Array(6) as _, weekIndex}
-            <div class="calendar-week">
-              {#each Array(7) as _, dayIndex}
-                {@const calendarIndex = weekIndex * 7 + dayIndex}
-                {@const day = calendarDays[calendarIndex] || { date: new Date(), isCurrentMonth: false, employees: [] }}
-                {@const isToday = day.date.toDateString() === new Date().toDateString()}
-                
-                <div 
-                  class="calendar-day {day.isCurrentMonth ? 'current-month' : 'other-month'} {isToday ? 'current-day' : ''}" 
-                  on:click={() => showAddScheduleForm(day.date)}
-                  on:keydown={e => e.key === 'Enter' && showAddScheduleForm(day.date)}
-                  role="button"
-                  tabindex="0"
-                >
-                  <div class="day-header">
-                    <span class="day-date">
-                      {day.date.getDate()}
-                    </span>
-                    <span class="day-name">
-                      {day.date.toLocaleDateString('en-US', { weekday: 'short' })}
-                    </span>
-                  </div>
+    
+    {#if loading}
+      <div class="loading">
+        <svg class="spinner" viewBox="0 0 50 50">
+          <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+        </svg>
+        <p>Loading schedule...</p>
+      </div>
+    {:else if error}
+      <div class="error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <p>Error loading schedule: {error}</p>
+        <button on:click={fetchData}>Retry</button>
+      </div>
+    {:else if showManager}
+      <!-- Show the Schedule Manager component -->
+      <ScheduleManager 
+        employees={employees} 
+        onScheduleUpdate={handleScheduleUpdate}
+      />
+    {:else if employees.length === 0}
+      <div class="card empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+        <h3>No Employees Yet</h3>
+        <p>Add employees to start creating schedules.</p>
+        <button class="add-button" on:click={showAddEmployeeModal}>Add Employee</button>
+      </div>
+    {:else}
+      <!-- Show your existing calendar -->
+      <div class="card">
+        <div class="calendar">
+          <div class="calendar-header">
+            {#each daysOfWeek as day}
+              <div class="weekday-header">{day}</div>
+            {/each}
+          </div>
+          
+          <div class="calendar-grid">
+            {#each Array(6) as _, weekIndex}
+              <div class="calendar-week">
+                {#each Array(7) as _, dayIndex}
+                  {@const calendarIndex = weekIndex * 7 + dayIndex}
+                  {@const day = calendarDays[calendarIndex] || { date: new Date(), isCurrentMonth: false, employees: [] }}
+                  {@const isToday = day.date.toDateString() === new Date().toDateString()}
                   
-                  <div class="day-content">
-                    {#if day.employees.length === 0}
-                      <div class="no-schedule">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <path d="M12 6v6l4 2"></path>
-                        </svg>
-                        <span>Available</span>
+                  <div 
+                    class="calendar-day {day.isCurrentMonth ? 'current-month' : 'other-month'} {isToday ? 'current-day' : ''}" 
+                    on:click={() => showAddScheduleForm(day.date)}
+                    on:keydown={e => e.key === 'Enter' && showAddScheduleForm(day.date)}
+                    role="button"
+                    tabindex="0"
+                  >
+                    <div class="day-header">
+                      <span class="day-date">
+                        {day.date.getDate()}
+                      </span>
+                      <span class="day-name">
+                        {day.date.toLocaleDateString('en-US', { weekday: 'short' })}
+                      </span>
+                    </div>
+                    
+                    <div class="day-content">
+                      {#if day.employees.length === 0}
+                        <div class="no-schedule">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M12 6v6l4 2"></path>
+                          </svg>
+                          <span>Available</span>
+                        </div>
+                      {:else}
+                        <ul class="employee-list">
+                          {#each day.employees as employee}
+                            <li class="employee {getRoleClass(employee.role)}">
+                              {employee.name}
+                              <!-- Role indicator instead of shift -->
+                              <span class="role-indicator" title="{employee.role}">{getRoleBadge(employee.role)}</span>
+                            </li>
+                          {/each}
+                        </ul>
+                      {/if}
+                    </div>
+                    
+                    <!-- Add this employee count badge -->
+                    {#if day.employees.length > 0}
+                      <div class="employee-count" title="{day.employees.length} employee{day.employees.length !== 1 ? 's' : ''} scheduled">
+                        {day.employees.length}
                       </div>
-                    {:else}
-                      <ul class="employee-list">
-                        {#each day.employees as employee}
-                          <li class="employee {getRoleClass(employee.role)}">
-                            {employee.name}
-                            <!-- Role indicator instead of shift -->
-                            <span class="role-indicator" title="{employee.role}">{getRoleBadge(employee.role)}</span>
-                          </li>
-                        {/each}
-                      </ul>
                     {/if}
                   </div>
-                  
-                  <!-- Add this employee count badge -->
-                  {#if day.employees.length > 0}
-                    <div class="employee-count" title="{day.employees.length} employee{day.employees.length !== 1 ? 's' : ''} scheduled">
-                      {day.employees.length}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          {/each}
+                {/each}
+              </div>
+            {/each}
+          </div>
         </div>
       </div>
-    </div>
-  {/if}
+    {/if}
+    
+    {#if showAddForm}
+    <div 
+    class="modal-overlay" 
+    on:click|self={hideAddScheduleForm} 
+    on:keydown={e => e.key === 'Escape' && hideAddScheduleForm()}
+    role="presentation"
+    tabindex="-1"
+      >
+        <div class="modal">
+          <div class="modal-header">
+            <h2 id="schedule-modal-title">Add Schedule</h2>
+            <button 
+              class="close-button" 
+              on:click={hideAddScheduleForm}
+              aria-label="Close modal"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <form on:submit|preventDefault={addScheduleItem}>
+            <div class="form-group">
+              <label for="employee">Employee</label>
+              <select 
+                id="employee" 
+                bind:value={newScheduleItem.employeeId} 
+                required
+              >
+                <option value="">Select Employee</option>
+                {#each employees as emp}
+                  <option value={emp.id}>{emp.name}</option>
+                {/each}
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="date">Date</label>
+              <input 
+                id="date" 
+                type="date" 
+                bind:value={newScheduleItem.date} 
+                required
+              />
+            </div>
+            
+            <div class="form-group">
+              <label for="shift">Shift</label>
+              <select id="shift" bind:value={newScheduleItem.shift}>
+                <option value="morning">Morning (8am-4pm)</option>
+                <option value="afternoon">Afternoon (4pm-12am)</option>
+                <option value="night">Night (12am-8am)</option>
+              </select>
+            </div>
+            
+            <div class="form-actions">
+              <button type="button" class="cancel-button" on:click={hideAddScheduleForm}>Cancel</button>
+              <button type="submit" class="save-button">Save Schedule</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    {/if}
   
-  {#if showAddForm}
-    <div 
-      class="modal-overlay" 
-      on:click|self={hideAddScheduleForm} 
-      on:keydown={e => e.key === 'Escape' && hideAddScheduleForm()}
-      role="dialog"
-      aria-labelledby="schedule-modal-title"
-      tabindex="-1"
-    >
-      <div class="modal">
-        <div class="modal-header">
-          <h2 id="schedule-modal-title">Add Schedule</h2>
-          <button 
-            class="close-button" 
-            on:click={hideAddScheduleForm}
-            aria-label="Close modal"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <form on:submit|preventDefault={addScheduleItem}>
-          <div class="form-group">
-            <label for="employee">Employee</label>
-            <select 
-              id="employee" 
-              bind:value={newScheduleItem.employeeId} 
-              required
+    {#if showEmployeeModal}
+      <div 
+        class="modal-overlay" 
+        on:click|self={hideEmployeeModal}
+        on:keydown={e => e.key === 'Escape' && hideEmployeeModal()} 
+        role="dialog"
+        aria-labelledby="employee-modal-title"
+        tabindex="-1"
+      >
+        <div class="modal">
+          <div class="modal-header">
+            <h2 id="employee-modal-title">Add Employee</h2>
+            <button 
+              class="close-button" 
+              on:click={hideEmployeeModal}
+              aria-label="Close modal"
             >
-              <option value="">Select Employee</option>
-              {#each employees as emp}
-                <option value={emp.id}>{emp.name}</option>
-              {/each}
-            </select>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
           </div>
           
-          <div class="form-group">
-            <label for="date">Date</label>
-            <input 
-              id="date" 
-              type="date" 
-              bind:value={newScheduleItem.date} 
-              required
-            />
-          </div>
-          
-          <div class="form-group">
-            <label for="shift">Shift</label>
-            <select id="shift" bind:value={newScheduleItem.shift}>
-              <option value="morning">Morning (8am-4pm)</option>
-              <option value="afternoon">Afternoon (4pm-12am)</option>
-              <option value="night">Night (12am-8am)</option>
-            </select>
-          </div>
-          
-          <div class="form-actions">
-            <button type="button" class="cancel-button" on:click={hideAddScheduleForm}>Cancel</button>
-            <button type="submit" class="save-button">Save Schedule</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  {/if}
-
-  {#if showEmployeeModal}
-    <div 
-      class="modal-overlay" 
-      on:click|self={hideEmployeeModal}
-      on:keydown={e => e.key === 'Escape' && hideEmployeeModal()} 
-      role="dialog"
-      aria-labelledby="employee-modal-title"
-      tabindex="-1"
-    >
-      <div class="modal">
-        <div class="modal-header">
-          <h2 id="employee-modal-title">Add Employee</h2>
-          <button 
-            class="close-button" 
-            on:click={hideEmployeeModal}
-            aria-label="Close modal"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        
-        <form on:submit|preventDefault={addEmployee}>
-          {#if employeeError}
-            <div class="form-error">
-              <p>{employeeError}</p>
+          <form on:submit|preventDefault={addEmployee}>
+            {#if employeeError}
+              <div class="form-error">
+                <p>{employeeError}</p>
+              </div>
+            {/if}
+            
+            <div class="form-group">
+              <label for="employeeName">Employee Name</label>
+              <input 
+                id="employeeName" 
+                type="text" 
+                bind:value={newEmployee.name} 
+                placeholder="John Smith"
+                required
+              />
             </div>
-          {/if}
-          
-          <div class="form-group">
-            <label for="employeeName">Employee Name</label>
-            <input 
-              id="employeeName" 
-              type="text" 
-              bind:value={newEmployee.name} 
-              placeholder="John Smith"
-              required
-            />
-          </div>
-          
-          <div class="form-group">
-            <label for="employeeRole">Role</label>
-            <select 
-              id="employeeRole" 
-              bind:value={newEmployee.role} 
-              required
-            >
-              <option value="">Select Role</option>
-              <option value="Manager">Manager</option>
-              <option value="Supervisor">Supervisor</option>
-              <option value="Team Lead">Team Lead</option>
-              <option value="Associate">Associate</option>
-              <option value="Trainee">Trainee</option>
-            </select>
-          </div>
-          
-          <div class="form-actions">
-            <button type="button" class="cancel-button" on:click={hideEmployeeModal}>Cancel</button>
-            <button type="submit" class="save-button">Add Employee</button>
-          </div>
-        </form>
+            
+            <div class="form-group">
+              <label for="employeeRole">Role</label>
+              <select 
+                id="employeeRole" 
+                bind:value={newEmployee.role} 
+                required
+              >
+                <option value="">Select Role</option>
+                <option value="Manager">Manager</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Team Lead">Team Lead</option>
+                <option value="Associate">Associate</option>
+                <option value="Trainee">Trainee</option>
+              </select>
+            </div>
+            
+            <div class="form-actions">
+              <button type="button" class="cancel-button" on:click={hideEmployeeModal}>Cancel</button>
+              <button type="submit" class="save-button">Add Employee</button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  {/if}
-</div>
+    {/if}
+  </div>
+{/if}
 
 <style>
   .calendar-container {
