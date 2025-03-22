@@ -60,8 +60,16 @@
         <li>Developed a Kanban board with columns: New Suggestions, Under Review, In Progress, and Completed</li>
         <li>Enabled drag‑and‑drop functionality with immediate updates via Supabase</li>
         <li>Introduced a side panel for project details with read‑only and edit modes</li>
-        <li>New project submissions are handled via a side panel form with support for comments and reactions</li>
-        <li>UI tweaks to improve usability and provide a modern look</li>
+        <li>Implemented project commenting system with author attribution and timestamps</li>
+        <li>Added "thumbs up" reactions to help prioritize popular improvement ideas</li>
+        <li>Created streamlined new project submission form with auto-filled user information</li>
+        <li>Enhanced accessibility throughout with proper ARIA attributes, keyboard navigation, and screen reader support</li>
+        <li>Implemented robust error handling with user-friendly notifications</li>
+        <li>Added verification steps for database operations to ensure data consistency</li>
+        <li>Optimized UI with smooth animations, intuitive controls, and responsive design</li>
+        <li>Improved visual hierarchy with clear section organization and consistent typography</li>
+        <li>Added support for project metadata including deadlines, owners, and detailed descriptions</li>
+        <li>Implemented proper date formatting for improved readability</li>
       </ul>
     </section>
 
