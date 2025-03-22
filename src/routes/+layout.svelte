@@ -11,6 +11,14 @@
   import { supabase } from '$lib/supabaseClient';
   import type { Session } from '@supabase/supabase-js';
   import { toastStore } from '$lib/toastStore';
+  import { fade } from 'svelte/transition';
+  import { page } from '$app/stores';
+  let currentPath = '';
+
+  // Subscribe to the page store to get the current path
+  page.subscribe(value => {
+    currentPath = value.url.pathname;
+  });
 
   // Initialize session as undefined
   let session: any = undefined;
@@ -146,6 +154,27 @@
     }
   }
 
+  let isUserMenuOpen = false;
+
+  // Close dropdown when clicking outside
+  function handleClickOutside(event: MouseEvent) {
+    if (isUserMenuOpen) {
+      const dropdown = document.querySelector('.user-dropdown');
+      if (dropdown && !dropdown.contains(event.target as Node)) {
+        isUserMenuOpen = false;
+      }
+    }
+  }
+  
+  // Add click event listener
+  onMount(() => {
+    // Existing onMount code
+    document.addEventListener('click', handleClickOutside);
+    
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  });
 </script>
 
 <div class="app-container">
@@ -157,59 +186,21 @@
       <ul>
         <!-- Dashboard Link -->
         <li>
-          <a href="/dashboard">
+          <a href="/dashboard" class:active={currentPath === '/dashboard'}>
             <i class="material-icons-outlined menu-icon">dashboard</i>
             <span class="label">Dashboard</span>
           </a>
         </li>
         <!-- Kaizen Projects Link -->
         <li>
-          <a href="/kaizen-projects">
+          <a href="/kaizen-projects" class:active={currentPath && currentPath.includes('/kaizen-projects')}>
             <i class="material-icons-outlined menu-icon">assignment</i>
             <span class="label">Kaizen Projects</span>
           </a>
         </li>
-        <!-- Reports Link -->
-        <li>
-          <a href="/reports">
-            <i class="material-icons-outlined menu-icon">bar_chart</i>
-            <span class="label">Reports</span>
-          </a>
-        </li>
-        <!-- Analytics Link -->
-        <li>
-          <a href="/analytics">
-            <i class="material-icons-outlined menu-icon">analytics</i>
-            <span class="label">Analytics</span>
-          </a>
-        </li>
-        <!-- Settings Link -->
-        <li>
-          <a href="/settings">
-            <i class="material-icons-outlined menu-icon">settings</i>
-            <span class="label">Settings</span>
-          </a>
-        </li>
-        <!-- Help Link -->
-        <li>
-          <a href="/help">
-            <i class="material-icons-outlined menu-icon">help_outline</i>
-            <span class="label">Help</span>
-          </a>
-        </li>
+        <!-- Remove the other navigation items you wanted to remove -->
       </ul>
     </nav>
-    {#if session}
-      <div class="sidebar-logout">
-        <button 
-          on:click={handleLogout} 
-          type="button" 
-          class="logout-button">
-          <i class="material-icons-outlined menu-icon">logout</i>
-          <span class="label">Logout</span>
-        </button>
-      </div>
-    {/if}
   </aside>
 
   <div class="content-wrapper">
@@ -221,9 +212,52 @@
       </div>
       <div class="header-right">
         {#if session}
-          <div class="user-badge">
-            <i class="material-icons-outlined user-icon">account_circle</i>
-            <span class="user-email">{session.user.email}</span>
+          <div class="user-dropdown">
+            <button class="user-badge" on:click={() => isUserMenuOpen = !isUserMenuOpen}>
+              <i class="material-icons-outlined user-icon">account_circle</i>
+              <span class="user-email">{session.user.email}</span>
+              <i class="material-icons-outlined dropdown-arrow">expand_more</i>
+            </button>
+            
+            {#if isUserMenuOpen}
+              <div class="dropdown-menu" transition:fade={{ duration: 150 }}>
+                <a href="/profile" class="dropdown-item">
+                  <i class="material-icons-outlined">person</i>
+                  My Profile
+                </a>
+                <a href="/account-settings" class="dropdown-item">
+                  <i class="material-icons-outlined">settings</i>
+                  Account Settings
+                </a>
+                <a href="/change-password" class="dropdown-item">
+                  <i class="material-icons-outlined">lock</i>
+                  Change Password
+                </a>
+                <div class="dropdown-section">
+                  <div class="dropdown-section-title">Appearance</div>
+                  <label class="dropdown-item appearance-option">
+                    <input type="radio" name="theme" value="light" checked>
+                    <i class="material-icons-outlined">light_mode</i>
+                    Light Mode
+                  </label>
+                  <label class="dropdown-item appearance-option disabled">
+                    <input type="radio" name="theme" value="dark" disabled>
+                    <i class="material-icons-outlined">dark_mode</i>
+                    Dark Mode
+                    <span class="coming-soon">Coming Soon</span>
+                  </label>
+                </div>
+                <a href="/help" class="dropdown-item">
+                  <i class="material-icons-outlined">help_outline</i>
+                  Help & Support
+                </a>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item logout-item" on:click={handleLogout}>
+                  <i class="material-icons-outlined">logout</i>
+                  Logout
+                </button>
+              </div>
+            {/if}
           </div>
         {/if}
       </div>
@@ -320,6 +354,14 @@
     padding: 8px 16px;
     border-radius: 24px;
     gap: 8px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color 0.2s ease;
+  }
+  
+  .user-badge:hover {
+    background-color: #E5E7EB;
   }
   
   .user-icon {
@@ -412,11 +454,6 @@
     background-color: rgba(53, 176, 123, 0.1); /* More subtle hover color */
   }
   
-  .sidebar nav ul li a.active {
-    border-left-color: #004225;
-    background-color: rgba(0, 66, 37, 0.05);
-  }
-  
   .menu-icon {
     font-size: 22px; /* Slightly smaller */
     margin-right: 12px;
@@ -464,20 +501,6 @@
     background-color: rgba(239, 68, 68, 0.1); /* Subtle red for logout */
     border-color: rgba(239, 68, 68, 0.2);
     color: rgb(185, 28, 28);
-  }
-  
-  .logout-button:hover .menu-icon {
-    color: rgb(185, 28, 28);
-  }
-  
-  /* Ensure menu icon is properly contained */
-  .logout-button .menu-icon {
-    font-size: 24px;
-    margin-right: 12px;
-    min-width: 24px; /* Ensure consistent width */
-    text-align: center; /* Center the icon */
-    color: #4B5563;
-    flex-shrink: 0;
   }
   
   /* Main Content */
@@ -654,5 +677,106 @@
 
   .toast button:hover {
     background-color: #F3F4F6;
+  }
+
+  .user-dropdown {
+    position: relative;
+  }
+
+  .dropdown-arrow {
+    font-size: 18px;
+    color: #6B7280;
+    margin-left: 4px;
+  }
+
+  .dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid #E5E7EB;
+    width: 250px;
+    z-index: 1000;
+    overflow: hidden;
+    padding: 8px 0;
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    color: #1F2937;
+    text-decoration: none;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+  }
+
+  .dropdown-item:hover {
+    background-color: #F9FAFB;
+  }
+
+  .dropdown-item i {
+    margin-right: 12px;
+    font-size: 20px;
+    color: #6B7280;
+    flex-shrink: 0;
+  }
+
+  .dropdown-divider {
+    height: 1px;
+    background-color: #E5E7EB;
+    margin: 8px 0;
+  }
+
+  .dropdown-section {
+    padding: 8px 0;
+  }
+
+  .dropdown-section-title {
+    padding: 0 16px 8px;
+    font-size: 0.8em;
+    color: #6B7280;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .appearance-option {
+    display: flex;
+    align-items: center;
+  }
+
+  .appearance-option input[type="radio"] {
+    margin-right: 12px;
+  }
+
+  .appearance-option.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .coming-soon {
+    margin-left: auto;
+    font-size: 0.7em;
+    color: #6B7280;
+    background-color: #F3F4F6;
+    padding: 2px 6px;
+    border-radius: 10px;
+  }
+
+  .logout-item {
+    color: #B91C1C; /* Red color for logout */
+  }
+
+  .logout-item i {
+    color: #B91C1C;
   }
 </style>
