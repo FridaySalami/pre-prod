@@ -670,6 +670,9 @@
   function hideBulkLeaveForm() {
     showBulkLeaveModal = false;
   }
+
+  // Add this near your other state variables
+  let showOnlyLeave = false;
 </script>
 
 {#if session === undefined || loading}
@@ -713,6 +716,35 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6"></polyline>
           </svg>
+        </button>
+      </div>
+      
+      <!-- Add this toggle button -->
+      <div class="view-filter">
+        <button 
+          class="toggle-button {showOnlyLeave ? 'active' : ''}"
+          on:click={() => showOnlyLeave = !showOnlyLeave}
+          aria-pressed={showOnlyLeave}
+        >
+          <span class="toggle-icon">
+            {#if showOnlyLeave}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 11 12 14 22 4"></polyline>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+              </svg>
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <path d="M8 9v2"></path>
+                <path d="M8 15v2"></path>
+                <path d="M12 9v2"></path>
+                <path d="M12 15v2"></path>
+                <path d="M16 9v2"></path>
+                <path d="M16 15v2"></path>
+              </svg>
+            {/if}
+          </span>
+          <span>{showOnlyLeave ? 'Show All Employees' : 'Show Only Leave'}</span>
         </button>
       </div>
       
@@ -818,7 +850,7 @@
     {:else}
       <!-- Show your existing calendar -->
       <div class="card">
-        <div class="calendar">
+        <div class="calendar {showOnlyLeave ? 'leave-only-mode' : ''}">
           <div class="calendar-header">
             {#each daysOfWeek as day}
               <div class="weekday-header">{day}</div>
@@ -858,10 +890,9 @@
                         {:else if day.employees.length === 0}
                           <div class="no-schedule">Available</div>
                         {:else}
-                          <!-- Always show the complete employee list -->
+                          <!-- Filter employees based on the toggle state -->
                           <ul class="employee-list">
-                            {#each day.employees as employee (employee.id)}
-                              <!-- Fix the accessibility issue by using button instead of li with role="button" -->
+                            {#each day.employees.filter(emp => !showOnlyLeave || emp.onLeave) as employee (employee.id)}
                               <button 
                                 class="employee-button {employee.onLeave ? 'employee-on-leave' : getRoleClass(employee.role)}"
                                 style={employee.onLeave ? `--leave-color: ${employee.leaveColor || '#9ca3af'};` : ''}
@@ -882,10 +913,21 @@
                         {/if}
                       </div>
                     {#if !isSunday && day.employees.length > 0}
-                      {@const activeCount = day.employees.filter(emp => !emp.onLeave).length}
-                      <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
-                        {activeCount}
-                      </div>
+                      {@const visibleEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
+                      {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
+                      {@const leaveCount = visibleEmployees.filter(emp => emp.onLeave).length}
+                      
+                      {#if showOnlyLeave}
+                        {#if leaveCount > 0}
+                          <div class="employee-count leave-count">
+                            {leaveCount}
+                          </div>
+                        {/if}
+                      {:else}
+                        <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
+                          {activeCount}
+                        </div>
+                      {/if}
                     {/if}                    </div>
                   {/each}
                 {:else}
@@ -1943,5 +1985,60 @@
 
   .employee-count.has-leave {
     background: linear-gradient(to right, #004225 50%, #9ca3af 50%);
+  }
+
+  .view-filter {
+    display: flex;
+    justify-content: center;
+  }
+
+  .toggle-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .toggle-button:hover {
+    background: #f3f4f6;
+  }
+
+  .toggle-button.active {
+    background: #004225;
+    color: white;
+    border-color: #004225;
+  }
+
+  .toggle-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .leave-count {
+    background: var(--leave-color, #ef4444);
+  }
+
+  @media (max-width: 768px) {
+    .view-filter {
+      width: 100%;
+    }
+    
+    .toggle-button {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
+  .calendar.leave-only-mode {
+    background: linear-gradient(to right, #fff8f8, #fff);
   }
 </style>
