@@ -88,6 +88,13 @@
         <li>Enhanced accessibility with proper ARIA attributes and keyboard navigation</li>
         <li>Improved empty state handling with helpful prompts and clear user flow</li>
         <li>Created role-based ordering on calendar to display employees by position hierarchy</li>
+        <li>Added employee leave management with visual indicators in the calendar</li>
+        <li>Implemented single-day and date range leave request capabilities</li>
+        <li>Added intelligent leave management that respects employee work schedules</li>
+        <li>Created an employee leave modal with type selection and date controls</li>
+        <li>Developed bulk leave request functionality for efficient time-off management</li>
+        <li>Integrated leave status indicators with calendar view for visual feedback</li>
+        <li>Added automatic employee count adjustments to exclude employees on leave</li>
         <li>Added error handling and loading states for smooth user experience</li>
         <li>Secured route with proper authentication protection matching application standards</li>
       </ul>
