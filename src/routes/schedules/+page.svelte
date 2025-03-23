@@ -438,38 +438,20 @@
       };
     });
 
+    // This should be the ONLY block calculating and saving hours
     for (const day of calendarDays) {
-      // After processing employees and leave
-      const activeEmployees = day.employees.filter(emp => !emp.onLeave);
-      const hoursForDay = activeEmployees.length * 8.5; // 8.5 hours per employee
-      
-      // Update both local state and the global store
-      day.totalWorkingHours = hoursForDay;
-      saveScheduledHours(day.date, hoursForDay);
-        }
-
-    // Inside populateCalendar function, after processing employees for each day
-    for (const day of calendarDays) {
-      // After checking for leaves and updating employee status
-      
-      // Skip Sundays as requested
       const isSunday = day.date.getDay() === 0;
       
       if (isSunday) {
-        // Set Sunday hours to 0 as specified
+        // Always force Sunday hours to 0
         day.totalWorkingHours = 0;
-        
-        // Save to database instead of store
         saveScheduledHours(day.date, 0);
       } else {
-        // Calculate hours for non-Sunday days
+        // For non-Sundays, calculate based on active employees
         const activeEmployees = day.employees.filter(emp => !emp.onLeave);
-        const hoursForDay = activeEmployees.length * 8.5; // 8.5 hours per employee
+        const hoursForDay = activeEmployees.length * 8.5;
         
-        // Update local state and save to database
         day.totalWorkingHours = hoursForDay;
-        
-        // Only save to database if hours actually changed
         saveScheduledHours(day.date, hoursForDay);
       }
     }
@@ -752,36 +734,34 @@
 
   // Add this function to save scheduled hours to the database
   async function saveScheduledHours(date: Date, hours: number) {
-    try {
-      const dateStr = date.toISOString().split('T')[0];
-      
-      // Update the metrics in the table directly
-      const { data, error } = await supabase
-        .from('daily_metrics')
-        .upsert(
-          { 
-            date: dateStr, 
-            scheduled_hours: hours 
-          }, 
-          {
-            onConflict: 'date'
-          }
-        )
-        .select();
-      
-      if (error) {
-        console.error('Error saving scheduled hours:', error);
-        showToast(`Failed to save scheduled hours for ${dateStr}`, 'error');
-        throw error;
-      }
-      
-      console.log(`Saved ${hours} scheduled hours for ${dateStr}`);
-      return data;
-    } catch (err) {
-      console.error('Error in saveScheduledHours:', err);
-      throw err;
+  try {
+    const dateStr = date.toISOString().split('T')[0];
+    
+    // Update the metrics in the table directly
+    const { error } = await supabase
+      .from('daily_metrics')
+      .upsert(
+        { 
+          date: dateStr, 
+          scheduled_hours: hours 
+        }, 
+        {
+          onConflict: 'date'
+        }
+      );
+    
+    if (error) {
+      console.error('Error saving scheduled hours:', error);
+      // Don't show toast for every automatic save to avoid spamming the user
+      throw error;
     }
+    
+    console.log(`Saved ${hours} scheduled hours for ${dateStr}`);
+  } catch (err) {
+    console.error('Error in saveScheduledHours:', err);
+    // Don't re-throw the error here to prevent disrupting the UI flow
   }
+}
 
   // Add this function to your file, after the other utility functions
   function getFormattedDate(date: Date): string {
@@ -795,6 +775,41 @@ function handleViewAllEmployees(day: CalendarDay) {
   
   // For now, let's just use the existing handler to add a schedule on this day
   showAddScheduleForm(day.date);
+}
+
+// Function to ensure all Sundays have 0 hours
+async function correctSundayHours() {
+  // Get the date range you need to correct
+  const startDate = new Date('2025-03-01'); // Adjust as needed
+  const endDate = new Date('2025-03-31');   // Adjust as needed
+  
+  // Loop through each day in the range
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    // If it's Sunday
+    if (d.getDay() === 0) {
+      const dateStr = d.toISOString().split('T')[0];
+      console.log(`Correcting hours for Sunday ${dateStr}`);
+      
+      // Force update the database with 0 hours
+      const { error } = await supabase
+        .from('daily_metrics')
+        .upsert(
+          { 
+            date: dateStr, 
+            scheduled_hours: 0 
+          }, 
+          {
+            onConflict: 'date'
+          }
+        );
+        
+      if (error) {
+        console.error(`Failed to correct Sunday ${dateStr}:`, error);
+      }
+    }
+  }
+  
+  console.log('Sunday hours correction completed');
 }
 </script>
 
@@ -1044,29 +1059,32 @@ function handleViewAllEmployees(day: CalendarDay) {
                         {/if}
                       </div>
                       
-                      {#if !isSunday && day.employees.length > 0}
-                        {@const visibleEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
-                        {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
-                        {@const leaveCount = visibleEmployees.filter(emp => emp.onLeave).length}
-                        
-                        {#if showOnlyLeave}
-                          {#if leaveCount > 0}
-                            <div class="employee-count leave-count">
-                              {leaveCount}
-                            </div>
-                          {/if}
-                        {:else}
-                          <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
-                            {activeCount}
-                          </div>
-                          {#if (day.totalWorkingHours ?? 0) > 0}
-                            <div class="hours-badge">
-                              {(day.totalWorkingHours ?? 0).toFixed(1)}h
-                            </div>
-                          {/if}
-                        {/if}
-                      {/if}
-                    </div>
+                      {#if !showOnlyLeave}
+  {#if isSunday}
+    <!-- Always show 0 hours for Sunday -->
+    <div class="hours-badge sunday-hours">
+      0.0h
+    </div>
+  {:else if day.employees.length > 0}
+    {@const visibleEmployees = day.employees}
+    {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
+    
+    <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
+      {activeCount}
+    </div>
+    
+    <!-- Always show hours badge, even if 0 -->
+    <div class="hours-badge">
+      {(day.totalWorkingHours ?? 0).toFixed(1)}h
+    </div>
+  {/if}
+{:else if day.employees.some(emp => emp.onLeave)}
+  <!-- Leave count badge in leave-only mode -->
+  {@const leaveCount = day.employees.filter(emp => emp.onLeave).length}
+  <div class="employee-count leave-count">
+    {leaveCount}
+  </div>
+{/if}                    </div>
                   {/each}
                 {:else}
                   <!-- Placeholder with correct height to maintain scroll position -->
@@ -1462,7 +1480,7 @@ function handleViewAllEmployees(day: CalendarDay) {
   .calendar-week,
   .calendar-grid {
     grid-template-columns: repeat(7, 1fr);
-    min-width: 700px; /* Minimum width for the entire grid */
+    min-width: 800px; /* Minimum width for the entire grid */
   }
   
   .calendar-week {
@@ -2002,6 +2020,10 @@ function handleViewAllEmployees(day: CalendarDay) {
     color: #4b5563;
     border-left: 3px solid #9ca3af;
   }
+
+  .sunday-hours {
+  background-color: #8E8E93; /* Muted gray for closed days */
+}
 
   /* Update the role indicator style */
   .role-indicator {
