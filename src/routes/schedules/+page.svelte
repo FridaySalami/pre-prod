@@ -6,7 +6,9 @@
   import ScheduleManager from '$lib/ScheduleManager.svelte';
   import EmployeeLeaveModal from '$lib/EmployeeLeaveModal.svelte';
   import BulkLeaveModal from '$lib/BulkLeaveModal.svelte';
-  
+  import { toastStore, showToast } from '$lib/toastStore';
+ // import { scheduledHoursData, updateScheduledHours, getFormattedDate, formatDateKey } from '$lib/scheduleStore';
+
   // Start with session as undefined (unknown)
   let session: any = undefined;
   const unsubscribe = userSession.subscribe((s) => {
@@ -40,12 +42,13 @@
     employees: {
       id: string;
       name: string;
-      role: string; // Add role property
+      role: string;
       shift: string;
       onLeave?: boolean;
       leaveType?: string;
       leaveColor?: string;
     }[];
+    totalWorkingHours?: number; // Add this property
   }
 
   // Add this type for weekly patterns
@@ -276,9 +279,12 @@
       // Populate calendar
       populateCalendar(weeklyPatterns);
       
+      showToast('Schedule updated successfully', 'success');
+      
     } catch (err) {
       error = err instanceof Error ? err.message : 'Unknown error occurred';
       console.error(error);
+      showToast('Failed to load schedule: ' + error, 'error');
     } finally {
       loading = false;
     }
@@ -406,6 +412,9 @@
           leaveColor: employeeLeave?.leave_type_color || undefined
         };
       });
+      
+      // Calculate and store total working hours for the day
+      day.totalWorkingHours = calculateDayWorkingHours(day.employees);
     }
     
     // Sort employees in each day by role priority first, then by name
@@ -428,6 +437,42 @@
         })
       };
     });
+
+    for (const day of calendarDays) {
+      // After processing employees and leave
+      const activeEmployees = day.employees.filter(emp => !emp.onLeave);
+      const hoursForDay = activeEmployees.length * 8.5; // 8.5 hours per employee
+      
+      // Update both local state and the global store
+      day.totalWorkingHours = hoursForDay;
+      saveScheduledHours(day.date, hoursForDay);
+        }
+
+    // Inside populateCalendar function, after processing employees for each day
+    for (const day of calendarDays) {
+      // After checking for leaves and updating employee status
+      
+      // Skip Sundays as requested
+      const isSunday = day.date.getDay() === 0;
+      
+      if (isSunday) {
+        // Set Sunday hours to 0 as specified
+        day.totalWorkingHours = 0;
+        
+        // Save to database instead of store
+        saveScheduledHours(day.date, 0);
+      } else {
+        // Calculate hours for non-Sunday days
+        const activeEmployees = day.employees.filter(emp => !emp.onLeave);
+        const hoursForDay = activeEmployees.length * 8.5; // 8.5 hours per employee
+        
+        // Update local state and save to database
+        day.totalWorkingHours = hoursForDay;
+        
+        // Only save to database if hours actually changed
+        saveScheduledHours(day.date, hoursForDay);
+      }
+    }
   }
   
   // Change month
@@ -452,7 +497,7 @@
   // Add a new schedule
   async function addScheduleItem() {
     if (!newScheduleItem.employeeId || !newScheduleItem.date || !newScheduleItem.shift) {
-      alert('Please fill out all required fields');
+      showToast('Please fill out all required fields', 'error');
       return;
     }
     
@@ -470,11 +515,17 @@
       
       // Refresh data
       await fetchData();
+      const employee = employees.find(emp => emp.id === newScheduleItem.employeeId);
+      showToast(
+        `Scheduled ${employee?.name || 'Employee'} for ${new Date(newScheduleItem.date).toLocaleDateString()}`,
+        'success'
+      );
       hideAddScheduleForm();
       
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to add schedule';
       console.error(error);
+      showToast('Failed to add schedule: ' + error, 'error');
     }
   }
   
@@ -536,11 +587,13 @@
       
       // Refresh employee data
       await fetchData();
+      showToast(`Added employee: ${newEmployee.name}`, 'success');
       hideEmployeeModal();
       
     } catch (err) {
       employeeError = err instanceof Error ? err.message : 'Failed to add employee';
       console.error(employeeError);
+      showToast('Failed to add employee: ' + employeeError, 'error');
     }
   }
   
@@ -657,6 +710,12 @@
   function handleLeaveSaved() {
     showLeaveModal = false;
     showBulkLeaveModal = false;
+    
+    // Get employee name for better message
+    const employeeName = selectedEmployee?.name || 'Employee';
+    
+    showToast(`Leave updated for ${employeeName}`, 'success');
+    
     selectedEmployee = null;
     selectedDate = null;
     selectedLeave = null;
@@ -673,6 +732,70 @@
 
   // Add this near your other state variables
   let showOnlyLeave = false;
+
+  // Add these constants for shift durations (in hours)
+  const SHIFT_DURATIONS = {
+    morning: 8.5, // 8:00 - 16:30 with paid break
+    afternoon: 8.5, // Assuming same duration for afternoon shift
+    night: 8.5 // Assuming same duration for night shift
+  };
+
+  // Function to calculate total working hours for a day
+  function calculateDayWorkingHours(employees: any[]): number {
+    // Only count employees who are not on leave
+    return employees
+      .filter(emp => !emp.onLeave)
+      .reduce((total, emp) => {
+        return total + (SHIFT_DURATIONS[emp.shift as keyof typeof SHIFT_DURATIONS] || 8.5);
+      }, 0);
+  }
+
+  // Add this function to save scheduled hours to the database
+  async function saveScheduledHours(date: Date, hours: number) {
+    try {
+      const dateStr = date.toISOString().split('T')[0];
+      
+      // Update the metrics in the table directly
+      const { data, error } = await supabase
+        .from('daily_metrics')
+        .upsert(
+          { 
+            date: dateStr, 
+            scheduled_hours: hours 
+          }, 
+          {
+            onConflict: 'date'
+          }
+        )
+        .select();
+      
+      if (error) {
+        console.error('Error saving scheduled hours:', error);
+        showToast(`Failed to save scheduled hours for ${dateStr}`, 'error');
+        throw error;
+      }
+      
+      console.log(`Saved ${hours} scheduled hours for ${dateStr}`);
+      return data;
+    } catch (err) {
+      console.error('Error in saveScheduledHours:', err);
+      throw err;
+    }
+  }
+
+  // Add this function to your file, after the other utility functions
+  function getFormattedDate(date: Date): string {
+    return date.toISOString().split('T')[0];
+  }
+
+// Update the handleViewAllEmployees function with proper type
+function handleViewAllEmployees(day: CalendarDay) {
+  // You could implement a modal that shows all employees for the selected day
+  console.log("View all employees for", day.date.toDateString());
+  
+  // For now, let's just use the existing handler to add a schedule on this day
+  showAddScheduleForm(day.date);
+}
 </script>
 
 {#if session === undefined || loading}
@@ -890,12 +1013,14 @@
                         {:else if day.employees.length === 0}
                           <div class="no-schedule">Available</div>
                         {:else}
-                          <!-- Filter employees based on the toggle state -->
-                          <ul class="employee-list">
-                            {#each day.employees.filter(emp => !showOnlyLeave || emp.onLeave) as employee (employee.id)}
+                          {@const filteredEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
+                          {@const displayEmployees = filteredEmployees.slice(0, 6)}
+                          {@const remainingCount = filteredEmployees.length - 6}
+                          
+                          <div class="employee-list">
+                            {#each displayEmployees as employee (employee.id)}
                               <button 
                                 class="employee-button {employee.onLeave ? 'employee-on-leave' : getRoleClass(employee.role)}"
-                                style={employee.onLeave ? `--leave-color: ${employee.leaveColor || '#9ca3af'};` : ''}
                                 on:click|stopPropagation={() => handleEmployeeClick(employee, day.date)}
                               >
                                 <span class="employee-name">
@@ -909,26 +1034,39 @@
                                 </span>
                               </button>
                             {/each}
-                          </ul>
-                        {/if}
-                      </div>
-                    {#if !isSunday && day.employees.length > 0}
-                      {@const visibleEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
-                      {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
-                      {@const leaveCount = visibleEmployees.filter(emp => emp.onLeave).length}
-                      
-                      {#if showOnlyLeave}
-                        {#if leaveCount > 0}
-                          <div class="employee-count leave-count">
-                            {leaveCount}
+                            
+                            {#if remainingCount > 0}
+                              <div class="employee-more" on:click|stopPropagation={() => handleViewAllEmployees(day)}>
+                                +{remainingCount} more
+                              </div>
+                            {/if}
                           </div>
                         {/if}
-                      {:else}
-                        <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
-                          {activeCount}
-                        </div>
+                      </div>
+                      
+                      {#if !isSunday && day.employees.length > 0}
+                        {@const visibleEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
+                        {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
+                        {@const leaveCount = visibleEmployees.filter(emp => emp.onLeave).length}
+                        
+                        {#if showOnlyLeave}
+                          {#if leaveCount > 0}
+                            <div class="employee-count leave-count">
+                              {leaveCount}
+                            </div>
+                          {/if}
+                        {:else}
+                          <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
+                            {activeCount}
+                          </div>
+                          {#if (day.totalWorkingHours ?? 0) > 0}
+                            <div class="hours-badge">
+                              {(day.totalWorkingHours ?? 0).toFixed(1)}h
+                            </div>
+                          {/if}
+                        {/if}
                       {/if}
-                    {/if}                    </div>
+                    </div>
                   {/each}
                 {:else}
                   <!-- Placeholder with correct height to maintain scroll position -->
@@ -1107,32 +1245,55 @@
   </div>
 {/if}
 
-<svelte:window on:keydown={e => (e.key === 'Escape' && (showLeaveModal || showBulkLeaveModal)) && (showLeaveModal ? handleLeaveModalClose() : hideBulkLeaveForm())} />
+<!-- Toast notification -->
+{#if $toastStore.show}
+  <div class="toast-container">
+    <div class="toast toast-{$toastStore.type}">
+      <div class="toast-icon">
+        {#if $toastStore.type === 'success'}
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        {:else if $toastStore.type === 'error'}
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        {:else}
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+        {/if}
+      </div>
+      <div class="toast-message">{$toastStore.message}</div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .calendar-container {
-    width: 100%;
-    max-width: 1400px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 1rem;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-    color: #1f2937;
-    letter-spacing: -0.01em;
+    padding: 24px;
   }
   
   .dashboard-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    margin-bottom: 24px;
-    flex-wrap: wrap;
-    gap: 16px;
-    background: linear-gradient(to right, #f9fafb, #f3f4f6);
-    border-radius: 10px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  }
-  
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: white; /* Apple uses white backgrounds */
+  border-radius: 12px;
+  border: 1px solid var(--apple-light-gray);
+}
+
   h1 {
     margin: 0;
     font-size: 1.8rem;
@@ -1181,31 +1342,20 @@
   }
   
   .add-button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: #004225;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  }
-  
-  .add-button:hover {
-    background: #006339;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-  }
-  
-  .add-button:active {
-    transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  }
+  background: var(--apple-blue);
+  color: white;
+  border: none;
+  border-radius: 18px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.add-button:hover {
+  background: var(--apple-blue-hover);
+}
   
   .loading, .error {
     padding: 3rem;
@@ -1270,57 +1420,86 @@
   
   /* Calendar Styles */
   .calendar {
-    width: 100%;
-    background: white;
-  }
-  
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: white;
+  overflow: hidden;
+}
+
   .calendar-header {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    background: linear-gradient(to bottom, #f9fafb, #f3f4f6);
-    border-bottom: 1px solid #e5e7eb;
-  }
-  
-  .weekday-header {
-    padding: 14px 8px;
-    text-align: center;
-    font-weight: 500;
-    color: #4b5563;
-    font-size: 0.9rem;
-  }
-  
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  background: white;
+  border-bottom: 1px solid var(--apple-light-gray);
+  width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.weekday-header {
+  padding: 14px 8px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--apple-dark-gray);
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  /* Add these constraints */
+  overflow: hidden;
+  white-space: nowrap;
+}
+
   .calendar-grid {
     display: flex;
     flex-direction: column;
     will-change: transform; /* Hint to browser about animations */
     transform: translateZ(0); /* Force hardware acceleration */
     backface-visibility: hidden; /* Reduce composite layers */
+    width: 100%; /* Ensure full width */
+  }
+  
+  .calendar-header,
+  .calendar-week,
+  .calendar-grid {
+    grid-template-columns: repeat(7, 1fr);
+    min-width: 700px; /* Minimum width for the entire grid */
   }
   
   .calendar-week {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    border-bottom: 1px solid #e5e7eb;
-  }
-  
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid #e5e7eb;
+  width: 100%;
+  /* Add these properties */
+  grid-gap: 0; /* No gaps between columns */
+  overflow: visible; /* Allow content to overflow within its own cell */
+  position: relative; /* Establish positioning context */
+}
+
   .calendar-week:last-child {
     border-bottom: none;
   }
   
   .calendar-day {
-    min-height: 130px; /* Slightly taller for better content display */
-    border-right: 1px solid #e5e7eb;
-    cursor: pointer;
-    padding: 12px; /* Increase padding for more breathing room */
-    transition: all 0.25s ease;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    overflow: hidden;
-    gap: 6px; /* Add gap between day header and content */
-    contain: layout style; /* Containment hint to browser */
-  }
-  
+  height: auto; /* Remove fixed height constraint */
+  min-height: 130px; 
+  max-height: 330px; /* Limit maximum height */
+  border-right: 1px solid #e5e7eb;
+  padding: 12px;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: auto; /* Change from hidden to auto for controlled scrolling */
+  box-sizing: border-box;
+  margin: 0;
+  gap: 6px;
+  min-width: 0; /* Allow cell to shrink if needed */
+  flex: 1 0 0%; /* Equal width flex items */
+  contain: content; /* Use CSS containment to optimize rendering */
+  isolation: isolate; /* Create a new stacking context */
+}
+
   .calendar-day:last-child {
     border-right: none;
   }
@@ -1344,14 +1523,14 @@
   }
   
   .current-day {
-    background-color: rgba(79, 70, 229, 0.15) !important; /* Indigo color instead of green */
-    box-shadow: inset 0 0 0 2px rgba(79, 70, 229, 0.3);
-  }
-  
-  .current-day .day-date {
-    color: #4f46e5; /* Indigo instead of green */
-    font-weight: 600;
-  }
+  background-color: rgba(0, 113, 227, 0.08) !important; /* Apple blue with low opacity */
+  box-shadow: inset 0 0 0 2px rgba(0, 113, 227, 0.3);
+}
+
+.current-day .day-date {
+  color: var(--apple-blue);
+  font-weight: 600;
+}
   
   .day-header {
     display: flex;
@@ -1376,13 +1555,12 @@
   }
   
   .day-content {
-    flex-grow: 1;
-    overflow-y: auto;
-    /* Customize scrollbar */
-    scrollbar-width: thin;
-    scrollbar-color: #e5e7eb transparent;
-  }
-  
+  flex: 1;
+  overflow: visible; /* Show all content */
+  margin: 0;
+  padding: 0;
+}
+
   .day-content::-webkit-scrollbar {
     width: 6px;
   }
@@ -1397,45 +1575,58 @@
   }
   
   .no-schedule {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: #9ca3af;
-    font-size: 0.85rem;
-    gap: 6px;
-    opacity: 0.8;
-  }
+  display: inline-block;
+  font-size: 0.8rem;
+  color: #86868b; /* Apple gray text */
+  background-color: #f5f5f7;
+  padding: 4px 10px;
+  border-radius: 12px;
+  margin-top: 8px;
+  text-align: center;
+}
+
   
   .employee-list {
     list-style: none;
     padding: 0;
     margin: 0;
-  }
-  
-  .employee, .employee-button {
-    font-size: 0.85rem;
-    padding: 6px 10px;
-    margin-bottom: 6px;
-    border-radius: 6px;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    box-shadow: none;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  .employee-button {
-    /* Ensure the button has the same styling as the li */
-    border-left: 3px solid transparent; /* Will be overridden by role classes */
+    flex-direction: column;
+    gap: 6px;
   }
   
+  .employee-button {
+  font-size: 0.85rem;
+  padding: 0px 12px;
+  margin-bottom: 1px;
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: white;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  position: relative;
+}
+
+.employee-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06);
+}
+
+.employee-button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
   .shift-indicator {
     font-weight: 600;
     font-size: 0.7rem;
@@ -1492,7 +1683,9 @@
     border-radius: 12px;
     width: 100%;
     max-width: 480px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+    max-width: 480px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
     animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     overflow: hidden;
   }
@@ -1507,15 +1700,15 @@
     justify-content: space-between;
     align-items: center;
     padding: 20px 24px;
-    background: linear-gradient(to right, #f9fafb, #f3f4f6);
-    border-bottom: 1px solid #e5e7eb;
+    background: white; /* Apple uses white headers */
+    border-bottom: 1px solid var(--apple-light-gray);
   }
   
   .modal h2 {
     margin: 0;
-    font-size: 1.4rem;
-    font-weight: 500;
-    color: #1f2937;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--apple-black);
   }
   
   .close-button {
@@ -1553,25 +1746,24 @@
   }
   
   .form-group input,
-  .form-group select {
-    width: 100%;
-    padding: 12px 14px;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    font-size: 1rem;
-    transition: all 0.2s ease;
-    font-family: inherit;
-    background-color: #f9fafb;
-  }
+.form-group select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--apple-light-gray);
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  background-color: white;
+}
   
-  .form-group input:focus,
-  .form-group select:focus {
-    outline: none;
-    border-color: #35b07b;
-    box-shadow: 0 0 0 3px rgba(53, 176, 123, 0.2);
-    background-color: white;
-  }
-  
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--apple-blue);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.2);
+}
+
   .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -1596,18 +1788,17 @@
   }
   
   .save-button {
-    background: #004225;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  }
-  
+  background: var(--apple-blue);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
   .save-button:hover {
     background: #006339;
     transform: translateY(-1px);
@@ -1621,17 +1812,31 @@
   
   /* Responsive Styles */
   @media (max-width: 768px) {
-    .dashboard-header {
-      flex-direction: column;
-      align-items: flex-start;
-      padding: 16px;
-    }
-    
-    .month-navigation {
-      width: 100%;
-      justify-content: space-between;
-    }
-    
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+  
+  .calendar-day {
+    min-height: 100px;
+    padding: 8px;
+  }
+  
+  .employee-button {
+    padding: 5px 8px;
+    font-size: 0.8rem;
+  }
+   
+  .month-navigation {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .month-navigation button {
+    padding: 8px 12px;
+  }
+  
     .add-button {
       width: 100%;
       justify-content: center;
@@ -1643,9 +1848,14 @@
     }
     
     .calendar {
-      overflow-x: auto;
-    }
-    
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  }
+
+  .calendar-grid {
+    min-width: 700px; /* Ensure grid is wide enough to scroll */
+  }
+  
     .calendar-day {
       min-height: 100px;
       padding: 6px;
@@ -1753,36 +1963,41 @@
 
   /* Role-based styling */
   .role-manager {
-    background-color: #e0f2fe;
-    color: #0369a1;
-    border-left: 3px solid #0ea5e9;
-  }
+  background: white;
+  color: #111;
+  border-left: 3px solid #0071e3; /* Apple blue */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
 
-  .role-supervisor {
-    background-color: #fef9c3;
-    color: #854d0e;
-    border-left: 3px solid #eab308;
-  }
+.role-supervisor {
+  background: white;
+  color: #111;
+  border-left: 3px solid #ff9f0a; /* Apple orange */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
 
-  .role-team-lead {
-    background-color: #f3e8ff;
-    color: #6b21a8;
-    border-left: 3px solid #a855f7;
-  }
+.role-team-lead {
+  background: white;
+  color: #111;
+  border-left: 3px solid #ac39ff; /* Apple purple */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
 
-  .role-associate {
-    background-color: #e6f7f0;
-    color: #065f46;
-    border-left: 3px solid #35b07b;
-  }
+.role-associate {
+  background: white;
+  color: #111;
+  border-left: 3px solid #39ca74; /* Adjusted green */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
 
-  .role-trainee {
-    background-color: #fce7f3;
-    color: #9d174d;
-    border-left: 3px solid #ec4899;
-  }
+.role-trainee {
+  background: white;
+  color: #111;
+  border-left: 3px solid #ff3b30; /* Apple red */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
 
-  .role-default {
+.role-default {
     background-color: #f3f4f6;
     color: #4b5563;
     border-left: 3px solid #9ca3af;
@@ -1790,18 +2005,18 @@
 
   /* Update the role indicator style */
   .role-indicator {
-    font-weight: 600;
-    font-size: 0.7rem;
-    min-width: 24px; /* Fixed width for consistency */
-    height: 18px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.6);
-    backdrop-filter: blur(4px);
-    padding: 0 4px;
-  }
+  font-weight: 500; /* Less bold */
+  font-size: 0.7rem;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f7;
+  padding: 0 6px;
+  color: #86868b;
+}
 
   /* Add this new style for employee count badge */
   .employee-count {
@@ -1853,7 +2068,9 @@
     display: flex;
     flex-direction: column;
     position: relative; /* Make sure this is here */
-    overflow: hidden;
+    overflow: hidden; /* Contain content within each day */
+    box-sizing: border-box; /* Include padding in width calculation */
+    margin: 0; /* Remove any margins */
     gap: 6px; /* Add gap between day header and content */
   }
 
@@ -1899,8 +2116,19 @@
   .employee-more {
     text-align: center;
     font-size: 0.8rem;
-    color: #6b7280;
-    padding: 2px 0;
+    color: #86868b;
+    background: rgba(245, 245, 247, 0.7);
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin-top: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+
+  .employee-more:hover {
+    background: rgba(245, 245, 247, 1);
+    color: #0071e3;
   }
 
   /* CSS icons instead of SVGs */
@@ -1947,29 +2175,32 @@
 
   /* Employee on leave styling */
   .employee-on-leave {
-    background-color: rgba(var(--leave-color, 156, 163, 175), 0.15);
-    color: rgba(var(--leave-color, 75, 85, 99), 0.8);
-    border-left: 3px solid var(--leave-color, #9ca3af);
-    font-style: italic;
-    cursor: pointer;
-  }
+  background: white;
+  opacity: 0.9;
+  border-left: 3px solid #8E8E93; /* Muted color for leave */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+}
   
   .leave-tag {
-    font-size: 0.65rem;
-    padding: 1px 4px;
-    background: rgba(var(--leave-color, 156, 163, 175), 0.2);
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    background: #f5f5f7;
     border-radius: 4px;
-    margin-left: 4px;
-    white-space: nowrap;
+    margin-left: 6px;
+    color: #86868b;
+    font-weight: 500;
   }
   
   .leave-indicator {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 18px;
-    min-width: 18px;
+    height: 22px;
+    min-width: 22px;
     font-size: 0.9rem;
+    background: #f5f5f7;
+    border-radius: 11px;
+    color: #86868b;
   }
   
   .employee {
@@ -1977,11 +2208,16 @@
   }
   
   .employee-name {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+  color: #1d1d1f;
+  padding-right: 8px;
+  max-width: calc(100% - 28px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
   .employee-count.has-leave {
     background: linear-gradient(to right, #004225 50%, #9ca3af 50%);
@@ -2040,5 +2276,116 @@
 
   .calendar.leave-only-mode {
     background: linear-gradient(to right, #fff8f8, #fff);
+  }
+
+  /* Toast notification styles */
+
+
+.toast {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background-color: white;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  animation: toastSlideIn 0.3s ease forwards;
+  pointer-events: auto;
+  max-width: 320px;
+}
+
+  .toast-success {
+    border-left: 4px solid #10b981;
+    color: #064e3b;
+  }
+
+  .toast-error {
+    border-left: 4px solid #ef4444;
+    color: #7f1d1d;
+  }
+
+  .toast-info {
+    border-left: 4px solid #3b82f6;
+    color: #1e40af;
+  }
+
+  .toast-icon {
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+  }
+
+  .toast-message {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  @keyframes toastSlideIn {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .toast-container {
+      bottom: 0;
+      right: 0;
+      left: 0;
+      padding: 10px;
+    }
+    
+    .toast {
+      width: 100%;
+      border-radius: 8px;
+    }
+  }
+
+  .hours-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #0071e3; /* Apple blue */
+  color: white;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 500; /* Less bold */
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+  :root {
+    --apple-blue: #0071e3;
+    --apple-blue-hover: #0077ed;
+    --apple-gray: #f5f5f7;
+    --apple-dark-gray: #86868b;
+    --apple-light-gray: #d2d2d7;
+    --apple-black: #1d1d1f;
+    --apple-success: #39ca74;
+    --apple-warning: #ff9f0a;
+    --apple-error: #ff3b30;
+  }
+
+  /* Apply Apple-like typography */
+
+  h1 {
+    font-size: 1.8rem;
+    font-weight: 600; /* Apple uses semi-bold for headings */
+    letter-spacing: -0.02em; /* Slight negative tracking */
+  }
+
+  .current-month {
+    font-size: 1.2rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 </style>
