@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabaseClient';
   import { slide } from 'svelte/transition';
+  import { writable } from 'svelte/store';
   
   export let employees: any[] = [];
   export let onScheduleUpdate: () => void = () => {};
@@ -12,6 +13,29 @@
   let employeeSchedules: Record<string, boolean[]> = {};
   let saving = false;
   let error: string | null = null; // Fix: Explicit type for error
+
+  // Create a local store for scheduled hours
+  const scheduledHoursData = writable<Record<string, number>>({});
+
+  // Helper function for date formatting
+  function getFormattedDate(date: Date): string {
+    if (!(date instanceof Date) || isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0];
+    }
+    return '';
+  }
+
+  // Then use these local versions in your component
+  let scheduledHours: Record<string, number> = {};
+  const unsubscribeHours = scheduledHoursData.subscribe(value => {
+    scheduledHours = value;
+    // You can log the hours or do other processing if needed
+    if (Object.keys(scheduledHours).length > 0) {
+      console.log('Scheduled hours updated:', scheduledHours);
+      // If you need to notify parent component of hours changes
+      onScheduleUpdate();
+    }
+  });
   
   // For week display (Monday to Sunday)
   const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

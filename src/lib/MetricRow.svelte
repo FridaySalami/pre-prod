@@ -26,6 +26,8 @@
   export let notesMap: Record<string, NoteData>;
   export let metricField: string | null;
   export let wowChange: string;
+  export let isReadOnly: boolean = false; // Add this line
+  export let tooltip: string | undefined = undefined;
 
   // New props for totals:
   export let currentTotal: string;
@@ -35,29 +37,16 @@
   // Callback functions:
   export let handleInputChange: (metricIndex: number, dayIndex: number, newValue?: number) => void;
   export let openNotes: (metricIndex: number, dayIndex: number) => void;
-
-  function getCalculationExplanation(): string {
-    if (metricIndex === 2) {
-      return "Shipments Packed ÷ Hours Worked";
-    } else if (metricIndex === 4) {
-      return "(Defects ÷ Shipments Packed) × 1,000,000";
-    } else if (metricIndex === 5) {
-      return "((Shipments Packed - Defects) ÷ Shipments Packed) × 100";
-    }
-    return "";
-  }
 </script>
 
 <tr class="metric-row">
   <td class="metric-name">
     {name}
-    {#if metricField === null}
-      <div class="calc-info-container">
-        <span class="calc-info">?</span>
-        <div class="calc-tooltip">
-          {getCalculationExplanation()}
-        </div>
-      </div>
+    {#if tooltip}
+      <span class="tooltip-container">
+        <span class="info-icon">?</span>
+        <span class="tooltip-text">{tooltip}</span>
+      </span>
     {/if}
   </td>
 
@@ -71,8 +60,9 @@
             on:blur={() => handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
             on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
             class="cell-value"
+            class:read-only={isReadOnly}
+            disabled={isReadOnly}
           />
-          <!-- Add flag button -->
         </div>
       {:else}
         <div class="value-container">
@@ -131,42 +121,6 @@
     font-size: 0.8em;
     text-align: left;
     padding-left: 16px; /* Reduced from 24px */
-  }
-  .calc-info-container {
-    position: relative;
-    display: inline-block;
-    margin-left: 4px;
-  }
-  .calc-info {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    line-height: 16px;
-    text-align: center;
-    font-size: 0.75em;
-    color: #fff;
-    background-color: #004225;
-    border-radius: 50%;
-    cursor: help;
-  }
-  .calc-tooltip {
-    visibility: hidden;
-    position: absolute;
-    bottom: 125%;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #fff;
-    color: #333;
-    padding: 4px 8px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    white-space: nowrap;
-    font-size: 0.75em;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    z-index: 10;
-  }
-  .calc-info-container:hover .calc-tooltip {
-    visibility: visible;
   }
   .cell-value {
     display: block;
@@ -268,6 +222,70 @@
   
   .current-day {
     background-color: rgba(53, 176, 123, 0.1);
+  }
+  
+  input.read-only {
+    background-color: #f5f5f5;
+    cursor: not-allowed;
+    opacity: 0.8;
+    border-color: #ddd;
+  }
+
+  .tooltip-container {
+    position: relative;
+    display: inline-block;
+    margin-left: 5px;
+  }
+
+  .info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: #e0e0e0;
+    color: #555;
+    font-size: 0.7em;
+    font-weight: bold;
+    cursor: help;
+  }
+
+  .tooltip-text {
+    visibility: hidden;
+    width: 250px;
+    background-color: #333;
+    color: #fff;
+    text-align: left;
+    border-radius: 6px;
+    padding: 8px 10px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-weight: normal;
+    font-size: 0.85em;
+    line-height: 1.4;
+    pointer-events: none;
+  }
+
+  .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+  }
+
+  .tooltip-container:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
   }
   
 </style>

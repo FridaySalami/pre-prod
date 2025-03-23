@@ -459,11 +459,6 @@
     margin-bottom: 2px;
   }
   
-  .more-dates {
-    background-color: #0077ff;
-    color: white;
-  }
-
   .close-button {
     background: none;
     border: none;
