@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { goto } from '$app/navigation';
   import { userSession } from '$lib/sessionStore';
   import { supabase } from '$lib/supabaseClient';
   import ScheduleManager from '$lib/ScheduleManager.svelte';
+  import EmployeeLeaveModal from '$lib/EmployeeLeaveModal.svelte';
+  import BulkLeaveModal from '$lib/BulkLeaveModal.svelte';
   
   // Start with session as undefined (unknown)
   let session: any = undefined;
@@ -40,6 +42,9 @@
       name: string;
       role: string; // Add role property
       shift: string;
+      onLeave?: boolean;
+      leaveType?: string;
+      leaveColor?: string;
     }[];
   }
 
@@ -50,10 +55,30 @@
     day_of_week: number;
     is_working: boolean;
   }
+
+  interface LeaveType {
+    id: number;
+    name: string;
+    color: string;
+  }
+
+  interface LeaveRequest {
+    id: string;
+    employee_id: string;
+    start_date: string;
+    end_date: string;
+    leave_type_id: number;
+    leave_type_name: string;
+    leave_type_color: string;
+    status: string;
+    notes: string;
+  }
   
   let employees: Employee[] = [];
   let scheduleItems: ScheduleItem[] = [];
   let employeeSchedules: EmployeeSchedule[] = [];
+  let leaveRequests: LeaveRequest[] = [];
+  let leaveTypes: LeaveType[] = [];
   let loading = true;
   let error: string | null = null;
   
@@ -205,7 +230,49 @@
       })) || [];
       
       const weeklyPatterns: WeeklyPattern[] = patternResult.data || [];
+
+      // Add this section to fetch leave requests
+      const { data: leaveData, error: leaveError } = await supabase
+        .from('leave_requests')
+        .select(`
+          id, employee_id, start_date, end_date, status, notes,
+          leave_types(id, name, color)
+        `)
+        .gte('start_date', startDate)
+        .lte('end_date', endDate)
+        .eq('status', 'approved');
+
+      console.log('Leave data from API:', JSON.stringify(leaveData, null, 2));
+
+      if (leaveError) throw leaveError;
       
+      // Transform leave data for easier use - fix the object access
+      leaveRequests = (leaveData || []).map(leave => {
+        // Check if leave_types is an array or an object and handle appropriately
+        let leaveType;
+        if (Array.isArray(leave.leave_types)) {
+          // Handle case where it might be an array
+          leaveType = leave.leave_types[0] || {};
+        } else {
+          // Handle case where it's an object
+          leaveType = leave.leave_types || {};
+        }
+        
+        console.log('Leave type for request:', leave.id, leaveType);
+        
+        return {
+          id: leave.id,
+          employee_id: leave.employee_id,
+          start_date: leave.start_date,
+          end_date: leave.end_date,
+          leave_type_id: leaveType.id || null,
+          leave_type_name: leaveType.name || 'Unknown',
+          leave_type_color: leaveType.color || '#9ca3af',
+          status: leave.status,
+          notes: leave.notes
+        };
+      });
+            
       // Populate calendar
       populateCalendar(weeklyPatterns);
       
@@ -227,6 +294,22 @@
       'Trainee': 5
     };
     return priorities[role] || 99; // Unknown roles go at the end
+  }
+
+  // Add this function to check if an employee is on leave
+  function getEmployeeLeave(employeeId: string, date: Date): LeaveRequest | null {
+    const dateStr = formatApiDate(date);
+    const leave = leaveRequests.find(leave => 
+      leave.employee_id === employeeId && 
+      leave.start_date <= dateStr && 
+      leave.end_date >= dateStr
+    );
+    
+    if (leave) {
+      console.log("Found leave for employee:", employeeId, "Leave type:", leave.leave_type_name);
+    }
+    
+    return leave || null;
   }
 
   // Populate calendar with scheduled employees
@@ -308,22 +391,43 @@
         }
       }
     }
+
+    // When adding employees, check for leave
+    for (const day of calendarDays) {
+      // Your existing day population code...
+      
+      // After populating employees for the day, check each employee for leave
+      day.employees = day.employees.map(emp => {
+        const employeeLeave = getEmployeeLeave(emp.id, day.date);
+        return {
+          ...emp,
+          onLeave: !!employeeLeave,
+          leaveType: employeeLeave?.leave_type_name || undefined,
+          leaveColor: employeeLeave?.leave_type_color || undefined
+        };
+      });
+    }
     
     // Sort employees in each day by role priority first, then by name
-    calendarDays = calendarDays.map(day => ({
-      ...day,
-      employees: day.employees.sort((a, b) => {
-        // First compare by role priority
-        const roleDiff = getRolePriority(a.role) - getRolePriority(b.role);
-        
-        // If same role, then sort by name
-        if (roleDiff === 0) {
-          return a.name.localeCompare(b.name);
-        }
-        
-        return roleDiff;
-      })
-    }));
+    calendarDays = calendarDays.map(day => {
+      // Count only employees not on leave
+      const activeEmployees = day.employees.filter(emp => !emp.onLeave);
+      
+      return {
+        ...day,
+        employees: day.employees.sort((a, b) => {
+          // First compare by role priority
+          const roleDiff = getRolePriority(a.role) - getRolePriority(b.role);
+          
+          // If same role, then sort by name
+          if (roleDiff === 0) {
+            return a.name.localeCompare(b.name);
+          }
+          
+          return roleDiff;
+        })
+      };
+    });
   }
   
   // Change month
@@ -403,8 +507,6 @@
   onDestroy(() => {
     unsubscribe();
   });
-
-  // Add these to your existing script section
   
   // Employee management modal state
   let showEmployeeModal = false;
@@ -483,7 +585,6 @@
     return roleBadges[role] || '?';
   }
 
-  // Add this to your script section
   // Show add schedule form
   function showAddScheduleForm(selectedDate?: Date) {
     newScheduleItem = {
@@ -531,6 +632,44 @@
       });
     }
   });
+
+  // Add these functions to handle employee click and leave management
+  let showLeaveModal = false;
+  let showBulkLeaveModal = false;
+  let selectedEmployee: any = null;
+  let selectedDate: Date | null = null;
+  let selectedLeave: any = null;
+
+  function handleEmployeeClick(employee: any, date: Date) {
+    selectedEmployee = employee;
+    selectedDate = date;
+    selectedLeave = getEmployeeLeave(employee.id, date);
+    showLeaveModal = true;
+  }
+  
+  function handleLeaveModalClose() {
+    showLeaveModal = false;
+    selectedEmployee = null;
+    selectedDate = null;
+    selectedLeave = null;
+  }
+  
+  function handleLeaveSaved() {
+    showLeaveModal = false;
+    showBulkLeaveModal = false;
+    selectedEmployee = null;
+    selectedDate = null;
+    selectedLeave = null;
+    fetchData(); // Refresh data
+  }
+  
+  function showBulkLeaveForm() {
+    showBulkLeaveModal = true;
+  }
+  
+  function hideBulkLeaveForm() {
+    showBulkLeaveModal = false;
+  }
 </script>
 
 {#if session === undefined || loading}
@@ -592,6 +731,22 @@
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
           Add Schedule
+        </button>
+
+        <button class="add-button" on:click={showBulkLeaveForm}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+            <path d="M8 14h.01"></path>
+            <path d="M12 14h.01"></path>
+            <path d="M16 14h.01"></path>
+            <path d="M8 18h.01"></path>
+            <path d="M12 18h.01"></path>
+            <path d="M16 18h.01"></path>
+          </svg>
+          Bulk Leave
         </button>
       </div>
     </div>
@@ -687,7 +842,7 @@
                       on:click={() => !isSunday && showAddScheduleForm(day.date)}
                       on:keydown={e => !isSunday && e.key === 'Enter' && showAddScheduleForm(day.date)}
                       role={isSunday ? 'presentation' : 'button'}
-                      tabindex={isSunday ? -1 : 0}
+                      tabindex={isSunday ? undefined : 0}
                     >
                       <div class="day-header">
                         <span class="day-date">{day.date.getDate()}</span>
@@ -706,19 +861,32 @@
                           <!-- Always show the complete employee list -->
                           <ul class="employee-list">
                             {#each day.employees as employee (employee.id)}
-                              <li class="employee {getRoleClass(employee.role)}">
-                                {employee.name}
-                                <span class="role-indicator">{getRoleBadge(employee.role)}</span>
-                              </li>
+                              <!-- Fix the accessibility issue by using button instead of li with role="button" -->
+                              <button 
+                                class="employee-button {employee.onLeave ? 'employee-on-leave' : getRoleClass(employee.role)}"
+                                style={employee.onLeave ? `--leave-color: ${employee.leaveColor || '#9ca3af'};` : ''}
+                                on:click|stopPropagation={() => handleEmployeeClick(employee, day.date)}
+                              >
+                                <span class="employee-name">
+                                  {employee.name}
+                                  {#if employee.onLeave}
+                                    <span class="leave-tag">{employee.leaveType}</span>
+                                  {/if}
+                                </span>
+                                <span class={employee.onLeave ? "leave-indicator" : "role-indicator"}>
+                                  {employee.onLeave ? '🏝️' : getRoleBadge(employee.role)}
+                                </span>
+                              </button>
                             {/each}
                           </ul>
                         {/if}
                       </div>
-                      
-                      {#if !isSunday && day.employees.length > 0}
-                        <div class="employee-count">{day.employees.length}</div>
-                      {/if}
-                    </div>
+                    {#if !isSunday && day.employees.length > 0}
+                      {@const activeCount = day.employees.filter(emp => !emp.onLeave).length}
+                      <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
+                        {activeCount}
+                      </div>
+                    {/if}                    </div>
                   {/each}
                 {:else}
                   <!-- Placeholder with correct height to maintain scroll position -->
@@ -864,6 +1032,40 @@
     {/if}
   </div>
 {/if}
+
+{#if showLeaveModal && selectedEmployee && selectedDate}
+  <div 
+    class="modal-overlay" 
+    on:click|self={handleLeaveModalClose}
+    role="dialog"
+    aria-modal="true"
+  >
+    <EmployeeLeaveModal
+      employee={selectedEmployee}
+      date={selectedDate}
+      existingLeave={selectedLeave}
+      on:close={handleLeaveModalClose}
+      on:saved={handleLeaveSaved}
+    />
+  </div>
+{/if}
+
+{#if showBulkLeaveModal}
+  <div 
+    class="modal-overlay" 
+    on:click|self={hideBulkLeaveForm}
+    role="dialog"
+    aria-modal="true"
+  >
+    <BulkLeaveModal
+      employees={employees}
+      on:close={hideBulkLeaveForm}
+      on:saved={handleLeaveSaved}
+    />
+  </div>
+{/if}
+
+<svelte:window on:keydown={e => (e.key === 'Escape' && (showLeaveModal || showBulkLeaveModal)) && (showLeaveModal ? handleLeaveModalClose() : hideBulkLeaveForm())} />
 
 <style>
   .calendar-container {
@@ -1170,7 +1372,7 @@
     margin: 0;
   }
   
-  .employee {
+  .employee, .employee-button {
     font-size: 0.85rem;
     padding: 6px 10px;
     margin-bottom: 6px;
@@ -1178,7 +1380,18 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: none; /* Remove shadow completely */
+    box-shadow: none;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .employee-button {
+    /* Ensure the button has the same styling as the li */
+    border-left: 3px solid transparent; /* Will be overridden by role classes */
   }
   
   .shift-indicator {
@@ -1667,5 +1880,68 @@
     height: 6px;
     border-radius: 50%;
     background: #94a3b8;
+  }
+
+  .modal-content {
+    padding: 20px;
+  }
+  
+  .delete-button {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+    padding: 8px 16px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-right: auto;
+  }
+  
+  .delete-button:hover {
+    background: #fecaca;
+  }
+
+  /* Employee on leave styling */
+  .employee-on-leave {
+    background-color: rgba(var(--leave-color, 156, 163, 175), 0.15);
+    color: rgba(var(--leave-color, 75, 85, 99), 0.8);
+    border-left: 3px solid var(--leave-color, #9ca3af);
+    font-style: italic;
+    cursor: pointer;
+  }
+  
+  .leave-tag {
+    font-size: 0.65rem;
+    padding: 1px 4px;
+    background: rgba(var(--leave-color, 156, 163, 175), 0.2);
+    border-radius: 4px;
+    margin-left: 4px;
+    white-space: nowrap;
+  }
+  
+  .leave-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 18px;
+    min-width: 18px;
+    font-size: 0.9rem;
+  }
+  
+  .employee {
+    cursor: pointer;
+  }
+  
+  .employee-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .employee-count.has-leave {
+    background: linear-gradient(to right, #004225 50%, #9ca3af 50%);
   }
 </style>
