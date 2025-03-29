@@ -5,8 +5,9 @@
   import { getMonday, formatNumber, getWeekNumber, isToday } from "./utils";
   import MetricRow from "./MetricRow.svelte";
   import { testDirectInsert } from '$lib/notesService';
-  import { showToast } from '$lib/toastStore'; // Add this import
-//  import { scheduledHoursData, getFormattedDate } from '$lib/scheduleStore';
+  import { showToast } from '$lib/toastStore';   
+  import { getScheduledHoursForDateRange } from '$lib/hours-service';
+
     
   // Updated ExtendedMetric with required properties.
   interface ExtendedMetric {
@@ -256,23 +257,73 @@
   let previousTotals: number[] = metrics.map(() => 0);
   let previousWeekMetrics: number[][] = metrics.map(() => new Array(daysCount).fill(0));
   async function loadPreviousWeekTotals() {
+  try {
     let totals = metrics.map(() => 0);
     previousWeekMetrics = metrics.map(() => new Array(daysCount).fill(0));
+    
+    // Format dates for API
+    const startDateStr = previousWeekDates[0].toISOString().split("T")[0];
+    const endDateStr = previousWeekDates[previousWeekDates.length-1].toISOString().split("T")[0];
+    
+    // Get scheduled hours from hours service
+    const scheduledHoursData = await getScheduledHoursForDateRange(
+      new Date(startDateStr), 
+      new Date(endDateStr)
+    );
+    
+    // Get other metrics from daily_metrics
+    const { data: prevWeekMetricsData } = await supabase
+      .from("daily_metrics")
+      .select("*")
+      .gte("date", startDateStr)
+      .lte("date", endDateStr)
+      .order("date");
+    
+    // Create a lookup map
+    const dataByDay: Record<string, any> = {};
+    prevWeekMetricsData?.forEach(record => {
+      dataByDay[record.date] = record;
+      
+      // Replace scheduled_hours with data from hours service if available
+      const hoursRecord = scheduledHoursData.find(h => h.date === record.date);
+      if (hoursRecord) {
+        dataByDay[record.date].scheduled_hours = hoursRecord.hours;
+      }
+    });
+    
+    // Add any dates that exist in hours service but not in metrics
+    scheduledHoursData.forEach(hoursRecord => {
+      if (!dataByDay[hoursRecord.date]) {
+        dataByDay[hoursRecord.date] = {
+          date: hoursRecord.date,
+          scheduled_hours: hoursRecord.hours
+        };
+      }
+    });
+    
+    // Process data for each day
     for (let i = 0; i < previousWeekDates.length; i++) {
       const dateStr = previousWeekDates[i].toISOString().split("T")[0];
-      const data = await loadMetricsForDate(dateStr);
+      const data = dataByDay[dateStr];
+      
       metrics.forEach((metric, idx) => {
         // For data rows (those with a non-null metricField), update the previous week values.
-        if (metric.metricField !== null) {
-          const val = data ? (data[metric.metricField] ?? 0) : 0;
+        if (metric.metricField !== null && data) {
+          let fieldName = metric.metricField;
+          if (fieldName === "shipments_packed") fieldName = "shipments";
+          
+          const val = data[fieldName] ?? 0;
           previousWeekMetrics[idx][i] = val;
           totals[idx] += val;
         }
       });
     }
+    
     previousTotals = totals;
+  } catch (err) {
+    console.error("Error loading previous week data:", err);
   }
-
+}
   $: previousTotalsComputed = metrics.map((metric, idx) => {
   if (!metric.values) return 0;
   if (metric.metricField === null) {
@@ -319,74 +370,96 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
   }
 
   async function loadMetrics() {
-    try {
-      loading = true;
-      
-      // Format dates for API queries
-      const mondayStr = displayedMonday.toISOString().split('T')[0];
-      const sundayStr = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
-      // Fetch current week data
-      const { data: currentWeekData, error } = await supabase
-        .from('daily_metrics')
-        .select('*')
-        .gte('date', mondayStr)
-        .lte('date', sundayStr)
-        .order('date');
-      
-      if (error) {
-        console.error('Error fetching metrics:', error);
-        throw error;
-      }
-      
-      // Create a lookup map for database records
-      const dataByDay: Record<string, any> = {};
-      currentWeekData?.forEach(record => {
-        dataByDay[record.date] = record;
-      });
-      
-      // Reset metrics to default values
-      let updatedMetrics = JSON.parse(JSON.stringify(metrics));
-      
-      // Populate with data from database
-      for (let i = 0; i < weekDates.length; i++) {
-        const dateStr = weekDates[i].toISOString().split('T')[0];
-        const dayData = dataByDay[dateStr];
-        
-        if (dayData) {
-          // Update each metric with database values
-          updatedMetrics = updatedMetrics.map((metric: ExtendedMetric) => {
-            if (!metric.metricField) return metric;
-            
-            // Map metricField to actual database column names
-            let dbField = metric.metricField;
-            if (metric.metricField === "shipments_packed") {
-              dbField = "shipments"; // Correct field name from schema
-            }
-            
-            if (dayData[dbField] !== undefined) {
-              const newValues = [...metric.values];
-              newValues[i] = dayData[dbField] || 0;
-              return { ...metric, values: newValues };
-            }
-            return metric;
-          });
-        }
-      }
-      
-      // Use updated metrics
-      metrics = updatedMetrics;
-      
-      // Also reload previous week data for comparison
-      await loadPreviousWeekTotals();
-      
-      loading = false;
-    } catch (err) {
-      console.error('Error in loadMetrics:', err);
-      loading = false;
+  try {
+    loading = true;
+    
+    // Format dates for API queries
+    const mondayStr = displayedMonday.toISOString().split('T')[0];
+    const sundayStr = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    // Fetch current week data
+    const { data: currentWeekData, error } = await supabase
+      .from('daily_metrics')
+      .select('*')
+      .gte('date', mondayStr)
+      .lte('date', sundayStr)
+      .order('date');
+    
+    if (error) {
+      console.error('Error fetching metrics:', error);
+      throw error;
     }
+    
+    // Get scheduled hours from hours service
+    const scheduledHoursData = await getScheduledHoursForDateRange(
+      new Date(mondayStr), 
+      new Date(sundayStr)
+    );
+    
+    // Create a lookup map for database records
+    const dataByDay: Record<string, any> = {};
+    currentWeekData?.forEach(record => {
+      dataByDay[record.date] = record;
+      
+      // Replace scheduled_hours with data from hours service if available
+      const hoursRecord = scheduledHoursData.find(h => h.date === record.date);
+      if (hoursRecord) {
+        dataByDay[record.date].scheduled_hours = hoursRecord.hours;
+      }
+    });
+    
+    // Add any dates that exist in hours service but not in metrics
+    scheduledHoursData.forEach(hoursRecord => {
+      if (!dataByDay[hoursRecord.date]) {
+        dataByDay[hoursRecord.date] = {
+          date: hoursRecord.date,
+          scheduled_hours: hoursRecord.hours
+        };
+      }
+    });
+    
+    // Reset metrics to default values
+    let updatedMetrics = JSON.parse(JSON.stringify(metrics));
+    
+    // Populate with data from database
+    for (let i = 0; i < weekDates.length; i++) {
+      const dateStr = weekDates[i].toISOString().split('T')[0];
+      const dayData = dataByDay[dateStr];
+      
+      if (dayData) {
+        // Update each metric with database values
+        updatedMetrics = updatedMetrics.map((metric: ExtendedMetric) => {
+          if (!metric.metricField) return metric;
+          
+          // Map metricField to actual database column names
+          let dbField = metric.metricField;
+          if (metric.metricField === "shipments_packed") {
+            dbField = "shipments"; // Correct field name from schema
+          }
+          
+          if (dayData[dbField] !== undefined) {
+            const newValues = [...metric.values];
+            newValues[i] = dayData[dbField] || 0;
+            return { ...metric, values: newValues };
+          }
+          return metric;
+        });
+      }
+    }
+    
+    // Use updated metrics
+    metrics = updatedMetrics;
+    
+    // Also reload previous week data for comparison
+    await loadPreviousWeekTotals();
+    
+    loading = false;
+  } catch (err) {
+    console.error('Error in loadMetrics:', err);
+    loading = false;
   }
-
+}
+  
   async function saveMetricsForDate(dateStr: string, metricsData: any) {
     try {
       console.log('Saving metrics for date:', dateStr, 'Data:', metricsData);
