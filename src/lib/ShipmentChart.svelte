@@ -399,7 +399,7 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
     // Create a lookup map for database records
     const dataByDay: Record<string, any> = {};
     currentWeekData?.forEach(record => {
-      dataByDay[record.date] = record;
+      dataByDay[record.date] = {...record};
       
       // Replace scheduled_hours with data from hours service if available
       const hoursRecord = scheduledHoursData.find(h => h.date === record.date);
@@ -428,7 +428,7 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       
       if (dayData) {
         // Update each metric with database values
-        updatedMetrics = updatedMetrics.map((metric: ExtendedMetric) => {
+        updatedMetrics = updatedMetrics.map((metric: any) => {
           if (!metric.metricField) return metric;
           
           // Map metricField to actual database column names

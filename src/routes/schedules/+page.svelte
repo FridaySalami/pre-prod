@@ -114,7 +114,54 @@
     fetchData();
   }
   
-  // Generate calendar days for a month
+// Helper function to get initials from a name
+function getInitials(name: string): string {
+  if (!name || typeof name !== 'string') return '??';
+  
+  return name
+    .split(' ')
+    .filter(part => part.length > 0)
+    .map(part => part[0])
+    .join('')
+    .toUpperCase()
+    .substring(0, 2); // Limit to 2 characters max
+}
+
+// Update the showTooltip function with proper types
+function showTooltip(event: MouseEvent) {
+  const container = event.currentTarget as HTMLElement;
+  const tooltip = container.querySelector('.employee-tooltip');
+  if (!tooltip) return;
+  
+  // Get position info
+  const rect = container.getBoundingClientRect();
+  const spaceAbove = rect.top;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  
+  // Clear existing position classes
+  tooltip.classList.remove('tooltip-top', 'tooltip-bottom');
+  
+  // Decide where to show tooltip
+  if (spaceBelow >= 100 || spaceBelow > spaceAbove) {
+    // Show below if there's enough space or more than above
+    tooltip.classList.add('tooltip-bottom');
+  } else {
+    // Otherwise show above
+    tooltip.classList.add('tooltip-top');
+  }
+  
+  // Make tooltip visible
+  tooltip.classList.add('tooltip-visible');
+}
+
+// Update the hideTooltip function with proper types
+function hideTooltip(event: MouseEvent) {
+  const container = event.currentTarget as HTMLElement;
+  const tooltip = container.querySelector('.employee-tooltip');
+  if (tooltip) {
+    tooltip.classList.remove('tooltip-visible');
+  }
+}  // Generate calendar days for a month
   function generateCalendar(year: number, month: number) {
     const firstDayOfMonth = new Date(year, month, 1);
     const lastDayOfMonth = new Date(year, month + 1, 0);
@@ -286,8 +333,9 @@
         };
       });
             
-      // Populate calendar
+      // Populate calendar-
       populateCalendar(weeklyPatterns);
+      organizeCalendarWeeks();
       
       showToast('Schedule updated successfully', 'success');
       
@@ -311,6 +359,57 @@
     };
     return priorities[role] || 99; // Unknown roles go at the end
   }
+  // Toggle week expansion
+function toggleWeek(weekIndex: number) {
+  const index = expandedWeeks.indexOf(weekIndex);
+  if (index > -1) {
+    // Only collapse if it's not the current week
+    const today = new Date();
+    const weekStart = weekIndex * 7;
+    const weekDays = calendarDays.slice(weekStart, weekStart + 7);
+    const isCurrentWeek = weekDays.some(day => 
+      day.date.toDateString() === today.toDateString()
+    );
+    
+    if (!isCurrentWeek) {
+      expandedWeeks.splice(index, 1);
+      expandedWeeks = [...expandedWeeks]; // Trigger reactivity
+    }
+  } else {
+    expandedWeeks.push(weekIndex);
+    expandedWeeks = [...expandedWeeks]; // Trigger reactivity
+  }
+}
+
+// Switch between view modes
+function switchView(view: 'month' | 'week' | 'day') {
+  calendarView = view;
+  
+  if (view === 'week') {
+    // Find the current week
+    const today = new Date();
+    const currentWeekIndex = Math.floor(calendarDays.findIndex(
+      day => day.date.toDateString() === today.toDateString()
+    ) / 7);
+    
+    // Only expand the current week
+    expandedWeeks = [currentWeekIndex];
+  } else if (view === 'month') {
+    // Expand current and next week in month view
+    const today = new Date();
+    const currentWeekIndex = Math.floor(calendarDays.findIndex(
+      day => day.date.toDateString() === today.toDateString()
+    ) / 7);
+    
+    expandedWeeks = [currentWeekIndex];
+    if (currentWeekIndex + 1 < 6) { // Assuming 6 weeks max in calendar view
+      expandedWeeks.push(currentWeekIndex + 1);
+    }
+  } else if (view === 'day') {
+    // Default to today for day view
+    selectedDate = new Date();
+  }
+}
 
   // Add this function to check if an employee is on leave
   function getEmployeeLeave(employeeId: string, date: Date): LeaveRequest | null {
@@ -538,7 +637,7 @@ function changeMonth(delta: number) {
   // Get shift display name
   function getShiftName(shift: string): string {
     const shiftNames = {
-      morning: 'Morning',
+      morning: '08:00 - 16:30',
       afternoon: 'Afternoon',
       night: 'Night'
     };
@@ -573,6 +672,12 @@ function changeMonth(delta: number) {
   };
   let employeeError: string | null = null;
   
+// Calendar view state
+let calendarView: 'month' | 'week' | 'day' = 'month';
+let currentDay = new Date().getDate();
+let expandedWeeks: number[] = []; // Track which weeks are expanded
+let weekHeaders: {weekNum: number, monthName: string}[] = [];
+
   // Add employee function
   async function addEmployee() {
     if (!newEmployee.name || !newEmployee.role) {
@@ -612,6 +717,58 @@ function changeMonth(delta: number) {
     };
     showEmployeeModal = true;
   }
+  
+// Group calendar days into weeks and add week headers
+function organizeCalendarWeeks() {
+  // Reset week headers
+  weekHeaders = [];
+  
+  // Today's date for highlighting current week
+  const today = new Date();
+  
+  // Find the week containing today
+  let currentWeekIndex = -1;
+  
+  // Process calendar days into weeks
+  for (let i = 0; i < calendarDays.length; i += 7) {
+    const weekStartDate = calendarDays[i].date;
+    const weekIndex = Math.floor(i / 7);
+    
+    // Get week number and month for header
+    const weekNum = getWeekNumber(weekStartDate);
+    const monthName = weekStartDate.toLocaleDateString('en-US', { month: 'long' });
+    
+    weekHeaders.push({ weekNum, monthName });
+    
+    // Check if this week contains today
+    const weekEndDate = new Date(weekStartDate);
+    weekEndDate.setDate(weekStartDate.getDate() + 6);
+    
+    if (today >= weekStartDate && today <= weekEndDate) {
+      currentWeekIndex = weekIndex;
+    }
+  }
+  
+  // Set default expanded weeks to current week and next week
+  expandedWeeks = [];
+  if (currentWeekIndex >= 0) {
+    expandedWeeks.push(currentWeekIndex);
+    if (currentWeekIndex + 1 < weekHeaders.length) {
+      expandedWeeks.push(currentWeekIndex + 1);
+    }
+  } else {
+    // If we couldn't find current week (rare edge case), expand first two weeks
+    expandedWeeks = [0, 1].filter(i => i < weekHeaders.length);
+  }
+  
+  return expandedWeeks;
+}
+// Helper function to get week number
+function getWeekNumber(date: Date): number {
+  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+}
   
   // Hide employee modal
   function hideEmployeeModal() {
@@ -976,9 +1133,8 @@ async function checkScheduledHours() {
           </svg>
         </button>
       </div>
-      
-      <!-- Add this toggle button -->
-      <div class="view-filter">
+ 
+     <div class="view-filter">
         <button 
           class="toggle-button {showOnlyLeave ? 'active' : ''}"
           on:click={() => showOnlyLeave = !showOnlyLeave}
@@ -1058,7 +1214,7 @@ async function checkScheduledHours() {
       <button class="add-button debug-button" on:click={checkScheduledHours}>
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
           <line x1="12" y1="8" x2="12.01" y2="8"></line>
         </svg>
         Check Hours
@@ -1092,6 +1248,25 @@ async function checkScheduledHours() {
         Manage Schedule Patterns
       </button>
     </div>
+    <!-- Add this right after the view-toggle div -->
+<div class="calendar-legend">
+  <div class="legend-item">
+    <span class="legend-icon">✅</span>
+    <span class="legend-label">Available</span>
+  </div>
+  <div class="legend-item">
+    <span class="legend-icon">🌴</span>
+    <span class="legend-label">Holiday/Leave</span>
+  </div>
+  <div class="legend-item">
+    <span class="legend-icon">🤒</span>
+    <span class="legend-label">Sick</span>
+  </div>
+  <div class="legend-item">
+    <span class="legend-icon">👤</span>
+    <span class="legend-label">Click on employee for details</span>
+  </div>
+</div>
     
     {#if loading}
       <div class="loading">
@@ -1140,257 +1315,421 @@ async function checkScheduledHours() {
           
           <!-- Updated calendar grid with virtual scrolling optimization -->
           <div class="calendar-grid" bind:this={calendarViewport}>
-            {#each Array(6) as _, weekIndex (weekIndex)}
-              <div class="calendar-week" data-week-index={weekIndex}>
-                <!-- Only render when in or near viewport -->
-                {#if Math.abs(weekIndex - visibleMonthStart) <= 2 || Math.abs(weekIndex - visibleMonthEnd) <= 2}
-                  {#each Array(7) as _, dayIndex (weekIndex * 7 + dayIndex)}
-                    {@const calendarIndex = weekIndex * 7 + dayIndex}
-                    {@const day = calendarDays[calendarIndex] || { date: new Date(), isCurrentMonth: false, employees: [] }}
-                    {@const isToday = day.date.toDateString() === new Date().toDateString()}
-                    {@const isSunday = day.date.getDay() === 0}
+  {#if calendarView === 'day' && selectedDate}
+    <!-- Day view -->
+    <div class="day-view">
+      <h2 class="day-title">{selectedDate.toLocaleDateString('en-US', {weekday: 'long', month: 'long', day: 'numeric'})}</h2>
+      <div class="day-schedule">
+        {#if selectedDate}
+        {@const selectedDayData = calendarDays.find(day => day.date.toDateString() === selectedDate?.toDateString())}
+        {#if selectedDayData}
+          <!-- Day employees -->
+          <div class="employee-list-detailed">
+            {#each selectedDayData.employees as employee}
+              <div class="employee-card {employee.onLeave ? 'employee-on-leave' : getRoleClass(employee.role)}">
+                <div class="employee-card-header">
+                  <span class="employee-name-full">{employee.name}</span>
+                  <span class="employee-status">
+                    {#if employee.onLeave}
+                      <span class="status-emoji">{employee.leaveType === 'Sick' ? '🤒' : '🌴'}</span>
+                      {employee.leaveType}
+                    {:else}
+                      <span class="status-emoji">✅</span> Available
+                    {/if}
+                  </span>
+                </div>
+                <div class="employee-card-details">
+                  <div class="employee-role">{employee.role}</div>
+                  <div class="employee-shift">{getShiftName(employee.shift)}</div>
+                </div>
+              </div>
+            {/each}
+            
+            {#if selectedDayData.employees.length === 0}
+              <p class="no-employees">No employees scheduled for this day.</p>
+            {/if}
+          </div>
+        {:else}
+          <p>No data available for this day.</p>
+        {/if}
+        {/if}
+      </div>
+    </div>
+  {:else}
+    <!-- Week/Month view -->
+    {#each Array(6) as _, weekIndex}
+      {@const weekHeader = weekHeaders[weekIndex] || { weekNum: 0, monthName: '' }}
+      {@const isExpanded = expandedWeeks.includes(weekIndex)}
+      {@const startDay = weekIndex * 7}
+      {@const endDay = startDay + 6}
+      {@const weekDays = calendarDays.slice(startDay, endDay + 1)}
+      {@const hasLeave = weekDays.some(day => day.employees.some(emp => emp.onLeave))}
+      {@const hasData = weekDays.some(day => day.employees.length > 0)}
+      {@const isCurrentWeek = weekDays.some(day => day.date.toDateString() === new Date().toDateString())}
+      
+      <div class="calendar-week-wrapper">
+        <!-- Week header -->
+        <button 
+          class="week-header {isExpanded ? 'expanded' : ''} {hasLeave ? 'has-leave' : ''} {hasData ? 'has-data' : ''} {isCurrentWeek ? 'current-week' : ''}"
+          on:click={() => toggleWeek(weekIndex)}
+        >
+          <span class="week-num">Week {weekHeader.weekNum}</span>
+          <span class="week-month">{weekHeader.monthName}</span>
+          <span class="week-expand-icon">
+            {#if isExpanded}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="18 15 12 9 6 15"></polyline>
+              </svg>
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            {/if}
+          </span>
+        </button>
+        
+        <!-- Week content (only shown when expanded) -->
+        {#if isExpanded}
+          <div class="calendar-week" data-week-index={weekIndex}>
+            {#each weekDays as day, dayIndex}
+              {@const isToday = day.date.toDateString() === new Date().toDateString()}
+              {@const isSunday = day.date.getDay() === 0}
+              {@const isSaturday = day.date.getDay() === 6}
+              {@const isWeekday = day.date.getDay() > 0 && day.date.getDay() < 6}
+              
+              <div 
+              class="calendar-day {day.isCurrentMonth ? 'current-month' : 'other-month'} {isToday ? 'current-day' : ''} {isSunday ? 'weekend sunday' : isSaturday ? 'weekend saturday' : 'weekday'}"
+              on:click={() => {
+                if (calendarView === 'day') {
+                  selectedDate = day.date;
+                } else {
+                  showAddScheduleForm(day.date);
+                }
+              }}
+              on:keydown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  if (calendarView === 'day') {
+                    selectedDate = day.date;
+                  } else {
+                    showAddScheduleForm(day.date);
+                  }
+                }
+              }}
+              role="button"
+              tabindex="0"
+            >
+                            <div class="day-header">
+                  <span class="day-date">{day.date.getDate()}</span>
+                  <span class="day-name">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][day.date.getDay()]}</span>
+                </div>
+                
+                <div class="day-content">
+                  {#if day.employees.length === 0}
+                    <div class="no-schedule">
+                      <span class="status-emoji">✅</span> Available
+                    </div>
+                  {:else}
+                    {@const filteredEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
+                    {@const displayEmployees = filteredEmployees.slice(0, 6)}
+                    {@const remainingCount = filteredEmployees.length - 6}
                     
-                    <div 
-                      class="calendar-day {day.isCurrentMonth ? 'current-month' : 'other-month'} {isToday ? 'current-day' : ''} {isSunday ? 'closed-day' : ''}"
-                      on:click={() => !isSunday && showAddScheduleForm(day.date)}
-                      on:keydown={e => !isSunday && e.key === 'Enter' && showAddScheduleForm(day.date)}
-                      role={isSunday ? 'presentation' : 'button'}
-                      tabindex={isSunday ? undefined : 0}
-                    >
-                      <div class="day-header">
-                        <span class="day-date">{day.date.getDate()}</span>
-                        <span class="day-name">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][day.date.getDay()]}</span>
-                      </div>
-                      
-                      <div class="day-content">
-                        {#if day.employees.length === 0}
-                          <div class="no-schedule">Available</div>
-                        {:else}
-                          {@const filteredEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
-                          {@const displayEmployees = filteredEmployees.slice(0, 6)}
-                          {@const remainingCount = filteredEmployees.length - 6}
-                          
-                          <div class="employee-list">
-                            {#each displayEmployees as employee (employee.id)}
-                              <button 
-                                class="employee-button {employee.onLeave ? 'employee-on-leave' : getRoleClass(employee.role)}"
-                                on:click|stopPropagation={() => handleEmployeeClick(employee, day.date)}
-                              >
-                                <span class="employee-name">
-                                  {employee.name}
-                                  {#if employee.onLeave}
-                                    <span class="leave-tag">{employee.leaveType}</span>
-                                  {/if}
-                                </span>
-                                <span class={employee.onLeave ? "leave-indicator" : "role-indicator"}>
-                                  {employee.onLeave ? '🏝️' : getRoleBadge(employee.role)}
-                                </span>
-                              </button>
-                            {/each}
-                            
-                            {#if remainingCount > 0}
-                              <div class="employee-more" on:click|stopPropagation={() => handleViewAllEmployees(day)}>
-                                +{remainingCount} more
-                              </div>
-                            {/if}
-                          </div>
-                        {/if}
-                      </div>
-                      
-                      {#if !showOnlyLeave && day.employees.length > 0}
-  {@const visibleEmployees = day.employees}
-  {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
-  
-  <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
-    {activeCount}
+                    <div class="employee-list">
+
+                      {#each displayEmployees as employee (employee.id)}
+
+                      <div 
+  class="employee-tooltip-container"
+  on:mouseenter={showTooltip}
+  on:mouseleave={hideTooltip}
+  role="presentation">
+  <button 
+    class="employee-button {employee.onLeave ? 'employee-on-leave' : getRoleClass(employee.role)}"
+    on:click|stopPropagation={() => handleEmployeeClick(employee, day.date)}
+  >
+    <span class="employee-name">
+      {getInitials(employee.name)}
+    </span>
+    <span class={employee.onLeave ? "leave-indicator" : "role-indicator"}>
+      {#if employee.onLeave}
+        {employee.leaveType === 'Sick' ? '🤒' : '🌴'}
+      {:else}
+        ✅
+      {/if}
+    </span>
+  </button>
+  <!-- Tooltip will be positioned by JS -->
+  <div class="employee-tooltip">
+    <div class="tooltip-name">{employee.name}</div>
+    <div class="tooltip-role">{employee.role}</div>
+    <div class="tooltip-shift">
+      <div class="shift-name">{getShiftName(employee.shift)}</div>
+    </div>
+    {#if employee.onLeave}
+      <div class="tooltip-leave">{employee.leaveType}</div>
+    {/if}
   </div>
-  
-  <!-- Always show hours badge when there are employees -->
-  <div class="hours-badge">
-    {(day.totalWorkingHours ?? 0).toFixed(1)}h
-  </div>
-{:else if showOnlyLeave && day.employees.some(emp => emp.onLeave)}
-  <!-- Leave count badge in leave-only mode -->
-  {@const leaveCount = day.employees.filter(emp => emp.onLeave).length}
-  <div class="employee-count leave-count">
-    {leaveCount}
-  </div>
-{/if}                    </div>
-                  {/each}
-                {:else}
-                  <!-- Placeholder with correct height to maintain scroll position -->
-                  <div class="calendar-week-placeholder" style="height: {130}px;"></div>
+</div>
+{/each}
+                      {#if remainingCount > 0}
+<!-- Fix using a button element -->
+<button 
+  class="employee-more" 
+  on:click|stopPropagation={() => handleViewAllEmployees(day)}
+  aria-label="View {remainingCount} more employees"
+  type="button"
+>
+  +{remainingCount} more
+</button>                      {/if}
+                    </div>
+                  {/if}
+                </div>
+                
+                {#if !showOnlyLeave && day.employees.length > 0}
+                  {@const visibleEmployees = day.employees}
+                  {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
+                  
+                  <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
+                    {activeCount}
+                  </div>
+                  
+                  <!-- Always show hours badge when there are employees -->
+                  <div class="hours-badge">
+                    {(day.totalWorkingHours ?? 0).toFixed(1)}h
+                  </div>
+                {:else if showOnlyLeave && day.employees.some(emp => emp.onLeave)}
+                  <!-- Leave count badge in leave-only mode -->
+                  {@const leaveCount = day.employees.filter(emp => emp.onLeave).length}
+                  <div class="employee-count leave-count">
+                    {leaveCount}
+                  </div>
                 {/if}
               </div>
             {/each}
           </div>
+        {/if}
+      </div>
+    {/each}
+  {/if}
+</div>
         </div>
       </div>
     {/if}
     
     {#if showAddForm}
     <div 
-    class="modal-overlay" 
-    on:click|self={hideAddScheduleForm} 
-    on:keydown={e => e.key === 'Escape' && hideAddScheduleForm()}
-    role="presentation"
-    tabindex="-1"
+  class="modal-overlay" 
+  tabindex="-1"
+>
+  <div 
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="schedule-modal-title"
+  >
+    <!-- Close button outside the modal content -->
+    <button 
+      class="overlay-close-button sr-only"
+      on:click={hideAddScheduleForm}
+      aria-label="Close modal"
+    >
+      Close
+    </button>
+    
+    <div class="modal-header">
+      <h2 id="schedule-modal-title">Add Schedule</h2>
+      <button 
+        class="close-button" 
+        on:click={hideAddScheduleForm}
+        aria-label="Close modal"
       >
-        <div class="modal">
-          <div class="modal-header">
-            <h2 id="schedule-modal-title">Add Schedule</h2>
-            <button 
-              class="close-button" 
-              on:click={hideAddScheduleForm}
-              aria-label="Close modal"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-          <form on:submit|preventDefault={addScheduleItem}>
-            <div class="form-group">
-              <label for="employee">Employee</label>
-              <select 
-                id="employee" 
-                bind:value={newScheduleItem.employeeId} 
-                required
-              >
-                <option value="">Select Employee</option>
-                {#each employees as emp}
-                  <option value={emp.id}>{emp.name}</option>
-                {/each}
-              </select>
-            </div>
-            
-            <div class="form-group">
-              <label for="date">Date</label>
-              <input 
-                id="date" 
-                type="date" 
-                bind:value={newScheduleItem.date} 
-                required
-              />
-            </div>
-            
-            <div class="form-group">
-              <label for="shift">Shift</label>
-              <select id="shift" bind:value={newScheduleItem.shift}>
-                <option value="morning">Morning (8am-4pm)</option>
-                <option value="afternoon">Afternoon (4pm-12am)</option>
-                <option value="night">Night (12am-8am)</option>
-              </select>
-            </div>
-            
-            <div class="form-actions">
-              <button type="button" class="cancel-button" on:click={hideAddScheduleForm}>Cancel</button>
-              <button type="submit" class="save-button">Save Schedule</button>
-            </div>
-          </form>
-        </div>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <!-- Rest of your modal content stays the same -->
+    <form on:submit|preventDefault={addScheduleItem}>
+      <div class="form-group">
+        <label for="employee">Employee</label>
+        <select 
+          id="employee" 
+          bind:value={newScheduleItem.employeeId} 
+          required
+        >
+          <option value="">Select Employee</option>
+          {#each employees as emp}
+            <option value={emp.id}>{emp.name}</option>
+          {/each}
+        </select>
       </div>
+      
+      <div class="form-group">
+        <label for="date">Date</label>
+        <input 
+          id="date" 
+          type="date" 
+          bind:value={newScheduleItem.date} 
+          required
+        />
+      </div>
+      
+      <div class="form-group">
+        <label for="shift">Shift</label>
+        <select id="shift" bind:value={newScheduleItem.shift}>
+          <option value="morning">Morning (8am-4pm)</option>
+          <option value="afternoon">Afternoon (4pm-12am)</option>
+          <option value="night">Night (12am-8am)</option>
+        </select>
+      </div>
+      
+      <div class="form-actions">
+        <button type="button" class="cancel-button" on:click={hideAddScheduleForm}>Cancel</button>
+        <button type="submit" class="save-button">Save Schedule</button>
+      </div>
+    </form>
+  </div>
+  
+  <!-- Add an explicit overlay click handler -->
+  <button 
+    class="modal-backdrop-button"
+    on:click={hideAddScheduleForm}
+    on:keydown={e => e.key === 'Escape' && hideAddScheduleForm()}
+    aria-label="Close modal"
+  ></button>
+</div>
     {/if}
   
     {#if showEmployeeModal}
-      <div 
-        class="modal-overlay" 
-        on:click|self={hideEmployeeModal}
-        on:keydown={e => e.key === 'Escape' && hideEmployeeModal()} 
-        role="dialog"
-        aria-labelledby="employee-modal-title"
-        tabindex="-1"
-      >
-        <div class="modal">
-          <div class="modal-header">
-            <h2 id="employee-modal-title">Add Employee</h2>
-            <button 
-              class="close-button" 
-              on:click={hideEmployeeModal}
-              aria-label="Close modal"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-          
-          <form on:submit|preventDefault={addEmployee}>
-            {#if employeeError}
-              <div class="form-error">
-                <p>{employeeError}</p>
-              </div>
-            {/if}
-            
-            <div class="form-group">
-              <label for="employeeName">Employee Name</label>
-              <input 
-                id="employeeName" 
-                type="text" 
-                bind:value={newEmployee.name} 
-                placeholder="John Smith"
-                required
-              />
-            </div>
-            
-            <div class="form-group">
-              <label for="employeeRole">Role</label>
-              <select 
-                id="employeeRole" 
-                bind:value={newEmployee.role} 
-                required
-              >
-                <option value="">Select Role</option>
-                <option value="Manager">Manager</option>
-                <option value="Supervisor">Supervisor</option>
-                <option value="Team Lead">Team Lead</option>
-                <option value="Associate">Associate</option>
-                <option value="Trainee">Trainee</option>
-              </select>
-            </div>
-            
-            <div class="form-actions">
-              <button type="button" class="cancel-button" on:click={hideEmployeeModal}>Cancel</button>
-              <button type="submit" class="save-button">Add Employee</button>
-            </div>
-          </form>
-        </div>
+  <div 
+    class="modal-overlay" 
+    tabindex="-1"
+  >
+    <div 
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="employee-modal-title"
+    >
+      <div class="modal-header">
+        <h2 id="employee-modal-title">Add Employee</h2>
+        <button 
+          class="close-button" 
+          on:click={hideEmployeeModal}
+          aria-label="Close modal"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
-    {/if}
+      
+      <!-- Rest of your modal content stays the same -->
+      <form on:submit|preventDefault={addEmployee}>
+        {#if employeeError}
+          <div class="form-error">
+            <p>{employeeError}</p>
+          </div>
+        {/if}
+        
+        <div class="form-group">
+          <label for="employeeName">Employee Name</label>
+          <input 
+            id="employeeName" 
+            type="text" 
+            bind:value={newEmployee.name} 
+            placeholder="John Smith"
+            required
+          />
+        </div>
+        
+        <div class="form-group">
+          <label for="employeeRole">Role</label>
+          <select 
+            id="employeeRole" 
+            bind:value={newEmployee.role} 
+            required
+          >
+            <option value="">Select Role</option>
+            <option value="Manager">Manager</option>
+            <option value="Supervisor">Supervisor</option>
+            <option value="Team Lead">Team Lead</option>
+            <option value="Associate">Associate</option>
+            <option value="Trainee">Trainee</option>
+          </select>
+        </div>
+        
+        <div class="form-actions">
+          <button type="button" class="cancel-button" on:click={hideEmployeeModal}>Cancel</button>
+          <button type="submit" class="save-button">Add Employee</button>
+        </div>
+      </form>
+    </div>
+    
+    <!-- Add explicit backdrop button for handling clicks outside the modal -->
+    <button 
+      class="modal-backdrop-button"
+      on:click={hideEmployeeModal}
+      on:keydown={e => e.key === 'Escape' && hideEmployeeModal()}
+      aria-label="Close modal"
+    ></button>
+  </div>
+{/if}
   </div>
 {/if}
 
 {#if showLeaveModal && selectedEmployee && selectedDate}
   <div 
     class="modal-overlay" 
-    on:click|self={handleLeaveModalClose}
-    role="dialog"
-    aria-modal="true"
+    tabindex="-1"
   >
-    <EmployeeLeaveModal
-      employee={selectedEmployee}
-      date={selectedDate}
-      existingLeave={selectedLeave}
-      on:close={handleLeaveModalClose}
-      on:saved={handleLeaveSaved}
-    />
+    <div class="modal-wrapper" role="dialog" aria-modal="true">
+      <EmployeeLeaveModal
+        employee={selectedEmployee}
+        date={selectedDate}
+        existingLeave={selectedLeave}
+        on:close={handleLeaveModalClose}
+        on:saved={handleLeaveSaved}
+      />
+    </div>
+    
+    <!-- Add explicit backdrop button for handling clicks outside the modal -->
+    <button 
+      class="modal-backdrop-button"
+      on:click={handleLeaveModalClose}
+      on:keydown={e => e.key === 'Escape' && handleLeaveModalClose()}
+      aria-label="Close leave modal"
+    ></button>
   </div>
 {/if}
 
 {#if showBulkLeaveModal}
   <div 
     class="modal-overlay" 
-    on:click|self={hideBulkLeaveForm}
-    role="dialog"
-    aria-modal="true"
+    tabindex="-1"
   >
-    <BulkLeaveModal
-      employees={employees}
-      on:close={hideBulkLeaveForm}
-      on:saved={handleLeaveSaved}
-    />
+    <div 
+      class="modal-wrapper" 
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bulk-leave-modal-title"
+    >
+      <BulkLeaveModal
+        employees={employees}
+        on:close={hideBulkLeaveForm}
+        on:saved={handleLeaveSaved}
+      />
+    </div>
+    
+    <!-- Add explicit backdrop button for handling clicks outside the modal -->
+    <button 
+      class="modal-backdrop-button"
+      on:click={hideBulkLeaveForm}
+      on:keydown={e => e.key === 'Escape' && hideBulkLeaveForm()}
+      aria-label="Close bulk leave modal"
+    ></button>
   </div>
 {/if}
 
@@ -1407,7 +1746,7 @@ async function checkScheduledHours() {
         {:else if $toastStore.type === 'error'}
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
             <line x1="12" y1="16" x2="12.01" y2="16"></line>
           </svg>
         {:else}
@@ -1505,6 +1844,80 @@ async function checkScheduledHours() {
 .add-button:hover {
   background: var(--apple-blue-hover);
 }
+
+/* Employee tooltip */
+/* Ensure this is set correctly */
+.employee-tooltip-container {
+  position: relative;
+  width: 100%;
+  display: flex; /* Add this */
+  flex-direction: column; /* Add this */
+}
+/* Update these CSS rules */
+.employee-tooltip {
+  position: absolute;
+  z-index: 100;
+  min-width: 180px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0s linear 0.2s;
+  pointer-events: none;
+  border: 1px solid #e5e7eb;
+  overflow: visible;
+  /* Remove specific positioning (will be calculated with JS) */
+  left: 0;
+}
+
+/* This is the key selector that needs to be fixed */
+.employee-tooltip-container:hover .employee-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s, visibility 0s linear 0s;
+}
+
+.tooltip-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.tooltip-top {
+  bottom: calc(100% + 5px);
+}
+
+.tooltip-bottom {
+  top: calc(100% + 5px);
+}
+
+.tooltip-visible {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transition: opacity 0.2s !important;
+}
+
+.tooltip-role {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.tooltip-shift {
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  background-color: #f3f4f6;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.tooltip-leave {
+  font-size: 0.8rem;
+  margin-top: 4px;
+  color: #ef4444;
+}
   
   .loading, .error {
     padding: 3rem;
@@ -1531,6 +1944,56 @@ async function checkScheduledHours() {
     height: 40px;
   }
   
+  .modal-backdrop-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  cursor: default;
+  z-index: 0;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  animation: fadeIn 0.25s ease;
+}
+
+.modal {
+  z-index: 1; /* Higher than the backdrop button */
+  /* Your other modal styles */
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.overlay-close-button {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+}
+
   .spinner .path {
     stroke: #004225;
     stroke-linecap: round;
@@ -1636,23 +2099,23 @@ async function checkScheduledHours() {
   }
   
   .calendar-day {
-  height: auto; /* Remove fixed height constraint */
+  height: auto;
   min-height: 130px; 
-  max-height: 330px; /* Limit maximum height */
+  max-height: 330px;
   border-right: 1px solid #e5e7eb;
   padding: 12px;
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: auto; /* Change from hidden to auto for controlled scrolling */
+  overflow: visible; /* Change from auto to visible - this removes the scrollbar */
   box-sizing: border-box;
   margin: 0;
   gap: 6px;
-  min-width: 0; /* Allow cell to shrink if needed */
-  flex: 1 0 0%; /* Equal width flex items */
-  contain: content; /* Use CSS containment to optimize rendering */
-  isolation: isolate; /* Create a new stacking context */
+  min-width: 0;
+  flex: 1 0 0%;
+  contain: content;
+  isolation: isolate;
 }
 
   .calendar-day:last-child {
@@ -1708,12 +2171,13 @@ async function checkScheduledHours() {
     font-size: 0.8rem;
     color: #6b7280;
   }
-  
+
   .day-content {
   flex: 1;
-  overflow: visible; /* Show all content */
+  overflow: visible; /* Change from auto to visible */
   margin: 0;
   padding: 0;
+  position: relative;
 }
 
   .day-content::-webkit-scrollbar {
@@ -1752,7 +2216,7 @@ async function checkScheduledHours() {
   
   .employee-button {
   font-size: 0.85rem;
-  padding: 0px 12px;
+  padding: 6px 10px;
   margin-bottom: 1px;
   border-radius: 10px;
   display: flex;
@@ -1765,9 +2229,6 @@ async function checkScheduledHours() {
   font-family: inherit;
   cursor: pointer;
   transition: all 0.2s ease;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
   position: relative;
 }
@@ -2162,100 +2623,6 @@ async function checkScheduledHours() {
     background-color: #8E8E93; /* Muted gray for closed days */
   }
 
-  /* Update the role indicator style */
-  .role-indicator {
-  font-weight: 500; /* Less bold */
-  font-size: 0.7rem;
-  min-width: 22px;
-  height: 22px;
-  border-radius: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f5f5f7;
-  padding: 0 6px;
-  color: #86868b;
-}
-
-  /* Add this new style for employee count badge */
-  .employee-count {
-    position: absolute;
-    top: 10px;  /* Move to top right instead of bottom */
-    right: 10px;
-    background: #004225;
-    color: white;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 500; /* Less bold */
-    min-width: 22px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-    transition: transform 0.2s ease;
-    padding: 0 6px;
-    z-index: 5; /* Ensure it stays above other content */
-  }
-
-  /* Add this to your existing styles */
-  
-  .employee-count {
-    position: absolute;
-    bottom: 6px;
-    right: 6px;
-    background: #004225;
-    color: white;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    width: 22px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  }
-  
-  /* Update calendar-day to ensure proper positioning */
-  .calendar-day {
-    min-height: 130px; /* Slightly taller for better content display */
-    border-right: 1px solid #e5e7eb;
-    cursor: pointer;
-    padding: 12px; /* Increase padding for more breathing room */
-    transition: all 0.25s ease;
-    display: flex;
-    flex-direction: column; /* Ensure flex layout */
-    position: relative; /* Make sure this is here */
-    overflow: hidden; /* Contain content within each day */
-    box-sizing: border-box; /* Include padding in width calculation */
-    margin: 0; /* Remove any margins */
-    gap: 6px; /* Add gap between day header and content */
-  }
-
-  .closed-day {
-    background-color: #f1f5f9 !important;
-    cursor: default !important;
-    user-select: none;
-    opacity: 0.9;
-  }
-
-  .closed-notice {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: #94a3b8;
-    font-size: 0.9rem;
-    gap: 8px;
-    font-weight: 500;
-  }
-
-  .closed-day .day-header {
-    opacity: 0.7;
-  }
-
   /* Simplified employee rendering for better performance */
   .employee-summary {
     display: flex;
@@ -2367,20 +2734,40 @@ async function checkScheduledHours() {
   }
   
   .employee-name {
-  display: flex;
-  align-items: center;
   font-weight: 500;
   color: #1d1d1f;
-  padding-right: 8px;
-  max-width: calc(100% - 28px);
+  flex-grow: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-  .employee-count.has-leave {
-    background: linear-gradient(to right, #004225 50%, #9ca3af 50%);
-  }
+.employee-count {
+  position: absolute; /* Position absolutely */
+  top: 8px; /* Position in top right corner */
+  right: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e5e7eb;
+  color: #4b5563;
+  border-radius: 12px;
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2; /* Ensure it's above other content */
+}
+
+
+.employee-count.leave-count {
+  background: var(--apple-error);
+  color: white;
+}
+
+.employee-count.has-leave {
+  background: linear-gradient(to right, #0071e3 50%, #ff3b30 50%);
+  color: white;
+}
 
   .view-filter {
     display: flex;
@@ -2505,22 +2892,23 @@ async function checkScheduledHours() {
       border-radius: 8px;
     }
   }
-
   .hours-badge {
   position: absolute;
   top: 8px;
-  left: 8px;
-  background: #0071e3; /* Apple blue */
+  left: 8px; /* Keep on left */
+  background: #0071e3;
   color: white;
   border-radius: 10px;
   font-size: 0.7rem;
-  font-weight: 500; /* Less bold */
+  font-weight: 500;
   padding: 2px 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  z-index: 2; /* Ensure it's above other content */
 }
+
 
   :root {
     --apple-blue: #0071e3;
@@ -2556,4 +2944,167 @@ async function checkScheduledHours() {
   .debug-button:hover {
     background: #6b6b6b;
   }
+
+  /* Calendar legend */
+.calendar-legend {
+  display: flex;
+  gap: 16px;
+  padding: 12px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-icon {
+  font-size: 1rem;
+}
+
+.legend-label {
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+/* View selector */
+.view-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.view-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  color: #374151;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-button:hover {
+  background: #f3f4f6;
+}
+
+.view-button.active {
+  background: #0071e3;
+  color: white;
+  border-color: #0071e3;
+}
+
+/* Week header and styling */
+.calendar-week-wrapper {
+  margin-bottom: 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.week-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  width: 100%;
+  background: #f5f5f7;
+  color: #374151;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.week-header:hover {
+  background: #eaeaec;
+}
+
+.week-header.expanded {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.week-header.has-data {
+  background-color: #f0f9ff;
+}
+
+.week-header.has-leave {
+  background-color: #fff1f2;
+}
+
+.week-num {
+  font-weight: 600;
+}
+
+.week-month {
+  color: #6b7280;
+}
+
+.week-expand-icon {
+  display: flex;
+  align-items: center;
+}
+
+.calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+/* Different styling for weekdays vs weekends */
+.calendar-day.weekday {
+  background-color: #ffffff;
+}
+
+.calendar-day.weekend:not(.closed-day) {
+  background-color: #f9fafb;
+  border-left: 1px solid #f0f0f0;
+}
+
+/* Status emoji */
+.status-emoji {
+  font-size: 1rem;
+  margin-right: 4px;
+}
+
+/* Day view styles */
+.day-view {
+  padding: 20px;
+}
+
+.day-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.day-schedule {
+  background: white;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+@media (max-width: 768px) {
+  .calendar-legend {
+    justify-content: center;
+  }
+  
+  .view-selector {
+    justify-content: center;
+  }
+}
 </style>
