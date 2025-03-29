@@ -7,6 +7,8 @@
   import EmployeeLeaveModal from '$lib/EmployeeLeaveModal.svelte';
   import BulkLeaveModal from '$lib/BulkLeaveModal.svelte';
   import { toastStore, showToast } from '$lib/toastStore';
+  import { updateScheduledHoursForDate } from '$lib/hours-service';
+  import { updateScheduledHoursBatch } from '$lib/batchUpdateService';
  // import { scheduledHoursData, updateScheduledHours, getFormattedDate, formatDateKey } from '$lib/scheduleStore';
 
   // Start with session as undefined (unknown)
@@ -186,6 +188,14 @@
   function formatApiDate(date: Date): string {
     return date.toISOString().split('T')[0];
   }
+
+  // Add this helper function for timezone safety
+  function getLocalISODate(date: Date): string {
+    // Get YYYY-MM-DD without timezone shifting
+    const offset = date.getTimezoneOffset();
+    const adjustedDate = new Date(date.getTime() - (offset * 60 * 1000));
+    return adjustedDate.toISOString().split('T')[0];
+  }
   
   // Fetch employees and schedules data
   async function fetchData() {
@@ -329,9 +339,6 @@
     // First, populate based on weekly patterns
     if (weeklyPatterns.length > 0) {
       for (const day of calendarDays) {
-        // Skip Sundays entirely
-        if (day.date.getDay() === 0) continue;
-        
         // Get day of week (0 = Monday, 6 = Sunday in our data model)
         let dayOfWeek = day.date.getDay() - 1;
         if (dayOfWeek < 0) dayOfWeek = 6; // Convert Sunday from 0 to 6
@@ -413,8 +420,7 @@
         };
       });
       
-      // Calculate and store total working hours for the day
-      day.totalWorkingHours = calculateDayWorkingHours(day.employees);
+
     }
     
     // Sort employees in each day by role priority first, then by name
@@ -440,42 +446,55 @@
 
     // This should be the ONLY block calculating and saving hours
     for (const day of calendarDays) {
-      const isSunday = day.date.getDay() === 0;
-      
-      if (isSunday) {
-        // Always force Sunday hours to 0
-        day.totalWorkingHours = 0;
-        saveScheduledHours(day.date, 0);
-      } else {
-        // For non-Sundays, calculate based on active employees
+      try {
         const activeEmployees = day.employees.filter(emp => !emp.onLeave);
         const hoursForDay = activeEmployees.length * 8.5;
         
+        // Extra validation to ensure the date is valid
+        if (!(day.date instanceof Date) || isNaN(day.date.getTime())) {
+          console.error('Invalid day date found:', day.date);
+          continue;
+        }
+        
+        // Create a clean date object (helps with potential reference issues)
+        const cleanDate = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
+        
+        // Log date details for debugging
+        console.log(`Processing day: 
+          Original date: ${day.date.toISOString()}
+          Clean date: ${cleanDate.toISOString()}
+          API format: ${getLocalISODate(cleanDate)}
+          Day of week: ${cleanDate.getDay()} (0=Sun)
+          Active employees: ${activeEmployees.length}
+          Hours: ${hoursForDay}
+        `);
+        
         day.totalWorkingHours = hoursForDay;
-        saveScheduledHours(day.date, hoursForDay);
+        saveScheduledHours(cleanDate, hoursForDay);
+      } catch (err) {
+        console.error('Error processing calendar day:', err, day);
       }
     }
   }
   
-  // Change month
-  function changeMonth(delta: number) {
-    const newMonth = currentMonth + delta;
-    
-    // Handle year change
-    if (newMonth < 0) {
-      currentMonth = 11;
-      currentYear -= 1;
-    } else if (newMonth > 11) {
-      currentMonth = 0;
-      currentYear += 1;
-    } else {
-      currentMonth = newMonth;
-    }
-    
-    // Fetch data for the new month
-    fetchData();
+// Change month
+function changeMonth(delta: number) {
+  const newMonth = currentMonth + delta;
+  
+  // Handle year change when navigating months
+  if (newMonth < 0) {
+    currentMonth = 11;
+    currentYear--;
+  } else if (newMonth > 11) {
+    currentMonth = 0;
+    currentYear++;
+  } else {
+    currentMonth = newMonth;
   }
   
+  // Fetch data for the new month
+  fetchData();
+}
   // Add a new schedule
   async function addScheduleItem() {
     if (!newScheduleItem.employeeId || !newScheduleItem.date || !newScheduleItem.shift) {
@@ -498,6 +517,11 @@
       // Refresh data
       await fetchData();
       const employee = employees.find(emp => emp.id === newScheduleItem.employeeId);
+      // Calculate the new hours after schedule change
+      const hours = await updateScheduledHoursForDate(new Date(newScheduleItem.date));
+      console.log(`Updated hours for ${newScheduleItem.date} to ${hours}`);
+      
+      // Show success message
       showToast(
         `Scheduled ${employee?.name || 'Employee'} for ${new Date(newScheduleItem.date).toLocaleDateString()}`,
         'success'
@@ -703,6 +727,30 @@
     selectedLeave = null;
     fetchData(); // Refresh data
   }
+
+  // Function to update all scheduled hours in the database
+
+async function updateAllScheduledHours() {
+  try {
+    showToast('Starting database update...', 'info');
+    
+    // Get date range (2 months before and after)
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setMonth(today.getMonth() - 2);
+    
+    const endDate = new Date(today);
+    endDate.setMonth(today.getMonth() + 2);
+    
+    // Use the batch update service
+    const updatedCount = await updateScheduledHoursBatch(startDate, endDate);
+    
+    showToast(`Successfully updated hours for ${updatedCount} days`, 'success');
+  } catch (err) {
+    console.error('Error updating hours:', err);
+    showToast('Failed to update hours: ' + (err instanceof Error ? err.message : String(err)), 'error');
+  }
+}
   
   function showBulkLeaveForm() {
     showBulkLeaveModal = true;
@@ -733,12 +781,48 @@
   }
 
   // Add this function to save scheduled hours to the database
-  async function saveScheduledHours(date: Date, hours: number) {
+  // Updated saveScheduledHours with validation and better logging
+async function saveScheduledHours(date: Date, hours: number) {
   try {
-    const dateStr = date.toISOString().split('T')[0];
+    // Validate the date is valid
+    if (!(date instanceof Date) || isNaN(date.getTime())) {
+      console.error('Invalid date provided to saveScheduledHours:', date);
+      return;
+    }
     
-    // Update the metrics in the table directly
-    const { error } = await supabase
+    const dateStr = getLocalISODate(date);
+    const formattedDate = new Date(date).toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    
+    console.log(`Saving ${hours} hours for ${formattedDate} (${dateStr})`);
+    
+    // Update the scheduled_hours table
+    const { data: savedData, error: hoursError } = await supabase
+      .from('scheduled_hours')
+      .upsert(
+        { 
+          date: dateStr, 
+          hours: hours,
+          updated_at: new Date()
+        }, 
+        {
+          onConflict: 'date'
+        }
+      )
+      .select();
+    
+    if (hoursError) {
+      console.error(`Error saving to scheduled_hours for ${formattedDate}:`, hoursError);
+      throw hoursError;
+    }
+    
+    console.log(`Successfully saved to scheduled_hours: ${JSON.stringify(savedData)}`);
+    
+    // Also update daily_metrics for backward compatibility
+    const { error: metricsError } = await supabase
       .from('daily_metrics')
       .upsert(
         { 
@@ -750,16 +834,13 @@
         }
       );
     
-    if (error) {
-      console.error('Error saving scheduled hours:', error);
-      // Don't show toast for every automatic save to avoid spamming the user
-      throw error;
+    if (metricsError) {
+      console.error(`Error saving to daily_metrics for ${formattedDate}:`, metricsError);
+    } else {
+      console.log(`Successfully saved to daily_metrics for ${formattedDate}`);
     }
-    
-    console.log(`Saved ${hours} scheduled hours for ${dateStr}`);
   } catch (err) {
-    console.error('Error in saveScheduledHours:', err);
-    // Don't re-throw the error here to prevent disrupting the UI flow
+    console.error(`Error in saveScheduledHours for ${date.toLocaleDateString()}:`, err);
   }
 }
 
@@ -777,40 +858,79 @@ function handleViewAllEmployees(day: CalendarDay) {
   showAddScheduleForm(day.date);
 }
 
-// Function to ensure all Sundays have 0 hours
-async function correctSundayHours() {
-  // Get the date range you need to correct
-  const startDate = new Date('2025-03-01'); // Adjust as needed
-  const endDate = new Date('2025-03-31');   // Adjust as needed
-  
-  // Loop through each day in the range
-  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    // If it's Sunday
-    if (d.getDay() === 0) {
-      const dateStr = d.toISOString().split('T')[0];
-      console.log(`Correcting hours for Sunday ${dateStr}`);
-      
-      // Force update the database with 0 hours
-      const { error } = await supabase
-        .from('daily_metrics')
-        .upsert(
-          { 
-            date: dateStr, 
-            scheduled_hours: 0 
-          }, 
-          {
-            onConflict: 'date'
-          }
-        );
+// Add this function for debugging
+async function checkScheduledHours() {
+  try {
+    showToast('Checking database records...', 'info');
+    
+    // Get current month dates
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    const lastDay = new Date(currentYear, currentMonth + 1, 0);
+    
+    const startDateStr = formatApiDate(firstDay);
+    const endDateStr = formatApiDate(lastDay);
+    
+    // Get data from both tables
+    const [hoursResult, metricsResult] = await Promise.all([
+      supabase
+        .from('scheduled_hours')
+        .select('date, hours, updated_at')
+        .gte('date', startDateStr)
+        .lte('date', endDateStr)
+        .order('date'),
         
-      if (error) {
-        console.error(`Failed to correct Sunday ${dateStr}:`, error);
+      supabase
+        .from('daily_metrics')
+        .select('date, scheduled_hours')
+        .gte('date', startDateStr)
+        .lte('date', endDateStr)
+        .order('date')
+    ]);
+    
+    // Format for comparison
+    const hoursData = (hoursResult.data || []).reduce((acc, item) => {
+      acc[item.date] = item.hours;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const metricsData = (metricsResult.data || []).reduce((acc, item) => {
+      acc[item.date] = item.scheduled_hours;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // Compare the data
+    const allDates = new Set([...Object.keys(hoursData), ...Object.keys(metricsData)]);
+    const discrepancies = [];
+    
+    for (const dateStr of allDates) {
+      const date = new Date(dateStr);
+      const dayOfWeek = date.getDay();
+      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
+      
+      if (hoursData[dateStr] !== metricsData[dateStr]) {
+        discrepancies.push({
+          date: dateStr,
+          dayOfWeek: dayName,
+          scheduledHours: hoursData[dateStr],
+          metricsHours: metricsData[dateStr]
+        });
       }
     }
+    
+    console.log('Data comparison:');
+    console.table(discrepancies);
+    
+    if (discrepancies.length > 0) {
+      showToast(`Found ${discrepancies.length} discrepancies. Check console.`, 'warning');
+    } else {
+      showToast('All data matches between tables!', 'success');
+    }
+  } catch (err) {
+    console.error('Error checking hours data:', err);
+    showToast('Error checking data', 'error');
   }
-  
-  console.log('Sunday hours correction completed');
 }
+
 </script>
 
 {#if session === undefined || loading}
@@ -920,7 +1040,30 @@ async function correctSundayHours() {
         </button>
       </div>
     </div>
-    
+    <div class="header-buttons">
+
+      <!-- Add this new update button -->
+      <button class="add-button update-button" on:click={updateAllScheduledHours}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 2v6h-6"></path>
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+          <path d="M3 12a9 9 0 0 0 6 8.5l2-4.5"></path>
+          <path d="M12 16l-2 4.5"></path>
+          <path d="M16 20a9 9 0 0 0 5-7.5"></path>
+        </svg>
+        Update Hours
+      </button>
+
+      <!-- Add this button next to your Update Hours button -->
+      <button class="add-button debug-button" on:click={checkScheduledHours}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        Check Hours
+      </button>
+    </div>
     <div class="view-toggle">
       <button 
         class={!showManager ? 'active' : ''} 
@@ -1020,12 +1163,7 @@ async function correctSundayHours() {
                       </div>
                       
                       <div class="day-content">
-                        {#if isSunday}
-                          <div class="closed-notice">
-                            <span class="icon-closed"></span>
-                            <span>Closed</span>
-                          </div>
-                        {:else if day.employees.length === 0}
+                        {#if day.employees.length === 0}
                           <div class="no-schedule">Available</div>
                         {:else}
                           {@const filteredEmployees = showOnlyLeave ? day.employees.filter(emp => emp.onLeave) : day.employees}
@@ -1059,26 +1197,19 @@ async function correctSundayHours() {
                         {/if}
                       </div>
                       
-                      {#if !showOnlyLeave}
-  {#if isSunday}
-    <!-- Always show 0 hours for Sunday -->
-    <div class="hours-badge sunday-hours">
-      0.0h
-    </div>
-  {:else if day.employees.length > 0}
-    {@const visibleEmployees = day.employees}
-    {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
-    
-    <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
-      {activeCount}
-    </div>
-    
-    <!-- Always show hours badge, even if 0 -->
-    <div class="hours-badge">
-      {(day.totalWorkingHours ?? 0).toFixed(1)}h
-    </div>
-  {/if}
-{:else if day.employees.some(emp => emp.onLeave)}
+                      {#if !showOnlyLeave && day.employees.length > 0}
+  {@const visibleEmployees = day.employees}
+  {@const activeCount = visibleEmployees.filter(emp => !emp.onLeave).length}
+  
+  <div class="employee-count" class:has-leave={day.employees.some(emp => emp.onLeave)}>
+    {activeCount}
+  </div>
+  
+  <!-- Always show hours badge when there are employees -->
+  <div class="hours-badge">
+    {(day.totalWorkingHours ?? 0).toFixed(1)}h
+  </div>
+{:else if showOnlyLeave && day.employees.some(emp => emp.onLeave)}
   <!-- Leave count badge in leave-only mode -->
   {@const leaveCount = day.employees.filter(emp => emp.onLeave).length}
   <div class="employee-count leave-count">
@@ -1466,7 +1597,13 @@ async function correctSundayHours() {
   overflow: hidden;
   white-space: nowrap;
 }
+.update-button {
+  background: var(--apple-warning);
+}
 
+.update-button:hover {
+  background: #ffb340;
+}
   .calendar-grid {
     display: flex;
     flex-direction: column;
@@ -2022,8 +2159,8 @@ async function correctSundayHours() {
   }
 
   .sunday-hours {
-  background-color: #8E8E93; /* Muted gray for closed days */
-}
+    background-color: #8E8E93; /* Muted gray for closed days */
+  }
 
   /* Update the role indicator style */
   .role-indicator {
@@ -2049,7 +2186,7 @@ async function correctSundayHours() {
     color: white;
     border-radius: 12px;
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: 500; /* Less bold */
     min-width: 22px;
     height: 22px;
     display: flex;
@@ -2088,7 +2225,7 @@ async function correctSundayHours() {
     padding: 12px; /* Increase padding for more breathing room */
     transition: all 0.25s ease;
     display: flex;
-    flex-direction: column;
+    flex-direction: column; /* Ensure flex layout */
     position: relative; /* Make sure this is here */
     overflow: hidden; /* Contain content within each day */
     box-sizing: border-box; /* Include padding in width calculation */
@@ -2409,5 +2546,14 @@ async function correctSundayHours() {
     font-size: 1.2rem;
     font-weight: 600;
     letter-spacing: -0.01em;
+  }
+
+  /* Add this style */
+  .debug-button {
+    background: var(--apple-dark-gray);
+  }
+
+  .debug-button:hover {
+    background: #6b6b6b;
   }
 </style>
