@@ -184,6 +184,14 @@
     </div>
     <nav>
       <ul>
+        <!-- Home/Landing Link -->
+        <li>
+          <a href="/landing" class:active={currentPath === '/landing'}>
+            <i class="material-icons-outlined menu-icon">home</i>
+            <span class="label">Home</span>
+          </a>
+        </li>
+        
         <!-- Dashboard Link -->
         <li>
           <a href="/dashboard" class:active={currentPath === '/dashboard'}>
