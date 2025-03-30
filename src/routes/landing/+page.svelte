@@ -1,7 +1,16 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { userSession } from '$lib/sessionStore';
   import { format, addDays, isWeekend } from 'date-fns';
   import { supabase } from '$lib/supabaseClient';
+  
+  // Add authentication check
+  // Start with session as undefined (unknown)
+  let session: any = undefined;
+  const unsubscribe = userSession.subscribe((s) => {
+    session = s;
+  });
   
   // Define proper interfaces for our data
   interface Employee {
@@ -66,7 +75,6 @@
           maxtemp_c: number;
           mintemp_c: number;
           maxtemp_f: number;
-          mintemp_f: number;
           condition: {
             text: string;
             icon: string;
@@ -115,14 +123,35 @@
     metrics: true
   };
 
+  // Add new variable for leave ranges
+  let leaveRanges: Array<{
+    startDate: Date,
+    endDate: Date,
+    isRange: boolean,
+    staff: LeaveEmployee[]
+  }> = [];
+
   onMount(async () => {
-    // Fetch all data in parallel
-    await Promise.all([
-      fetchStaffScheduled(),
-      fetchUpcomingLeave(),
-      fetchWeather(),
-      fetchYesterdayMetrics()
-    ]);
+    // Once we know the session, if it's null then redirect
+    if (session === null) {
+      goto('/login');
+      return;
+    }
+    
+    // Only fetch data if user is authenticated
+    if (session) {
+      // Fetch all data in parallel
+      await Promise.all([
+        fetchStaffScheduled(),
+        fetchUpcomingLeave(),
+        fetchWeather(),
+        fetchYesterdayMetrics()
+      ]);
+    }
+  });
+  
+  onDestroy(() => {
+    unsubscribe();
   });
 
   // Updated fetchStaffScheduled function with correct day_of_week query
@@ -364,66 +393,82 @@
     }
   }
 
-  // Fetch upcoming leave days
+  // Enhanced fetchUpcomingLeave function that properly preserves date ranges
   async function fetchUpcomingLeave(): Promise<void> {
     try {
       const todayFormatted = format(today, 'yyyy-MM-dd');
       
-      // Updated interface to match your leave_requests table structure
-      interface LeaveItem {
-        uuid: string;
-        employee_id: string;
-        start_date: string;
-        end_date: string;
-        leave_type: string;
-        employee?: {
-          id: string;
-          name: string;
-        };
-      }
-      
-      // Fetch all leave entries starting from today from the correct table
+      // Fetch all leave entries starting from today
       const { data, error } = await supabase
-        .from('leave_requests')  // Updated table name
-        .select('*, employee:employees(id, name)')  // Join with employees table
+        .from('leave_requests')
+        .select('*, employee:employees(id, name)')
         .gte('start_date', todayFormatted)
         .order('start_date', { ascending: true });
         
       if (error) throw error;
       
-      // Process and group by date with proper typing
-      const leaveByDate: Record<string, LeaveDay> = {};
+      console.log("Raw leave data:", data);
       
-      (data as LeaveItem[]).forEach(leave => {
+      // Process each leave request directly into range groups
+      const dateRangeGroups = new Map<string, {
+        startDate: Date,
+        endDate: Date,
+        isRange: boolean,
+        staff: LeaveEmployee[]
+      }>();
+      
+      // Process each leave request
+      (data as any[]).forEach(leave => {
         // Skip if employee data is missing
         if (!leave.employee) return;
         
-        const start = new Date(leave.start_date);
-        const end = new Date(leave.end_date);
+        const startDate = new Date(leave.start_date);
+        const endDate = new Date(leave.end_date);
         
-        // Create entries for each date in the range
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          const dateKey = format(d, 'yyyy-MM-dd');
-          if (!leaveByDate[dateKey]) {
-            leaveByDate[dateKey] = {
-              date: new Date(d),
-              staff: []
-            };
-          }
-          
-          leaveByDate[dateKey].staff.push({
-            id: leave.employee.id,
-            name: leave.employee.name,
-            leaveType: leave.leave_type
+        // Check if this is a multi-day leave
+        const isRange = format(startDate, 'yyyy-MM-dd') !== format(endDate, 'yyyy-MM-dd');
+        
+        // Create a key for this date range
+        const rangeKey = `${leave.start_date}_${leave.end_date}`;
+        
+        if (!dateRangeGroups.has(rangeKey)) {
+          dateRangeGroups.set(rangeKey, {
+            startDate,
+            endDate,
+            isRange,
+            staff: []
           });
         }
+        
+        // Add employee to this date range
+        dateRangeGroups.get(rangeKey)!.staff.push({
+          id: leave.employee.id,
+          name: leave.employee.name,
+          leaveType: leave.leave_type
+        });
       });
       
-      // Convert to array and take next 5 unique dates
-      upcomingLeave = Object.values(leaveByDate)
-        .sort((a, b) => a.date.getTime() - b.date.getTime())
-        .slice(0, 5);
+      console.log("Processed leave groups:", Array.from(dateRangeGroups.values()));
+      
+      // Convert to array of leave groups sorted by start date
+      upcomingLeave = [];
+      
+      // Sort the date ranges by start date and take first 8
+      const sortedRanges = Array.from(dateRangeGroups.values())
+        .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+        .slice(0, 8);
         
+      // Create dummy structure to satisfy the LeaveDay[] type
+      sortedRanges.forEach(range => {
+        upcomingLeave.push({
+          date: range.startDate,
+          staff: range.staff
+        });
+      });
+      
+      // Store the range data for display
+      leaveRanges = sortedRanges;
+      
     } catch (error) {
       console.error('Error fetching upcoming leave:', error);
     } finally {
@@ -431,15 +476,15 @@
     }
   }
 
-  // Fetch weather data with forecast
+  // Fetch weather data with forecast for today AND tomorrow
   async function fetchWeather(): Promise<void> {
     try {
       const apiKey = '29f822e1fd8345edb1354635253003';
       const location = 'BN18 0BF';
       
-      // Updated to get forecast data (includes high/low temps)
+      // Updated to get 2 days of forecast data
       const response = await fetch(
-        `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${location}&days=1&aqi=no`
+        `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${location}&days=2&aqi=no`
       );
       
       if (!response.ok) {
@@ -539,219 +584,473 @@
       return a.name.localeCompare(b.name);
     });
   }
+
+  // Helper function to group staff by role
+  function groupStaffByRole(staff: Employee[]): Array<{ role: string, staff: Employee[] }> {
+    // Define role priorities (higher number = higher rank)
+    const rolePriorities: Record<string, number> = {
+      'Manager': 100,
+      'Supervisor': 90,
+      'Team Lead': 80,
+      'Senior': 70,
+      'Associate': 50,
+      'Junior': 40,
+      'Intern': 30,
+      'Unknown': 0
+    };
+    
+    // Helper function to determine priority of a role
+    const getRolePriority = (role: string | undefined): { priority: number, roleGroup: string } => {
+      if (!role) return { priority: 0, roleGroup: 'Staff' };
+      
+      // Check for partial matches
+      for (const [key, value] of Object.entries(rolePriorities)) {
+        if (role.toLowerCase().includes(key.toLowerCase())) {
+          return { priority: value, roleGroup: key };
+        }
+      }
+      
+      return { priority: 20, roleGroup: 'Staff' };
+    };
+    
+    // Create a map to group staff by role group
+    const roleGroups = new Map<string, { priority: number, staff: Employee[] }>();
+    
+    // Group staff by their role
+    for (const employee of staff) {
+      const { priority, roleGroup } = getRolePriority(employee.role);
+      
+      if (!roleGroups.has(roleGroup)) {
+        roleGroups.set(roleGroup, { priority, staff: [] });
+      }
+      
+      roleGroups.get(roleGroup)?.staff.push(employee);
+    }
+    
+    // Sort each group alphabetically
+    for (const group of roleGroups.values()) {
+      group.staff.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    
+    // Convert map to sorted array
+    return Array.from(roleGroups.entries())
+      .map(([role, { priority, staff }]) => ({ role, priority, staff }))
+      .sort((a, b) => b.priority - a.priority)
+      .map(({ role, staff }) => ({ role, staff }));
+  }
+
+  // Fixed groupLeaveByDateRange function to handle dates reliably
+  function groupLeaveByDateRange(leaveData: LeaveDay[]): Array<{
+    startDate: Date,
+    endDate: Date,
+    isRange: boolean,
+    staff: LeaveEmployee[]
+  }> {
+    // Directly use the actual leave periods rather than trying to parse from text
+    const employeeLeavePeriods = new Map<string, {
+      id: string,
+      name: string,
+      startDate: Date,
+      endDate: Date,
+      leaveType: string
+    }>();
+    
+    // Process each leave day
+    leaveData.forEach(leaveDay => {
+      // Get date as a string for lookup
+      const dateKey = format(leaveDay.date, 'yyyy-MM-dd');
+      
+      // Process each person on leave
+      leaveDay.staff.forEach(person => {
+        const employeeKey = `${person.id}-${dateKey}`;
+        
+        // Instead of trying to parse dates from text, initialize with known date
+        if (!employeeLeavePeriods.has(employeeKey)) {
+          // Extract clean name - remove any existing date patterns
+          const cleanName = person.name.replace(/\s*\(until.*\)/, '');
+          
+          employeeLeavePeriods.set(employeeKey, {
+            id: person.id,
+            name: cleanName,
+            startDate: new Date(leaveDay.date),
+            endDate: new Date(leaveDay.date), // Start with single day period
+            leaveType: person.leaveType
+          });
+        }
+      });
+    });
+    
+    // Consolidate consecutive days for the same employee
+    const consolidatedLeave = new Map<string, {
+      id: string,
+      name: string,
+      startDate: Date,
+      endDate: Date,
+      leaveType: string
+    }>();
+    
+    // Process each leave entry
+    Array.from(employeeLeavePeriods.values()).forEach(period => {
+      const employeeKey = period.id;
+      
+      if (!consolidatedLeave.has(employeeKey)) {
+        // First entry for this employee
+        consolidatedLeave.set(employeeKey, { ...period });
+      } else {
+        // Update existing entry if needed
+        const existing = consolidatedLeave.get(employeeKey)!;
+        
+        // Check if dates are within 1 day of each other (consecutive)
+        const timeDiff = Math.abs(period.startDate.getTime() - existing.endDate.getTime());
+        const dayDiff = timeDiff / (1000 * 3600 * 24);
+        
+        if (dayDiff <= 1) {
+          // Extend period if this is a consecutive day
+          if (period.startDate < existing.startDate) {
+            existing.startDate = period.startDate;
+          }
+          if (period.endDate > existing.endDate) {
+            existing.endDate = period.endDate;
+          }
+        } 
+        // Otherwise it's a separate period that we'll handle later
+      }
+    });
+    
+    // Group by date range
+    const dateRangeGroups = new Map<string, {
+      startDate: Date,
+      endDate: Date,
+      isRange: boolean,
+      staff: LeaveEmployee[]
+    }>();
+    
+    // Process each employee's consolidated leave period
+    for (const period of consolidatedLeave.values()) {
+      // Format dates safely
+      const startStr = format(period.startDate, 'yyyy-MM-dd');
+      const endStr = format(period.endDate, 'yyyy-MM-dd');
+      const isRange = startStr !== endStr;
+      
+      const rangeKey = `${startStr}_${endStr}`;
+      
+      if (!dateRangeGroups.has(rangeKey)) {
+        dateRangeGroups.set(rangeKey, {
+          startDate: period.startDate,
+          endDate: period.endDate,
+          isRange,
+          staff: []
+        });
+      }
+      
+      // Add employee to this date range group
+      dateRangeGroups.get(rangeKey)!.staff.push({
+        id: period.id,
+        name: period.name,
+        leaveType: period.leaveType
+      });
+    }
+    
+    // Convert to array, sort by start date
+    return Array.from(dateRangeGroups.values())
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+  }
 </script>
 
 <svelte:head>
   <title>Dashboard | Parker's Foodservice</title>
 </svelte:head>
 
-<div class="dashboard-container">
-  <!-- Dashboard Header -->
-  <header class="dashboard-header">
-    <h1>Operations Dashboard</h1>
-    <p class="date-display">{format(today, 'EEEE, do MMMM yyyy')}</p>
-  </header>
-  
-  <div class="dashboard-grid">
-    <!-- Left Column: Staff and Leave -->
-    <div class="main-column">
-      <div class="staff-row">
-        <!-- Today's Staff -->
-        <div class="card">
-          <h2>Today's Staffing</h2>
-          
-          {#if isLoading.staff}
-            <div class="loading-placeholder">
-              <div class="loading-bar"></div>
-            </div>
-          {:else if todayStaff.length === 0}
-            <p class="empty-state">No staff scheduled for today</p>
-          {:else}
-            <ul class="staff-list">
-              {#each sortStaffByRank(todayStaff) as person}
-                <li class="staff-item">
-                  <span class="staff-name">{person.name}</span>
-                  {#if person.role}
-                    <span class="staff-role">{person.role}</span>
+<!-- Add authentication check wrapper around landing content -->
+{#if session === undefined}
+  <div class="loading-container">
+    <div class="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+{:else if session}
+  <!-- Your existing landing page content - keep everything the same -->
+  <div class="dashboard-container">
+    <header class="dashboard-header">
+      <h1>Operations Dashboard</h1>
+      <p class="date-display">{format(today, 'EEEE, do MMMM yyyy')}</p>
+    </header>
+    
+    <!-- Rest of your existing landing page content -->
+    <div class="dashboard-grid">
+      <!-- Left Column: Staff and Yesterday's Performance -->
+      <div class="main-column">
+        <div class="staff-row">
+          <!-- Today's Staff -->
+          <div class="card">
+            <h2>Today's Staffing</h2>
+            
+            {#if isLoading.staff}
+              <div class="loading-placeholder">
+                <div class="loading-bar"></div>
+              </div>
+            {:else if todayStaff.length === 0}
+              <p class="empty-state">No staff scheduled for today</p>
+            {:else}
+              <ul class="staff-list">
+                {#each groupStaffByRole(todayStaff) as { role, staff }, i}
+                  {#if i > 0}
+                    <li class="role-separator"></li>
                   {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-        
-        <!-- Tomorrow's Staff -->
-        <div class="card">
-          <h2>Tomorrow's Staffing</h2>
-          
-          {#if isLoading.staff}
-            <div class="loading-placeholder">
-              <div class="loading-bar"></div>
-            </div>
-          {:else if tomorrowStaff.length === 0}
-            <p class="empty-state">No staff scheduled for tomorrow</p>
-          {:else}
-            <ul class="staff-list">
-              {#each sortStaffByRank(tomorrowStaff) as person}
-                <li class="staff-item">
-                  <span class="staff-name">{person.name}</span>
-                  {#if person.role}
-                    <span class="staff-role">{person.role}</span>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-      </div>
-      
-      <!-- Leave Calendar -->
-      <div class="card">
-        <h2>Upcoming Leave</h2>
-        
-        {#if isLoading.leave}
-          <div class="loading-placeholder">
-            <div class="loading-bar"></div>
-          </div>
-        {:else if upcomingLeave.length === 0}
-          <p class="empty-state">No upcoming leave scheduled</p>
-        {:else}
-          <div class="leave-grid">
-            {#each upcomingLeave as leaveDay}
-              <div class="leave-card">
-                <div class="leave-date">
-                  {formatDate(leaveDay.date)}
-                </div>
-                <ul class="leave-staff-list">
-                  {#each leaveDay.staff as person}
-                    <li class="leave-staff-item">
-                      <span class="leave-icon">
-                        {person.leaveType === 'Sick' ? '🤒' : '🌴'}
-                      </span>
-                      {person.name}
+                  {#each staff as person}
+                    <li class="staff-item">
+                      <span class="staff-name">{person.name}</span>
                     </li>
                   {/each}
-                </ul>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    </div>
-    
-    <!-- Right Column: Weather and Metrics -->
-    <div class="sidebar-column">
-      <!-- Weather Widget with High/Low Temperatures -->
-      <div class="card">
-        <div class="widget-header">
-          <h2>Weather</h2>
-          <span class="location-badge">{weatherData?.location?.name || 'Southampton'}, UK</span>
-        </div>
-        
-        {#if isLoading.weather}
-          <div class="loading-placeholder center">
-            <div class="loading-circle"></div>
-          </div>
-        {:else if weatherError}
-          <div class="error-state">{weatherError}</div>
-        {:else if weatherData}
-          <div class="weather-content">
-            <div class="weather-main">
-              <div class="weather-icon-temp">
-                <img 
-                  src={weatherData.current.condition.icon.replace('64x64', '128x128')} 
-                  alt={weatherData.current.condition.text}
-                  class="weather-icon"
-                />
-                <div>
-                  <div class="weather-temp">{weatherData.current.temp_c}°C</div>
-                  <div class="weather-condition">{weatherData.current.condition.text}</div>
-                  
-                  <!-- High/Low Temperature -->
-                  {#if weatherData.forecast?.forecastday?.[0]?.day}
-                    <div class="high-low">
-                      <span class="high">H: {weatherData.forecast.forecastday[0].day.maxtemp_c}°</span>
-                      <span class="low">L: {weatherData.forecast.forecastday[0].day.mintemp_c}°</span>
-                    </div>
-                  {/if}
-                </div>
-              </div>
-              <div class="weather-updated">
-                <span>Updated</span>
-                {weatherData.current.last_updated.split(' ')[1]}
-              </div>
-            </div>
-            
-            <div class="weather-details">
-              <div class="weather-detail-item">
-                <div class="detail-label">Feels like</div>
-                <div class="detail-value">{weatherData.current.feelslike_c}°C</div>
-              </div>
-              <div class="weather-detail-item">
-                <div class="detail-label">Humidity</div>
-                <div class="detail-value">{weatherData.current.humidity}%</div>
-              </div>
-              <div class="weather-detail-item">
-                <div class="detail-label">Wind</div>
-                <div class="detail-value">{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}</div>
-              </div>
-              
-              <!-- Rain chance instead of UV index -->
-              <div class="weather-detail-item">
-                <div class="detail-label">Rain chance</div>
-                <div class="detail-value">
-                  {weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
-                </div>
-              </div>
-            </div>
-            
-            {#if weatherData.alerts && weatherData.alerts.alert.length}
-              <div class="weather-alert">
-                <div class="alert-title">Weather Alert</div>
-                <div class="alert-text">{weatherData.alerts.alert[0].headline}</div>
-              </div>
+                {/each}
+              </ul>
             {/if}
           </div>
-        {/if}
+          
+          <!-- Tomorrow's Staff -->
+          <div class="card">
+            <h2>Tomorrow's Staffing</h2>
+            
+            {#if isLoading.staff}
+              <div class="loading-placeholder">
+                <div class="loading-bar"></div>
+              </div>
+            {:else if tomorrowStaff.length === 0}
+              <p class="empty-state">No staff scheduled for tomorrow</p>
+            {:else}
+              <ul class="staff-list">
+                {#each groupStaffByRole(tomorrowStaff) as { role, staff }, i}
+                  {#if i > 0}
+                    <li class="role-separator"></li>
+                  {/if}
+                  {#each staff as person}
+                    <li class="staff-item">
+                      <span class="staff-name">{person.name}</span>
+                    </li>
+                  {/each}
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        </div>
+        
+        <!-- MOVED: Yesterday's Performance -->
+        <div class="card">
+          <h2>
+            Yesterday's Performance
+            <span class="date-badge">{format(addDays(today, -1), 'do MMM')}</span>
+          </h2>
+          
+          {#if isLoading.metrics}
+            <div class="loading-placeholder">
+              <div class="loading-bar"></div>
+              <div class="loading-bar"></div>
+              <div class="loading-bar"></div>
+            </div>
+          {:else}
+            <div class="metrics-list">
+              <div class="metric-item">
+                <div class="metric-label">Shipments Packed</div>
+                <div class="metric-value">{metrics.shipmentsPacked}</div>
+              </div>
+              
+              <div class="metric-item">
+                <div class="metric-label">Shipments per Hour</div>
+                <div class="metric-value">{metrics.shipmentsPerHour.toFixed(1)}</div>
+              </div>
+              
+              <div class="metric-item">
+                <div class="metric-label">Labour Utilisation</div>
+                <div class="metric-value">{metrics.labourUtilisation.toFixed(1)}%</div>
+              </div>
+            </div>
+          {/if}
+        </div>
       </div>
       
-      <!-- Yesterday's Metrics -->
-      <div class="card">
-        <h2>
-          Yesterday's Performance
-          <span class="date-badge">{format(addDays(today, -1), 'do MMM')}</span>
-        </h2>
+      <!-- Right Column: Upcoming Leave and Weather -->
+      <div class="sidebar-column">
+        <!-- MOVED: Upcoming Leave (Simplified) -->
+        <!-- Updated Upcoming Leave section with more robust date handling -->
+        <!-- Corrected Upcoming Leave section with proper end tag and date range display -->
+        <!-- Upcoming Leave section using leaveRanges directly -->
+        <div class="card">
+          <h2>Upcoming Leave</h2>
+          
+          {#if isLoading.leave}
+            <div class="loading-placeholder">
+              <div class="loading-bar"></div>
+            </div>
+          {:else if leaveRanges.length === 0}
+            <p class="empty-state">No upcoming leave scheduled</p>
+          {:else}
+            <div class="leave-list-container">
+              {#each leaveRanges as leaveGroup}
+                <div class="leave-section">
+                  <div class="leave-date-header">
+                    {#if leaveGroup.isRange}
+                      {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && 
+                           leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
+                        {format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(leaveGroup.endDate, 'EEEE, do MMMM')}
+                      {:else}
+                        Invalid Date Range
+                      {/if}
+                    {:else}
+                      {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
+                        {format(leaveGroup.startDate, 'EEEE, do MMMM')}
+                      {:else}
+                        Invalid Date
+                      {/if}
+                    {/if}
+                  </div>
+                  <ul class="leave-staff-list simple">
+                    {#each leaveGroup.staff as person}
+                      <li class="leave-staff-item simple">
+                        {person.name}
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
         
-        {#if isLoading.metrics}
-          <div class="loading-placeholder">
-            <div class="loading-bar"></div>
-            <div class="loading-bar"></div>
-            <div class="loading-bar"></div>
+        <!-- MOVED: Weather Widget -->
+        <div class="card">
+          <div class="widget-header">
+            <h2>Weather</h2>
+            <span class="location-badge">{weatherData?.location?.name || 'Southampton'}, UK</span>
           </div>
-        {:else}
-          <div class="metrics-list">
-            <div class="metric-item">
-              <div class="metric-label">Shipments Packed</div>
-              <div class="metric-value">{metrics.shipmentsPacked}</div>
+          
+          {#if isLoading.weather}
+            <div class="loading-placeholder center">
+              <div class="loading-circle"></div>
             </div>
-            
-            <div class="metric-item">
-              <div class="metric-label">Shipments per Hour</div>
-              <div class="metric-value">{metrics.shipmentsPerHour.toFixed(1)}</div>
+          {:else if weatherError}
+            <div class="error-state">{weatherError}</div>
+          {:else if weatherData}
+            <div class="weather-content">
+              <!-- Today's Weather -->
+              <div class="weather-main">
+                <div class="weather-icon-temp">
+                  <img 
+                    src={weatherData.current.condition.icon.replace('64x64', '128x128')} 
+                    alt={weatherData.current.condition.text}
+                    class="weather-icon"
+                  />
+                  <div>
+                    <div class="weather-temp">{weatherData.current.temp_c}°C</div>
+                    <div class="weather-condition">{weatherData.current.condition.text}</div>
+                    
+                    <!-- High/Low Temperature -->
+                    {#if weatherData.forecast?.forecastday?.[0]?.day}
+                      {@const maxTemp = Math.max(
+                        weatherData.current.temp_c,
+                        weatherData.forecast.forecastday[0].day.maxtemp_c
+                      )}
+                      <div class="high-low">
+                        <span class="high">H: {maxTemp.toFixed(0)}°</span>
+                        <span class="low">L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(0)}°</span>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+                <div class="weather-updated">
+                  <span>Updated</span>
+                  {weatherData.current.last_updated.split(' ')[1]}
+                </div>
+              </div>
+              
+              <!-- Weather Details for Today -->
+              <div class="weather-details">
+                <div class="weather-detail-item">
+                  <div class="detail-label">Feels like</div>
+                  <div class="detail-value">{weatherData.current.feelslike_c}°C</div>
+                </div>
+                <div class="weather-detail-item">
+                  <div class="detail-label">Humidity</div>
+                  <div class="detail-value">{weatherData.current.humidity}%</div>
+                </div>
+                <div class="weather-detail-item">
+                  <div class="detail-label">Wind</div>
+                  <div class="detail-value">{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}</div>
+                </div>
+                <div class="weather-detail-item">
+                  <div class="detail-label">Rain chance</div>
+                  <div class="detail-value">
+                    {weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Tomorrow's Forecast -->
+              {#if weatherData.forecast?.forecastday?.[1]?.day}
+                <div class="tomorrow-forecast">
+                  <div class="tomorrow-header">
+                    <span>Tomorrow</span>
+                    <span>{format(tomorrow, 'EEE, do')}</span>
+                  </div>
+                  <div class="tomorrow-content">
+                    <div class="tomorrow-icon-temp">
+                      <img 
+                        src={weatherData.forecast.forecastday[1].day.condition.icon} 
+                        alt={weatherData.forecast.forecastday[1].day.condition.text}
+                        class="tomorrow-icon"
+                      />
+                      <div class="tomorrow-condition">
+                        {weatherData.forecast.forecastday[1].day.condition.text}
+                      </div>
+                    </div>
+                    <div class="tomorrow-temps">
+                      <div class="tomorrow-high">
+                        H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
+                      </div>
+                      <div class="tomorrow-low">
+                        L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
+                      </div>
+                      <div class="tomorrow-rain">
+                        <span class="rain-icon">💧</span>
+                        {weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {/if}
             </div>
-            
-            <div class="metric-item">
-              <div class="metric-label">Labour Utilisation</div>
-              <div class="metric-value">{metrics.labourUtilisation.toFixed(1)}%</div>
-            </div>
-          </div>
-        {/if}
+          {/if}
+        </div>
       </div>
     </div>
   </div>
-</div>
+{:else}
+  <!-- When session is null, onMount should have redirected already -->
+  <div class="loading-container">
+    <p>Redirecting to login...</p>
+  </div>
+{/if}
 
 <style>
+  /* Add these new styles for loading state */
+  .loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: #1d1d1f;
+  }
+
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(0, 122, 255, 0.1);
+    border-radius: 50%;
+    border-top-color: #007aff;
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 16px;
+  }
+  
+  /* Your existing styles... */
   /* Global Dashboard Styles */
   .dashboard-container {
     padding: 24px;
@@ -816,6 +1115,8 @@
     margin-bottom: 24px;
   }
 
+  /* Add to your existing styles */
+
   /* Staff List Styles */
   .staff-list {
     list-style: none;
@@ -840,56 +1141,6 @@
     color: #1d1d1f;
   }
 
-  .staff-role {
-    font-size: 0.85rem;
-    color: #86868b;
-    text-align: right;
-  }
-
-  .shift-badge {
-    font-size: 0.75rem;
-    font-weight: 500;
-    padding: 3px 8px;
-    border-radius: 4px;
-    margin-right: 12px;
-    min-width: 36px;
-    text-align: center;
-  }
-
-  .morning {
-    background-color: #e3f2fd;
-    color: #0071e3;
-  }
-
-  .afternoon {
-    background-color: #fff8e1;
-    color: #f5a623;
-  }
-
-  .night {
-    background-color: #e8eaf6;
-    color: #5856d6;
-  }
-
-  /* Leave Calendar Styles */
-  .leave-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 16px;
-  }
-
-  .leave-card {
-    background: #f5f5f7;
-    border-radius: 8px;
-    padding: 12px;
-  }
-
-  .leave-date {
-    font-weight: 500;
-    color: #1d1d1f;
-    margin-bottom: 8px;
-    font-size: 0.9rem;
-  }
 
   .leave-staff-list {
     list-style: none;
@@ -898,19 +1149,82 @@
   }
 
   .leave-staff-item {
-    display: flex;
-    align-items: center;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     padding: 4px 0;
+    color: #1d1d1f;
   }
 
-  .leave-icon {
-    font-size: 1rem;
-    margin-right: 8px;
-    width: 16px;
-    display: inline-flex;
-    justify-content: center;
-  }
+  /* Tomorrow's forecast styles */
+.tomorrow-forecast {
+  margin-top: 20px;
+  background: #f5f5f7;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.tomorrow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: #1d1d1f;
+  font-weight: 500;
+}
+
+.tomorrow-header span:last-child {
+  color: #86868b;
+  font-weight: normal;
+}
+
+.tomorrow-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tomorrow-icon-temp {
+  display: flex;
+  align-items: center;
+}
+
+.tomorrow-icon {
+  width: 36px;
+  height: 36px;
+  margin-right: 8px;
+}
+
+.tomorrow-condition {
+  font-size: 0.85rem;
+  color: #1d1d1f;
+}
+
+.tomorrow-temps {
+  text-align: right;
+  font-size: 0.85rem;
+}
+
+.tomorrow-high {
+  color: #ff3b30;
+  font-weight: 500;
+}
+
+.tomorrow-low {
+  color: #007aff;
+  margin: 4px 0;
+}
+
+.tomorrow-rain {
+  color: #86868b;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.rain-icon {
+  margin-right: 4px;
+  font-size: 0.8rem;
+}
 
   /* Weather Widget Styles */
   .widget-header {
@@ -1123,10 +1437,6 @@
     .staff-row {
       grid-template-columns: 1fr;
     }
-    
-    .leave-grid {
-      grid-template-columns: 1fr 1fr;
-    }
   }
 
   @media (max-width: 480px) {
@@ -1138,4 +1448,43 @@
       padding: 16px;
     }
   }
+
+  /* Simplified Leave List Styles */
+.leave-list-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.leave-section {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f5f5f7;
+}
+
+.leave-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.leave-date-header {
+  font-weight: 500;
+  color: #1d1d1f;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+}
+
+.leave-staff-list.simple {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.leave-staff-item.simple {
+  font-size: 0.9rem;
+  padding: 3px 0;
+  color: #1d1d1f;
+}
+
+/* You can remove or comment out the old grid-based leave styles if not used elsewhere */
 </style>

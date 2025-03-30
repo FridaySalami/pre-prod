@@ -95,8 +95,38 @@
         <li>Developed bulk leave request functionality for efficient time-off management</li>
         <li>Integrated leave status indicators with calendar view for visual feedback</li>
         <li>Added automatic employee count adjustments to exclude employees on leave</li>
+        <!-- New release items we should add -->
+        <li>Enhanced employee display with compact initials and detailed tooltips for better space utilization</li>
+        <li>Added flexible month, week, and day view toggle options for varied schedule management needs</li>
+        <li>Implemented intelligent tooltip positioning that adjusts based on available screen space</li>
+        <li>Redesigned calendar UI with clear visual separation of weekends from weekdays</li>
+        <li>Improved schedule pattern visualization with collapsible week cards and clear week headers</li>
+        <li>Added comprehensive status icon system (available, holiday, sick) for better schedule clarity</li>
+        <li>Enhanced shift display with detailed time information (morning: 08:00-16:30, etc.)</li>
+        <li>Improved accessibility compliance with proper ARIA attributes and keyboard navigation</li>
+        <li>Optimized layout for better information density while maintaining visual clarity</li>
         <li>Added error handling and loading states for smooth user experience</li>
         <li>Secured route with proper authentication protection matching application standards</li>
+      </ul>
+    </section>
+
+    <section class="release-section">
+      <h2>Landing Page</h2>
+      <ul class="feature-list">
+        <li>Created a new centralized landing page with key operational information at a glance</li>
+        <li>Implemented responsive dashboard layout optimized for desktop and tablet views</li>
+        <li>Added today's and tomorrow's staffing sections with role-based grouping and visual separators</li>
+        <li>Integrated upcoming leave calendar with consolidated date ranges for cleaner display</li>
+        <li>Added real-time weather widget with current conditions, high/low temperatures, and tomorrow's forecast</li>
+        <li>Included yesterday's performance metrics summarizing key operational data</li>
+        <li>Implemented session-based authentication with automatic redirects for unauthorized access</li>
+        <li>Created elegant loading states for all async data fetches to improve perceived performance</li>
+        <li>Integrated with Supabase for real-time employee scheduling and leave management data</li>
+        <li>Added proper date formatting throughout to maintain consistent UI language</li>
+        <li>Designed clean card-based layout with subtle shadows and clear visual hierarchy</li>
+        <li>Implemented error handling for API failures with user-friendly fallback states</li>
+        <li>Added support for showing employees grouped by role with subtle visual separators</li>
+        <li>Built modular component architecture for improved maintainability and future expansion</li>
       </ul>
     </section>
 
