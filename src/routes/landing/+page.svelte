@@ -771,7 +771,7 @@
   <!-- Your existing landing page content - keep everything the same -->
   <div class="dashboard-container">
     <header class="dashboard-header">
-      <h1>Operations Dashboard</h1>
+      <h1>Welcome</h1>
       <p class="date-display">{format(today, 'EEEE, do MMMM yyyy')}</p>
     </header>
     
