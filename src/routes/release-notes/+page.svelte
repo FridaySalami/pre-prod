@@ -1,7 +1,7 @@
 <script lang="ts">
   // Fixed release information for this version.
   let appVersion = "1.0";
-  let globalReleaseDate = "March 5, 2025";
+  let globalReleaseDate = "April 7, 2025";
 </script>
 
 <main class="release-notes">

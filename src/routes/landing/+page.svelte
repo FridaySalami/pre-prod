@@ -12,12 +12,12 @@
     session = s;
   });
   
-  // Define proper interfaces for our data
   interface Employee {
     id: string;
     name: string;
     shift: string;
-    role?: string;  // Add this property
+    role?: string; 
+    onLeave?: boolean; // Add this field 
   }
   
   interface LeaveEmployee {
@@ -131,268 +131,321 @@
     staff: LeaveEmployee[]
   }> = [];
 
+  // Define structure for weekly staffing
+  let weeklyStaff: Array<{
+    date: Date,
+    dayOfWeek: string,
+    staff: Employee[]
+  }> = [];
+
   onMount(async () => {
-    // Once we know the session, if it's null then redirect
-    if (session === null) {
-      goto('/login');
-      return;
-    }
-    
-    // Only fetch data if user is authenticated
-    if (session) {
-      // Fetch all data in parallel
-      await Promise.all([
-        fetchStaffScheduled(),
-        fetchUpcomingLeave(),
-        fetchWeather(),
-        fetchYesterdayMetrics()
-      ]);
-    }
-  });
+  // Once we know the session, if it's null then redirect
+  if (session === null) {
+    goto('/login');
+    return;
+  }
+  
+  // Only fetch data if user is authenticated
+  if (session) {
+    // Fetch all data in parallel
+    await Promise.all([
+      fetchWeeklyStaff(),  // Replace fetchStaffScheduled with fetchWeeklyStaff
+      fetchUpcomingLeave(),
+      fetchWeather(),
+      fetchYesterdayMetrics()
+    ]);
+  }
+});
   
   onDestroy(() => {
     unsubscribe();
   });
 
-  // Updated fetchStaffScheduled function with correct day_of_week query
-  async function fetchStaffScheduled(): Promise<void> {
-    try {
-      const todayFormatted = format(today, 'yyyy-MM-dd');
-      const tomorrowFormatted = format(tomorrow, 'yyyy-MM-dd');
+  // Fix the staff filtering for leave - consolidate code
+
+  // Enhanced pattern filtering that correctly handles day_of_week matching
+function isEmployeeScheduledForDay(pattern: any, dayOfWeek: number | null): boolean {
+  if (dayOfWeek === null) return false;
+  
+  // Force numeric comparison and logging for debugging
+  const patternDay = Number(pattern.day_of_week);
+  const currentDay = Number(dayOfWeek);
+  
+  // Check if the day matches and the employee is marked as working
+  const scheduled = patternDay === currentDay && pattern.is_working === true;
+  
+  console.log(`${pattern.employee_name || 'Employee'}: scheduled for day ${currentDay}? ${scheduled ? 'YES' : 'NO'} (day_of_week=${patternDay})`);
+  
+  return scheduled;
+}
+
+// Updated function to correctly fetch weekly staff from Supabase
+  async function fetchWeeklyStaff(): Promise<void> {
+  try {
+    isLoading.staff = true;
+    
+    // Get current week dates
+    const weekDates = getWeekDays();
+    console.log("Fetching staff for dates:", weekDates.map(d => format(d, 'yyyy-MM-dd')));
+    
+    // Query for specific date assignments
+    const formattedDates = weekDates.map(date => format(date, 'yyyy-MM-dd'));
+    const { data: schedulesData, error: schedulesError } = await supabase
+      .from('schedules')
+      .select('*')
+      .in('date', formattedDates);
       
-      // Convert day of week to match your DB schema (1=Monday, 2=Tuesday, etc.)
-      // JavaScript's getDay() returns 0=Sunday, 1=Monday, etc., so we need to adjust
-      const todayDayOfWeek = today.getDay() === 0 ? 7 : today.getDay(); // Convert Sunday from 0 to 7 if needed
-      const tomorrowDayOfWeek = tomorrow.getDay() === 0 ? 7 : tomorrow.getDay();
+    if (schedulesError) {
+      console.error('Error fetching specific schedules:', schedulesError);
+      throw schedulesError;
+    }
+    
+    // Query for recurring patterns - removed active filter
+    const { data: patternsData, error: patternsError } = await supabase
+      .from('employee_schedules')
+      .select('*');
+        
+    if (patternsError) {
+      console.error('Error fetching schedule patterns:', patternsError);
+      throw patternsError;
+    }
+    
+    console.log("Specific schedules data:", schedulesData);
+    console.log("Pattern data:", patternsData);
+    
+    // Fetch employee details
+    const employeeIds = new Set<string>();
+    
+    // Add IDs from specific schedules
+    if (schedulesData) {
+      schedulesData.forEach(item => {
+        if (item.employee_id) employeeIds.add(item.employee_id);
+      });
+    }
+    
+    // Add IDs from pattern schedules
+    if (patternsData) {
+      patternsData.forEach(item => {
+        if (item.employee_id) employeeIds.add(item.employee_id);
+      });
+    }
+    
+    // Only proceed if we have employee IDs
+    if (employeeIds.size === 0) {
+      console.log("No employee IDs found in schedules");
+      weeklyStaff = weekDates.map(date => ({
+        date,
+        dayOfWeek: format(date, 'EEEE'),
+        staff: []
+      }));
       
-      console.log("Looking for schedules on:", todayFormatted, tomorrowFormatted);
-      console.log("Days of week (numeric):", todayDayOfWeek, tomorrowDayOfWeek);
-      
-      // First check for specific date assignments in the schedules table
-      const { data: schedulesData, error: schedulesError } = await supabase
-        .from('schedules')
-        .select('*')
-        .or(`date.eq.${todayFormatted},date.eq.${tomorrowFormatted}`);
-      
-      if (schedulesError) {
-        console.error('Error fetching specific schedules:', schedulesError);
-        throw schedulesError;
-      }
-      
-      // Then check for recurring patterns in employee_schedules table using day_of_week
-      const { data: patternsData, error: patternsError } = await supabase
-        .from('employee_schedules')
-        .select('*')
-        .or(`day_of_week.eq.${todayDayOfWeek},day_of_week.eq.${tomorrowDayOfWeek}`);
-      
-      if (patternsError) {
-        console.error('Error fetching schedule patterns:', patternsError);
-        throw patternsError;
-      }
-      
-      console.log("Specific schedules data:", schedulesData);
-      console.log("Pattern data:", patternsData);
-      
-      // Separate specific assignments by date
-      const specificTodayData = schedulesData?.filter(item => item.date === todayFormatted) || [];
-      const specificTomorrowData = schedulesData?.filter(item => item.date === tomorrowFormatted) || [];
-      
-      // Separate patterns by day of week (numeric)
-      const patternTodayData = patternsData?.filter(item => item.day_of_week === todayDayOfWeek) || [];
-      const patternTomorrowData = patternsData?.filter(item => item.day_of_week === tomorrowDayOfWeek) || [];
-      
-      // Get all unique employee IDs we need to fetch
-      const employeeIds = new Set([
-        ...specificTodayData.map(item => item.employee_id),
-        ...specificTomorrowData.map(item => item.employee_id),
-        ...patternTodayData.map(item => item.employee_id),
-        ...patternTomorrowData.map(item => item.employee_id)
-      ]);
-      
-      // If we have no data at all, use demo data
-      if (employeeIds.size === 0) {
-        console.log("No employee data found, using demo data");
-        
-        // Demo data for development
-        todayStaff = [
-          { id: 'demo1', name: 'John Smith', shift: 'morning' },
-          { id: 'demo2', name: 'Sarah Jones', shift: 'afternoon' }
-        ];
-        
-        tomorrowStaff = [
-          { id: 'demo1', name: 'John Smith', shift: 'morning' },
-          { id: 'demo3', name: 'Michael Brown', shift: 'night' },
-          { id: 'demo4', name: 'Alice Green', shift: 'afternoon' }
-        ];
-      } else {
-        // Fetch employee details
-        const { data: employeeData, error: employeeError } = await supabase
-          .from('employees')
-          .select('*')
-          .in('id', Array.from(employeeIds));
-          
-        if (employeeError) {
-          console.error('Error fetching employees:', employeeError);
-          throw employeeError;
-        }
-        
-        console.log("Employee data:", employeeData);
-        
-        // Rest of your existing code remains the same
-        // ... (leave data fetch, employee mapping, etc.)
-        
-        // Process today's schedule
-        // Priority: specific assignments override patterns
-        const todayScheduledEmployees = new Map();
-        
-        // Add pattern-based staff first (can be overridden)
-        patternTodayData.forEach(pattern => {
-          todayScheduledEmployees.set(pattern.employee_id, {
-            employee_id: pattern.employee_id,
-            shift: pattern.shift || 'morning' // Default to morning if not specified
-          });
-        });
-        
-        // Override with specific assignments
-        specificTodayData.forEach(schedule => {
-          todayScheduledEmployees.set(schedule.employee_id, {
-            employee_id: schedule.employee_id,
-            shift: schedule.shift
-          });
-        });
-        
-        // Process tomorrow's schedule with same logic
-        const tomorrowScheduledEmployees = new Map();
-        
-        patternTomorrowData.forEach(pattern => {
-          tomorrowScheduledEmployees.set(pattern.employee_id, {
-            employee_id: pattern.employee_id,
-            shift: pattern.shift || 'morning'
-          });
-        });
-        
-        specificTomorrowData.forEach(schedule => {
-          tomorrowScheduledEmployees.set(schedule.employee_id, {
-            employee_id: schedule.employee_id,
-            shift: schedule.shift
-          });
-        });
-        
-        console.log("Combined today schedules:", Array.from(todayScheduledEmployees.values()));
-        console.log("Combined tomorrow schedules:", Array.from(tomorrowScheduledEmployees.values()));
-        
-        // Fetch leave data to filter out employees on leave
-        const { data: leaveData, error: leaveError } = await supabase
-          .from('leave_requests')
-          .select('*')
-          .or(`start_date.lte.${todayFormatted},end_date.gte.${todayFormatted},start_date.lte.${tomorrowFormatted},end_date.gte.${tomorrowFormatted}`)
-          .eq('status', 'approved');
-        
-        if (leaveError) {
-          console.error('Error fetching leave data:', leaveError);
-        }
-        
-        console.log("Leave data:", leaveData);
-        
-        // Filter out employees on leave
-        const isOnLeaveToday = (employeeId: string) => {
-          return leaveData?.some(leave => 
-            leave.employee_id === employeeId &&
-            new Date(leave.start_date) <= new Date(todayFormatted) &&
-            new Date(leave.end_date) >= new Date(todayFormatted)
-          ) || false;
-        };
-        
-        const isOnLeaveTomorrow = (employeeId: string) => {
-          return leaveData?.some(leave => 
-            leave.employee_id === employeeId &&
-            new Date(leave.start_date) <= new Date(tomorrowFormatted) &&
-            new Date(leave.end_date) >= new Date(tomorrowFormatted)
-          ) || false;
-        };
-        
-        // Build final staff arrays
-        todayStaff = Array.from(todayScheduledEmployees.values())
-          .filter(schedule => !isOnLeaveToday(schedule.employee_id))
-          .map(schedule => {
-            const employee = employeeData?.find(emp => emp.id === schedule.employee_id);
-            return {
-              id: schedule.employee_id,
-              name: employee?.name || 'Unknown',
-              shift: schedule.shift,
-              role: employee?.role || undefined
-            };
-          });
-        
-        tomorrowStaff = Array.from(tomorrowScheduledEmployees.values())
-          .filter(schedule => !isOnLeaveTomorrow(schedule.employee_id))
-          .map(schedule => {
-            const employee = employeeData?.find(emp => emp.id === schedule.employee_id);
-            return {
-              id: schedule.employee_id,
-              name: employee?.name || 'Unknown',
-              shift: schedule.shift,
-              role: employee?.role || undefined
-            };
-          });
-      }
-      
-      console.log("Final today staff:", todayStaff);
-      console.log("Final tomorrow staff:", tomorrowStaff);
-      
-    } catch (error) {
-      console.error('Error fetching scheduled staff:', error);
-    } finally {
       isLoading.staff = false;
+      return;
     }
-  }
-
-  // Helper function to check for employees on leave
-  async function checkEmployeesForLeave(): Promise<void> {
-    try {
-      const todayFormatted = format(today, 'yyyy-MM-dd');
-      const tomorrowFormatted = format(tomorrow, 'yyyy-MM-dd');
+    
+    const { data: employeeData, error: employeeError } = await supabase
+      .from('employees')
+      .select('*')
+      .in('id', Array.from(employeeIds));
       
-      // Fetch leave requests that overlap with today or tomorrow
-      const { data: leaveData, error: leaveError } = await supabase
-        .from('leave_requests')
-        .select('id, employee_id, start_date, end_date')
-        .or(`start_date.lte.${todayFormatted},end_date.gte.${todayFormatted},start_date.lte.${tomorrowFormatted},end_date.gte.${tomorrowFormatted}`)
-        .eq('status', 'approved');
-      
-      if (leaveError) {
-        console.error('Error checking for leave:', leaveError);
-        return;
-      }
-      
-      console.log("Leave data:", leaveData);
-      
-      // Filter out employees who are on leave today
-      if (leaveData && leaveData.length > 0) {
-        todayStaff = todayStaff.filter(employee => {
-          const onLeave = leaveData.some(leave => 
-            leave.employee_id === employee.id && 
-            new Date(leave.start_date) <= new Date(todayFormatted) && 
-            new Date(leave.end_date) >= new Date(todayFormatted)
-          );
-          return !onLeave;
-        });
-        
-        // Filter out employees who are on leave tomorrow
-        tomorrowStaff = tomorrowStaff.filter(employee => {
-          const onLeave = leaveData.some(leave => 
-            leave.employee_id === employee.id && 
-            new Date(leave.start_date) <= new Date(tomorrowFormatted) && 
-            new Date(leave.end_date) >= new Date(tomorrowFormatted)
-          );
-          return !onLeave;
-        });
-      }
-    } catch (error) {
-      console.error('Error checking for employee leave:', error);
+    if (employeeError) {
+      console.error('Error fetching employees:', employeeError);
+      throw employeeError;
     }
-  }
+    
+// Corrected leave data query that finds any leave overlapping with the week
+const { data: leaveData, error: leaveError } = await supabase
+  .from('leave_requests')
+  .select('*')
+  .lte('start_date', format(weekDates[5], 'yyyy-MM-dd'))  // Leave starts before or on Saturday
+  .gte('end_date', format(weekDates[0], 'yyyy-MM-dd'))    // Leave ends after or on Monday
+  .eq('status', 'approved');
 
+    if (leaveError) {
+      console.error('Error fetching leave data:', leaveError);
+      throw leaveError;
+    }
+    
+    console.log("Leave data for filtering:", leaveData);
+    
+    // Convert JavaScript day (0=Sunday, 1=Monday, ...) to your database format (0=Monday, 1=Tuesday, ...)
+function convertJsDayToDbDay(jsDay: number): number {
+  // JavaScript: 0=Sunday, 1=Monday, ..., 6=Saturday
+  // Database:   0=Monday, 1=Tuesday, ..., 6=Sunday
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
+
+// Process each day of the week
+weeklyStaff = weekDates.map(date => {
+  const formattedDate = format(date, 'yyyy-MM-dd');
+  
+  // Get JavaScript day (0=Sunday, 1=Monday, etc.)
+  const jsDay = date.getDay();
+  
+  // Convert to database day format (0=Monday, 1=Tuesday, etc.)
+  const dbDayOfWeek = convertJsDayToDbDay(jsDay);
+  
+  const dayName = format(date, 'EEEE');
+  
+  // Log both the JavaScript day and the DB day for debugging
+  console.log(`Processing ${dayName}: JS day = ${jsDay}, DB day = ${dbDayOfWeek}, date = ${formattedDate}`);
+  
+  const specificSchedules = schedulesData?.filter(item => item.date === formattedDate) || [];
+      
+  // Debug the day of week comparison
+  console.log(`Filtering for day ${dayName} (db day=${dbDayOfWeek})`);
+  
+  // Get patterns for this day of week and where employee is working
+  const dayPatterns = patternsData?.filter(pattern => {
+    // Compare pattern.day_of_week with the converted dbDayOfWeek
+    const patternDay = Number(pattern.day_of_week); 
+    const scheduled = patternDay === dbDayOfWeek && pattern.is_working === true;
+    
+    if (pattern.employee_id && employeeData) {
+      const emp = employeeData.find(e => e.id === pattern.employee_id);
+      console.log(`${emp?.name || 'Unknown'}: scheduled for db day ${dbDayOfWeek}? ${scheduled ? 'YES' : 'NO'} (day_of_week=${patternDay})`);
+    }
+    
+    return scheduled;
+  }) || [];
+  
+  console.log(`Day ${dayName} (db day=${dbDayOfWeek}): Found ${dayPatterns.length} pattern schedules`);
+  
+  // Combine schedules (specific overrides pattern)
+  const scheduledEmployees = new Map();
+  
+  // Add pattern-based staff first (can be overridden)
+  dayPatterns.forEach(pattern => {
+    scheduledEmployees.set(pattern.employee_id, {
+      employee_id: pattern.employee_id,
+      shift: pattern.shift || 'morning' // Default to morning if not specified
+    });
+  });
+  
+  // Override with specific assignments
+  specificSchedules.forEach(schedule => {
+    scheduledEmployees.set(schedule.employee_id, {
+      employee_id: schedule.employee_id,
+      shift: schedule.shift
+    });
+  });
+  
+// More reliable date comparison
+const isOnLeave = (employeeId: string, currentDate: Date) => {
+  const formattedCurrentDate = format(currentDate, 'yyyy-MM-dd');
+  
+  return leaveData?.some(leave => {
+    // Convert dates to yyyy-MM-dd format for comparison to avoid time issues
+    const leaveStartFormatted = format(new Date(leave.start_date), 'yyyy-MM-dd');
+    const leaveEndFormatted = format(new Date(leave.end_date), 'yyyy-MM-dd');
+    
+    const isOnLeaveThisDay = 
+      leave.employee_id === employeeId &&
+      leaveStartFormatted <= formattedCurrentDate &&
+      leaveEndFormatted >= formattedCurrentDate;
+      
+    if (isOnLeaveThisDay) {
+      console.log(`Employee ${employeeId} is on leave on ${formattedCurrentDate}`);
+    }
+    
+    return isOnLeaveThisDay;
+  }) || false;
+};
+  
+  // Filter out employees on leave before mapping to full employee data
+  let staffWithLeaveStatus: Employee[] = [];
+  
+  // Loop through each employee scheduled for this day
+  Array.from(scheduledEmployees.entries()).forEach(([employeeId, schedule]) => {
+    // Check if employee is on leave
+    const onLeave = isOnLeave(employeeId, date);
+    
+    // Add all employees - mark if they're on leave
+    const employee = employeeData?.find(emp => emp.id === employeeId);
+    staffWithLeaveStatus.push({
+      id: employeeId,
+      name: employee?.name || 'Unknown', 
+      shift: schedule.shift,
+      role: employee?.role || undefined,
+      onLeave: onLeave // Add this flag to track leave status
+    });
+  });
+
+  // Use this as the final staff list
+  const staffList = staffWithLeaveStatus;
+  
+  // Add this after your staff list is built
+  console.log(`Day ${dayName} staff details:`, staffList.map(person => ({
+    name: person.name,
+    role: person.role
+  })));
+  
+  return {
+    date,
+    dayOfWeek: dayName,
+    staff: staffList
+  };
+});
+    
+    // Add debug to ensure we're not mixing up the display order
+    console.log("Weekly staff before sorting:", weeklyStaff.map(day => ({
+      date: format(day.date, 'yyyy-MM-dd'),
+      dayName: day.dayOfWeek,
+      jsDay: day.date.getDay(),
+      staffCount: day.staff.length
+    })));
+    
+    // Make sure weeklyStaff is properly sorted by date
+    weeklyStaff = weeklyStaff.sort((a, b) => a.date.getTime() - b.date.getTime());
+    
+    // Remove Sunday if it exists
+    weeklyStaff = weeklyStaff.filter(day => format(day.date, 'EEEE') !== 'Sunday');
+    
+    console.log("Final weekly staff schedule:", weeklyStaff.map(day => ({
+      date: format(day.date, 'yyyy-MM-dd'),
+      dayName: day.dayOfWeek, 
+      staffCount: day.staff.length
+    })));
+    
+  } catch (error) {
+    console.error('Error fetching weekly staff schedule:', error);
+  } finally {
+    isLoading.staff = false;
+  }
+}
+  // Helper function to get days of current week (Mon-Sat)
+// Improved getWeekDays function with more explicit day handling
+function getWeekDays(): Date[] {
+  const today = new Date();
+  const days = [];
+  
+  // Reset time to midnight to avoid any time-related issues
+  today.setHours(0, 0, 0, 0);
+  
+  // Get current day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+  const currentDayOfWeek = today.getDay();
+  
+  // Calculate days to go back to reach Monday
+  const daysToMonday = currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1;
+  
+  // Create Monday date
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - daysToMonday);
+  
+  // Create array of dates from Monday to Saturday (6 days)
+  for (let i = 0; i < 6; i++) {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + i);
+    days.push(date);
+    
+    // Add detailed logging
+    console.log(
+      `Week day ${i}: ${format(date, 'EEEE')} (${date.getDay()}) - ${format(date, 'yyyy-MM-dd')}`
+    );
+  }
+  
+  return days;
+}
   // Enhanced fetchUpcomingLeave function that properly preserves date ranges
   async function fetchUpcomingLeave(): Promise<void> {
     try {
@@ -768,257 +821,257 @@
     <p>Loading...</p>
   </div>
 {:else if session}
-  <!-- Your existing landing page content - keep everything the same -->
+  <!-- Add back the welcome header -->
   <div class="dashboard-container">
-    <header class="dashboard-header">
-      <h1>Welcome</h1>
-      <p class="date-display">{format(today, 'EEEE, do MMMM yyyy')}</p>
-    </header>
-    
-    <!-- Rest of your existing landing page content -->
-    <div class="dashboard-grid">
-      <!-- Left Column: Staff and Yesterday's Performance -->
-      <div class="main-column">
-        <div class="staff-row">
-          <!-- Today's Staff -->
-          <div class="card">
-            <h2>Today's Staffing</h2>
-            
-            {#if isLoading.staff}
-              <div class="loading-placeholder">
-                <div class="loading-bar"></div>
+    <div class="dashboard-header">
+      <h1>Welcome{session?.user?.user_metadata?.name ? ', ' + session.user.user_metadata.name : ''}</h1>
+      <div class="date-display">Today is {format(today, 'EEEE, do MMMM yyyy')}</div>
+    </div>
+  </div>
+
+  <!-- Your existing dashboard grid layout -->
+  <div class="dashboard-grid">
+    <!-- Left Column - Main column now contains only weekly staff & upcoming leave -->
+    <div class="main-column">
+      <!-- Weekly Staff View - stays at the top of left column -->
+      <div class="card weekly-staff-card">
+        <h2>This Week's Staffing</h2>
+        <!-- Weekly staff content... -->
+        {#if isLoading.staff}
+          <div class="loading-placeholder">
+            <div class="loading-bar"></div>
+          </div>
+        {:else if weeklyStaff.length === 0}
+          <p class="empty-state">No staff scheduled this week</p>
+        {:else}
+        <div class="weekly-staff-grid">
+          {#each weeklyStaff as dayData, index}
+          <div class="day-column" class:today={format(dayData.date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')}>
+            <div class="day-header">
+              <div class="day-name">{dayData.dayOfWeek}</div>
+              <div class="day-date">{format(dayData.date, 'do MMM')}</div>
+              <!-- Add this debug info temporarily -->
+              <div class="day-debug" style="font-size: 0.7rem; color: #999;">
+                {format(dayData.date, 'yyyy-MM-dd')}
               </div>
-            {:else if todayStaff.length === 0}
-              <p class="empty-state">No staff scheduled for today</p>
+            </div>
+                      
+            {#if dayData.staff.length === 0}
+              <div class="day-empty">No staff</div>
             {:else}
-              <ul class="staff-list">
-                {#each groupStaffByRole(todayStaff) as { role, staff }, i}
+              <!-- Calculate active staff count (excluding those on leave) -->
+              {@const activeStaffCount = dayData.staff.filter(person => !person.onLeave).length}
+              
+              <!-- Show active count, not total count -->
+              <div class="staff-count">{activeStaffCount}</div>
+              
+              <ul class="staff-list compact">
+                {#each groupStaffByRole(dayData.staff) as { role, staff }, i}
                   {#if i > 0}
                     <li class="role-separator"></li>
                   {/if}
                   {#each staff as person}
-                    <li class="staff-item">
-                      <span class="staff-name">{person.name}</span>
+                    <li class="staff-item compact" class:on-leave={person.onLeave}>
+                      <span class="staff-name">
+                        {#if person.onLeave}
+                          <span class="leave-icon" aria-label="On leave">🌴</span>
+                        {/if}
+                        {person.name}
+                      </span>
                     </li>
                   {/each}
                 {/each}
               </ul>
             {/if}
           </div>
-          
-          <!-- Tomorrow's Staff -->
-          <div class="card">
-            <h2>Tomorrow's Staffing</h2>
-            
-            {#if isLoading.staff}
-              <div class="loading-placeholder">
-                <div class="loading-bar"></div>
-              </div>
-            {:else if tomorrowStaff.length === 0}
-              <p class="empty-state">No staff scheduled for tomorrow</p>
-            {:else}
-              <ul class="staff-list">
-                {#each groupStaffByRole(tomorrowStaff) as { role, staff }, i}
-                  {#if i > 0}
-                    <li class="role-separator"></li>
-                  {/if}
-                  {#each staff as person}
-                    <li class="staff-item">
-                      <span class="staff-name">{person.name}</span>
-                    </li>
-                  {/each}
-                {/each}
-              </ul>
-            {/if}
-          </div>
+          {/each}
         </div>
-        
-        <!-- MOVED: Yesterday's Performance -->
-        <div class="card">
-          <h2>
-            Yesterday's Performance
-            <span class="date-badge">{format(addDays(today, -1), 'do MMM')}</span>
-          </h2>
-          
-          {#if isLoading.metrics}
-            <div class="loading-placeholder">
-              <div class="loading-bar"></div>
-              <div class="loading-bar"></div>
-              <div class="loading-bar"></div>
-            </div>
-          {:else}
-            <div class="metrics-list">
-              <div class="metric-item">
-                <div class="metric-label">Shipments Packed</div>
-                <div class="metric-value">{metrics.shipmentsPacked}</div>
-              </div>
-              
-              <div class="metric-item">
-                <div class="metric-label">Shipments per Hour</div>
-                <div class="metric-value">{metrics.shipmentsPerHour.toFixed(1)}</div>
-              </div>
-              
-              <div class="metric-item">
-                <div class="metric-label">Labour Utilisation</div>
-                <div class="metric-value">{metrics.labourUtilisation.toFixed(1)}%</div>
-              </div>
-            </div>
-          {/if}
-        </div>
+        {/if}
       </div>
       
-      <!-- Right Column: Upcoming Leave and Weather -->
-      <div class="sidebar-column">
-        <!-- MOVED: Upcoming Leave (Simplified) -->
-        <!-- Updated Upcoming Leave section with more robust date handling -->
-        <!-- Corrected Upcoming Leave section with proper end tag and date range display -->
-        <!-- Upcoming Leave section using leaveRanges directly -->
-        <div class="card">
-          <h2>Upcoming Leave</h2>
-          
-          {#if isLoading.leave}
-            <div class="loading-placeholder">
-              <div class="loading-bar"></div>
-            </div>
-          {:else if leaveRanges.length === 0}
-            <p class="empty-state">No upcoming leave scheduled</p>
-          {:else}
-            <div class="leave-list-container">
-              {#each leaveRanges as leaveGroup}
-                <div class="leave-section">
-                  <div class="leave-date-header">
-                    {#if leaveGroup.isRange}
-                      {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && 
-                           leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
-                        {format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(leaveGroup.endDate, 'EEEE, do MMMM')}
-                      {:else}
-                        Invalid Date Range
-                      {/if}
-                    {:else}
-                      {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
-                        {format(leaveGroup.startDate, 'EEEE, do MMMM')}
-                      {:else}
-                        Invalid Date
-                      {/if}
-                    {/if}
-                  </div>
-                  <ul class="leave-staff-list simple">
-                    {#each leaveGroup.staff as person}
-                      <li class="leave-staff-item simple">
-                        {person.name}
-                      </li>
-                    {/each}
-                  </ul>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-        
-        <!-- MOVED: Weather Widget -->
-        <div class="card">
-          <div class="widget-header">
-            <h2>Weather</h2>
-            <span class="location-badge">{weatherData?.location?.name || 'Southampton'}, UK</span>
+      <!-- Upcoming Leave - moved to left column under weekly staff -->
+      <div class="card">
+        <h2>Upcoming Leave</h2>
+        <!-- Upcoming leave content... -->
+        {#if isLoading.leave}
+          <div class="loading-placeholder">
+            <div class="loading-bar"></div>
           </div>
-          
-          {#if isLoading.weather}
-            <div class="loading-placeholder center">
-              <div class="loading-circle"></div>
-            </div>
-          {:else if weatherError}
-            <div class="error-state">{weatherError}</div>
-          {:else if weatherData}
-            <div class="weather-content">
-              <!-- Today's Weather -->
-              <div class="weather-main">
-                <div class="weather-icon-temp">
-                  <img 
-                    src={weatherData.current.condition.icon.replace('64x64', '128x128')} 
-                    alt={weatherData.current.condition.text}
-                    class="weather-icon"
-                  />
-                  <div>
-                    <div class="weather-temp">{weatherData.current.temp_c}°C</div>
-                    <div class="weather-condition">{weatherData.current.condition.text}</div>
-                    
-                    <!-- High/Low Temperature -->
-                    {#if weatherData.forecast?.forecastday?.[0]?.day}
-                      {@const maxTemp = Math.max(
-                        weatherData.current.temp_c,
-                        weatherData.forecast.forecastday[0].day.maxtemp_c
-                      )}
-                      <div class="high-low">
-                        <span class="high">H: {maxTemp.toFixed(0)}°</span>
-                        <span class="low">L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(0)}°</span>
-                      </div>
+        {:else if leaveRanges.length === 0}
+          <p class="empty-state">No upcoming leave scheduled</p>
+        {:else}
+          <div class="leave-list-container">
+            {#each leaveRanges as leaveGroup}
+              <div class="leave-section">
+                <div class="leave-date-header">
+                  {#if leaveGroup.isRange}
+                    {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && 
+                         leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
+                      {format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(leaveGroup.endDate, 'EEEE, do MMMM')}
+                    {:else}
+                      Invalid Date Range
                     {/if}
-                  </div>
+                  {:else}
+                    {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
+                      {format(leaveGroup.startDate, 'EEEE, do MMMM')}
+                    {:else}
+                      Invalid Date
+                    {/if}
+                  {/if}
                 </div>
-                <div class="weather-updated">
-                  <span>Updated</span>
-                  {weatherData.current.last_updated.split(' ')[1]}
-                </div>
+                <ul class="leave-staff-list simple">
+                  {#each leaveGroup.staff as person}
+                    <li class="leave-staff-item simple">
+                      {person.name}
+                    </li>
+                  {/each}
+                </ul>
               </div>
-              
-              <!-- Weather Details for Today -->
-              <div class="weather-details">
-                <div class="weather-detail-item">
-                  <div class="detail-label">Feels like</div>
-                  <div class="detail-value">{weatherData.current.feelslike_c}°C</div>
-                </div>
-                <div class="weather-detail-item">
-                  <div class="detail-label">Humidity</div>
-                  <div class="detail-value">{weatherData.current.humidity}%</div>
-                </div>
-                <div class="weather-detail-item">
-                  <div class="detail-label">Wind</div>
-                  <div class="detail-value">{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}</div>
-                </div>
-                <div class="weather-detail-item">
-                  <div class="detail-label">Rain chance</div>
-                  <div class="detail-value">
-                    {weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
-                  </div>
-                </div>
-              </div>
-              
-              <!-- Tomorrow's Forecast -->
-              {#if weatherData.forecast?.forecastday?.[1]?.day}
-                <div class="tomorrow-forecast">
-                  <div class="tomorrow-header">
-                    <span>Tomorrow</span>
-                    <span>{format(tomorrow, 'EEE, do')}</span>
-                  </div>
-                  <div class="tomorrow-content">
-                    <div class="tomorrow-icon-temp">
-                      <img 
-                        src={weatherData.forecast.forecastday[1].day.condition.icon} 
-                        alt={weatherData.forecast.forecastday[1].day.condition.text}
-                        class="tomorrow-icon"
-                      />
-                      <div class="tomorrow-condition">
-                        {weatherData.forecast.forecastday[1].day.condition.text}
-                      </div>
-                    </div>
-                    <div class="tomorrow-temps">
-                      <div class="tomorrow-high">
-                        H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
-                      </div>
-                      <div class="tomorrow-low">
-                        L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
-                      </div>
-                      <div class="tomorrow-rain">
-                        <span class="rain-icon">💧</span>
-                        {weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              {/if}
-            </div>
-          {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+    
+    <!-- Right Column - Now contains weather at top & performance metrics below -->
+    <div class="sidebar-column">
+      <!-- Weather Widget - moved to top of right column -->
+      <div class="card">
+        <div class="widget-header">
+          <h2>Weather</h2>
+          <span class="location-badge">{weatherData?.location?.name || 'Southampton'}, UK</span>
         </div>
+        <!-- Weather content... -->
+        {#if isLoading.weather}
+          <div class="loading-placeholder center">
+            <div class="loading-circle"></div>
+          </div>
+        {:else if weatherError}
+          <div class="error-state">{weatherError}</div>
+        {:else if weatherData}
+          <div class="weather-content">
+            <!-- Today's Weather -->
+            <div class="weather-main">
+              <div class="weather-icon-temp">
+                <img 
+                  src={weatherData.current.condition.icon.replace('64x64', '128x128')} 
+                  alt={weatherData.current.condition.text}
+                  class="weather-icon"
+                />
+                <div>
+                  <div class="weather-temp">{weatherData.current.temp_c}°C</div>
+                  <div class="weather-condition">{weatherData.current.condition.text}</div>
+                  
+                  <!-- High/Low Temperature -->
+                  {#if weatherData.forecast?.forecastday?.[0]?.day}
+                    {@const maxTemp = Math.max(
+                      weatherData.current.temp_c,
+                      weatherData.forecast.forecastday[0].day.maxtemp_c
+                    )}
+                    <div class="high-low">
+                      <span class="high">H: {maxTemp.toFixed(0)}°</span>
+                      <span class="low">L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(0)}°</span>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+              <div class="weather-updated">
+                <span>Updated</span>
+                {weatherData.current.last_updated.split(' ')[1]}
+              </div>
+            </div>
+            
+            <!-- Weather Details for Today -->
+            <div class="weather-details">
+              <div class="weather-detail-item">
+                <div class="detail-label">Feels like</div>
+                <div class="detail-value">{weatherData.current.feelslike_c}°C</div>
+              </div>
+              <div class="weather-detail-item">
+                <div class="detail-label">Humidity</div>
+                <div class="detail-value">{weatherData.current.humidity}%</div>
+              </div>
+              <div class="weather-detail-item">
+                <div class="detail-label">Wind</div>
+                <div class="detail-value">{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}</div>
+              </div>
+              <div class="weather-detail-item">
+                <div class="detail-label">Rain chance</div>
+                <div class="detail-value">
+                  {weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
+                </div>
+              </div>
+            </div>
+            
+            <!-- Tomorrow's Forecast -->
+            {#if weatherData.forecast?.forecastday?.[1]?.day}
+              <div class="tomorrow-forecast">
+                <div class="tomorrow-header">
+                  <span>Tomorrow</span>
+                  <span>{format(tomorrow, 'EEE, do')}</span>
+                </div>
+                <div class="tomorrow-content">
+                  <div class="tomorrow-icon-temp">
+                    <img 
+                      src={weatherData.forecast.forecastday[1].day.condition.icon} 
+                      alt={weatherData.forecast.forecastday[1].day.condition.text}
+                      class="tomorrow-icon"
+                    />
+                    <div class="tomorrow-condition">
+                      {weatherData.forecast.forecastday[1].day.condition.text}
+                    </div>
+                  </div>
+                  <div class="tomorrow-temps">
+                    <div class="tomorrow-high">
+                      H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
+                    </div>
+                    <div class="tomorrow-low">
+                      L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
+                    </div>
+                    <div class="tomorrow-rain">
+                      <span class="rain-icon">💧</span>
+                      {weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+      
+      <!-- Yesterday's Performance - now in right column with 2 horizontal columns -->
+      <div class="card">
+        <h2>
+          Yesterday's Performance
+          <span class="date-badge">{format(addDays(today, -1), 'do MMM')}</span>
+        </h2>
+        
+        {#if isLoading.metrics}
+          <div class="loading-placeholder">
+            <div class="loading-bar"></div>
+            <div class="loading-bar"></div>
+            <div class="loading-bar"></div>
+          </div>
+        {:else}
+          <!-- Updated to use two columns layout -->
+          <div class="metrics-list two-columns">
+            <div class="metric-item">
+              <div class="metric-label">Shipments Packed</div>
+              <div class="metric-value">{metrics.shipmentsPacked}</div>
+            </div>
+            
+            <div class="metric-item">
+              <div class="metric-label">Shipments per Hour</div>
+              <div class="metric-value">{metrics.shipmentsPerHour.toFixed(1)}</div>
+            </div>
+            
+            <div class="metric-item">
+              <div class="metric-label">Labour Utilisation</div>
+              <div class="metric-value">{metrics.labourUtilisation.toFixed(1)}%</div>
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
   </div>
@@ -1061,6 +1114,17 @@
   .dashboard-header {
     margin-bottom: 24px;
   }
+
+  .staff-count {
+  background: #f5f5f7;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  color: #86868b;
+  padding: 2px 8px;
+  display: inline-block;
+  margin: 0 0 8px 0;
+  align-self: flex-start;
+}
 
   .dashboard-header h1 {
     font-size: 1.75rem;
@@ -1107,22 +1171,42 @@
     margin-left: 8px;
   }
 
-  /* Staff Columns Layout */
-  .staff-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-bottom: 24px;
-  }
-
-  /* Add to your existing styles */
-
   /* Staff List Styles */
   .staff-list {
     list-style: none;
     padding: 0;
     margin: 0;
   }
+
+  /* Two-column metrics layout */
+.metrics-list.two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.metrics-list.two-columns .metric-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 12px;
+  margin: 0;
+  background: #f5f5f7;
+  border-radius: 8px;
+  border: none;
+}
+
+.metrics-list.two-columns .metric-item:last-child {
+  grid-column: span 2; /* Make the last item span both columns */
+}
+
+.metrics-list.two-columns .metric-label {
+  margin-bottom: 6px;
+}
+
+.metrics-list.two-columns .metric-value {
+  font-size: 1.5rem;
+}
 
   .staff-item {
     display: flex;
@@ -1153,6 +1237,15 @@
     padding: 4px 0;
     color: #1d1d1f;
   }
+
+  .staff-item.on-leave .staff-name {
+  color: #acacae;
+}
+
+.leave-icon {
+  font-size: 0.8em;
+  margin-right: 4px;
+}
 
   /* Tomorrow's forecast styles */
 .tomorrow-forecast {
@@ -1325,26 +1418,6 @@
   color: #007aff;
 }
 
-  .weather-alert {
-    margin-top: 16px;
-    background-color: rgba(255, 204, 0, 0.1);
-    border-left: 3px solid #ffcc00;
-    padding: 12px;
-    border-radius: 6px;
-  }
-
-  .alert-title {
-    font-weight: 500;
-    color: #1d1d1f;
-    margin-bottom: 4px;
-    font-size: 0.9rem;
-  }
-
-  .alert-text {
-    font-size: 0.8rem;
-    color: #86868b;
-  }
-
   /* Metrics Styles */
   .metrics-list {
     display: flex;
@@ -1433,12 +1506,6 @@
     }
   }
 
-  @media (max-width: 640px) {
-    .staff-row {
-      grid-template-columns: 1fr;
-    }
-  }
-
   @media (max-width: 480px) {
     .leave-grid {
       grid-template-columns: 1fr;
@@ -1487,4 +1554,96 @@
 }
 
 /* You can remove or comment out the old grid-based leave styles if not used elsewhere */
+
+/* Weekly Staff Grid Styles */
+.weekly-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.weekly-staff-card {
+  margin-bottom: 24px;
+}
+
+.day-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.day-header {
+  text-align: center;
+  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.day-name {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.day-date {
+  font-size: 0.8rem;
+  color: #86868b;
+  margin-top: 2px;
+}
+
+.day-empty {
+  color: #86868b;
+  font-size: 0.85rem;
+  padding: 12px 0;
+  text-align: center;
+  font-style: italic;
+}
+
+.staff-list.compact {
+  font-size: 0.85rem;
+}
+
+.staff-item.compact {
+  padding: 4px 0;
+}
+
+/* Add responsive behavior for weekly staff */
+@media (max-width: 1024px) {
+  .weekly-staff-grid {
+    grid-template-columns: repeat(3, 1fr);
+    grid-gap: 16px;
+  }
+  
+  .day-column {
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .weekly-staff-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .weekly-staff-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Add this to your styles */
+.day-column.today {
+  background-color: rgba(0, 122, 255, 0.05);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.2);
+}
+
+.day-column.today .day-header {
+  border-bottom-color: rgba(0, 122, 255, 0.2);
+}
+
+.day-column.today .day-name {
+  color: #007aff;
+}
 </style>
