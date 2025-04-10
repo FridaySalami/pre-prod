@@ -166,18 +166,79 @@
     }
   }
   
-  // Add click event listener
+  let showPasswordBanner: boolean = false;
+
+  // Create a separate async function for checking password status
+  async function checkUserPasswordStatus() {
+    try {
+      if (!session || !session.user) {
+        // No active session, don't show banner
+        showPasswordBanner = false;
+        return;
+      }
+      
+      // Check authentication method from session metadata
+      const authProvider = session.user.app_metadata?.provider;
+      
+      // If we don't have a provider or it's not "email" with password, show banner
+      // This will catch magic link logins, SSO, and OAuth
+      showPasswordBanner = !authProvider || authProvider !== 'email';
+      
+      // If we have local storage flag that password was set, don't show banner
+      if (browser && localStorage.getItem('password_set') === 'true') {
+        showPasswordBanner = false;
+      }
+      
+      console.log('Auth provider check:', { 
+        provider: authProvider,
+        showBanner: showPasswordBanner
+      });
+      
+    } catch (err) {
+      console.error('Error checking user auth status:', err);
+      showPasswordBanner = false;
+    }
+    
+    // Update body padding based on banner status
+    if (browser) {
+      if (showPasswordBanner) {
+        document.body.style.paddingTop = '33px';
+      } else {
+        document.body.style.paddingTop = '0';
+      }
+    }
+  }
+
+  // Modified onMount function to avoid Promise<function> return
   onMount(() => {
-    // Existing onMount code
+    // Call the async function without awaiting it here
+    checkUserPasswordStatus();
+    
+    // Add event listener synchronously
     document.addEventListener('click', handleClickOutside);
     
+    // Return cleanup function directly
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
   });
+
+  // Function to dismiss the banner
+  function dismissPasswordBanner(): void {
+    showPasswordBanner = false;
+  }
+
+  // Make sure this reactive statement is typed properly
+  $: if (browser) {
+    if (showPasswordBanner === true) {
+      document.body.style.paddingTop = '33px';
+    } else {
+      document.body.style.paddingTop = '0';
+    }
+  }
 </script>
 
-<div class="app-container">
+<div class="app-container" class:has-banner={showPasswordBanner}>
   <aside class="sidebar">
     <div class="sidebar-logo">
       <span class="app-icon">P</span>
@@ -291,6 +352,20 @@
 
     <!-- Add below header -->
     <main class="site-main">
+      {#if showPasswordBanner}
+        <div class="password-setup-banner" transition:fade={{ duration: 300 }}>
+          <p>
+            <i class="material-icons-outlined banner-icon">info</i>
+            Complete your account setup by setting a password
+          </p>
+          <div class="banner-actions">
+            <a href="/set-password" class="banner-button">Complete Setup</a>
+            <button class="banner-dismiss" on:click={dismissPasswordBanner}>
+              <i class="material-icons-outlined">close</i>
+            </button>
+          </div>
+        </div>
+      {/if}
       <slot />
     </main>
     
@@ -804,5 +879,80 @@
 
   .logout-item i {
     color: #B91C1C;
+  }
+
+  .password-setup-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: #004225;
+    color: white;
+    z-index: 1001;
+    padding: 6px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .password-setup-banner p {
+    margin: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+    margin-right: 8px;
+  }
+
+  .banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .banner-button {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    text-decoration: none;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+  }
+
+  .banner-button:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+  }
+
+  .banner-dismiss {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  .banner-dismiss:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  /* Adjust content-wrapper to account for banner */
+  .app-container.has-banner .sidebar {
+    top: 33px; /* Height of banner */
+  }
+
+  .app-container.has-banner .content-wrapper {
+    margin-top: 33px; /* Height of banner */
   }
 </style>
