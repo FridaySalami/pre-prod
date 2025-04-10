@@ -140,6 +140,28 @@
         <li>Improved Supabase integration for more efficient data synchronization</li>
       </ul>
     </section>
+
+    <section class="release-section">
+      <h2>Process Map</h2>
+      <ul class="feature-list">
+        <li>Created interactive process mapping tool for documenting and analyzing operational workflows</li>
+        <li>Implemented structured issue tracking with severity levels (low, medium, high) and status tracking (open, in-progress, resolved)</li>
+        <li>Built responsive Apple-inspired design with clean visual hierarchy and consistent styling</li>
+        <li>Developed comprehensive step management system with add, edit, delete, duplicate and reorder capabilities</li>
+        <li>Added real-time search and filtering to quickly locate specific process steps</li>
+        <li>Created role-based assignment system to track step ownership and responsibility</li>
+        <li>Implemented detailed issue management with multi-issue support for each process step</li>
+        <li>Integrated print-friendly view for easy documentation sharing</li>
+        <li>Added efficient keyboard navigation support with shortcuts for common actions</li>
+        <li>Built informative tooltips to guide users through the interface</li>
+        <li>Implemented responsive design that maintains usability on various screen sizes</li>
+        <li>Enhanced step editing with context-sensitive controls and validation</li>
+        <li>Created smooth animations and transitions for a polished user experience</li>
+        <li>Added centralized "Add Step" controls at both top and bottom for better usability with large process maps</li>
+        <li>Integrated with authentication system to protect process data</li>
+        <li>Implemented Supabase integration for real-time data storage and retrieval</li>
+      </ul>
+    </section>
   </div>
   
   <footer class="release-footer">

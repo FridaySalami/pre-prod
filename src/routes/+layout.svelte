@@ -208,6 +208,14 @@
           </a>
         </li>
         
+        <!-- Process Map Link -->
+        <li>
+          <a href="/process-map" class:active={currentPath && currentPath.includes('/process-map')}>
+            <i class="material-icons-outlined menu-icon">account_tree</i>
+            <span class="label">Process Map</span>
+          </a>
+        </li>
+        
         <!-- Schedules Link -->
         <li>
           <a href="/schedules" class:active={currentPath && currentPath.includes('/schedules')}>
