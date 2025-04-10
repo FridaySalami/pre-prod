@@ -1,13 +1,19 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { supabase } from '$lib/supabaseClient';
   import { showToast } from '$lib/toastStore';
+  import { userSession } from '$lib/sessionStore';
   
-  // Form state
+  // Form state - with proper types
   let currentPassword = '';
   let newPassword = '';
   let confirmPassword = '';
   let loading = false;
+  
+  // User state - explicitly initialize with default values
+  let isNewUser = false;
+  let userEmail = '';
+  let session: any = null;
   
   // Validation state
   let passwordErrors = {
@@ -30,51 +36,104 @@
     { id: 'special', label: 'At least 1 special character', met: false }
   ];
   
-  // Check if any field has an error
-  $: hasErrors = Object.values(passwordErrors).some(error => error !== '');
+  // Subscribe to auth state
+  const unsubscribe = userSession.subscribe((s) => {
+    session = s;
+  });
   
+  onMount(async () => {
+    await checkUserStatus();
+  });
+  
+  onDestroy(() => {
+    unsubscribe();
+  });
+  
+  // Check if user is a new user (no password set)
+  async function checkUserStatus() {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      
+      if (error) {
+        showToast('Error retrieving user information', 'error');
+        return;
+      }
+      
+      if (data?.user) {
+        userEmail = data.user.email || '';
+        
+        // Check if user has password auth enabled
+        // For users coming from invite links, they typically don't have a password
+        const hasPasswordAuth = data.user.identities?.some(identity => 
+          identity.provider === 'email' && identity.identity_data?.password_hash
+        );
+        
+        isNewUser = !hasPasswordAuth;
+      }
+    } catch (err) {
+      console.error('Error checking user status:', err);
+    }
+  }
+  
+  // Update requirements as user types password
   function setRequirementMet(id: string, isMet: boolean): void {
     const requirement = requirements.find(r => r.id === id);
     if (requirement) {
       requirement.met = isMet;
     }
   }
-
-  // Check password strength in real-time
+  
+  // Calculate password strength and update requirements
   $: {
-    // Reset requirements
-    requirements.forEach(req => req.met = false);
-    
-    setRequirementMet('length', newPassword.length >= 8);
-    setRequirementMet('uppercase', /[A-Z]/.test(newPassword));
-    setRequirementMet('lowercase', /[a-z]/.test(newPassword));
-    setRequirementMet('number', /[0-9]/.test(newPassword));
-    setRequirementMet('special', /[^A-Za-z0-9]/.test(newPassword));
-    
-    // Calculate strength based on requirements met
-    passwordStrength = requirements.filter(r => r.met).length;
-    
-    // Set strength text and class
-    if (passwordStrength === 0) {
-      strengthText = 'Very Weak';
-      strengthClass = 'very-weak';
-    } else if (passwordStrength <= 2) {
-      strengthText = 'Weak';
-      strengthClass = 'weak';
-    } else if (passwordStrength <= 3) {
-      strengthText = 'Medium';
-      strengthClass = 'medium';
-    } else if (passwordStrength === 4) {
-      strengthText = 'Strong';
-      strengthClass = 'strong';
+    if (newPassword) {
+      // Reset requirements
+      requirements.forEach(req => req.met = false);
+      
+      setRequirementMet('length', newPassword.length >= 8);
+      setRequirementMet('uppercase', /[A-Z]/.test(newPassword));
+      setRequirementMet('lowercase', /[a-z]/.test(newPassword));
+      setRequirementMet('number', /[0-9]/.test(newPassword));
+      setRequirementMet('special', /[^A-Za-z0-9]/.test(newPassword));
+      
+      // Calculate strength based on requirements met
+      passwordStrength = requirements.filter(r => r.met).length;
+      
+      // Set strength text and class
+      if (passwordStrength === 0) {
+        strengthText = 'Very Weak';
+        strengthClass = 'very-weak';
+      } else if (passwordStrength <= 2) {
+        strengthText = 'Weak';
+        strengthClass = 'weak';
+      } else if (passwordStrength <= 3) {
+        strengthText = 'Medium';
+        strengthClass = 'medium';
+      } else if (passwordStrength === 4) {
+        strengthText = 'Strong';
+        strengthClass = 'strong';
+      } else {
+        strengthText = 'Very Strong';
+        strengthClass = 'very-strong';
+      }
     } else {
-      strengthText = 'Very Strong';
-      strengthClass = 'very-strong';
+      passwordStrength = 0;
+      strengthText = '';
+      strengthClass = '';
     }
   }
   
-  // Validate the form
-  function validateForm() {
+  // Simple computed value for form validation - avoids the TypeScript error
+  $: hasFormErrors = Object.values(passwordErrors).some(error => error !== '');
+  
+  // Computed value for button disabled state - typed as boolean
+  $: isButtonDisabled = loading || 
+                      hasFormErrors || 
+                      (!isNewUser && !currentPassword) || 
+                      !newPassword || 
+                      !confirmPassword;
+  
+  // Validate form inputs
+  function validateForm(): boolean {
     // Reset errors
     passwordErrors = {
       currentPassword: '',
@@ -82,8 +141,8 @@
       confirmPassword: ''
     };
     
-    // Validate current password
-    if (!currentPassword) {
+    // Only validate current password for existing users
+    if (!isNewUser && !currentPassword) {
       passwordErrors.currentPassword = 'Current password is required';
     }
     
@@ -103,7 +162,8 @@
       passwordErrors.confirmPassword = 'Passwords do not match';
     }
     
-    return !hasErrors;
+    // Return true if no errors
+    return !Object.values(passwordErrors).some(error => error !== '');
   }
   
   // Handle form submission
@@ -113,42 +173,33 @@
     loading = true;
     
     try {
-      // Step 1: Get the current user's session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        showToast('Error accessing your account. Please try logging in again.', 'error');
-        console.error('Session error:', sessionError);
-        loading = false;
-        return;
-      }
-      
-      if (!session || !session.user) {
-        showToast('You must be logged in to change your password', 'error');
-        loading = false;
-        return;
-      }
-      
-      // Step 2: Update the password
-      const { error: updateError } = await supabase.auth.updateUser({
+      // Update the user's password
+      const { error } = await supabase.auth.updateUser({
         password: newPassword
       });
       
-      if (updateError) {
-        showToast(`Failed to update password: ${updateError.message}`, 'error');
-        console.error('Update error:', updateError);
+      if (error) {
+        showToast(`Failed to update password: ${error.message}`, 'error');
         loading = false;
         return;
       }
       
-      // Success
-      showToast('Password updated successfully!', 'success');
+      // Success!
+      if (isNewUser) {
+        showToast('Password set successfully! You can now log in with your email and password.', 'success');
+        
+        // Redirect after successful password set for new users
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 1500);
+      } else {
+        showToast('Password updated successfully!', 'success');
+      }
       
       // Reset form
       currentPassword = '';
       newPassword = '';
       confirmPassword = '';
-      
     } catch (err) {
       console.error('Unexpected error:', err);
       showToast('An unexpected error occurred', 'error');
@@ -160,25 +211,34 @@
 
 <div class="password-page">
   <div class="password-card">
-    <h1>Change Password</h1>
-    <p class="description">Update your account password to keep your account secure.</p>
+    <h1>{isNewUser ? 'Set Your Password' : 'Change Password'}</h1>
+    <p class="description">
+      {#if isNewUser}
+        Welcome! Please set up your password to secure your account.
+      {:else}
+        Update your account password to keep your account secure.
+      {/if}
+    </p>
     
     <form on:submit|preventDefault={handleSubmit}>
-      <div class="form-group">
-        <label for="currentPassword">Current Password</label>
-        <div class="password-input-container">
-          <input 
-            type="password" 
-            id="currentPassword" 
-            bind:value={currentPassword}
-            class:error={passwordErrors.currentPassword} 
-            autocomplete="current-password"
-          />
+      {#if !isNewUser}
+        <!-- Only show current password field for existing users -->
+        <div class="form-group">
+          <label for="currentPassword">Current Password</label>
+          <div class="password-input-container">
+            <input 
+              type="password" 
+              id="currentPassword" 
+              bind:value={currentPassword}
+              class:error={passwordErrors.currentPassword} 
+              autocomplete="current-password"
+            />
+          </div>
+          {#if passwordErrors.currentPassword}
+            <p class="error-message">{passwordErrors.currentPassword}</p>
+          {/if}
         </div>
-        {#if passwordErrors.currentPassword}
-          <p class="error-message">{passwordErrors.currentPassword}</p>
-        {/if}
-      </div>
+      {/if}
       
       <div class="form-group">
         <label for="newPassword">New Password</label>
@@ -234,9 +294,13 @@
         <button 
           type="submit" 
           class="change-button" 
-          disabled={loading || hasErrors || !currentPassword || !newPassword || !confirmPassword}
+          disabled={isButtonDisabled}
         >
-          {loading ? 'Updating...' : 'Update Password'}
+          {#if loading}
+            {isNewUser ? 'Setting...' : 'Updating...'}
+          {:else}
+            {isNewUser ? 'Set Password' : 'Update Password'}
+          {/if}
         </button>
       </div>
     </form>
@@ -428,5 +492,21 @@
   .change-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  /* Add to your existing styles */
+  .success-notification {
+    background-color: #D1FAE5;
+    border: 1px solid #10B981;
+    color: #065F46;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+  }
+
+  .redirect-message {
+    font-size: 0.8rem;
+    color: #6B7280;
+    margin-top: 8px;
   }
 </style>
