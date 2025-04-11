@@ -138,25 +138,97 @@
     staff: Employee[]
   }> = [];
 
+  // Add these to your script section
+  let hasError = false; 
+  let errorMessage = "";
+  let loadingStatus = "";
+  let dataLoaded = false;
+  let retryCount = 0;
+
+  // Update the onMount function to properly sequence data loading
   onMount(async () => {
-  // Once we know the session, if it's null then redirect
-  if (session === null) {
-    goto('/login');
-    return;
+    // Create a timeout promise to ensure we don't wait forever
+    const sessionTimeout = new Promise(resolve => 
+      setTimeout(() => resolve(null), 5000));
+      
+    // Wait for session with a timeout
+    let currentSession;
+    try {
+      // Use Promise.race to either get the session or timeout
+      const unsubscribePromise = new Promise<any>(resolve => {
+        const unsub = userSession.subscribe(s => {
+          if (s !== undefined) { // Only resolve when session is decided (not undefined)
+            currentSession = s;
+            resolve(s);
+            unsub();
+          }
+        });
+      });
+      
+      await Promise.race([unsubscribePromise, sessionTimeout]);
+      
+      // Check if we have a valid session
+      if (currentSession === null) {
+        console.log("No session found, redirecting to login");
+        goto('/login');
+        return;
+      }
+      
+      if (currentSession) {
+        await loadAllData();
+      }
+    } catch (error) {
+      console.error("Error during initialization:", error);
+      // Show error state to user
+      hasError = true;
+      errorMessage = "Failed to initialize. Please refresh the page.";
+    }
+  });
+
+  // Create a separate function to load all data with retry logic
+  async function loadAllData(retryCount = 0) {
+    try {
+      isLoading = {
+        staff: true,
+        leave: true,
+        weather: true,
+        metrics: true
+      };
+      
+      // Show global loading state
+      loadingStatus = "Loading dashboard data...";
+      
+      // First request critical data in sequence to ensure dependencies are met
+      await fetchWeeklyStaff();
+      
+      // Then load other data in parallel
+      await Promise.all([
+        fetchUpcomingLeave(),
+        fetchWeather(),
+        fetchYesterdayMetrics()
+      ]);
+      
+      // Data loaded successfully
+      dataLoaded = true;
+    } catch (error) {
+      console.error("Error loading data:", error);
+      
+      // Implement retry logic (max 3 retries)
+      if (retryCount < 3) {
+        loadingStatus = `Retrying... (${retryCount + 1}/3)`;
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
+        return loadAllData(retryCount + 1);
+      }
+      
+      // Show partial data with error notice
+      hasError = true;
+      errorMessage = "Some data couldn't be loaded. You can try refreshing the page.";
+    } finally {
+      // Clear loading status even if there was an error
+      loadingStatus = "";
+    }
   }
-  
-  // Only fetch data if user is authenticated
-  if (session) {
-    // Fetch all data in parallel
-    await Promise.all([
-      fetchWeeklyStaff(),  // Replace fetchStaffScheduled with fetchWeeklyStaff
-      fetchUpcomingLeave(),
-      fetchWeather(),
-      fetchYesterdayMetrics()
-    ]);
-  }
-});
-  
+
   onDestroy(() => {
     unsubscribe();
   });
@@ -180,20 +252,34 @@ function isEmployeeScheduledForDay(pattern: any, dayOfWeek: number | null): bool
 }
 
 // Updated function to correctly fetch weekly staff from Supabase
-  async function fetchWeeklyStaff(): Promise<void> {
+async function fetchWeeklyStaff(): Promise<void> {
   try {
     isLoading.staff = true;
+    
+    // Log the request
+    console.log("Fetching weekly staff data...");
     
     // Get current week dates
     const weekDates = getWeekDays();
     console.log("Fetching staff for dates:", weekDates.map(d => format(d, 'yyyy-MM-dd')));
     
-    // Query for specific date assignments
+    // Add timeouts to Supabase calls to prevent hanging
+    const fetchTimeout = new Promise<{ data: null, error: Error }>(resolve => 
+      setTimeout(() => resolve({
+        data: null,
+        error: new Error('Request timed out after 10s')
+      }), 10000));
+    
+    // Query for specific date assignments with timeout
     const formattedDates = weekDates.map(date => format(date, 'yyyy-MM-dd'));
-    const { data: schedulesData, error: schedulesError } = await supabase
+    const schedulesPromise = supabase
       .from('schedules')
       .select('*')
       .in('date', formattedDates);
+      
+    // Use Promise.race to implement timeout
+    const { data: schedulesData, error: schedulesError } = 
+      await Promise.race([schedulesPromise, fetchTimeout]);
       
     if (schedulesError) {
       console.error('Error fetching specific schedules:', schedulesError);
@@ -409,6 +495,8 @@ const isOnLeave = (employeeId: string, currentDate: Date) => {
     
   } catch (error) {
     console.error('Error fetching weekly staff schedule:', error);
+    // Re-throw the error to be handled by the main error handler
+    throw error;
   } finally {
     isLoading.staff = false;
   }
@@ -818,260 +906,277 @@ function getWeekDays(): Date[] {
 {#if session === undefined}
   <div class="loading-container">
     <div class="loading-spinner"></div>
-    <p>Loading...</p>
+    <p>Initializing dashboard...</p>
   </div>
 {:else if session}
-  <!-- Add back the welcome header -->
   <div class="dashboard-container">
+    <!-- Show any global messages -->
+    {#if loadingStatus}
+      <div class="global-loading-banner">
+        <div class="loading-spinner-small"></div>
+        <p>{loadingStatus}</p>
+      </div>
+    {/if}
+    
+    {#if hasError}
+      <div class="global-error-banner">
+        <div class="error-icon">⚠️</div>
+        <p>{errorMessage}</p>
+        <button on:click={() => window.location.reload()} class="refresh-button">
+          Refresh Page
+        </button>
+      </div>
+    {/if}
+  
     <div class="dashboard-header">
       <h1>Welcome{session?.user?.user_metadata?.name ? ', ' + session.user.user_metadata.name : ''}</h1>
       <div class="date-display">Today is {format(today, 'EEEE, do MMMM yyyy')}</div>
     </div>
-  </div>
-
-  <!-- Your existing dashboard grid layout -->
-  <div class="dashboard-grid">
-    <!-- Left Column - Main column now contains only weekly staff & upcoming leave -->
-    <div class="main-column">
-      <!-- Weekly Staff View - stays at the top of left column -->
-      <div class="card weekly-staff-card">
-        <h2>This Week's Staffing</h2>
-        <!-- Weekly staff content... -->
-        {#if isLoading.staff}
-          <div class="loading-placeholder">
-            <div class="loading-bar"></div>
-          </div>
-        {:else if weeklyStaff.length === 0}
-          <p class="empty-state">No staff scheduled this week</p>
-        {:else}
-        <div class="weekly-staff-grid">
-          {#each weeklyStaff as dayData, index}
-          <div class="day-column" class:today={format(dayData.date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')}>
-            <div class="day-header">
-              <div class="day-name">{dayData.dayOfWeek}</div>
-              <div class="day-date">{format(dayData.date, 'do MMM')}</div>
-              <!-- Add this debug info temporarily -->
-              <div class="day-debug" style="font-size: 0.7rem; color: #999;">
-                {format(dayData.date, 'yyyy-MM-dd')}
-              </div>
+  
+    <!-- Your existing dashboard grid layout -->
+    <div class="dashboard-grid">
+      <!-- Left Column - Main column now contains only weekly staff & upcoming leave -->
+      <div class="main-column">
+        <!-- Weekly Staff View - stays at the top of left column -->
+        <div class="card weekly-staff-card">
+          <h2>This Week's Staffing</h2>
+          <!-- Weekly staff content... -->
+          {#if isLoading.staff}
+            <div class="loading-placeholder">
+              <div class="loading-bar"></div>
             </div>
-                      
-            {#if dayData.staff.length === 0}
-              <div class="day-empty">No staff</div>
-            {:else}
-              <!-- Calculate active staff count (excluding those on leave) -->
-              {@const activeStaffCount = dayData.staff.filter(person => !person.onLeave).length}
-              
-              <!-- Show active count, not total count -->
-              <div class="staff-count">{activeStaffCount}</div>
-              
-              <ul class="staff-list compact">
-                {#each groupStaffByRole(dayData.staff) as { role, staff }, i}
-                  {#if i > 0}
-                    <li class="role-separator"></li>
-                  {/if}
-                  {#each staff as person}
-                    <li class="staff-item compact" class:on-leave={person.onLeave}>
-                      <span class="staff-name">
-                        {#if person.onLeave}
-                          <span class="leave-icon" aria-label="On leave">🌴</span>
-                        {/if}
-                        {person.name}
-                      </span>
-                    </li>
-                  {/each}
-                {/each}
-              </ul>
-            {/if}
-          </div>
-          {/each}
-        </div>
-        {/if}
-      </div>
-      
-      <!-- Upcoming Leave - moved to left column under weekly staff -->
-      <div class="card">
-        <h2>Upcoming Leave</h2>
-        <!-- Upcoming leave content... -->
-        {#if isLoading.leave}
-          <div class="loading-placeholder">
-            <div class="loading-bar"></div>
-          </div>
-        {:else if leaveRanges.length === 0}
-          <p class="empty-state">No upcoming leave scheduled</p>
-        {:else}
-          <div class="leave-list-container">
-            {#each leaveRanges as leaveGroup}
-              <div class="leave-section">
-                <div class="leave-date-header">
-                  {#if leaveGroup.isRange}
-                    {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && 
-                         leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
-                      {format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(leaveGroup.endDate, 'EEEE, do MMMM')}
-                    {:else}
-                      Invalid Date Range
-                    {/if}
-                  {:else}
-                    {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
-                      {format(leaveGroup.startDate, 'EEEE, do MMMM')}
-                    {:else}
-                      Invalid Date
-                    {/if}
-                  {/if}
+          {:else if weeklyStaff.length === 0}
+            <p class="empty-state">No staff scheduled this week</p>
+          {:else}
+          <div class="weekly-staff-grid">
+            {#each weeklyStaff as dayData, index}
+            <div class="day-column" class:today={format(dayData.date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')}>
+              <div class="day-header">
+                <div class="day-name">{dayData.dayOfWeek}</div>
+                <div class="day-date">{format(dayData.date, 'do MMM')}</div>
+                <!-- Add this debug info temporarily -->
+                <div class="day-debug" style="font-size: 0.7rem; color: #999;">
+                  {format(dayData.date, 'yyyy-MM-dd')}
                 </div>
-                <ul class="leave-staff-list simple">
-                  {#each leaveGroup.staff as person}
-                    <li class="leave-staff-item simple">
-                      {person.name}
-                    </li>
+              </div>
+                        
+              {#if dayData.staff.length === 0}
+                <div class="day-empty">No staff</div>
+              {:else}
+                <!-- Calculate active staff count (excluding those on leave) -->
+                {@const activeStaffCount = dayData.staff.filter(person => !person.onLeave).length}
+                
+                <!-- Show active count, not total count -->
+                <div class="staff-count">{activeStaffCount}</div>
+                
+                <ul class="staff-list compact">
+                  {#each groupStaffByRole(dayData.staff) as { role, staff }, i}
+                    {#if i > 0}
+                      <li class="role-separator"></li>
+                    {/if}
+                    {#each staff as person}
+                      <li class="staff-item compact" class:on-leave={person.onLeave}>
+                        <span class="staff-name">
+                          {#if person.onLeave}
+                            <span class="leave-icon" aria-label="On leave">🌴</span>
+                          {/if}
+                          {person.name}
+                        </span>
+                      </li>
+                    {/each}
                   {/each}
                 </ul>
-              </div>
+              {/if}
+            </div>
             {/each}
           </div>
-        {/if}
-      </div>
-    </div>
-    
-    <!-- Right Column - Now contains weather at top & performance metrics below -->
-    <div class="sidebar-column">
-      <!-- Weather Widget - moved to top of right column -->
-      <div class="card">
-        <div class="widget-header">
-          <h2>Weather</h2>
-          <span class="location-badge">{weatherData?.location?.name || 'Southampton'}, UK</span>
+          {/if}
         </div>
-        <!-- Weather content... -->
-        {#if isLoading.weather}
-          <div class="loading-placeholder center">
-            <div class="loading-circle"></div>
-          </div>
-        {:else if weatherError}
-          <div class="error-state">{weatherError}</div>
-        {:else if weatherData}
-          <div class="weather-content">
-            <!-- Today's Weather -->
-            <div class="weather-main">
-              <div class="weather-icon-temp">
-                <img 
-                  src={weatherData.current.condition.icon.replace('64x64', '128x128')} 
-                  alt={weatherData.current.condition.text}
-                  class="weather-icon"
-                />
-                <div>
-                  <div class="weather-temp">{weatherData.current.temp_c}°C</div>
-                  <div class="weather-condition">{weatherData.current.condition.text}</div>
-                  
-                  <!-- High/Low Temperature -->
-                  {#if weatherData.forecast?.forecastday?.[0]?.day}
-                    {@const maxTemp = Math.max(
-                      weatherData.current.temp_c,
-                      weatherData.forecast.forecastday[0].day.maxtemp_c
-                    )}
-                    <div class="high-low">
-                      <span class="high">H: {maxTemp.toFixed(0)}°</span>
-                      <span class="low">L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(0)}°</span>
-                    </div>
-                  {/if}
-                </div>
-              </div>
-              <div class="weather-updated">
-                <span>Updated</span>
-                {weatherData.current.last_updated.split(' ')[1]}
-              </div>
+        
+        <!-- Upcoming Leave - moved to left column under weekly staff -->
+        <div class="card">
+          <h2>Upcoming Leave</h2>
+          <!-- Upcoming leave content... -->
+          {#if isLoading.leave}
+            <div class="loading-placeholder">
+              <div class="loading-bar"></div>
             </div>
-            
-            <!-- Weather Details for Today -->
-            <div class="weather-details">
-              <div class="weather-detail-item">
-                <div class="detail-label">Feels like</div>
-                <div class="detail-value">{weatherData.current.feelslike_c}°C</div>
-              </div>
-              <div class="weather-detail-item">
-                <div class="detail-label">Humidity</div>
-                <div class="detail-value">{weatherData.current.humidity}%</div>
-              </div>
-              <div class="weather-detail-item">
-                <div class="detail-label">Wind</div>
-                <div class="detail-value">{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}</div>
-              </div>
-              <div class="weather-detail-item">
-                <div class="detail-label">Rain chance</div>
-                <div class="detail-value">
-                  {weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
+          {:else if leaveRanges.length === 0}
+            <p class="empty-state">No upcoming leave scheduled</p>
+          {:else}
+            <div class="leave-list-container">
+              {#each leaveRanges as leaveGroup}
+                <div class="leave-section">
+                  <div class="leave-date-header">
+                    {#if leaveGroup.isRange}
+                      {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && 
+                           leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
+                        {format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(leaveGroup.endDate, 'EEEE, do MMMM')}
+                      {:else}
+                        Invalid Date Range
+                      {/if}
+                    {:else}
+                      {#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
+                        {format(leaveGroup.startDate, 'EEEE, do MMMM')}
+                      {:else}
+                        Invalid Date
+                      {/if}
+                    {/if}
+                  </div>
+                  <ul class="leave-staff-list simple">
+                    {#each leaveGroup.staff as person}
+                      <li class="leave-staff-item simple">
+                        {person.name}
+                      </li>
+                    {/each}
+                  </ul>
                 </div>
-              </div>
+              {/each}
             </div>
-            
-            <!-- Tomorrow's Forecast -->
-            {#if weatherData.forecast?.forecastday?.[1]?.day}
-              <div class="tomorrow-forecast">
-                <div class="tomorrow-header">
-                  <span>Tomorrow</span>
-                  <span>{format(tomorrow, 'EEE, do')}</span>
-                </div>
-                <div class="tomorrow-content">
-                  <div class="tomorrow-icon-temp">
-                    <img 
-                      src={weatherData.forecast.forecastday[1].day.condition.icon} 
-                      alt={weatherData.forecast.forecastday[1].day.condition.text}
-                      class="tomorrow-icon"
-                    />
-                    <div class="tomorrow-condition">
-                      {weatherData.forecast.forecastday[1].day.condition.text}
-                    </div>
-                  </div>
-                  <div class="tomorrow-temps">
-                    <div class="tomorrow-high">
-                      H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
-                    </div>
-                    <div class="tomorrow-low">
-                      L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
-                    </div>
-                    <div class="tomorrow-rain">
-                      <span class="rain-icon">💧</span>
-                      {weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
-                    </div>
-                  </div>
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
+          {/if}
+        </div>
       </div>
       
-      <!-- Yesterday's Performance - now in right column with 2 horizontal columns -->
-      <div class="card">
-        <h2>
-          Yesterday's Performance
-          <span class="date-badge">{format(addDays(today, -1), 'do MMM')}</span>
-        </h2>
+      <!-- Right Column - Now contains weather at top & performance metrics below -->
+      <div class="sidebar-column">
+        <!-- Weather Widget - moved to top of right column -->
+        <div class="card">
+          <div class="widget-header">
+            <h2>Weather</h2>
+            <span class="location-badge">{weatherData?.location?.name || 'Southampton'}, UK</span>
+          </div>
+          <!-- Weather content... -->
+          {#if isLoading.weather}
+            <div class="loading-placeholder center">
+              <div class="loading-circle"></div>
+            </div>
+          {:else if weatherError}
+            <div class="error-state">{weatherError}</div>
+          {:else if weatherData}
+            <div class="weather-content">
+              <!-- Today's Weather -->
+              <div class="weather-main">
+                <div class="weather-icon-temp">
+                  <img 
+                    src={weatherData.current.condition.icon.replace('64x64', '128x128')} 
+                    alt={weatherData.current.condition.text}
+                    class="weather-icon"
+                  />
+                  <div>
+                    <div class="weather-temp">{weatherData.current.temp_c}°C</div>
+                    <div class="weather-condition">{weatherData.current.condition.text}</div>
+                    
+                    <!-- High/Low Temperature -->
+                    {#if weatherData.forecast?.forecastday?.[0]?.day}
+                      {@const maxTemp = Math.max(
+                        weatherData.current.temp_c,
+                        weatherData.forecast.forecastday[0].day.maxtemp_c
+                      )}
+                      <div class="high-low">
+                        <span class="high">H: {maxTemp.toFixed(0)}°</span>
+                        <span class="low">L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(0)}°</span>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+                <div class="weather-updated">
+                  <span>Updated</span>
+                  {weatherData.current.last_updated.split(' ')[1]}
+                </div>
+              </div>
+              
+              <!-- Weather Details for Today -->
+              <div class="weather-details">
+                <div class="weather-detail-item">
+                  <div class="detail-label">Feels like</div>
+                  <div class="detail-value">{weatherData.current.feelslike_c}°C</div>
+                </div>
+                <div class="weather-detail-item">
+                  <div class="detail-label">Humidity</div>
+                  <div class="detail-value">{weatherData.current.humidity}%</div>
+                </div>
+                <div class="weather-detail-item">
+                  <div class="detail-label">Wind</div>
+                  <div class="detail-value">{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}</div>
+                </div>
+                <div class="weather-detail-item">
+                  <div class="detail-label">Rain chance</div>
+                  <div class="detail-value">
+                    {weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Tomorrow's Forecast -->
+              {#if weatherData.forecast?.forecastday?.[1]?.day}
+                <div class="tomorrow-forecast">
+                  <div class="tomorrow-header">
+                    <span>Tomorrow</span>
+                    <span>{format(tomorrow, 'EEE, do')}</span>
+                  </div>
+                  <div class="tomorrow-content">
+                    <div class="tomorrow-icon-temp">
+                      <img 
+                        src={weatherData.forecast.forecastday[1].day.condition.icon} 
+                        alt={weatherData.forecast.forecastday[1].day.condition.text}
+                        class="tomorrow-icon"
+                      />
+                      <div class="tomorrow-condition">
+                        {weatherData.forecast.forecastday[1].day.condition.text}
+                      </div>
+                    </div>
+                    <div class="tomorrow-temps">
+                      <div class="tomorrow-high">
+                        H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
+                      </div>
+                      <div class="tomorrow-low">
+                        L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
+                      </div>
+                      <div class="tomorrow-rain">
+                        <span class="rain-icon">💧</span>
+                        {weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
         
-        {#if isLoading.metrics}
-          <div class="loading-placeholder">
-            <div class="loading-bar"></div>
-            <div class="loading-bar"></div>
-            <div class="loading-bar"></div>
-          </div>
-        {:else}
-          <!-- Updated to use two columns layout -->
-          <div class="metrics-list two-columns">
-            <div class="metric-item">
-              <div class="metric-label">Shipments Packed</div>
-              <div class="metric-value">{metrics.shipmentsPacked}</div>
+        <!-- Yesterday's Performance - now in right column with 2 horizontal columns -->
+        <div class="card">
+          <h2>
+            Yesterday's Performance
+            <span class="date-badge">{format(addDays(today, -1), 'do MMM')}</span>
+          </h2>
+          
+          {#if isLoading.metrics}
+            <div class="loading-placeholder">
+              <div class="loading-bar"></div>
+              <div class="loading-bar"></div>
+              <div class="loading-bar"></div>
             </div>
-            
-            <div class="metric-item">
-              <div class="metric-label">Shipments per Hour</div>
-              <div class="metric-value">{metrics.shipmentsPerHour.toFixed(1)}</div>
+          {:else}
+            <!-- Updated to use two columns layout -->
+            <div class="metrics-list two-columns">
+              <div class="metric-item">
+                <div class="metric-label">Shipments Packed</div>
+                <div class="metric-value">{metrics.shipmentsPacked}</div>
+              </div>
+              
+              <div class="metric-item">
+                <div class="metric-label">Shipments per Hour</div>
+                <div class="metric-value">{metrics.shipmentsPerHour.toFixed(1)}</div>
+              </div>
+              
+              <div class="metric-item">
+                <div class="metric-label">Labour Utilisation</div>
+                <div class="metric-value">{metrics.labourUtilisation.toFixed(1)}%</div>
+              </div>
             </div>
-            
-            <div class="metric-item">
-              <div class="metric-label">Labour Utilisation</div>
-              <div class="metric-value">{metrics.labourUtilisation.toFixed(1)}%</div>
-            </div>
-          </div>
-        {/if}
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -1083,6 +1188,66 @@ function getWeekDays(): Date[] {
 {/if}
 
 <style>
+
+  /* Global status banners */
+.global-loading-banner {
+  background-color: #f2f9ff;
+  border: 1px solid #d0e8ff;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease;
+}
+
+.loading-spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0, 122, 255, 0.1);
+  border-radius: 50%;
+  border-top-color: #007aff;
+  animation: spin 1s ease-in-out infinite;
+  margin-right: 12px;
+}
+
+.global-error-banner {
+  background-color: #fff5f5;
+  border: 1px solid #ffebeb;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease;
+}
+
+.error-icon {
+  margin-right: 12px;
+  font-size: 18px;
+}
+
+.refresh-button {
+  margin-left: auto;
+  background-color: #007aff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.refresh-button:hover {
+  background-color: #0066cc;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
   /* Add these new styles for loading state */
   .loading-container {
     display: flex;
