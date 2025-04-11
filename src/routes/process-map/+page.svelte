@@ -31,13 +31,14 @@
     let processSteps: ProcessStep[] = [];
     let isLoading = true;
     let error = '';
-    let session: any = undefined;
+    let session: any = undefined; // Consider creating a proper Session interface
     let editingStep: ProcessStep | null = null;
     let isAddingNewStep = false;
     let newStep: ProcessStep = createEmptyStep();
     let searchQuery = '';
     let sortCriteria = 'step_number';
     let filteredSteps: ProcessStep[] = [];
+    let activeStepId: string | null = null;
   
     // Common responsible parties for dropdown
     const responsibleParties = [
@@ -115,9 +116,14 @@
           .select('*')
           .order('step_number', { ascending: true });
         
-        if (fetchError) throw fetchError;
+        // Add proper error handling with type checking
+        if (fetchError) {
+          console.error('Supabase error:', fetchError);
+          throw fetchError;
+        }
         
-        processSteps = data?.map(step => {
+        // Use more precise typing and null coalescing
+        processSteps = (data ?? []).map(step => {
           // Convert string issues to the new format if needed
           if (typeof step.issues === 'string' && step.issues.trim()) {
             return {
@@ -141,12 +147,17 @@
         
         filteredSteps = [...processSteps];
         
-        // If no steps exist, prepare for first entry
-        if (processSteps.length === 0) {
+        // Select the first step by default if not adding/editing a step
+        if (processSteps.length > 0 && !isAddingNewStep && !editingStep) {
+          activeStepId = processSteps[0]?.id ?? null;
+        } else if (processSteps.length === 0) {
+          // If no steps exist, prepare for first entry
           isAddingNewStep = true;
         }
       } catch (err) {
-        console.error('Error fetching process steps:', err);
+        // Type the error properly
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error('Error fetching process steps:', errorMessage);
         error = 'Failed to load process steps';
       } finally {
         isLoading = false;
@@ -237,7 +248,7 @@
       }
     }
   
-    // Renumber steps after deletion or reordering
+    // Instead of updating steps one by one
     async function renumberSteps() {
       try {
         // Update step numbers locally first
@@ -246,20 +257,21 @@
           step_number: index + 1
         }));
         
-        // Then update in database (could be optimized with batch operations)
-        for (const step of processSteps) {
-          await supabase
-            .from('process_steps')
-            .update({ step_number: step.step_number })
-            .eq('id', step.id);
-        }
+        // Prepare batch update
+        const updates = processSteps.map(step => ({
+          id: step.id,
+          step_number: step.step_number
+        }));
+        
+        // Send a single batch update
+        const { error } = await supabase.rpc('update_step_numbers', { updates });
+        
+        if (error) throw error;
       } catch (err) {
         console.error('Error renumbering steps:', err);
         error = 'Failed to renumber steps';
       }
     }
-  
-    // Move a step up or down
     async function moveStep(stepId: string, direction: 'up' | 'down') {
       // Only proceed if stepId is defined
       if (!stepId) return;
@@ -304,14 +316,21 @@
   
     // Validate step data
     function validateStep(step: ProcessStep): boolean {
-      if (!step.name.trim()) {
+      if (!step) {
+        error = 'Invalid step data';
+        return false;
+      }
+      
+      if (!step.name?.trim()) {
         error = 'Step name is required';
         return false;
       }
-      if (!step.responsible.trim()) {
+      
+      if (!step.responsible?.trim()) {
         error = 'Responsible party is required';
         return false;
       }
+      
       return true;
     }
   
@@ -401,1078 +420,1012 @@
         if (isAddingNewStep) saveNewStep();
       }
     }
+    // When loading steps, select the first one
+    $: if (processSteps.length > 0 && !activeStepId && !isAddingNewStep && !editingStep) {
+      activeStepId = processSteps[0]?.id ?? null;
+    }
+
+    // Update filtered steps when search changes and maintain active selection
+    $: {
+      filterSteps();
+      sortSteps();
+      // If active step is filtered out, select first visible step
+      if (activeStepId && !filteredSteps.some(step => step.id === activeStepId)) {
+        activeStepId = filteredSteps.length > 0 ? filteredSteps[0]?.id ?? null : null;
+      }
+    }
+
+    // Instead of recalculating on every change
+    let prevSearchQuery = '';
+    let prevSortCriteria = '';
+    $: {
+      if (searchQuery !== prevSearchQuery) {
+        prevSearchQuery = searchQuery;
+        filterSteps();
+      }
+      if (sortCriteria !== prevSortCriteria) {
+        prevSortCriteria = sortCriteria;
+        sortSteps();
+      }
+    }
   </script>
   
-  <!-- Use the same session handling approach as dashboard -->
-  {#if session === undefined}
-    <div class="loading-container">
-      <div class="loading-spinner"></div>
-      <p>Loading...</p>
-    </div>
-  {:else if session}
-  <div class="process-map-container" on:keydown={handleKeyDown} role="region" aria-label="Process Map Editor">      <header class="process-map-header">
-        <h1>Fulfilment Process Observation Map</h1>
-        <p class="description">
-          Track and analyze each step of the fulfillment process to identify bottlenecks and improvement opportunities.
-        </p>
-      </header>
+{#if session === undefined}
+  <div class="loading-container">
+    <div class="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+{:else if session}
+  <div class="process-map-container" on:keydown={handleKeyDown} role="region" aria-label="Process Map Editor">
+    <header class="process-map-header">
+      <h1>Fulfilment Process Observation Map</h1>
+      <p class="description">
+        Track and analyze each step of the fulfillment process to identify bottlenecks and improvement opportunities.
+      </p>
+    </header>
     
-      {#if error}
-        <div class="error-banner">
-          {error}
-          <button on:click={() => error = ''} class="close-button">×</button>
-        </div>
-      {/if}
-    
-      {#if isLoading}
-        <div class="loading-container">
-          <div class="loading-spinner"></div>
-          <p>Loading process map...</p>
-        </div>
-      {:else}
-        <div class="process-map">
-          <!-- Control buttons -->
-          <div class="controls">
-            <button 
-              class="add-step-button" 
-              on:click={() => {
+    {#if error}
+      <div class="error-banner">
+        {error}
+        <button on:click={() => error = ''} class="close-button">×</button>
+      </div>
+    {/if}
+
+    {#if isLoading}
+      <div class="loading-container">
+        <div class="loading-spinner"></div>
+        <p>Loading process map...</p>
+      </div>
+    {:else}
+      <div class="process-map-layout">
+        <!-- Step tabs sidebar -->
+        <div class="step-tabs">
+          <!-- Your existing step-tabs code... -->
+          {#if filteredSteps.length === 0 && !isAddingNewStep}
+            <p class="empty-state">No process steps defined yet.</p>
+          {:else}
+            <ul>
+              <!-- Step list items -->
+              {#each filteredSteps as step (step.id)}
+              <li 
+                class:active={activeStepId === step?.id}
+                class:has-issues={step?.issues?.length > 0}
+                class:high-priority={step?.issues?.some(issue => issue?.severity === 'high' && issue?.status !== 'resolved')}
+                on:click={() => {
+                  if (step?.id) activeStepId = step.id;
+                  isAddingNewStep = false;
+                }}
+              >
+                <!-- Make the step name take full width -->
+                <span class="step-tab-name">{step.name}</span>
+              </li>
+            {/each}            
+              <!-- "Add step" tab at the bottom of the list -->
+              <li class="add-step-tab" on:click={() => {
                 isAddingNewStep = true;
                 newStep.step_number = processSteps.length + 1;
-              }}
-              disabled={isAddingNewStep}
-            >
-              Add New Process Step
-            </button>
-            <button class="print-button" on:click={printProcessMap}>
-              Print Process Map
-            </button>
-          </div>
-    
-          <div class="filter-controls">
-            <div class="search-box">
-              <input 
-                type="text" 
-                bind:value={searchQuery} 
-                placeholder="Search steps..." 
-                on:input={filterSteps}
-              />
-            </div>
-            
-            <div class="sort-controls">
-              <label>
-                Sort by:
-                <select bind:value={sortCriteria} on:change={sortSteps}>
-                  <option value="step_number">Step Number</option>
-                  <option value="responsible">Responsible Party</option>
-                </select>
-              </label>
-            </div>
-          </div>
-    
-          <!-- Process steps list -->
-          <div class="process-steps">
-            {#if processSteps.length === 0 && !isAddingNewStep}
-              <p class="empty-state">No process steps defined yet. Add the first step to get started.</p>
-            {:else}
-              <!-- Steps table header - remove step number column -->
-              <div class="process-step-header">
-                <div class="step-name">Step</div>
-                <div class="step-description">Description</div>
-                <div class="step-responsible">Responsible</div>
-                <div class="step-issues">Issues</div>
-                <div class="step-notes">Notes</div>
-                <div class="step-actions">Actions</div>
-              </div>
-    
-              <!-- Process steps listing -->
-              {#each filteredSteps as step (step.id)}
-                {#if editingStep && editingStep.id === step.id}
-                  <!-- Editing mode for existing step -->
-                  <div class="process-step editing">
-                    <div class="step-name">
-                      <input type="text" bind:value={editingStep.name} placeholder="Step name" />
-                    </div>
-                    <div class="step-description">
-                      <textarea bind:value={editingStep.description} placeholder="Describe this process step"></textarea>
-                    </div>
-                    <div class="step-responsible">
-                      <select bind:value={editingStep.responsible}>
-                        <option value="">Select</option>
-                        {#each responsibleParties as party}
-                          <option value={party}>{party}</option>
-                        {/each}
-                      </select>
-                    </div>
-                    <div class="step-issues">
-                      <span class="field-label">Issues</span>
-                      <div class="issues-container">
-                        {#if editingStep.issues.length === 0}
-                          <p class="no-issues">No issues reported</p>
-                        {/if}
-                        {#each editingStep.issues as issue, i}
-                          <div class="issue-item">
-                            <div class="issue-header">
-                              <span>Issue #{i+1}</span>
-                              <button 
-                                class="remove-issue-btn" 
-                                on:click={() => removeIssue(i)} 
-                                title="Remove issue"
-                              >×</button>
-                            </div>
-                            <textarea 
-                              bind:value={issue.description} 
-                              placeholder="Describe the issue"
-                            ></textarea>
-                            <div class="issue-controls">
-                              <label>
-                                Severity:
-                                <select bind:value={issue.severity}>
-                                  <option value="low">Low</option>
-                                  <option value="medium">Medium</option>
-                                  <option value="high">High</option>
-                                </select>
-                              </label>
-                              <label>
-                                Status:
-                                <select bind:value={issue.status}>
-                                  <option value="open">Open</option>
-                                  <option value="in-progress">In Progress</option>
-                                  <option value="resolved">Resolved</option>
-                                </select>
-                              </label>
-                            </div>
-                          </div>
-                        {/each}
-                        <button type="button" class="add-issue-btn" on:click={addIssueToStep}>
-                          + Add Issue
-                        </button>
-                      </div>
-                    </div>
-                    <div class="step-notes">
-                      <textarea bind:value={editingStep.notes} placeholder="Additional notes"></textarea>
-                    </div>
-                    <div class="step-actions">
-                      <button class="action-button save" on:click={updateStep}>
-                        Save
-                      </button>
-                      <button class="action-button cancel" on:click={cancelEdit}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                {:else}
-                  <!-- View mode for step -->
-                  <div class="process-step">
-                    <div class="step-name">
-                      {step.name}
-                    </div>
-                    <div class="step-description">
-                      {step.description || '-'}
-                    </div>
-                    <div class="step-responsible">
-                      {step.responsible || '-'}
-                    </div>
-                    <!-- Update the issues display structure -->
-                    <div class="step-issues">
-                      {#if step.issues.length === 0}
-                        -
-                      {:else}
-                        <div class="issues-list">
-                          {#each step.issues as issue, i}
-                            <div class="issue-display" class:resolved={issue.status === 'resolved'}>
-                              <div class="issue-header-row">
-                                <div class="issue-badge" class:high={issue.severity === 'high'} class:medium={issue.severity === 'medium'} class:low={issue.severity === 'low'}>
-                                  {issue.severity}
-                                </div>
-                                <div class="issue-status">{issue.status}</div>
-                              </div>
-                              <div class="issue-text">{issue.description}</div>
-                            </div>
-                          {/each}
+                activeStepId = null;
+              }}>
+                <span class="add-icon">+</span>
+                <span>Add New Step</span>
+              </li>
+            </ul>
+          {/if}
+        </div>
+        
+        <!-- Add this content area -->
+        <div class="step-content">
+          {#if isAddingNewStep}
+            <!-- New step form -->
+            <div class="step-document new-step">
+              <h2>Add New Process Step</h2>
+              
+              <form on:submit|preventDefault={saveNewStep}>
+                <div class="form-section">
+                  <label for="stepName">Step Name</label>
+                  <input type="text" id="stepName" bind:value={newStep.name} placeholder="Enter step name" required />
+                </div>
+                
+                <div class="form-section">
+                  <label for="stepDescription">Description</label>
+                  <textarea id="stepDescription" bind:value={newStep.description} placeholder="Describe this process step"></textarea>
+                </div>
+                
+                <div class="form-section">
+                  <label for="stepResponsible">Responsible Party</label>
+                  <select id="stepResponsible" bind:value={newStep.responsible} required>
+                    <option value="">Select responsible party</option>
+                    {#each responsibleParties as party}
+                      <option value={party}>{party}</option>
+                    {/each}
+                  </select>
+                </div>
+                
+                <div class="form-section">
+                  <label>Issues</label>
+                  <div class="issues-container">
+                    {#if newStep.issues.length === 0}
+                      <p class="no-issues">No issues reported</p>
+                    {/if}
+                    {#each newStep.issues as issue, i}
+                      <div class="issue-item">
+                        <div class="issue-header">
+                          <span>Issue #{i+1}</span>
+                          <button 
+                            class="remove-issue-btn" 
+                            on:click={() => {
+                              newStep.issues = newStep.issues.filter((_, idx) => idx !== i);
+                            }} 
+                            type="button"
+                            title="Remove issue"
+                          >×</button>
                         </div>
-                      {/if}
-                    </div>
-                    <div class="step-notes">
-                      {step.notes || '-'}
-                    </div>
-                    <div class="step-actions">
-                      <div class="tooltip">
-                        <button class="action-button edit" on:click={() => editStep(step)}>
-                          Edit
-                        </button>
-                        <span class="tooltip-text">Edit this process step's details</span>
-                      </div>
-                      <button class="action-button delete" on:click={() => step.id && deleteStep(step.id)}>
-                        Delete
-                      </button>
-                      <button class="action-button duplicate" on:click={() => step.id && duplicateStep(step)}>
-                        Copy
-                      </button>
-                      <div class="move-controls">
-                        <button 
-                          class="action-button move-up" 
-                          on:click={() => step.id && moveStep(step.id, 'up')}
-                          disabled={step.step_number <= 1}
-                        >
-                          ↑
-                        </button>
-                        <button 
-                          class="action-button move-down" 
-                          on:click={() => step.id && moveStep(step.id, 'down')}
-                          disabled={step.step_number >= processSteps.length}
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                {/if}
-              {/each}
-    
-              <!-- New step form -->
-              {#if isAddingNewStep}
-                <div class="process-step new-step">
-                  <div class="step-name">
-                    <input type="text" bind:value={newStep.name} placeholder="Step name" />
-                  </div>
-                  <div class="step-description">
-                    <textarea bind:value={newStep.description} placeholder="Describe this process step"></textarea>
-                  </div>
-                  <div class="step-responsible">
-                    <select bind:value={newStep.responsible}>
-                      <option value="">Select</option>
-                      {#each responsibleParties as party}
-                        <option value={party}>{party}</option>
-                      {/each}
-                    </select>
-                  </div>
-                  <!-- Issues section for new step -->
-                  <div class="step-issues">
-                    <span class="field-label">Issues</span>
-                    <div class="issues-container">
-                      {#if newStep.issues.length === 0}
-                        <p class="no-issues">No issues reported</p>
-                      {/if}
-                      {#each newStep.issues as issue, i}
-                        <div class="issue-item">
-                          <div class="issue-header">
-                            <span>Issue #{i+1}</span>
-                            <button 
-                              class="remove-issue-btn" 
-                              on:click={() => {
-                                newStep.issues = newStep.issues.filter((_, idx) => idx !== i);
-                              }} 
-                              type="button"
-                              title="Remove issue"
-                            >×</button>
-                          </div>
-                          <textarea 
-                            bind:value={issue.description} 
-                            placeholder="Describe the issue"
-                          ></textarea>
-                          <div class="issue-controls">
-                            <label>
-                              Severity:
-                              <select bind:value={issue.severity}>
-                                <option value="low">Low</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                              </select>
-                            </label>
-                            <label>
-                              Status:
-                              <select bind:value={issue.status}>
-                                <option value="open">Open</option>
-                                <option value="in-progress">In Progress</option>
-                                <option value="resolved">Resolved</option>
-                              </select>
-                            </label>
-                          </div>
+                        <textarea 
+                          bind:value={issue.description} 
+                          placeholder="Describe the issue"
+                        ></textarea>
+                        <div class="issue-controls">
+                          <label>
+                            Severity:
+                            <select bind:value={issue.severity}>
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                          </label>
+                          <label>
+                            Status:
+                            <select bind:value={issue.status}>
+                              <option value="open">Open</option>
+                              <option value="in-progress">In Progress</option>
+                              <option value="resolved">Resolved</option>
+                            </select>
+                          </label>
                         </div>
-                      {/each}
-                      <button type="button" class="add-issue-btn" on:click={() => {
-                        newStep.issues = [...newStep.issues, createEmptyIssue()];
-                      }}>
-                        + Add Issue
-                      </button>
-                    </div>
-                  </div>
-                  <div class="step-notes">
-                    <textarea bind:value={newStep.notes} placeholder="Additional notes"></textarea>
-                  </div>
-                  <div class="step-actions">
-                    <button class="action-button save" on:click={saveNewStep}>
-                      Save
-                    </button>
-                    <button class="action-button cancel" on:click={cancelAddNew}>
-                      Cancel
+                      </div>
+                    {/each}
+                    <button type="button" class="add-issue-btn" on:click={() => {
+                      newStep.issues = [...newStep.issues, createEmptyIssue()];
+                    }}>
+                      + Add Issue
                     </button>
                   </div>
                 </div>
-              {/if}
-            {/if}
-          </div>
-          {#if !isAddingNewStep && processSteps.length > 0}
-            <div class="bottom-controls">
-              <button 
-                class="add-step-button" 
-                on:click={() => {
-                  isAddingNewStep = true;
-                  newStep.step_number = processSteps.length + 1;
-                  // Scroll to where the new form will appear
-                  setTimeout(() => {
-                    const newStepForm = document.querySelector('.new-step');
-                    if (newStepForm) {
-                      newStepForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                  }, 100);
-                }}
-              >
-                Add New Process Step
-              </button>
+                
+                <div class="form-section">
+                  <label for="stepNotes">Notes</label>
+                  <textarea id="stepNotes" bind:value={newStep.notes} placeholder="Additional notes"></textarea>
+                </div>
+                
+                <div class="form-actions">
+                  <button type="button" class="cancel-button" on:click={cancelAddNew}>
+                    Cancel
+                  </button>
+                  <button type="submit" class="save-button">
+                    Save New Step
+                  </button>
+                </div>
+              </form>
+            </div>
+          {:else if editingStep}
+            <!-- Edit step form -->
+            <div class="step-document editing">
+              <h2>Edit Process Step</h2>
+              
+              <form on:submit|preventDefault={updateStep}>
+                <div class="form-section">
+                  <label for="editStepName">Step Name</label>
+                  <input type="text" id="editStepName" bind:value={editingStep.name} placeholder="Enter step name" required />
+                </div>
+                
+                <div class="form-section">
+                  <label for="editStepDescription">Description</label>
+                  <textarea id="editStepDescription" bind:value={editingStep.description} placeholder="Describe this process step"></textarea>
+                </div>
+                
+                <div class="form-section">
+                  <label for="editStepResponsible">Responsible Party</label>
+                  <select id="editStepResponsible" bind:value={editingStep.responsible} required>
+                    <option value="">Select responsible party</option>
+                    {#each responsibleParties as party}
+                      <option value={party}>{party}</option>
+                    {/each}
+                  </select>
+                </div>
+                
+                <div class="form-section">
+                  <label>Issues</label>
+                  <div class="issues-container">
+                    {#if editingStep.issues.length === 0}
+                      <p class="no-issues">No issues reported</p>
+                    {/if}
+                    {#each editingStep.issues as issue, i}
+                      <div class="issue-item">
+                        <div class="issue-header">
+                          <span>Issue #{i+1}</span>
+                          <button 
+                            class="remove-issue-btn" 
+                            on:click={() => {
+                              if (editingStep) {
+                                editingStep.issues = editingStep.issues.filter((_, idx) => idx !== i);
+                              }
+                            }} 
+                            type="button"
+                            title="Remove issue"
+                          >×</button>
+                        </div>
+                        <textarea 
+                          bind:value={issue.description} 
+                          placeholder="Describe the issue"
+                        ></textarea>
+                        <div class="issue-controls">
+                          <label>
+                            Severity:
+                            <select bind:value={issue.severity}>
+                              <option value="low">Low</option>
+                              <option value="medium">Medium</option>
+                              <option value="high">High</option>
+                            </select>
+                          </label>
+                          <label>
+                            Status:
+                            <select bind:value={issue.status}>
+                              <option value="open">Open</option>
+                              <option value="in-progress">In Progress</option>
+                              <option value="resolved">Resolved</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    {/each}
+                    <button type="button" class="add-issue-btn" on:click={addIssueToStep}>
+                      + Add Issue
+                    </button>
+                  </div>
+                </div>
+                
+                <div class="form-section">
+                  <label for="editStepNotes">Notes</label>
+                  <textarea id="editStepNotes" bind:value={editingStep.notes} placeholder="Additional notes"></textarea>
+                </div>
+                
+                <div class="form-actions">
+                  <button type="button" class="action-button cancel" on:click={cancelEdit}>
+                    Cancel
+                  </button>
+                  <button type="submit" class="action-button save">
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          {:else if activeStepId}
+            <!-- View step details -->
+            {#each processSteps.filter(step => step.id === activeStepId) as activeStep}
+              <div class="step-document viewing">
+                <div class="document-header">
+                  <!-- Optionally include step number in title -->
+                  <h2><!-- {activeStep.step_number}: -->{activeStep.name}</h2>
+                  <div class="step-actions">
+                    <button class="action-button edit" on:click={() => editStep(activeStep)}>Edit</button>
+                    <button class="action-button delete" on:click={() => activeStep.id && deleteStep(activeStep.id)}>Delete</button>
+                    <button class="action-button duplicate" on:click={() => duplicateStep(activeStep)}>Copy</button>
+                  </div>
+                </div>
+                
+                <div class="document-section">
+                  <h3>Description</h3>
+                  <p>{activeStep.description || 'No description provided'}</p>
+                </div>
+                
+                <div class="document-section">
+                  <h3>Responsible Party</h3>
+                  <p>{activeStep.responsible || 'Not assigned'}</p>
+                </div>
+                
+                <div class="document-section">
+                  <h3>Issues</h3>
+                  {#if activeStep.issues.length === 0}
+                    <p class="no-issues">No issues reported</p>
+                  {:else}
+                    <div class="issues-list">
+                      {#each activeStep.issues as issue, i}
+                        <div class="issue-display" class:resolved={issue.status === 'resolved'}>
+                          <div class="issue-header-row">
+                            <div class="issue-badge" class:high={issue.severity === 'high'} class:medium={issue.severity === 'medium'} class:low={issue.severity === 'low'}>
+                              {issue.severity}
+                            </div>
+                            <div class="issue-status">{issue.status}</div>
+                          </div>
+                          <div class="issue-text">{issue.description}</div>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+                
+                <div class="document-section">
+                  <h3>Notes</h3>
+                  <p>{activeStep.notes || 'No additional notes'}</p>
+                </div>
+                
+                <div class="document-footer">
+                  <div class="step-move-controls">
+                    <button 
+                      class="action-button move-up" 
+                      on:click={() => activeStep.id && moveStep(activeStep.id, 'up')}
+                      disabled={activeStep.step_number <= 1}
+                    >
+                      Move Up
+                    </button>
+                    <button 
+                      class="action-button move-down" 
+                      on:click={() => activeStep.id && moveStep(activeStep.id, 'down')}
+                      disabled={activeStep.step_number >= processSteps.length}
+                    >
+                      Move Down
+                    </button>
+                  </div>
+                </div>
+              </div>
+            {:else}
+              <!-- If activeStepId is set but step not found -->
+              <div class="no-selection">
+                <p>Selected step not found. It may have been deleted.</p>
+              </div>
+            {/each}
+          {:else}
+            <!-- Nothing selected state -->
+            <div class="no-selection">
+              <p>Select a step from the left to view details or add a new step.</p>
             </div>
           {/if}
         </div>
-      {/if}
-    </div>
-  {:else}
-    <!-- When session is null, onMount should have redirected already -->
-    <div class="loading-container">
-      <p>Redirecting to login...</p>
-    </div>
-  {/if}
+      </div>
+    {/if}
+  </div>
+{:else}
+  <div class="not-authenticated">
+    <p>Please log in to access the Process Map.</p>
+    <a href="/login" class="login-button">Go to Login</a>
+  </div>
+{/if}
   
-  <style>
-    .process-map-container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-  
-    .process-map-header {
-      margin-bottom: 24px;
-    }
-  
-    .process-map-header h1 {
-      font-size: 1.9rem;
-      font-weight: 500;
-      color: #1d1d1f;
-      margin: 0 0 8px 0;
-      letter-spacing: -0.025em;
-      line-height: 1.2;
-    }
-  
-    .process-map-header .description {
-      color: #86868b;
-      font-size: 1rem;
-      margin: 0;
-    }
-  
-    .loading-container {
-      display: flex;
+<style>
+  :root {
+    --apple-blue: #0071e3;
+    --apple-red: #ff3b30;
+    --apple-green: #34c759;
+    --apple-orange: #ff9500;
+    --apple-gray-1: #f5f5f7;
+    --apple-gray-2: #e8e8ed;
+    --apple-gray-3: #d2d2d7;
+    --apple-text: #1d1d1f;
+    --apple-text-secondary: #86868b;
+  }
+
+  .process-map-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .process-map-header {
+    margin-bottom: 24px;
+  }
+
+  .process-map-header h1 {
+    font-size: 1.9rem;
+    font-weight: 500;
+    color: #1d1d1f;
+    margin: 0 0 8px 0;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+  }
+
+  .process-map-header .description {
+    color: #86868b;
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  .loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 0;
+  }
+
+  .loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 113, 227, 0.15);
+  border-radius: 50%;
+  border-top-color: var(--apple-blue);
+  animation: spin 0.8s linear infinite;
+}
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .error-banner {
+    background-color: #ffebee;
+    color: #c62828;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .close-button {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #c62828;
+  }
+
+  .add-step-button, .print-button {
+    background-color: #0071e3;
+    color: white;
+    border: none;
+    border-radius: 980px;
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 0;
+    color: #86868b;
+    font-style: italic;
+  }
+
+  .add-issue-btn:hover {
+    background-color: #e5e5e5;
+  }
+
+  .no-issues {
+    font-style: italic;
+    color: #86868b;
+    margin: 0;
+    font-size: 14px;
+  }
+
+  /* Styles for viewing issues */
+  .issues-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .issue-display {
+    border: none;
+    background-color: #f5f5f7;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+
+  .issue-display.resolved {
+    opacity: 0.7;
+    text-decoration: line-through;
+  }
+
+  .issue-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .issue-badge.high {
+    background-color: rgba(255, 59, 48, 0.1); /* More subtle */
+    color: #ff3b30; /* Apple red */
+  }
+
+  .issue-badge.medium {
+    background-color: rgba(255, 149, 0, 0.1);
+    color: #ff9500; /* Apple orange */
+  }
+
+  .issue-badge.low {
+    background-color: rgba(52, 199, 89, 0.1);
+    color: #34c759; /* Apple green */
+  }
+
+  .issue-status {
+    font-size: 11px;
+    font-weight: 500;
+    color: #86868b; /* Apple gray */
+    text-transform: capitalize;
+  }
+
+  .field-label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  .issue-header-row {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes highlight {
+    0% { background-color: rgba(0, 113, 227, 0.15); }
+    100% { background-color: #f0f7ff; }
+  }
+
+  /* Issue form editor */
+  .issue-item {
+    border: none;
+    background-color: #f5f5f7;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  .issue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .issue-header span {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1d1d1f;
+  }
+
+  .add-issue-btn {
+    background-color: transparent;
+    color: #0071e3; /* Apple blue */
+    border: 1px dashed #d1d1d6;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    width: 100%;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  /* Two-column layout - KEEP THESE */
+  .process-map-layout {
+    display: flex;
+    gap: 16px; /* Apple uses tighter gaps */
+    margin-top: 24px;
+    height: calc(100vh - 220px);
+    min-height: 500px;
+  }
+
+  /* Step tabs sidebar */
+  .step-tabs {
+    width: 250px;
+    flex-shrink: 0;
+    background: #f5f5f7;
+    border-radius: 10px; /* Apple uses more consistent rounding now */
+    overflow-y: auto;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); /* More subtle shadows */
+    border: 1px solid rgba(0, 0, 0, 0.05); /* Very subtle border */
+  }
+
+  .step-tabs ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Apple-style list items */
+  .step-tabs li {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  /* Apple-style active states */
+  .step-tabs li.active {
+    background-color: rgba(0, 113, 227, 0.1); /* More subtle blue */
+    color: #0071e3; /* Apple blue */
+    font-weight: 500;
+    border-left: 3px solid #0071e3;
+  }
+
+  /* More subtle hover states */
+  .step-tabs li:hover:not(.active) {
+    background-color: rgba(0, 0, 0, 0.02);
+  }
+
+  /* Issues indicators */
+  .step-tabs li.has-issues {
+    border-left: 3px solid #ff9f0a; /* Apple orange */
+  }
+
+  .step-tabs li.high-priority {
+    border-left: 3px solid #ff3b30; /* Apple red */
+  }
+
+  .step-tab-name {
+    position: relative;
+    flex: 1;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.3;
+    font-size: 13px;
+    padding-left: 4px;
+  }
+
+  .add-step-tab {
+    color: #0071e3;
+    font-weight: 500;
+    border-left: none !important;
+  }
+
+  .add-icon {
+    margin-right: 8px;
+    font-weight: 500;
+    font-size: 16px;
+  }
+
+  .step-content {
+    flex: 1;
+    overflow-y: auto;
+    background: white;
+    border-radius: 10px; /* Apple uses more consistent rounding now */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); /* More subtle shadows */
+    border: 1px solid rgba(0, 0, 0, 0.05); /* Very subtle border */
+  }
+
+  .step-document {
+    padding: 24px;
+    max-width: 800px; /* Limit width for better readability */
+    margin: 0 auto;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .document-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e5e5;
+  }
+
+  .document-header h2 {
+    margin: 0;
+    font-size: 2.2rem;
+    color: #1d1d1f;
+    font-weight: 500;
+  }
+
+  .document-section {
+    margin-bottom: 22px;
+  }
+
+  .document-section h3 {
+    font-size: 15px;
+    font-weight: 500;
+    color: #1d1d1f;
+    margin-bottom: 10px;
+  }
+
+  .document-section p {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #424245;
+  }
+
+  .document-footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e5e5;
+  }
+
+  /* Form sections */
+  .form-section {
+    margin-bottom: 20px;
+  }
+
+  .form-section label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #1d1d1f;
+  }
+
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 32px;
+  }
+
+  /* No selection state */
+  .no-selection {
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: #86868b;
+    text-align: center;
+    padding: 24px;
+  }
+
+  /* Top controls */
+  .top-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .process-map-layout {
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 48px 0;
-    }
-  
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid rgba(0, 122, 255, 0.1);
-      border-radius: 50%;
-      border-top-color: #007aff;
-      animation: spin 1s ease-in-out infinite;
-      margin-bottom: 16px;
-    }
-  
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-  
-    .error-banner {
-      background-color: #ffebee;
-      color: #c62828;
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin-bottom: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-  
-    .close-button {
-      background: none;
-      border: none;
-      font-size: 20px;
-      cursor: pointer;
-      color: #c62828;
-    }
-  
-    .controls {
-      margin-bottom: 16px;
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-  
-    .add-step-button, .print-button {
-      background-color: #0071e3; /* Apple's blue */
-      color: white;
-      border: none;
-      border-radius: 980px; /* More rounded for primary actions */
-      padding: 8px 18px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-  
-    .add-step-button:hover, .print-button:hover {
-      background-color: #0077ED;
-      transform: scale(1.01);
-    }
-  
-    .add-step-button:disabled {
-      background-color: #ccc;
-      cursor: not-allowed;
-    }
-
-    .filter-controls {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-  
-    .search-box input {
-      width: 200px;
-      padding: 8px;
-      border: 1px solid #d1d1d6;
-      border-radius: 4px;
-      font-size: 14px;
-    }
-  
-    .sort-controls label {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-  
-    .sort-controls select {
-      padding: 8px;
-      border: 1px solid #d1d1d6;
-      border-radius: 4px;
-      font-size: 14px;
-    }
-  
-    .empty-state {
-      text-align: center;
-      padding: 48px 0;
-      color: #86868b;
-      font-style: italic;
-    }
-  
-    /* More Apple-like card styling */
-    .process-steps {
-      border: none; /* Remove border */
-      border-radius: 12px; /* More rounded corners */
-      overflow: hidden;
-      margin-bottom: 24px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); /* Subtle shadow */
-      background-color: #ffffff;
-      transition: box-shadow 0.3s ease;
-    }
-
-    .process-steps:hover {
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-    }
-
-    .process-step-header {
-      background-color: #f5f5f7; /* Light gray header */
-      font-weight: 500; /* Semi-bold instead of bold */
-      letter-spacing: -0.01em; 
-    }
-
-    .process-step {
-      transition: background-color 0.2s ease;
-    }
-
-    /* Subtle hover effect */
-    .process-step:not(.editing):not(.new-step):hover {
-      background-color: #f9f9fb;
-    }
-  
-    .process-step-header,
-    .process-step {
-      display: grid;
-      /* Adjust column widths */
-      grid-template-columns: minmax(120px, 1fr) minmax(180px, 1.5fr) minmax(120px, 1fr) minmax(220px, 2fr) minmax(150px, 1fr) 150px;
-      padding: 12px 16px;
-      border-bottom: 1px solid #e5e5e5;
-      align-items: start;
-    }
-  
-    .process-step:last-child {
-      border-bottom: none;
-    }
-  
-    .process-step.editing, .process-step.new-step {
-      background-color: #f0f7ff;
+      height: auto;
     }
     
-    /* More Apple-like form controls */
-    input, select, textarea {
+    .step-tabs {
       width: 100%;
-      padding: 10px 12px; /* Slightly more padding */
-      border: 1px solid #d2d2d7; /* Apple's border color */
-      border-radius: 8px; /* More rounded */
-      font-size: 14px;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* Subtle depth */
-      transition: border-color 0.2s, box-shadow 0.2s;
+      max-height: 200px;
     }
-
-    input:focus, select:focus, textarea:focus {
-      border-color: #0071e3; /* Apple blue for focus */
-      box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.15); /* Subtle focus ring */
-      outline: none;
-    }
-
-    textarea {
-      min-height: 80px;
-      height: auto; /* Allow natural expansion */
-      resize: vertical;
-      line-height: 1.5;
-      white-space: pre-wrap; /* Better handling of line breaks */
-    }
-  
-    .step-description, 
-    .step-issues, 
-    .step-notes {
-      overflow-wrap: break-word;
-      word-wrap: break-word;
-      word-break: normal; /* Change from break-word to normal to avoid hyphenation */
-      hyphens: none; /* Disable hyphenation */
-      white-space: pre-line; /* Preserve line breaks but wrap text */
-      padding: 8px;
-      line-height: 1.5;
-      color: #424245;
-    }
-  
-    .process-step:not(.editing):not(.new-step) .step-description, 
-    .process-step:not(.editing):not(.new-step) .step-issues, 
-    .process-step:not(.editing):not(.new-step) .step-notes {
-      max-height: none; /* Remove height restriction */
-      overflow-y: visible;
-      padding-right: 5px;
-    }
-  
-    .step-actions {
-      display: flex;
-      gap: 8px;
+    
+    .top-controls {
       flex-wrap: wrap;
-      justify-content: center;
     }
+  }
+
+  /* Search and sort controls */
+  .search-box input {
+    width: 200px;
+    padding: 8px;
+    border: 1px solid #d1d1d6;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  .sort-controls label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sort-controls select {
+    padding: 8px;
+    border: 1px solid #d1d1d6;
+    border-radius: 4px;
+    font-size: 14px;
+  }
   
-    .action-button {
-      padding: 6px 14px;
-      border-radius: 980px; /* More rounded */
-      border: none;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
+  /* Print styles */
+  @media print {
+    .controls, .filter-controls, .step-actions, .move-controls, .error-banner, .step-tabs {
+      display: none;
     }
-  
-    .action-button.edit {
-      background-color: #f5f5f7;
-      color: #1d1d1f;
-    }
-  
-    .action-button.edit:hover {
-      background-color: #e8e8ed;
-      transform: scale(1.02);
-    }
-  
-    .action-button.delete {
-      background-color: rgba(255, 59, 48, 0.1); /* Apple red with transparency */
-      color: #ff3b30; /* Apple red */
-    }
-  
-    .action-button.delete:hover {
-      background-color: rgba(255, 59, 48, 0.15);
-      transform: scale(1.02);
-    }
-  
-    .action-button.save {
-      background-color: #0071e3; /* Apple blue */
-      color: white;
-    }
-  
-    .action-button.save:hover {
-      background-color: #0077ed;
-      transform: scale(1.02);
-    }
-  
-    .action-button.cancel {
-      background-color: #f5f5f7;
-      color: #1d1d1f;
-    }
-  
-    .action-button.cancel:hover {
-      background-color: #e5e5e5;
-    }
-  
-    .action-button.duplicate {
-      background-color: #f5f5f7;
-      color: #1d1d1f;
-    }
-  
-    .action-button.duplicate:hover {
-      background-color: #e8e8ed;
-      transform: scale(1.02);
-    }
-  
-    .move-controls {
-      display: flex;
-      gap: 4px;
-    }
-  
-    .move-controls .action-button {
-      padding: 4px 8px;
-    }
-  
-    /* Responsive layout */
-    @media (max-width: 1200px) {
-      .process-step-header, .process-step {
-        grid-template-columns: 1fr 1.5fr 1fr 2fr 1fr 120px;
-      }
-    }
-  
-    @media (max-width: 992px) {
-      .process-map-container {
-        padding: 16px;
-      }
-  
-      .process-step-header, .process-step {
-        display: block;
-        padding: 12px;
-      }
-  
-      .process-step-header {
-        display: none;
-      }
-  
-      .process-step {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 8px;
-      }
-  
-      .step-name, .step-description, .step-responsible, 
-      .step-issues, .step-notes {
-        margin-bottom: 8px;
-      }
     
-      .step-name {
-        font-weight: 600;
-        font-size: 1rem;
-      }
-  
-      /* Add labels before each field when in mobile view */
-      .step-description::before { 
-        content: 'Description: ';
-        font-weight: 500;
-      }
-  
-      .step-responsible::before { 
-        content: 'Responsible: ';
-        font-weight: 500;
-      }
-  
-      .step-issues::before { 
-        content: 'Issues: ';
-        font-weight: 500;
-      }
-  
-      .step-notes::before { 
-        content: 'Notes: ';
-        font-weight: 500;
-      }
-  
-      .step-actions {
-        margin-top: 12px;
-        justify-content: flex-start;
-      }
-
-      .process-step {
-        background-color: #ffffff;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        margin-bottom: 16px;
-        padding: 16px;
-      }
-      
-      /* Add more spacing between stacked fields */
-      .step-name, .step-description, .step-responsible, 
-      .step-issues, .step-notes {
-        margin-bottom: 16px;
-      }
-      
-      /* Make field labels more Apple-like */
-      .step-description::before,
-      .step-responsible::before,
-      .step-issues::before,
-      .step-notes::before {
-        content: attr(data-label); /* Use data attributes instead of pseudo-elements */
-        font-weight: 500;
-        display: block;
-        margin-bottom: 4px;
-        color: #86868b; /* Apple's secondary text color */
-        font-size: 0.9rem;
-      }
-
-      /* Add this to improve mobile view */
-      .process-step > div:not(:last-child) {
-        border-bottom: 1px solid #e5e5e5;
-        padding-bottom: 16px;
-        margin-bottom: 16px;
-      }
-      
-      .process-step {
-        padding: 20px;
-      }
+    .process-map-container {
+      padding: 0;
     }
-
-    @media print {
-      .controls, .filter-controls, .step-actions, .move-controls, .error-banner {
-        display: none;
-      }
-      
-      .process-map-container {
-        padding: 0;
-      }
-      
-      .process-step-header, .process-step {
-        page-break-inside: avoid;
-      }
+    
+    .step-document {
+      page-break-inside: avoid;
     }
-
-    /* Styles for multiple issues */
-    .issues-container {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .issue-item {
-      border: none;
-      border-radius: 8px;
-      padding: 12px;
-      background-color: #f5f5f7; /* Light gray background */
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-      animation: fadeIn 0.3s ease;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .issue-item:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .issue-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      font-weight: 500;
-    }
-
-    .remove-issue-btn {
-      background: none;
-      border: none;
-      color: #c62828;
-      font-size: 18px;
-      cursor: pointer;
-      line-height: 1;
-    }
-
-    .issue-controls {
-      display: flex;
-      gap: 12px;
-      margin-top: 8px;
-    }
-
-    .issue-controls label {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-    }
-
-    .issue-controls select {
-      padding: 4px;
-      height: auto;
-    }
-
-    .add-issue-btn {
-      background-color: #f5f5f7;
-      border: 1px dashed #d1d1d6;
-      color: #007aff;
-      padding: 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-      text-align: center;
-      margin-top: 4px;
-    }
-
-    .add-issue-btn:hover {
-      background-color: #e5e5e5;
-    }
-
-    .no-issues {
-      font-style: italic;
-      color: #86868b;
-      margin: 0;
-      font-size: 14px;
-    }
-
-    /* Styles for viewing issues */
-    .issues-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .issue-display {
-      border: none;
-      border-radius: 8px;
-      padding: 12px;
-      background-color: #f5f5f7;
-      margin-bottom: 8px;
-      animation: fadeIn 0.3s ease;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .issue-display:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .issue-display.resolved {
-      opacity: 0.7;
-      text-decoration: line-through;
-    }
-
-    .issue-badge {
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 980px; /* Very rounded like Apple tags */
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.02em;
-    }
-
-    .issue-badge.high {
-      background-color: rgba(255, 59, 48, 0.15); /* Apple red with transparency */
-      color: #ff3b30;
-    }
-
-    .issue-badge.medium {
-      background-color: rgba(255, 149, 0, 0.15); /* Apple orange with transparency */
-      color: #ff9500;
-    }
-
-    .issue-badge.low {
-      background-color: rgba(52, 199, 89, 0.15); /* Apple green with transparency */
-      color: #34c759;
-    }
-
-    .issue-text {
-      width: 100%;  /* Full width for text */
-      white-space: pre-wrap; /* Preserve line breaks and spaces */
-      margin: 4px 0;
-    }
-
-    .issue-status {
-      font-size: 11px;
-      opacity: 0.7;
-    }
-
-    .field-label {
+    
+    .process-map-layout {
       display: block;
-      font-weight: 500;
-      margin-bottom: 8px;
     }
+  }
 
-    /* Remove max-height and overflow restrictions for issues */
-    .process-step:not(.editing):not(.new-step) .step-issues {
-      max-height: none;  /* Remove the height limit */
-      overflow-y: visible; /* Don't add scroll */
-    }
+  /* Standardize all buttons with Apple's SF Pro aesthetic */
+  button {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    border: none;
+    border-radius: 6px; /* Apple uses more subtle rounding in SF Symbols and macOS */
+  }
 
-    /* Add this to ensure the row expands to fit content */
-    .process-step {
-      min-height: max-content;
-      height: auto;
-      transition: all 0.3s ease;
-    }
+  /* Primary buttons (Save, Add, etc) */
+  .action-button.save, .save-button {
+    background-color: #0071e3; /* Apple's signature blue */
+    color: white;
+    padding: 8px 16px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
 
-    /* Adjust issue display for better readability */
-    .issue-header-row {
-      display: flex;
-      width: 100%;
-      justify-content: space-between;
-      align-items: center;
-    }
+  /* Secondary buttons (Cancel, Edit) */
+  .action-button.cancel, .cancel-button {
+    background-color: #f5f5f7; /* Apple's light gray */
+    color: #1d1d1f;
+    padding: 8px 16px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
 
-    .process-step.editing, .process-step.new-step {
-      animation: highlight 1s ease;
-    }
+  /* Other action buttons */
+  .action-button.edit, .action-button.duplicate {
+    background-color: #f5f5f7;
+    color: #1d1d1f;
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
 
-    @keyframes highlight {
-      0% { background-color: rgba(0, 113, 227, 0.15); }
-      100% { background-color: #f0f7ff; }
-    }
+  /* Danger button */
+  .action-button.delete {
+    background-color: #fff1f0; /* Lighter red background */
+    color: #ff3b30; /* Apple red */
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+  /* Movement buttons */
+  .action-button.move-up, .action-button.move-down {
+    background-color: #f5f5f7;
+    color: #1d1d1f;
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
 
-    /* Fix for vertical alignment in grid cells */
-    .process-step-header > div,
-    .process-step > div {
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
-      align-items: flex-start;
-      padding-top: 8px;
-      padding-bottom: 8px;
-    }
+  .action-button.move-up:disabled, .action-button.move-down:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 
-    /* Ensure all cell content starts at the same vertical position */
-    .step-name, 
-    .step-description, 
-    .step-responsible, 
-    .step-issues, 
-    .step-notes {
-      margin-top: 0;
-      margin-bottom: 0;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
-    }
+  /* Form controls with Apple-like styling */
+  input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d2d2d7; /* Apple's border color */
+    border-radius: 6px;
+    font-size: 14px;
+    color: #1d1d1f;
+    background-color: #ffffff;
+    transition: all 0.2s ease;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
 
-    /* Ensure the issues text aligns with other text */
-    .issue-display {
-      margin-bottom: 8px;
-      margin-top: 0;
-      padding: 8px; /* Reduce padding to make vertical alignment better */
-    }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #0071e3;
+    box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15); /* Apple's focus ring effect */
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
 
-    /* First issue should start at same position as text in other columns */
-    .issues-list {
-      margin-top: 0;
-    }
+  /* Apple-style labels */
+  label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1d1d1f;
+    margin-bottom: 6px;
+    display: block;
+  }
 
-    /* Fix text vertical alignment */
-    .process-step:not(.editing):not(.new-step) .step-description,
-    .process-step:not(.editing):not(.new-step) .step-responsible,
-    .process-step:not(.editing):not(.new-step) .step-notes {
-      padding-top: 0;
-    }
+  /* Dropdown styling */
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%227%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M%201%201%20l%205%205%20l%205%20-5%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+  }
 
-    .bottom-controls {
-      display: flex;
-      justify-content: center;
-      margin-top: 24px;
-      margin-bottom: 32px;
-    }
+  /* Apple-style cards and containers */
+  .step-tabs, .step-content, .issue-display, .issue-item {
+    border-radius: 10px; /* Apple uses more consistent rounding now */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); /* More subtle shadows */
+    border: 1px solid rgba(0, 0, 0, 0.05); /* Very subtle border */
+  }
 
-    .bottom-controls .add-step-button {
-      padding: 10px 20px;
-      font-size: 15px;
-    }
+  .process-map-layout {
+    gap: 16px; /* Apple uses tighter gaps */
+  }
 
-    /* Hide the bottom button in print view */
-    @media print {
-      .bottom-controls {
-        display: none;
-      }
-    }
+  .step-document {
+    padding: 24px;
+    max-width: 800px; /* Limit width for better readability */
+    margin: 0 auto;
+  }
 
-    /* Add tooltip styles */
-    .tooltip {
-      position: relative;
-      display: inline-block;
-    }
+  .document-section {
+    margin-bottom: 22px;
+  }
 
-    .tooltip .tooltip-text {
-      visibility: hidden;
-      width: 200px;
-      background-color: #1d1d1f;
-      color: #fff;
-      text-align: center;
-      border-radius: 6px;
-      padding: 8px;
-      position: absolute;
-      z-index: 1;
-      bottom: 125%;
-      left: 50%;
-      margin-left: -100px;
-      opacity: 0;
-      transition: opacity 0.3s;
-      font-size: 12px;
-      pointer-events: none;
-    }
+  .document-section h3 {
+    font-size: 15px;
+    font-weight: 500;
+    color: #1d1d1f;
+    margin-bottom: 10px;
+  }
 
-    .tooltip:hover .tooltip-text {
-      visibility: visible;
-      opacity: 0.9;
-    }
+  .document-section p {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #424245;
+  }
 
-    /* Enhance animations */
-    .process-steps {
-      transition: box-shadow 0.3s ease;
-    }
+  /* Global typography */
+  * {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
 
-    .process-steps:hover {
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-    }
+  /* Headings */
+  h1 {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: #1d1d1f;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+  }
 
-    .issue-item, .issue-display {
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
+  h2 {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: #1d1d1f;
+    letter-spacing: -0.01em;
+  }
 
-    .issue-item:hover, .issue-display:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    }
+  h3 {
+    font-size: 17px;
+    font-weight: 600;
+    color: #1d1d1f;
+  }
 
-    /* Add animation for saving/deleting */
-    @keyframes pulse {
-      0% { opacity: 0.6; }
-      50% { opacity: 1; }
-      100% { opacity: 0.6; }
-    }
+  p {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #424245;
+  }
 
-    /* Improve form layout */
-    .process-step.editing .step-name,
-    .process-step.editing .step-description,
-    .process-step.editing .step-responsible,
-    .process-step.editing .step-issues,
-    .process-step.editing .step-notes {
-      padding: 12px;
-      background-color: rgba(255, 255, 255, 0.8);
-      border-radius: 8px;
-      transition: all 0.2s ease;
-    }
+  /* Subtle animations */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 
-    .process-step.editing .field-label {
-      color: #0071e3;
-      font-size: 0.85rem;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-  </style>
+  /* Apply animations to key elements */
+  .step-document {
+    animation: fadeIn 0.3s ease;
+  }
+
+  /* Form field focus effect */
+  input:focus, textarea:focus, select:focus {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  /* Button press effect */
+  button:active {
+    transform: scale(0.98);
+  }
+</style>
