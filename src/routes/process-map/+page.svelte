@@ -1047,6 +1047,7 @@
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   position: relative;
   transition: all 0.2s ease;
+  cursor: pointer; /* Explicitly set cursor to pointer */
 }
 
 .step-tabs li + li {
@@ -1076,18 +1077,23 @@
   }
 
   .step-tab-name {
-    position: relative;
-    flex: 1;
-    white-space: normal;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    line-height: 1.3;
-    font-size: 13px;
-    padding-left: 4px;
-  }
+  position: relative;
+  flex: 1;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
+  font-size: 13px;
+  padding-left: 4px;
+  cursor: pointer; /* Change cursor to pointer */
+  user-select: none; /* Prevent text selection */
+  -webkit-user-select: none; /* For Safari */
+  -moz-user-select: none; /* For Firefox */
+  -ms-user-select: none; /* For older versions of Edge */
+}
 
   .add-step-tab {
     color: #0071e3;
