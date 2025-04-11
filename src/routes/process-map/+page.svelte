@@ -907,18 +907,23 @@
   }
 
   .issue-display {
-    border: none;
-    background-color: #f5f5f7;
-    padding: 14px 16px;
-    margin-bottom: 8px;
-    border-radius: 8px;
-    transition: all 0.2s ease;
-  }
+  border: none;
+  background-color: #f5f5f7;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+}
 
-  .issue-display.resolved {
-    opacity: 0.7;
-    text-decoration: line-through;
-  }
+.issue-display.resolved {
+  opacity: 0.7;
+  background-color: #f8f8f8;
+}
+
+.issue-text {
+  margin-top: 12px;
+  white-space: pre-wrap;
+}
 
   .issue-badge {
     font-size: 11px;
@@ -1038,11 +1043,15 @@
 
   /* Apple-style list items */
   .step-tabs li {
-    padding: 10px 14px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.step-tabs li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.7);
+}
 
   /* Apple-style active states */
   .step-tabs li.active {
@@ -1118,15 +1127,19 @@
   }
 
   .document-header h2 {
-    margin: 0;
-    font-size: 2.2rem;
-    color: #1d1d1f;
-    font-weight: 500;
-  }
+  margin: 0;
+  font-size: 30px; /* Reduced from 2.2rem which was too large */
+  color: #1d1d1f;
+  font-weight: 500;
+}
 
   .document-section {
     margin-bottom: 22px;
   }
+
+  .document-section + .document-section {
+  margin-top: 24px;
+}
 
   .document-section h3 {
     font-size: 15px;
@@ -1160,11 +1173,13 @@
   }
 
   .form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    margin-top: 32px;
-  }
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e5e5;
+}
 
   /* No selection state */
   .no-selection {
@@ -1189,11 +1204,36 @@
     .process-map-layout {
       flex-direction: column;
       height: auto;
+      min-height: 0;
     }
     
     .step-tabs {
       width: 100%;
-      max-height: 200px;
+      max-height: 250px;
+    }
+    
+    .document-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    
+    .document-header h2 {
+      margin-bottom: 16px;
+    }
+    
+    .step-actions {
+      width: 100%;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-start;
+    }
+    
+    .form-actions {
+      flex-direction: column;
+    }
+    
+    .form-actions button {
+      width: 100%;
     }
     
     .top-controls {
@@ -1361,11 +1401,23 @@
   }
 
   .document-section h3 {
-    font-size: 15px;
-    font-weight: 500;
-    color: #1d1d1f;
-    margin-bottom: 10px;
-  }
+  font-size: 15px;
+  font-weight: 600; /* Slightly bolder */
+  color: #1d1d1f;
+  margin-bottom: 8px;
+  position: relative;
+  padding-bottom: 8px;
+}
+
+.document-section h3::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 32px;
+  height: 2px;
+  background-color: #e5e5e5;
+}
 
   .document-section p {
     font-size: 14px;
