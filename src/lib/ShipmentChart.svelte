@@ -2,7 +2,7 @@
   import { onMount, tick, onDestroy } from "svelte";
   import { supabase } from "$lib/supabaseClient";
   import ExportCsv from "$lib/ExportCsv.svelte";
-  import { getMonday, formatNumber, getWeekNumber, isToday } from "./utils";
+  import { getMonday, formatNumber, getWeekNumber, isToday, formatPercentage, getWowColor } from "./utils";
   import MetricRow from "./MetricRow.svelte";
   import { testDirectInsert } from '$lib/notesService';
   import { showToast } from '$lib/toastStore';   
@@ -13,9 +13,14 @@
     date: string;
     count: number;
     formattedDate: string;
+    channels?: {
+      amazon: number;
+      ebay: number;
+      shopify: number;
+      other: number;
+    };
   }
 
-  // Updated ExtendedMetric with required properties.
   interface ExtendedMetric {
   name: string;
   values: number[];
@@ -23,9 +28,9 @@
   isHeader?: boolean;
   isSpacer?: boolean;
   isReadOnly?: boolean;
-  tooltip?: string;  // Add this property
+  isSubItem?: boolean;  // Add this line to fix the errors
+  tooltip?: string;
 }
-
   // Define the NoteData interface to resolve type errors.
   interface NoteData {
     id: string;
@@ -71,14 +76,23 @@
     return change.toFixed(2) + "%";
   }
 
+  // Add this helper function to determine if a metric is a percentage metric
+  function isPercentageMetric(metricName: string): boolean {
+    return metricName.includes('%') || 
+           metricName === "1.5 Labor Utilization (%)" || 
+           metricName === "1.8 Order Accuracy (%)" ||
+           metricName.startsWith("2.2.");  // All channel distribution percentage metrics
+  }
+
   // B2C Amazon Fulfilment section with tooltips
   let b2cMetrics: ExtendedMetric[] = [
     { name: "B2C Amazon Fulfilment", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },
     { 
       name: "1.1 Shipments Packed", 
       values: new Array(daysCount).fill(0), 
-      metricField: "shipments",
-      tooltip: "The total number of shipments processed and packed each day."
+      metricField: "shipments", // CHANGED from "shipments_packed" to match database column name
+      isReadOnly: false,
+      tooltip: "Daily count of shipments packed and shipped."
     },
     { 
       name: "1.2 Scheduled Hours", 
@@ -90,8 +104,9 @@
     { 
       name: "1.3 Actual Hours Worked", 
       values: new Array(daysCount).fill(0), 
-      metricField: "hours_worked",
-      tooltip: "The actual number of labor hours used each day."
+      metricField: "hours_worked", // CHANGED from "actual_hours_worked" to match database column name
+      isReadOnly: false,
+      tooltip: "Actual labor hours used for packing operations."
     },
     { 
       name: "1.4 Labor Efficiency (shipments/hour)", 
@@ -108,19 +123,22 @@
     { 
       name: "1.6 Packing Errors", 
       values: new Array(daysCount).fill(0), 
-      metricField: "defects",
-      tooltip: "The number of errors or defects found in packed shipments."
+      metricField: "defects", // CHANGED from "packing_errors" to match database column name
+      isReadOnly: false,
+      tooltip: "Count of errors in packed orders (wrong items, damaged items, etc.)."
     },
     { 
       name: "1.7 Packing Errors DPMO", 
       values: new Array(daysCount).fill(0), 
-      metricField: null,
+      metricField: "dpmo", // Added database column name
+      isReadOnly: true,
       tooltip: "Defects Per Million Opportunities. Calculated as (Packing Errors ÷ Shipments Packed) × 1,000,000. Standardized measure of defect rate."
     },
     { 
       name: "1.8 Order Accuracy (%)", 
       values: new Array(daysCount).fill(0), 
-      metricField: null,
+      metricField: "order_accuracy", // Added database column name
+      isReadOnly: true,
       tooltip: "Calculated as ((Shipments Packed - Packing Errors) ÷ Shipments Packed) × 100. Measures the percentage of error-free shipments."
     }
   ];
@@ -132,11 +150,77 @@
   let b2bMetrics: ExtendedMetric[] = [
     { name: "B2C Amazon Financials", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },
     { 
-      name: "2.1 Linnworks Completed Orders", 
+      name: "2.1 Linnworks Total Orders", 
       values: new Array(daysCount).fill(0), 
       metricField: "linnworks_completed_orders",
       isReadOnly: true, // Mark as read-only since it's from an external API
       tooltip: "Total number of completed orders in Linnworks each day. Automatically synced from Linnworks API."
+    },
+    { 
+      name: "2.1.1 Amazon Orders", 
+      values: new Array(daysCount).fill(0), 
+      metricField: "linnworks_amazon_orders",
+      isReadOnly: true,
+      isSubItem: true,
+      tooltip: "Number of completed Amazon orders each day."
+    },
+    { 
+      name: "2.1.2 eBay Orders", 
+      values: new Array(daysCount).fill(0), 
+      metricField: "linnworks_ebay_orders",
+      isReadOnly: true,
+      isSubItem: true,
+      tooltip: "Number of completed eBay orders each day."
+    },
+    { 
+      name: "2.1.3 Shopify Orders", 
+      values: new Array(daysCount).fill(0), 
+      metricField: "linnworks_shopify_orders",
+      isReadOnly: true,
+      isSubItem: true,
+      tooltip: "Number of completed Shopify orders each day."
+    },
+    { 
+      name: "2.1.4 Other Orders", 
+      values: new Array(daysCount).fill(0), 
+      metricField: "linnworks_other_orders",
+      isReadOnly: true,
+      isSubItem: true,
+      tooltip: "Number of orders from other channels each day."
+    },
+    { 
+      name: "2.2 Channel Percentage Distribution", 
+      isHeader: true, 
+      values: new Array(daysCount).fill(0), 
+      metricField: null 
+    },
+    { 
+      name: "2.2.1 Amazon Orders %", 
+      values: new Array(daysCount).fill(0), 
+      metricField: null,
+      isReadOnly: true,
+      tooltip: "Percentage of orders coming from Amazon channel."
+    },
+    { 
+      name: "2.2.2 eBay Orders %", 
+      values: new Array(daysCount).fill(0), 
+      metricField: null,
+      isReadOnly: true,
+      tooltip: "Percentage of orders coming from eBay channel."
+    },
+    { 
+      name: "2.2.3 Shopify Orders %", 
+      values: new Array(daysCount).fill(0), 
+      metricField: null,
+      isReadOnly: true,
+      tooltip: "Percentage of orders coming from Shopify channel."
+    },
+    { 
+      name: "2.2.4 Other Orders %", 
+      values: new Array(daysCount).fill(0), 
+      metricField: null,
+      isReadOnly: true,
+      tooltip: "Percentage of orders coming from other channels."
     },
     { 
       name: "2.2 Placeholder", 
@@ -198,10 +282,10 @@
 
   $: currentDayIndex = isCurrentWeek ? Math.max(weekDates.findIndex(date => isToday(date)) - 1, 0) : daysCount - 1;
 
-  // Compute computed metrics by metric name.
-  let computedMetrics: number[][] = [];
-  $: computedMetrics = metrics.map((metric: ExtendedMetric): number[] => {
+  // Modify the computedMetrics calculation to include the percentage calculations
+  $: computedMetrics = metrics.map((metric: ExtendedMetric, idx): number[] => {
     if (!metric.values) return [];
+    
     if (metric.name === "1.4 Labor Efficiency (shipments/hour)") {
       const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
       const hours = metrics.find(m => m.name === "1.3 Actual Hours Worked")?.values ?? new Array(daysCount).fill(0);
@@ -214,21 +298,84 @@
       return weekDates.map((_, i) =>
         scheduledHrs[i] > 0 ? Math.round((actualHours[i] / scheduledHrs[i]) * 10000) / 100 : 0
       );
-    } else if (metric.name === "1.7 Packing Errors DPMO") { // Updated name
+    } else if (metric.name === "1.7 Packing Errors DPMO") { 
       const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
-      const defects = metrics.find(m => m.name === "1.6 Packing Errors")?.values ?? new Array(daysCount).fill(0); // Updated name
+      const defects = metrics.find(m => m.name === "1.6 Packing Errors")?.values ?? new Array(daysCount).fill(0);
       return weekDates.map((_, i) =>
         shipments[i] > 0 ? Math.round((defects[i] / shipments[i]) * 1000000) : 0
       );
     } else if (metric.name === "1.8 Order Accuracy (%)") {
       const shipments = metrics.find(m => m.name === "1.1 Shipments Packed")?.values ?? new Array(daysCount).fill(0);
-      const defects = metrics.find(m => m.name === "1.6 Packing Errors")?.values ?? new Array(daysCount).fill(0); // Updated name
+      const defects = metrics.find(m => m.name === "1.6 Packing Errors")?.values ?? new Array(daysCount).fill(0);
       return weekDates.map((_, i) =>
         shipments[i] > 0 ? Math.round(((shipments[i] - defects[i]) / shipments[i]) * 10000) / 100 : 0
+      );
+    } 
+    // Add new percentage calculations for channel distribution
+    else if (metric.name === "2.2.1 Amazon Orders %") {
+      const totalOrders = metrics.find(m => m.name === "2.1 Linnworks Total Orders")?.values ?? new Array(daysCount).fill(0);
+      const amazonOrders = metrics.find(m => m.name === "2.1.1 Amazon Orders")?.values ?? new Array(daysCount).fill(0);
+      return weekDates.map((_, i) =>
+        totalOrders[i] > 0 ? Math.round((amazonOrders[i] / totalOrders[i]) * 10000) / 100 : 0
+      );
+    } 
+    else if (metric.name === "2.2.2 eBay Orders %") {
+      const totalOrders = metrics.find(m => m.name === "2.1 Linnworks Total Orders")?.values ?? new Array(daysCount).fill(0);
+      const ebayOrders = metrics.find(m => m.name === "2.1.2 eBay Orders")?.values ?? new Array(daysCount).fill(0);
+      return weekDates.map((_, i) =>
+        totalOrders[i] > 0 ? Math.round((ebayOrders[i] / totalOrders[i]) * 10000) / 100 : 0
+      );
+    }
+    else if (metric.name === "2.2.3 Shopify Orders %") {
+      const totalOrders = metrics.find(m => m.name === "2.1 Linnworks Total Orders")?.values ?? new Array(daysCount).fill(0);
+      const shopifyOrders = metrics.find(m => m.name === "2.1.3 Shopify Orders")?.values ?? new Array(daysCount).fill(0);
+      return weekDates.map((_, i) =>
+        totalOrders[i] > 0 ? Math.round((shopifyOrders[i] / totalOrders[i]) * 10000) / 100 : 0
+      );
+    }
+    else if (metric.name === "2.2.4 Other Orders %") {
+      const totalOrders = metrics.find(m => m.name === "2.1 Linnworks Total Orders")?.values ?? new Array(daysCount).fill(0);
+      const otherOrders = metrics.find(m => m.name === "2.1.4 Other Orders")?.values ?? new Array(daysCount).fill(0);
+      return weekDates.map((_, i) =>
+        totalOrders[i] > 0 ? Math.round((otherOrders[i] / totalOrders[i]) * 10000) / 100 : 0
       );
     }
     return metric.values;
   });
+
+  // Update the week-over-week calculations to handle percentage metrics correctly
+  $: weekOverWeekChanges = metrics.map((metric, idx) => {
+    // Skip headers and spacers
+    if (metric.isHeader || metric.isSpacer) return "N/A";
+    
+    let currentTotal: number;
+    let prevTotal: number;
+    
+    // Determine if we should use partial or full previous week based on current week status
+    if (isCurrentWeek) {
+      currentTotal = currentTotals[idx];
+      prevTotal = partialPreviousTotalsComputed[idx]; // Use partial previous week data
+    } else {
+      currentTotal = currentTotals[idx];
+      prevTotal = previousTotalsComputed[idx]; // Use full previous week data
+    }
+    
+    // If previous total is 0, we can't calculate a percentage change
+    if (prevTotal === 0) return "N/A";
+    
+    const change = ((currentTotal - prevTotal) / prevTotal) * 100;
+    
+    // Format the change value
+    return `${change > 0 ? "+" : ""}${change.toFixed(2)}%`;
+  });
+
+  // Add a function to format metric values with appropriate units
+  function formatMetricValue(value: number, metricName: string): string {
+    if (isPercentageMetric(metricName)) {
+      return formatPercentage(value);
+    }
+    return formatNumber(value);
+  }
 
   // Compute current totals.
   $: currentTotals = metrics.map((metric: ExtendedMetric, idx) => {
@@ -247,7 +394,13 @@
         ignoreZeros: true, 
         excludeSundays: true 
       });
-    } else if (metric.name === "1.7 Packing Errors DPMO" || metric.name === "1.8 Order Accuracy (%)") {
+    } else if (metric.name === "1.7 Packing Errors DPMO" || 
+               metric.name === "1.8 Order Accuracy (%)" ||
+               metric.name === "2.2.1 Amazon Orders %" ||
+               metric.name === "2.2.2 eBay Orders %" || 
+               metric.name === "2.2.3 Shopify Orders %" ||
+               metric.name === "2.2.4 Other Orders %") {
+      // For error metrics and channel percentages, compute average
       return computeMetricAverage(currentSlice, weekDates.slice(0, end + 1), { 
         ignoreZeros: false, 
         excludeSundays: true 
@@ -334,6 +487,14 @@
   }
   // Add Linnworks data to our lookup map
   dataByDay[date].linnworks_completed_orders = dayData.count;
+  
+  // Add channel-specific metrics if available
+  if (dayData.channels) {
+    dataByDay[date].linnworks_amazon_orders = dayData.channels.amazon;
+    dataByDay[date].linnworks_ebay_orders = dayData.channels.ebay;
+    dataByDay[date].linnworks_shopify_orders = dayData.channels.shopify;
+    dataByDay[date].linnworks_other_orders = dayData.channels.other;
+  }
 });
     
     // Process data for each day
@@ -359,10 +520,11 @@
     console.error("Error loading previous week data:", err);
   }
 }
-  $: previousTotalsComputed = metrics.map((metric, idx) => {
+$: previousTotalsComputed = metrics.map((metric, idx) => {
   if (!metric.values) return 0;
   if (metric.metricField === null) {
     // For computed metrics, average over all days of the previous week.
+    // Add percentage metrics to the list of metrics that should be averaged
     return computeMetricAverage(previousWeekMetrics[idx], previousWeekDates, {
       ignoreZeros: metric.name === "1.4 Labor Efficiency (shipments/hour)" || 
                   metric.name === "1.5 Labor Utilization (%)",
@@ -373,7 +535,6 @@
     return previousWeekMetrics[idx].reduce((acc, v) => acc + v, 0);
   }
 });
-
 $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
   let arr = previousWeekMetrics[idx];
   const end = isCurrentWeek
@@ -381,17 +542,20 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
     : arr.length - 1;
   const slicedValues = arr.slice(0, end + 1);
   const slicedDates = previousWeekDates.slice(0, end + 1);
+  
+  // Check if this is a percentage metric that should be averaged
   if (metric.metricField === null) {
     return computeMetricAverage(slicedValues, slicedDates, {
       ignoreZeros: metric.name === "1.4 Labor Efficiency (shipments/hour)" ||
-                   metric.name === "1.5 Labor Utilization (%)",
+                  metric.name === "1.5 Labor Utilization (%)",
       excludeSundays: true
     });
   } else {
     return slicedValues.reduce((acc, v) => acc + v, 0);
   }
 });
-  async function loadMetrics() {
+
+async function loadMetrics() {
   try {
     loading = true;
     
@@ -466,6 +630,14 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
   }
   // Add Linnworks data to our lookup map
   dataByDay[date].linnworks_completed_orders = dayData.count;
+  
+  // Add channel-specific metrics if available
+  if (dayData.channels) {
+    dataByDay[date].linnworks_amazon_orders = dayData.channels.amazon;
+    dataByDay[date].linnworks_ebay_orders = dayData.channels.ebay;
+    dataByDay[date].linnworks_shopify_orders = dayData.channels.shopify;
+    dataByDay[date].linnworks_other_orders = dayData.channels.other;
+  }
 });
 
     // Reset metrics to default values
@@ -509,7 +681,7 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
     loading = false;
   }
 }
-  
+
   async function saveMetricsForDate(dateStr: string, metricsData: any) {
     try {
       console.log('Saving metrics for date:', dateStr, 'Data:', metricsData);
@@ -548,40 +720,21 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       date: dateStr  // Always include the date
     };
     
-    // List of valid fields in your daily_metrics table
-    const validDbFields = [
-      "shipments",           // Renamed from shipments_packed 
-      "defects",
-      "hours_worked",
-      "scheduled_hours",
-      "dpmo",
-      "order_accuracy"
-      // Note: B2B metrics not included as they don't exist in the table
-    ];
-    
-    // Map metric fields to correct database column names
+    // Map metrics to database columns correctly
     metrics.forEach((metric: ExtendedMetric) => {
-      // Skip read-only fields
-      if (metric.isReadOnly) return;
+      // Skip read-only fields and non-database fields
+      if (metric.isReadOnly || !metric.metricField) return;
       
-      if (!metric.metricField || metric.values[dayIndex] === null || metric.values[dayIndex] === undefined) {
+      // Only save if there's a valid value
+      if (metric.values[dayIndex] === null || metric.values[dayIndex] === undefined) {
         return;
       }
       
-      // Map metricField to actual database column names
-      let dbField = metric.metricField;
-      if (metric.metricField === "shipments_packed") {
-        dbField = "shipments"; // Correct field name from schema
-      }
-      
-      // Only include fields that exist in the database
-      if (validDbFields.includes(dbField)) {
-        // Ensure numeric values
-        data[dbField] = Number(metric.values[dayIndex]);
-      }
+      // Direct mapping - no more conversion needed since we've fixed the field names
+      data[metric.metricField] = Number(metric.values[dayIndex]);
     });
     
-    console.log('Saving day data (filtered for valid DB fields):', dateStr, data);
+    console.log('Saving day data:', dateStr, data);
     
     // Check if record exists first
     const { data: existingRecord } = await supabase
@@ -621,7 +774,6 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
     throw err;
   }
 }
-
 
 async function saveAllMetrics() {
     try {
@@ -765,6 +917,111 @@ async function saveAllMetrics() {
     }
   });
 
+  // Add this to your existing variables
+  let isLoading = true;
+  let loadError: string | null = null;
+
+  // Fix the query in loadMetricsData function
+  async function loadMetricsData() {
+    isLoading = true;
+    loadError = null;
+    
+    try {
+      console.log('Loading metrics data from Supabase...');
+      
+      // Get the selected week's dates for querying
+      const start = weekDates[0];
+      const end = weekDates[weekDates.length - 1];
+      
+      console.log(`Fetching data for week: ${start.toISOString()} to ${end.toISOString()}`);
+      
+      // CHANGE THIS: Use 'daily_metrics' instead of 'metrics'
+      const { data, error } = await supabase
+        .from('daily_metrics') // Changed from 'metrics' to 'daily_metrics'
+        .select('*')
+        .gte('date', start.toISOString().split('T')[0])
+        .lte('date', end.toISOString().split('T')[0])
+        .order('date', { ascending: true });
+        
+      if (error) {
+        console.error('Supabase query error:', error);
+        loadError = error.message;
+        return;
+      }
+      
+      console.log(`Loaded ${data?.length || 0} records from Supabase`);
+      console.log('Sample data:', data?.slice(0, 2));
+      
+      // Map the data to metrics
+      if (data && data.length > 0) {
+        // Group by date
+        const metricsByDate = data.reduce((acc, item) => {
+          const dateStr = item.date;
+          if (!acc[dateStr]) acc[dateStr] = [];
+          acc[dateStr].push(item);
+          return acc;
+        }, {});
+        
+        // Now update the metrics with the data
+        metrics = metrics.map((metric, idx) => {
+          // Skip headers and spacers
+          if (metric.isHeader || metric.isSpacer) return metric;
+          
+          // Only update metrics that have a corresponding field in the database
+          if (!metric.metricField) return metric;
+          
+          const newValues = [...metric.values];
+          
+          // For each day in our week
+          weekDates.forEach((date, dayIndex) => {
+            const dateStr = date.toISOString().split('T')[0];
+            const dayData = metricsByDate[dateStr];
+            
+            if (dayData && dayData.length > 0) {
+              // Fix the 'd' parameter type
+              const matchingRecord = dayData.find((d: Record<string, any>) => 
+                d.hasOwnProperty(metric.metricField as string));
+              
+              if (matchingRecord && metric.metricField) { // Add null check for metricField
+                console.log(`Found data for ${metric.name} on ${dateStr}:`, matchingRecord[metric.metricField]);
+                newValues[dayIndex] = matchingRecord[metric.metricField] || 0;
+              }
+            }
+          });
+          
+          return {
+            ...metric,
+            values: newValues
+          };
+        });
+        
+        console.log('Updated metrics with Supabase data');
+        // Check specific metrics we're concerned about
+        const shipmentsPacked = metrics.find(m => m.name === "1.1 Shipments Packed");
+        const actualHours = metrics.find(m => m.name === "1.3 Actual Hours Worked");
+        const packingErrors = metrics.find(m => m.name === "1.6 Packing Errors");
+        
+        console.log('1.1 Shipments Packed values:', shipmentsPacked?.values);
+        console.log('1.3 Actual Hours Worked values:', actualHours?.values);
+        console.log('1.6 Packing Errors values:', packingErrors?.values);
+      }
+    } catch (err: unknown) { // Type the error as unknown
+      console.error('Error loading metrics data:', err);
+      loadError = err instanceof Error ? err.message : String(err);
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  // Call this in onMount to load data when the component initializes
+  onMount(() => {
+    loadMetricsData();
+  });
+
+  // Also add a watcher for weekDates to reload data when the week changes
+  $: if (weekDates && weekDates.length > 0) {
+    loadMetricsData();
+  }
 </script>
 
 <!-- Week Navigation (aligned left) with Export button (aligned right) -->
@@ -791,6 +1048,20 @@ async function saveAllMetrics() {
     />
   </div>
 </div>
+
+<!-- Add loading indicator to your template -->
+{#if isLoading}
+  <div class="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p>Loading data...</p>
+  </div>
+{/if}
+
+{#if loadError}
+  <div class="error-message">
+    Error loading data: {loadError}
+  </div>
+{/if}
 
 <!-- Card Container for Dashboard Table -->
 <div class="card">
@@ -833,7 +1104,7 @@ async function saveAllMetrics() {
               <td colspan="12"></td>
             </tr>
           {:else}
-            <MetricRow
+            <svelte:component this={MetricRow} 
               name={metric.name}
               values={metric.metricField === null ? computedMetrics[metricIndex] : metric.values}
               {metricIndex}
@@ -851,13 +1122,14 @@ async function saveAllMetrics() {
                 )
               }
               handleInputChange={handleInputChange}
-              currentTotal={formatNumber(currentTotals[metricIndex])}
-              byThisTimeLastWeek={formatNumber(isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex])}
-              previousTotal={formatNumber(previousTotalsComputed[metricIndex])}
+              currentTotal={currentTotals[metricIndex]}
+              byThisTimeLastWeek={isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex]}
+              previousTotal={previousTotalsComputed[metricIndex]}
               notesMap={notesMap}
               openNotes={openNotePanel}
               isReadOnly={metric.isReadOnly}
               tooltip={metric.tooltip}
+              isPercentage={isPercentageMetric(metric.name)}
             />
           {/if}
         {/each}
@@ -1024,6 +1296,44 @@ async function saveAllMetrics() {
   .current-day {
     background-color: rgba(53, 176, 123, 0.1);
     font-weight: 500;
+  }
+
+  .loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.8);
+    z-index: 100;
+  }
+  
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 16px;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .error-message {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 0.9em;
   }
   
 @media (max-width: 768px) {

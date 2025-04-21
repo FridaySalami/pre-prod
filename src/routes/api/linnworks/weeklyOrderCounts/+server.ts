@@ -28,13 +28,31 @@ export async function GET({ url }) {
       }
     }
     
-    // Get the order counts for each day in the range
+    // Log the API call details
+    console.log('Making Linnworks API call for date range:', {
+      startDate: start.toISOString(),
+      endDate: end.toISOString()
+    });
+
+    // Get the order counts for each day in the range, including channel breakdown
     const dailyOrders = await getDailyOrderCounts(start, end);
+    
+    // Add summary information
+    const summary = {
+      totalOrders: dailyOrders.reduce((sum, day) => sum + day.count, 0),
+      channelTotals: {
+        amazon: dailyOrders.reduce((sum, day) => sum + (day.channels?.amazon || 0), 0),
+        ebay: dailyOrders.reduce((sum, day) => sum + (day.channels?.ebay || 0), 0),
+        shopify: dailyOrders.reduce((sum, day) => sum + (day.channels?.shopify || 0), 0),
+        other: dailyOrders.reduce((sum, day) => sum + (day.channels?.other || 0), 0)
+      }
+    };
     
     return json({
       startDate: start.toISOString(),
       endDate: end.toISOString(),
-      dailyOrders
+      dailyOrders,
+      summary
     });
   } catch (error) {
     console.error('Error fetching weekly order counts:', error);

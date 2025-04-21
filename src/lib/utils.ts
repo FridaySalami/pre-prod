@@ -5,8 +5,26 @@ export function getMonday(date: Date): Date {
     return new Date(d.setDate(diff));
   }
   
-  export function formatNumber(num: number): string {
-    return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
+  export function formatNumber(value: number | string): string {
+    if (value === null || value === undefined || isNaN(Number(value))) return '0';
+    
+    // Convert to number if it's a string
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    
+    // Return the formatted number
+    if (numValue % 1 !== 0) {
+      // Handle decimal numbers - round to 2 decimal places
+      return numValue.toFixed(2);
+    } else {
+      // Handle integers - don't show decimal places
+      return numValue.toString();
+    }
+  }
+  
+  // Add a specific formatter for percentage values
+  export function formatPercentage(value: number): string {
+    if (value === null || value === undefined || isNaN(value)) return '0%';
+    return `${value.toFixed(2)}%`;
   }
   
   export function getWeekNumber(date: Date): number {

@@ -14,29 +14,43 @@
 </script>
 
 <script lang="ts">
-  import { getWowColor } from "./utils";
+  import { formatNumber, formatPercentage, getWowColor } from '$lib/utils';
 
   // Explicit prop declarations:
-  export let name: string;
-  export let values: number[];
+  export let name = '';
+  export let values: number[] = [];
+  export let total = 0;
+  export let previousTotal = 0;
+  export let prevChange = 'N/A';
+  export let metricField: string | null = null;
+  export let isHeader = false;
+  export let isSpacer = false;
+  export let isReadOnly = false;
+  export let isSubItem = false;
+  export let tooltip = '';
+  export let currentDayIndex = -1;
+  export let isCurrentWeek = true;
+  export let isPercentage = false; // New prop to indicate if this is a percentage metric
+
   export let metricIndex: number;
   export let weekDates: Date[];
-  export let currentDayIndex: number;
-  export let isCurrentWeek: boolean;
   export let notesMap: Record<string, NoteData>;
-  export let metricField: string | null;
   export let wowChange: string;
-  export let isReadOnly: boolean = false; // Add this line
-  export let tooltip: string | undefined = undefined;
-
-  // New props for totals:
-  export let currentTotal: string;
-  export let byThisTimeLastWeek: string;
-  export let previousTotal: string;
+  
+  // Change these types from string to number:
+  export let currentTotal: number;  // Changed from string
+  export let byThisTimeLastWeek: number;  // Changed from string
 
   // Callback functions:
   export let handleInputChange: (metricIndex: number, dayIndex: number, newValue?: number) => void;
   export let openNotes: (metricIndex: number, dayIndex: number) => void;
+
+  // Add this function to check if a metric is editable
+  function isEditableMetric(name: string): boolean {
+    return name === "1.1 Shipments Packed" || 
+           name === "1.3 Actual Hours Worked" || 
+           name === "1.6 Packing Errors";
+  }
 </script>
 
 <tr class="metric-row">
@@ -50,58 +64,58 @@
     {/if}
   </td>
 
+  <!-- Daily values rendering -->
   {#each values as value, dayIndex}
-    <td class:current-day={isCurrentWeek && dayIndex === currentDayIndex}>
-      {#if metricField !== null}
-        <div class="input-container">
-          <input
-            type="number"
-            bind:value={values[dayIndex]}
-            on:blur={() => handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
-            on:keydown={(e) => e.key === "Enter" && handleInputChange(metricIndex, dayIndex, +values[dayIndex])}
-            class="cell-value"
-            class:read-only={isReadOnly}
-            disabled={isReadOnly}
-          />
-        </div>
+    <td 
+      class:highlight={isCurrentWeek && dayIndex === currentDayIndex}
+      class:text-right={!isHeader && !isSpacer}
+    >
+      {#if isHeader}
+        <strong>{value}</strong>
+      {:else if isSpacer}
+        <!-- Spacer formatting -->
+      {:else if isEditableMetric(name) && !isReadOnly}
+        <!-- Editable input for metrics 1.1, 1.3, and 1.6 -->
+        <input
+          type="number"
+          class="metric-input"
+          value={value}
+          on:change={(e) => {
+            const target = e.target as HTMLInputElement;
+            handleInputChange(metricIndex, dayIndex, parseFloat(target.value));
+          }}
+          min="0"
+          step={name === "1.3 Actual Hours Worked" ? "0.25" : "1"}
+        />
+        <!-- Add notes icon -->
+      {:else if isPercentage}
+        {formatPercentage(value)}
       {:else}
-        <div class="value-container">
-          <span
-            role="button"
-            tabindex="0"
-            class="cell-value computed-cell"
-            on:click={() => openNotes(metricIndex, dayIndex)}
-            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, dayIndex); } }}
-          >
-            {value}
-            {#if notesMap[`${metricIndex}-${weekDates[dayIndex].toISOString().split("T")[0]}`]}
-              <div class="note-indicator" role="presentation"></div>
-            {/if}
-          </span>
-          <!-- Add flag button -->
-        </div>
+        {formatNumber(value)}
       {/if}
     </td>
   {/each}
 
   <!-- Current Week Total cell -->
-  <td class="totals-cell">
-    <span
-      role="button"
-      tabindex="0"
-      on:click={() => openNotes(metricIndex, -1)}
-      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotes(metricIndex, -1); } }}
-    >
-      <strong>{currentTotal}</strong>
-      {#if notesMap[`${metricIndex}-total`]}
-        <div class="note-indicator" role="presentation"></div>
-      {/if}
-    </span>
+  <td class="text-right">
+    {#if isHeader || isSpacer}
+      <!-- Empty header or spacer -->
+    {:else if isPercentage}
+      {formatPercentage(currentTotal)}  <!-- Changed from byThisTimeLastWeek -->
+    {:else}
+      {formatNumber(currentTotal)}  <!-- Changed from byThisTimeLastWeek -->
+    {/if}
   </td>
-
+  
   <!-- By This Time Last Week cell -->
-  <td class="totals-cell">
-    <em>{byThisTimeLastWeek}</em>
+  <td class="text-right">
+    {#if isHeader || isSpacer}
+      <!-- Empty header or spacer -->
+    {:else if isPercentage}
+      {formatPercentage(byThisTimeLastWeek)}
+    {:else}
+      {formatNumber(byThisTimeLastWeek)}
+    {/if}
   </td>
 
   <!-- WoW % Change cell -->
@@ -110,8 +124,14 @@
   </td>
 
   <!-- Previous Week Total cell -->
-  <td class="totals-cell prev-week-col">
-    <em>{previousTotal}</em>
+  <td class="text-right">
+    {#if isHeader || isSpacer}
+      <!-- Empty header or spacer -->
+    {:else if isPercentage}
+      {formatPercentage(previousTotal)}
+    {:else}
+      {formatNumber(previousTotal)}
+    {/if}
   </td>
 </tr>
 
@@ -121,60 +141,6 @@
     font-size: 0.8em;
     text-align: left;
     padding-left: 16px; /* Reduced from 24px */
-  }
-  .cell-value {
-    display: block;
-    margin: 0 auto;
-    width: 60px; /* Reduced from 80px */
-    padding: 6px; /* Reduced from 8px */
-    text-align: center;
-    font-size: 0.95em;
-    border: 1px solid #E5E7EB;
-    border-radius: 6px;
-    background-color: #fff;
-    transition: border-color 0.2s ease;
-  }
-  input.cell-value {
-    display: block;
-    margin: 0 auto;
-    width: 60px; /* Reduced from 80px */
-    padding: 6px; /* Reduced from 8px */
-    border: 1px solid #E5E7EB;
-    border-radius: 6px;
-    font-size: 0.95em;
-    text-align: center;
-  }
-  input.cell-value:focus {
-    outline: none;
-    border-color: #004225;
-    box-shadow: 0 0 0 2px rgba(0, 66, 37, 0.2);
-  }
-  .computed-cell {
-    display: block;
-    margin: 0 auto;
-    width: 60px; /* Reduced from 80px */
-    padding: 6px; /* Reduced from 8px */
-    text-align: center;
-    background-color: #F5F7FA;
-    cursor: pointer;
-    position: relative;
-  }
-  .note-indicator {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    width: 0;
-    height: 0;
-    border-top: 8px solid #ff4d4f;
-    border-right: 8px solid transparent;
-  }
-  .current-day {
-    background-color: #DDEAFB;
-    border-left: 2px solid #0056B3;
-    border-right: 2px solid #0056B3;
-  }
-  .prev-week-col {
-    background-color: rgba(0, 66, 37, 0.05);
   }
   td {
     border: 0.5px solid #ddd; /* Light border for all cells */
@@ -204,33 +170,7 @@
     text-align: left;
     font-weight: 500;
   }
-  
-  .input-container, .value-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-  }
-  
-  input {
-    width: 45px; /* Reduced from 50px */
-    text-align: center;
-    border: 1px solid #E5E7EB;
-    border-radius: 4px;
-    padding: 4px;
-  }
-  
-  .current-day {
-    background-color: rgba(53, 176, 123, 0.1);
-  }
-  
-  input.read-only {
-    background-color: #f5f5f5;
-    cursor: not-allowed;
-    opacity: 0.8;
-    border-color: #ddd;
-  }
-
+      
   .tooltip-container {
     position: relative;
     display: inline-block;
@@ -287,5 +227,32 @@
     visibility: visible;
     opacity: 1;
   }
+
+  .metric-input {
+    width: 60px;
+    text-align: right;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 4px;
+    font-size: 0.9em;
+  }
   
+  .metric-input:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+  }
+  
+  .metric-input:disabled {
+    background-color: #f3f4f6;
+    cursor: not-allowed;
+  }
+  
+  .text-right {
+    text-align: right;
+  }
+
+  .highlight {
+    background-color: #bbdaf8;
+  }
 </style>
