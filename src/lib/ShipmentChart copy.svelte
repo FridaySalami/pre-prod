@@ -789,9 +789,9 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
                 )
               }
               handleInputChange={handleInputChange}
-              currentTotal={formatNumber(currentTotals[metricIndex])}
-              byThisTimeLastWeek={formatNumber(isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex])}
-              previousTotal={formatNumber(previousTotalsComputed[metricIndex])}
+              currentTotal={currentTotals[metricIndex]}
+              byThisTimeLastWeek={isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex]}
+              previousTotal={previousTotalsComputed[metricIndex]}
               notesMap={notesMap}
               openNotes={openNotePanel}
               isReadOnly={metric.isReadOnly}
