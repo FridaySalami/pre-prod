@@ -557,13 +557,12 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       "dpmo",
       "order_accuracy"
       // Note: B2B metrics not included as they don't exist in the table
-      // Excluding linnworks_completed_orders since we don't want to save it to Supabase
     ];
     
     // Map metric fields to correct database column names
     metrics.forEach((metric: ExtendedMetric) => {
-      // Skip read-only fields and Linnworks data
-      if (metric.isReadOnly || metric.metricField === "linnworks_completed_orders") return;
+      // Skip read-only fields
+      if (metric.isReadOnly) return;
       
       if (!metric.metricField || metric.values[dayIndex] === null || metric.values[dayIndex] === undefined) {
         return;
@@ -582,13 +581,49 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       }
     });
     
-    // Rest of function stays the same...
+    console.log('Saving day data (filtered for valid DB fields):', dateStr, data);
+    
+    // Check if record exists first
+    const { data: existingRecord } = await supabase
+      .from('daily_metrics')
+      .select('id')
+      .eq('date', dateStr)
+      .maybeSingle();
+      
+    if (existingRecord?.id) {
+      // Update existing record
+      const { error } = await supabase
+        .from('daily_metrics')
+        .update(data)
+        .eq('id', existingRecord.id);
+        
+      if (error) {
+        console.error('Error updating metrics:', error);
+        showToast(`Failed to update data for ${dateStr}: ${error.message}`, 'error');
+        throw error;
+      }
+    } else {
+      // Insert new record
+      const { error } = await supabase
+        .from('daily_metrics')
+        .insert(data);
+        
+      if (error) {
+        console.error('Error inserting metrics:', error);
+        showToast(`Failed to save data for ${dateStr}: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+    
+    showToast(`Metrics for ${new Date(dateStr).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} updated`, 'success', 3000);
   } catch (err) {
     console.error('Failed to save day:', dayIndex, err);
     throw err;
   }
 }
-  async function saveAllMetrics() {
+
+
+async function saveAllMetrics() {
     try {
       loading = true;
       console.log('Starting saveAllMetrics...');
@@ -614,7 +649,13 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
   function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
   if (newValue === undefined) return;
   
-  console.log('Input changed:', { metricIndex, dayIndex, newValue });
+  console.log('Input changed:', { 
+    metricIndex, 
+    dayIndex, 
+    date: weekDates[dayIndex].toISOString().split('T')[0],
+    metricName: metrics[metricIndex].name, 
+    newValue 
+  });
   
   // Get metric and check if it's read-only or Linnworks data
   const metric = metrics[metricIndex];
@@ -628,7 +669,28 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
     return;
   }
   
-  // Rest of function stays the same...
+  // Update the metric value in the array
+  const newValues = [...metric.values];
+  newValues[dayIndex] = newValue;
+  
+  // Create a new metrics array with the updated values
+  metrics = metrics.map((m, i) => {
+    if (i === metricIndex) {
+      return { ...m, values: newValues };
+    }
+    return m;
+  });
+  
+  // Save the updated metric for this specific day
+  saveMetricsForDay(dayIndex)
+    .then(() => {
+      // Quietly show success message
+      showToast(`Updated ${metric.name} for ${weekDates[dayIndex].toLocaleDateString(undefined, { weekday: 'long' })}`, 'success', 2000);
+    })
+    .catch((err) => {
+      console.error('Failed to save after input change:', err);
+      showToast(`Failed to save ${metric.name}`, 'error');
+    });
 }
 
   async function changeWeek(offset: number) {
