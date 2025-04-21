@@ -1069,7 +1069,7 @@
 
   /* Issues indicators */
   .step-tabs li.has-issues {
-    border-left: 3px solid #ff9f0a; /* Apple orange */
+    border-left: 3px solid #0087d0; 
   }
 
   .step-tabs li.high-priority {

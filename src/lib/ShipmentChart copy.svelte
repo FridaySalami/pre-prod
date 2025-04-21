@@ -8,13 +8,7 @@
   import { showToast } from '$lib/toastStore';   
   import { getScheduledHoursForDateRange } from '$lib/hours-service';
 
-  // Add this interface to your type definitions section at the top
-  interface LinnworksOrderData {
-    date: string;
-    count: number;
-    formattedDate: string;
-  }
-
+    
   // Updated ExtendedMetric with required properties.
   interface ExtendedMetric {
   name: string;
@@ -130,34 +124,33 @@
 
   // B2B Warehouse and On‑road section with tooltips
   let b2bMetrics: ExtendedMetric[] = [
-    { name: "B2C Amazon Financials", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },
+    { name: "B2B Warehouse and On‑road", isHeader: true, values: new Array(daysCount).fill(0), metricField: null },
     { 
-      name: "2.1 Linnworks Completed Orders", 
+      name: "2.1 Inventory Accuracy (%)", 
       values: new Array(daysCount).fill(0), 
-      metricField: "linnworks_completed_orders",
-      isReadOnly: true, // Mark as read-only since it's from an external API
-      tooltip: "Total number of completed orders in Linnworks each day. Automatically synced from Linnworks API."
+      metricField: "inventory_accuracy",
+      tooltip: "Percentage of inventory records that match physical counts. Higher is better."
     },
     { 
-      name: "2.2 Placeholder", 
+      name: "2.2 Order Picking Rate", 
       values: new Array(daysCount).fill(0), 
       metricField: "order_picking_rate",
       tooltip: "Number of items picked per hour. Measures warehouse picking efficiency."
     },
     { 
-      name: "2.3 Placeholder", 
+      name: "2.3 Delivery Timeliness (%)", 
       values: new Array(daysCount).fill(0), 
       metricField: "delivery_timeliness",
       tooltip: "Percentage of deliveries made within the promised time window. Higher is better."
     },
     { 
-      name: "2.4 Placeholder", 
+      name: "2.4 Fuel Efficiency (MPG)", 
       values: new Array(daysCount).fill(0), 
       metricField: "fuel_efficiency",
       tooltip: "Miles traveled per gallon of fuel consumed by delivery vehicles. Higher is better."
     },
     { 
-      name: "2.5 Placeholder", 
+      name: "2.5 Driver Utilization (%)", 
       values: new Array(daysCount).fill(0), 
       metricField: "driver_utilization",
       tooltip: "Percentage of driver time spent actively making deliveries vs. total scheduled time."
@@ -286,24 +279,6 @@
       .lte("date", endDateStr)
       .order("date");
     
-    // NEW: Fetch Linnworks completed orders data for previous week
-    let linnworksOrdersData: LinnworksOrderData[] = [];
-        try {
-      console.log('Fetching previous week Linnworks data for date range:', startDateStr, 'to', endDateStr);
-      const linnworksResponse = await fetch(`/api/linnworks/weeklyOrderCounts?startDate=${startDateStr}&endDate=${endDateStr}`);
-      
-      if (!linnworksResponse.ok) {
-        throw new Error(`API Error ${linnworksResponse.status}: ${await linnworksResponse.text()}`);
-      }
-      
-      const linnworksData = await linnworksResponse.json();
-      linnworksOrdersData = linnworksData.dailyOrders || [];
-      console.log('Fetched previous week Linnworks data:', linnworksOrdersData);
-    } catch (err) {
-      console.error('Failed to fetch previous week Linnworks data:', err);
-      // Continue without Linnworks data
-    }
-    
     // Create a lookup map
     const dataByDay: Record<string, any> = {};
     prevWeekMetricsData?.forEach(record => {
@@ -326,23 +301,13 @@
       }
     });
     
-    // Add Linnworks data to the lookup map
-    linnworksOrdersData.forEach((dayData: LinnworksOrderData) => {
-  const date = dayData.date;
-  if (!dataByDay[date]) {
-    dataByDay[date] = { date };
-  }
-  // Add Linnworks data to our lookup map
-  dataByDay[date].linnworks_completed_orders = dayData.count;
-});
-    
     // Process data for each day
     for (let i = 0; i < previousWeekDates.length; i++) {
       const dateStr = previousWeekDates[i].toISOString().split("T")[0];
       const data = dataByDay[dateStr];
       
       metrics.forEach((metric, idx) => {
-        // For data rows (those with a non-null metricField), update the previous week values
+        // For data rows (those with a non-null metricField), update the previous week values.
         if (metric.metricField !== null && data) {
           let fieldName = metric.metricField;
           if (fieldName === "shipments_packed") fieldName = "shipments";
@@ -391,6 +356,19 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
     return slicedValues.reduce((acc, v) => acc + v, 0);
   }
 });
+  async function loadMetricsForDate(dateStr: string) {
+    const { data, error } = await supabase
+      .from("daily_metrics")
+      .select("*")
+      .eq("date", dateStr)
+      .maybeSingle();
+    if (error) {
+      console.error("Error fetching metrics for date " + dateStr, error);
+      return null;
+    }
+    return data;
+  }
+
   async function loadMetrics() {
   try {
     loading = true;
@@ -418,24 +396,6 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       new Date(sundayStr)
     );
     
-    // NEW: Fetch Linnworks completed orders data
-    let linnworksOrdersData: LinnworksOrderData[] = [];
-        try {
-      console.log('Fetching Linnworks data for date range:', mondayStr, 'to', sundayStr);
-      const linnworksResponse = await fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`);
-      
-      if (!linnworksResponse.ok) {
-        throw new Error(`API Error ${linnworksResponse.status}: ${await linnworksResponse.text()}`);
-      }
-      
-      const linnworksData = await linnworksResponse.json();
-      linnworksOrdersData = linnworksData.dailyOrders || [];
-      console.log('Fetched Linnworks data:', linnworksOrdersData);
-    } catch (err) {
-      console.error('Failed to fetch Linnworks data:', err);
-      // Continue without Linnworks data
-    }
-    
     // Create a lookup map for database records
     const dataByDay: Record<string, any> = {};
     currentWeekData?.forEach(record => {
@@ -458,20 +418,10 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       }
     });
     
-    // Add Linnworks data to the lookup map
-    linnworksOrdersData.forEach((dayData: LinnworksOrderData) => {
-  const date = dayData.date;
-  if (!dataByDay[date]) {
-    dataByDay[date] = { date };
-  }
-  // Add Linnworks data to our lookup map
-  dataByDay[date].linnworks_completed_orders = dayData.count;
-});
-
     // Reset metrics to default values
     let updatedMetrics = JSON.parse(JSON.stringify(metrics));
     
-    // Populate with data from database and APIs
+    // Populate with data from database
     for (let i = 0; i < weekDates.length; i++) {
       const dateStr = weekDates[i].toISOString().split('T')[0];
       const dayData = dataByDay[dateStr];
@@ -557,13 +507,12 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       "dpmo",
       "order_accuracy"
       // Note: B2B metrics not included as they don't exist in the table
-      // Excluding linnworks_completed_orders since we don't want to save it to Supabase
     ];
     
     // Map metric fields to correct database column names
     metrics.forEach((metric: ExtendedMetric) => {
-      // Skip read-only fields and Linnworks data
-      if (metric.isReadOnly || metric.metricField === "linnworks_completed_orders") return;
+      // Skip read-only fields
+      if (metric.isReadOnly) return;
       
       if (!metric.metricField || metric.values[dayIndex] === null || metric.values[dayIndex] === undefined) {
         return;
@@ -582,7 +531,41 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
       }
     });
     
-    // Rest of function stays the same...
+    console.log('Saving day data (filtered for valid DB fields):', dateStr, data);
+    
+    // Check if record exists first
+    const { data: existingRecord } = await supabase
+      .from('daily_metrics')
+      .select('id')
+      .eq('date', dateStr)
+      .maybeSingle();
+      
+    if (existingRecord?.id) {
+      // Update existing record
+      const { error } = await supabase
+        .from('daily_metrics')
+        .update(data)
+        .eq('id', existingRecord.id);
+        
+      if (error) {
+        console.error('Error updating metrics:', error);
+        showToast(`Failed to update data for ${dateStr}: ${error.message}`, 'error');
+        throw error;
+      }
+    } else {
+      // Insert new record
+      const { error } = await supabase
+        .from('daily_metrics')
+        .insert(data);
+        
+      if (error) {
+        console.error('Error inserting metrics:', error);
+        showToast(`Failed to save data for ${dateStr}: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+    
+    showToast(`Metrics for ${new Date(dateStr).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} updated`, 'success', 3000);
   } catch (err) {
     console.error('Failed to save day:', dayIndex, err);
     throw err;
@@ -612,24 +595,41 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
   }
 
   function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
-  if (newValue === undefined) return;
-  
-  console.log('Input changed:', { metricIndex, dayIndex, newValue });
-  
-  // Get metric and check if it's read-only or Linnworks data
-  const metric = metrics[metricIndex];
-  if (metric.isReadOnly) {
-    showToast(`"${metric.name}" is read-only. It's automatically updated.`, 'info');
-    return;
+    if (newValue === undefined) return;
+    
+    console.log('Input changed:', { metricIndex, dayIndex, newValue });
+    
+    // Get metric and check if it's read-only
+    const metric = metrics[metricIndex];
+    if (metric.isReadOnly) {
+      showToast(`"${metric.name}" is read-only. Update from the schedule page.`, 'info');
+      return;
+    }
+    
+    // Get metric name for better toast message
+    const metricName = metric?.name || '';
+    const dayDate = weekDates[dayIndex].toLocaleDateString(undefined, {weekday: 'long'});
+    
+    metrics = metrics.map((metric: ExtendedMetric, idx) => {
+      if (idx === metricIndex) {
+        const newValues = [...metric.values];
+        newValues[dayIndex] = newValue;
+        return { ...metric, values: newValues };
+      }
+      return metric;
+    });
+    
+    // Wrap in async function and add error handling
+    (async () => {
+      try {
+        await saveMetricsForDay(dayIndex);
+        // No need for additional toast here as saveMetricsForDay already shows one
+      } catch (err) {
+        console.error('Failed to save after input change:', err);
+        showToast(`Failed to update ${metricName} for ${dayDate}`, 'error');
+      }
+    })();
   }
-  
-  if (metric.metricField === "linnworks_completed_orders") {
-    showToast(`"${metric.name}" is retrieved from the Linnworks API and cannot be edited.`, 'info');
-    return;
-  }
-  
-  // Rest of function stays the same...
-}
 
   async function changeWeek(offset: number) {
     weekOffset += offset;
