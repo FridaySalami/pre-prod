@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
-  
+    
   // Define types for the view stats data
   interface ViewUser {
     Name: string;

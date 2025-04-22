@@ -1672,9 +1672,6 @@ function getWeekDays(): Date[] {
   }
 
   @media (max-width: 480px) {
-    .leave-grid {
-      grid-template-columns: 1fr;
-    }
     
     .dashboard-container {
       padding: 16px;

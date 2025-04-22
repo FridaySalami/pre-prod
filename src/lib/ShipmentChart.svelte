@@ -1071,7 +1071,8 @@ async function saveAllMetrics() {
         <tr class="table-header">
           <th class="metric-name-header">Week {getWeekNumber(displayedMonday)}</th>
           {#each weekDates as date, i}
-            <th class="small-header" class:current-day={isCurrentWeek && i === currentDayIndex}>
+            <th class:current-day={isCurrentWeek && i === currentDayIndex} 
+                class:highlight-column={isCurrentWeek && i === currentDayIndex}>
               {date.toLocaleDateString(undefined, { weekday: "long" })}
             </th>
           {/each}
@@ -1083,7 +1084,7 @@ async function saveAllMetrics() {
         <tr class="table-header sub-header">
           <th></th>
           {#each weekDates as date, i}
-            <th class:current-day={isCurrentWeek && i === currentDayIndex}>
+            <th class:highlight-column={isCurrentWeek && i === currentDayIndex}>
               {date.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
             </th>
           {/each}
@@ -1197,8 +1198,8 @@ async function saveAllMetrics() {
   .card {
     background-color: #fff;
     border: 1px solid #E5E7EB;
-    border-radius: 10px; /* Apple uses more rounded corners */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.08); /* More subtle, layered shadow */
+    border-radius: 12px; /* Apple uses more rounded corners */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06); /* More subtle shadow */
     margin: 8px 24px; /* Further reduced top margin */
     overflow: hidden;
   }
@@ -1234,26 +1235,29 @@ async function saveAllMetrics() {
 
   .table-header th {
     font-weight: 500; /* Medium weight for the main header */
+    padding-top: 12px;
+    padding-bottom: 8px;
+    color: #1f2937; /* Darker text for better contrast */
   }
 
   .sub-header {
     background-color: #F9FAFB;
     font-size: 0.75em;
     color: #6B7280; /* Slightly darker for better readability */
-    border-bottom: 1px solid #E5E7EB;
-  }
-
-  .sub-header th {
+    border-bottom: 2px solid #E5E7EB; /* Slightly thicker bottom border */
     font-weight: 400; /* Lighter weight for the subheader */
     padding-top: 4px; /* Less padding on top since it follows the main day name */
+    padding-bottom: 8px;
   }
 
   .section-header td {
     font-weight: 500; /* Medium weight instead of bold */
-    background-color: #e6f7f0; /* Slightly lighter, more subdued green */
+    background-color: #f0f9f6; /* Even lighter green */
     text-align: left;
     padding: 10px 16px;
-    border: 1px solid #E5E7EB;
+    border-top: 1px solid #E5E7EB;
+    border-bottom: 1px solid #E5E7EB;
+    color: #004225; /* Darker green text for better contrast */
   }
 
   .chart-footer {
@@ -1289,13 +1293,44 @@ async function saveAllMetrics() {
 
   /* Add subtle hover effect to table rows */
   tbody tr:not(.section-header):not(.spacer-row):hover {
-    background-color: #f9fafb;
+    background-color: #f5f7fa;
   }
 
   /* For the current day highlight */
   .current-day {
-    background-color: rgba(53, 176, 123, 0.1);
+    background-color: rgba(53, 176, 123, 0.08); /* Subtle green background */
+    position: relative;
     font-weight: 500;
+  }
+
+  /* Add this new CSS to highlight the entire column */
+  td:nth-child(n+2):nth-child(-n+8).highlight-column, 
+  th:nth-child(n+2):nth-child(-n+8).highlight-column {
+    background-color: rgba(53, 176, 123, 0.08); /* Subtle green background */
+    position: relative;
+  }
+
+  /* Add vertical lines only to the cells in the highlighted column */
+  th.highlight-column::before,
+  th.highlight-column::after,
+  td.highlight-column::before,
+  td.highlight-column::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #35b07b; /* Solid green line */
+  }
+
+  th.highlight-column::before,
+  td.highlight-column::before {
+    left: 0;
+  }
+
+  th.highlight-column::after,
+  td.highlight-column::after {
+    right: 0;
   }
 
   .loading-overlay {
