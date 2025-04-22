@@ -720,57 +720,82 @@ async function loadMetrics() {
       date: dateStr  // Always include the date
     };
     
-    // Map metrics to database columns correctly
+    // List of valid DB columns that exist in the daily_metrics table
+    const validColumns = [
+      "shipments", 
+      "hours_worked", 
+      "defects", 
+      "scheduled_hours",
+      "dpmo",
+      "order_accuracy"
+    ];
+    
+    // Map metrics to database columns correctly based on your schema
     metrics.forEach((metric: ExtendedMetric) => {
-      // Skip read-only fields and non-database fields
-      if (metric.isReadOnly || !metric.metricField) return;
+      // Skip read-only fields, headers, spacers, and non-database fields
+      if (metric.isReadOnly || metric.isHeader || metric.isSpacer || !metric.metricField) return;
       
-      // Only save if there's a valid value
+      // Only save if there's a valid value AND the column exists in the database
       if (metric.values[dayIndex] === null || metric.values[dayIndex] === undefined) {
         return;
       }
       
-      // Direct mapping - no more conversion needed since we've fixed the field names
-      data[metric.metricField] = Number(metric.values[dayIndex]);
+      // Important: Check if this is a valid column before trying to save it
+      if (validColumns.includes(metric.metricField)) {
+        data[metric.metricField] = Number(metric.values[dayIndex]);
+      } else {
+        console.log(`Skipping save for non-existent column: ${metric.metricField}`);
+      }
     });
     
     console.log('Saving day data:', dateStr, data);
     
     // Check if record exists first
-    const { data: existingRecord } = await supabase
+    const { data: existingRecord, error: fetchError } = await supabase
       .from('daily_metrics')
       .select('id')
       .eq('date', dateStr)
       .maybeSingle();
+    
+    if (fetchError) {
+      console.error('Error checking for existing record:', fetchError);
+      showToast(`Failed to check if record exists for ${dateStr}: ${fetchError.message}`, 'error');
+      throw fetchError;
+    }
       
+    let result;
     if (existingRecord?.id) {
       // Update existing record
-      const { error } = await supabase
+      result = await supabase
         .from('daily_metrics')
         .update(data)
         .eq('id', existingRecord.id);
         
-      if (error) {
-        console.error('Error updating metrics:', error);
-        showToast(`Failed to update data for ${dateStr}: ${error.message}`, 'error');
-        throw error;
+      if (result.error) {
+        console.error('Error updating metrics:', result.error);
+        showToast(`Failed to update data for ${dateStr}: ${result.error.message}`, 'error');
+        throw result.error;
       }
     } else {
       // Insert new record
-      const { error } = await supabase
+      result = await supabase
         .from('daily_metrics')
         .insert(data);
         
-      if (error) {
-        console.error('Error inserting metrics:', error);
-        showToast(`Failed to save data for ${dateStr}: ${error.message}`, 'error');
-        throw error;
+      if (result.error) {
+        console.error('Error inserting metrics:', result.error);
+        showToast(`Failed to save data for ${dateStr}: ${result.error.message}`, 'error');
+        throw result.error;
       }
     }
     
+    // Ensure the toast is visible with a longer duration
     showToast(`Metrics for ${new Date(dateStr).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} updated`, 'success', 3000);
+    return result;
   } catch (err) {
     console.error('Failed to save day:', dayIndex, err);
+    // Make sure error is displayed in the toast
+    showToast(`Failed to save data: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error', 5000);
     throw err;
   }
 }
@@ -1076,10 +1101,10 @@ async function saveAllMetrics() {
               {date.toLocaleDateString(undefined, { weekday: "long" })}
             </th>
           {/each}
-          <th>Current Week Total</th>
-          <th>By This Time Last Week</th>
+          <th class="multiline-header">Current<br>Week Total</th>
+          <th class="multiline-header">By This Time<br>Last Week</th>
           <th>WoW % Change</th>
-          <th class="prev-week-col">Previous Week Total</th>
+          <th class="multiline-header">Previous<br>Week Total</th>
         </tr>
         <tr class="table-header sub-header">
           <th></th>
@@ -1202,30 +1227,63 @@ async function saveAllMetrics() {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06); /* More subtle shadow */
     margin: 8px 24px; /* Further reduced top margin */
     overflow: hidden;
+    padding: 0; /* Add padding to prevent content from touching edges */
   }
 
   /* Table styling */
   table {
-    table-layout: fixed;
+    table-layout: auto; /* Change from fixed to auto to allow more natural sizing */
     width: 100%;
     border-spacing: 0;
     font-size: 0.9em; /* Slightly smaller text */
   }
 
+  /* Adjust the width of day columns */
   table th,
   table td {
-    width: 65px; /* Reduced from 80px */
-    box-sizing: border-box;
-    padding: 8px 10px; /* Reduced padding from 10px 12px */
+    min-width: 110px; /* Increased minimum width to ensure day names fit */
+    padding: 8px 12px; /* Slightly increased horizontal padding */
+    text-align: right; /* Ensure numerical values are right-aligned */
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* Make the metric name column wider but not too wide */
+  /* Make the metric name column wider */
   .metric-name-header, 
   table th:first-child, 
   table td:first-child {
-    width: 160px; /* Reduced from 180px */
-    min-width: 160px;
+    width: 180px; /* Increased from 160px */
+    min-width: 180px;
+    max-width: 220px; /* Add max-width to prevent this column from getting too wide */
     text-align: left;
+  }
+
+  /* Make the total/summary columns properly sized */
+  table th:nth-child(9), 
+  table td:nth-child(9), 
+  table th:nth-child(10), 
+  table td:nth-child(10),
+  table th:nth-child(11), 
+  table td:nth-child(11),
+  table th:nth-child(12), 
+  table td:nth-child(12) {
+    min-width: 120px;
+  }
+
+  /* Make the dashboard container horizontally scrollable on smaller screens */
+  .dashboard-container {
+    overflow-x: auto;
+    width: 100%;
+    /* Add smooth scrolling */
+    scroll-behavior: smooth;
+  }
+
+  /* Ensure day names don't wrap and have adequate space */
+  .table-header th {
+    white-space: nowrap;
+    font-weight: 500; /* Medium weight for the main header */
+    height: 40px; /* Set a fixed height for the header row */
+    vertical-align: middle; /* Center text vertically */
   }
 
   .table-header {
@@ -1306,19 +1364,6 @@ async function saveAllMetrics() {
   /* Add this new CSS to highlight the entire column */
   td:nth-child(n+2):nth-child(-n+8).highlight-column, 
   th:nth-child(n+2):nth-child(-n+8).highlight-column {
-    background-color: rgba(53, 176, 123, 0.08); /* Subtle green background */
-    position: relative;
-  }
-
-  /* Add vertical lines only to the cells in the highlighted column */
-  th.highlight-column::before,
-  th.highlight-column::after,
-  td.highlight-column::before,
-  td.highlight-column::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
     width: 2px;
     background-color: #35b07b; /* Solid green line */
   }
@@ -1369,6 +1414,23 @@ async function saveAllMetrics() {
     border-radius: 6px;
     margin-bottom: 16px;
     font-size: 0.9em;
+  }
+
+  /* Add this to your existing styles section */
+  .multiline-header {
+    white-space: normal !important; /* Allow text to wrap */
+    height: auto !important; /* Allow height to adjust based on content */
+    line-height: 1.2; /* Tighter line spacing for wrapped text */
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  /* Target the specific columns that need multiline headers */
+  table th:nth-child(9), 
+  table th:nth-child(10),
+  table th:nth-child(12) {
+    width: 110px; /* Set a narrower fixed width to force wrapping */
+    min-width: 110px;
   }
   
 @media (max-width: 768px) {
