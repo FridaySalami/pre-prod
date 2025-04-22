@@ -68,6 +68,7 @@
   {#each values as value, dayIndex}
     <td 
       class:highlight={isCurrentWeek && dayIndex === currentDayIndex}
+      class:highlight-column={isCurrentWeek && dayIndex === currentDayIndex}
       class:text-right={!isHeader && !isSpacer}
     >
       {#if isHeader}
@@ -145,6 +146,7 @@
   td {
     border: 0.5px solid #ddd; /* Light border for all cells */
     padding: 8px 10px; /* Reduced from 10px 12px */
+    position: relative; /* Added to ensure position relative works properly */
   }
 
   /* Center the content of totals cells */
@@ -253,6 +255,58 @@
   }
 
   .highlight {
-    background-color: #bbdaf8;
+    background-color: rgba(53, 176, 123, 0.08); /* Subtle green background */
+    position: relative;
+  }
+  
+  /* Add vertical borders with pseudo-elements */
+  .highlight::before,
+  .highlight::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #35b07b; /* Solid green line */
+    z-index: 1; /* Ensure lines appear above other content */
+  }
+  
+  .highlight::before {
+    left: 0;
+  }
+  
+  .highlight::after {
+    right: 0;
+  }
+  
+  /* Make sure highlighting is visible above cell borders */
+  .metric-row td.highlight {
+    border-left-color: transparent;
+    border-right-color: transparent;
+  }
+  
+  /* Add this class for the highlight-column approach if you prefer that */
+  .highlight-column {
+    background-color: rgba(53, 176, 123, 0.08);
+    position: relative;
+  }
+  
+  .highlight-column::before,
+  .highlight-column::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #35b07b;
+    z-index: 1;
+  }
+  
+  .highlight-column::before {
+    left: 0;
+  }
+  
+  .highlight-column::after {
+    right: 0;
   }
 </style>

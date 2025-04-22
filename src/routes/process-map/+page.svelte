@@ -869,18 +869,6 @@
     color: #c62828;
   }
 
-  .add-step-button, .print-button {
-    background-color: #0071e3;
-    color: white;
-    border: none;
-    border-radius: 980px;
-    padding: 8px 18px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
   .empty-state {
     text-align: center;
     padding: 48px 0;
@@ -954,12 +942,6 @@
     font-weight: 500;
     color: #86868b; /* Apple gray */
     text-transform: capitalize;
-  }
-
-  .field-label {
-    display: block;
-    font-weight: 500;
-    margin-bottom: 8px;
   }
 
   .issue-header-row {
@@ -1198,13 +1180,6 @@
     padding: 24px;
   }
 
-  /* Top controls */
-  .top-controls {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 24px;
-  }
-
   /* Responsive adjustments */
   @media (max-width: 768px) {
     .process-map-layout {
@@ -1241,37 +1216,10 @@
     .form-actions button {
       width: 100%;
     }
-    
-    .top-controls {
-      flex-wrap: wrap;
-    }
   }
-
-  /* Search and sort controls */
-  .search-box input {
-    width: 200px;
-    padding: 8px;
-    border: 1px solid #d1d1d6;
-    border-radius: 4px;
-    font-size: 14px;
-  }
-
-  .sort-controls label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .sort-controls select {
-    padding: 8px;
-    border: 1px solid #d1d1d6;
-    border-radius: 4px;
-    font-size: 14px;
-  }
-  
   /* Print styles */
   @media print {
-    .controls, .filter-controls, .step-actions, .move-controls, .error-banner, .step-tabs {
+    .step-actions,.error-banner, .step-tabs {
       display: none;
     }
     
