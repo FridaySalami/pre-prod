@@ -69,8 +69,13 @@
       }
     });
 
+    onMount(() => {
+      document.addEventListener('keydown', handleKeyDown);
+    });
+  
     onDestroy(() => {
       unsubscribe();
+      document.removeEventListener('keydown', handleKeyDown);
     });
   
     function createEmptyStep(): ProcessStep {
@@ -456,7 +461,7 @@
     <p>Loading...</p>
   </div>
 {:else if session}
-  <div class="process-map-container" on:keydown={handleKeyDown} role="region" aria-label="Process Map Editor">
+  <div class="process-map-container" role="region" aria-label="Process Map Editor">
     <header class="process-map-header">
       <h1>Fulfilment Process Observation Map</h1>
       <p class="description">
@@ -487,27 +492,34 @@
             <ul>
               <!-- Step list items -->
               {#each filteredSteps as step (step.id)}
-              <li 
-                class:active={activeStepId === step?.id}
-                class:has-issues={step?.issues?.length > 0}
-                class:high-priority={step?.issues?.some(issue => issue?.severity === 'high' && issue?.status !== 'resolved')}
-                on:click={() => {
-                  if (step?.id) activeStepId = step.id;
-                  isAddingNewStep = false;
-                }}
-              >
-                <!-- Make the step name take full width -->
-                <span class="step-tab-name">{step.name}</span>
+              <li>
+                <button 
+                  class="step-button"
+                  class:active={activeStepId === step?.id}
+                  class:has-issues={step?.issues?.length > 0}
+                  class:high-priority={step?.issues?.some(issue => issue?.severity === 'high' && issue?.status !== 'resolved')}
+                  on:click={() => {
+                    if (step?.id) activeStepId = step.id;
+                    isAddingNewStep = false;
+                  }}
+                >
+                  <span class="step-tab-name">{step.name}</span>
+                </button>
               </li>
-            {/each}            
+              {/each}            
               <!-- "Add step" tab at the bottom of the list -->
-              <li class="add-step-tab" on:click={() => {
-                isAddingNewStep = true;
-                newStep.step_number = processSteps.length + 1;
-                activeStepId = null;
-              }}>
-                <span class="add-icon">+</span>
-                <span>Add New Step</span>
+              <li>
+                <button 
+                  class="step-button add-step-tab"
+                  on:click={() => {
+                    isAddingNewStep = true;
+                    newStep.step_number = processSteps.length + 1;
+                    activeStepId = null;
+                  }}
+                >
+                  <span class="add-icon">+</span>
+                  <span>Add New Step</span>
+                </button>
               </li>
             </ul>
           {/if}
@@ -860,6 +872,48 @@
     justify-content: space-between;
     align-items: center;
   }
+
+  /* Add these to your existing styles */
+.step-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-size: inherit;
+  color: inherit;
+  transition: all 0.2s ease;
+}
+
+/* Reset the padding on li elements since the button will handle it */
+.step-tabs li {
+  padding: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  position: relative;
+}
+
+/* Move these styles from li to the button */
+.step-tabs .step-button.active {
+  background-color: rgba(0, 113, 227, 0.1); /* More subtle blue */
+  color: #0071e3; /* Apple blue */
+  font-weight: 500;
+  border-left: 3px solid #0071e3;
+}
+
+.step-tabs .step-button:hover:not(.active) {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Move issue indicators to button */
+.step-tabs .step-button.has-issues {
+  border-left: 3px solid #0087d0; 
+}
+
+.step-tabs .step-button.high-priority {
+  border-left: 3px solid #ff3b30; /* Apple red */
+}
 
   .close-button {
     background: none;
