@@ -1134,10 +1134,8 @@ async function saveAllMetrics() {
               name={metric.name}
               values={metric.metricField === null ? computedMetrics[metricIndex] : metric.values}
               {metricIndex}
-              {weekDates}
               {currentDayIndex}
               {isCurrentWeek}
-              metricField={metric.metricField}
               wowChange={
                 computeWoWChange(
                   currentTotals[metricIndex],
@@ -1151,8 +1149,6 @@ async function saveAllMetrics() {
               currentTotal={currentTotals[metricIndex]}
               byThisTimeLastWeek={isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex]}
               previousTotal={previousTotalsComputed[metricIndex]}
-              notesMap={notesMap}
-              openNotes={openNotePanel}
               isReadOnly={metric.isReadOnly}
               tooltip={metric.tooltip}
               isPercentage={isPercentageMetric(metric.name)}
@@ -1241,7 +1237,7 @@ async function saveAllMetrics() {
   /* Adjust the width of day columns */
   table th,
   table td {
-    min-width: 110px; /* Increased minimum width to ensure day names fit */
+    min-width: 100px; /* Increased minimum width to ensure day names fit */
     padding: 8px 12px; /* Slightly increased horizontal padding */
     text-align: right; /* Ensure numerical values are right-aligned */
     overflow: hidden;
@@ -1252,7 +1248,7 @@ async function saveAllMetrics() {
   .metric-name-header, 
   table th:first-child, 
   table td:first-child {
-    width: 180px; /* Increased from 160px */
+    width: 200px; /* Increased from 160px */
     min-width: 180px;
     max-width: 220px; /* Add max-width to prevent this column from getting too wide */
     text-align: left;
@@ -1267,7 +1263,8 @@ async function saveAllMetrics() {
   table td:nth-child(11),
   table th:nth-child(12), 
   table td:nth-child(12) {
-    min-width: 120px;
+    min-width: 100px;
+    width: 100px; /* Set a fixed width for the total columns */
   }
 
   /* Make the dashboard container horizontally scrollable on smaller screens */
@@ -1362,19 +1359,16 @@ async function saveAllMetrics() {
   }
 
   /* Add this new CSS to highlight the entire column */
-  td:nth-child(n+2):nth-child(-n+8).highlight-column, 
   th:nth-child(n+2):nth-child(-n+8).highlight-column {
     width: 2px;
     background-color: #35b07b; /* Solid green line */
   }
 
-  th.highlight-column::before,
-  td.highlight-column::before {
+  th.highlight-column::before {
     left: 0;
   }
 
-  th.highlight-column::after,
-  td.highlight-column::after {
+  th.highlight-column::after {
     right: 0;
   }
 

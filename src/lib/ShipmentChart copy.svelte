@@ -775,10 +775,8 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
               name={metric.name}
               values={metric.metricField === null ? computedMetrics[metricIndex] : metric.values}
               {metricIndex}
-              {weekDates}
               {currentDayIndex}
               {isCurrentWeek}
-              metricField={metric.metricField}
               wowChange={
                 computeWoWChange(
                   currentTotals[metricIndex],
@@ -792,8 +790,6 @@ $: partialPreviousTotalsComputed = metrics.map((metric, idx) => {
               currentTotal={currentTotals[metricIndex]}
               byThisTimeLastWeek={isCurrentWeek ? partialPreviousTotalsComputed[metricIndex] : previousTotalsComputed[metricIndex]}
               previousTotal={previousTotalsComputed[metricIndex]}
-              notesMap={notesMap}
-              openNotes={openNotePanel}
               isReadOnly={metric.isReadOnly}
               tooltip={metric.tooltip}
             />

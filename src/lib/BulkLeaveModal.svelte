@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { supabase } from '$lib/supabaseClient';
   import { writable } from 'svelte/store';
   
@@ -170,13 +170,29 @@
     }
   }
   
+  // Add keyboard handling for accessibility
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') dispatch('close');
+  }
+
   onMount(() => {
+    window.addEventListener('keydown', handleKeydown);
     loadLeaveTypes();
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('keydown', handleKeydown);
   });
 </script>
 
-<!-- Apple-inspired design with condensed layout -->
-<div class="modal-backdrop" on:click|self={() => dispatch('close')}>
+<!-- svelte-ignore a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<div 
+  class="modal-backdrop" 
+  on:click|self={() => dispatch('close')}
+  role="dialog" 
+  aria-modal="true"
+>
   <div class="modal">
     <div class="modal-header">
       <h2>Add Leave</h2>
