@@ -19,22 +19,16 @@
   // Explicit prop declarations:
   export let name = '';
   export let values: number[] = [];
-  export let total = 0;
   export let previousTotal = 0;
-  export let prevChange = 'N/A';
-  export let metricField: string | null = null;
   export let isHeader = false;
   export let isSpacer = false;
   export let isReadOnly = false;
-  export let isSubItem = false;
   export let tooltip = '';
   export let currentDayIndex = -1;
   export let isCurrentWeek = true;
   export let isPercentage = false; // New prop to indicate if this is a percentage metric
 
   export let metricIndex: number;
-  export let weekDates: Date[];
-  export let notesMap: Record<string, NoteData>;
   export let wowChange: string;
   
   // Change these types from string to number:
@@ -43,7 +37,6 @@
 
   // Callback functions:
   export let handleInputChange: (metricIndex: number, dayIndex: number, newValue?: number) => void;
-  export let openNotes: (metricIndex: number, dayIndex: number) => void;
 
   // Add this function to check if a metric is editable
   function isEditableMetric(name: string): boolean {
@@ -102,9 +95,9 @@
     {#if isHeader || isSpacer}
       <!-- Empty header or spacer -->
     {:else if isPercentage}
-      {formatPercentage(currentTotal)}  <!-- Changed from byThisTimeLastWeek -->
+      {formatPercentage(currentTotal)}
     {:else}
-      {formatNumber(currentTotal)}  <!-- Changed from byThisTimeLastWeek -->
+      {formatNumber(currentTotal)}
     {/if}
   </td>
   

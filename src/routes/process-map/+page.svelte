@@ -1090,22 +1090,9 @@
   border-top: 1px solid rgba(255, 255, 255, 0.7);
 }
 
-  /* Apple-style active states */
-  .step-tabs li.active {
-    background-color: rgba(0, 113, 227, 0.1); /* More subtle blue */
-    color: #0071e3; /* Apple blue */
-    font-weight: 500;
-    border-left: 3px solid #0071e3;
-  }
-
   /* More subtle hover states */
   .step-tabs li:hover:not(.active) {
     background-color: rgba(0, 0, 0, 0.02);
-  }
-
-  /* Issues indicators */
-  .step-tabs li.has-issues {
-    border-left: 3px solid #0087d0; 
   }
 
   .step-tabs li.high-priority {
