@@ -6,7 +6,7 @@
   import MetricRow from "./MetricRow.svelte";
   import { testDirectInsert } from '$lib/notesService';
   import { showToast } from '$lib/toastStore';   
-  import { getScheduledHoursForDateRange } from '$lib/hours-service';
+  import { getScheduledHoursForDateRange } from '$lib/schedule/hours-service';
 
     
   // Updated ExtendedMetric with required properties.
