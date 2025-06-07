@@ -1,7 +1,7 @@
-import { 
-  LINNWORKS_APP_ID, 
-  LINNWORKS_APP_SECRET, 
-  LINNWORKS_ACCESS_TOKEN 
+import {
+  LINNWORKS_APP_ID,
+  LINNWORKS_APP_SECRET,
+  LINNWORKS_ACCESS_TOKEN
 } from '$env/static/private';
 import { getTestOpenOrdersData } from '$lib/shared/mockData';
 
@@ -77,31 +77,31 @@ export async function getLinnworksAuth(): Promise<{ token: string, server: strin
 export async function callLinnworksApi<T>(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: any): Promise<T> {
   // Get auth first
   const auth = await getLinnworksAuth();
-  
+
   const headers: Record<string, string> = {
     'Authorization': auth.token,
     'Accept': 'application/json'
   };
-  
+
   const options: RequestInit = { method, headers };
-  
+
   // Add body if provided
   if (body) {
     headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
-  
+
   const url = `${auth.server}/api/${endpoint}`;
   console.log(`Making API call to ${url} with method ${method}`);
-  
+
   const response = await fetch(url, options);
-  
+
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`API Error ${response.status}: ${errorText}`);
     throw new Error(`API Error ${response.status}: ${errorText}`);
   }
-  
+
   return await response.json() as T;
 }
 
@@ -111,7 +111,7 @@ export async function callLinnworksApi<T>(endpoint: string, method: 'GET' | 'POS
  */
 export async function getRefundsData(fromDate: string, toDate: string): Promise<any> {
   console.log(`Getting refunds data from ${fromDate} to ${toDate}`);
-  
+
   // Define the query parameters for the Linnworks API
   const params = {
     DateFrom: fromDate,
@@ -127,31 +127,31 @@ export async function getRefundsData(fromDate: string, toDate: string): Promise<
     PageNumber: 1,
     EntriesPerPage: 100
   };
-  
+
   try {
     // Call the Linnworks Orders API with a specific return type
     interface LinnworksOrdersResponse {
       Data?: any[];
       [key: string]: any;
     }
-    
+
     const result = await callLinnworksApi<LinnworksOrdersResponse>('Orders/GetOrdersProcessed', 'POST', params);
-    
+
     // Now we have proper type safety when accessing result properties
     const formattedResult = {
       ProcessedOrders: {
-        Data: Array.isArray(result.Data) ? result.Data : 
-              (Array.isArray(result) ? result : [])
+        Data: Array.isArray(result.Data) ? result.Data :
+          (Array.isArray(result) ? result : [])
       }
     };
 
     // Log some debug info
     console.log(`Got ${formattedResult.ProcessedOrders.Data.length} refunds from Linnworks API`);
-    
+
     if (formattedResult.ProcessedOrders.Data.length > 0) {
       console.log('Sample refund data:', JSON.stringify(formattedResult.ProcessedOrders.Data[0], null, 2));
     }
-    
+
     return formattedResult;
   } catch (error) {
     console.error('Error getting refunds data:', error);
@@ -169,7 +169,7 @@ export async function getRefundsData(fromDate: string, toDate: string): Promise<
  */
 export async function getOpenOrdersData(pageNumber: number, pageSize: number): Promise<any> {
   console.log(`Getting open orders data for page ${pageNumber}, size ${pageSize}`);
-  
+
   // Define interface for OpenOrders response
   interface OpenOrdersResponse {
     PageNumber?: number;
@@ -179,17 +179,17 @@ export async function getOpenOrdersData(pageNumber: number, pageSize: number): P
     Data?: any[];
     [key: string]: any;
   }
-  
+
   try {
     // Based on the documentation, first we need to get the IDs of open orders
     // Get stock locations first (might be required for OpenOrders endpoints)
     const locationsResponse = await callLinnworksApi<any[]>('Inventory/GetStockLocations', 'GET');
-    const locationId = locationsResponse && locationsResponse.length > 0 
-      ? locationsResponse[0].StockLocationId 
+    const locationId = locationsResponse && locationsResponse.length > 0
+      ? locationsResponse[0].StockLocationId
       : '';
-    
+
     console.log('Got location ID:', locationId);
-    
+
     // Step 1: First get the list of open orders using GetOpenOrders
     console.log('Making API call to OpenOrders/GetOpenOrders with locationId:', locationId);
     const openOrdersResponse = await callLinnworksApi<OpenOrdersResponse>('OpenOrders/GetOpenOrders', 'POST', {
@@ -198,9 +198,9 @@ export async function getOpenOrdersData(pageNumber: number, pageSize: number): P
       EntriesPerPage: pageSize,
       PageNumber: pageNumber
     });
-    
+
     console.log(`Got open orders response with ${openOrdersResponse.Data?.length || 0} orders`);
-    
+
     // Ensure consistent structure for the response
     const formattedResult = {
       PageNumber: openOrdersResponse.PageNumber || pageNumber,
@@ -210,11 +210,11 @@ export async function getOpenOrdersData(pageNumber: number, pageSize: number): P
       Data: Array.isArray(openOrdersResponse.Data) ? openOrdersResponse.Data : [],
       isRealData: true // Flag to indicate this is real data
     };
-    
+
     return formattedResult;
   } catch (error) {
     console.error('Error getting open orders data:', error);
-    
+
     // For development, return mock data instead of throwing when the API fails
     console.log('Falling back to mock data due to API error');
     return {

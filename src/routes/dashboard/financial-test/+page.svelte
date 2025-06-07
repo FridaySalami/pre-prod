@@ -1,6 +1,44 @@
 <script lang="ts">
 	import { formatNumber } from '$lib/utils';
 
+	interface SourceData {
+		count: number;
+		sales: number;
+	}
+
+	interface FinancialSummary {
+		totalSales: number;
+		totalProfit: number;
+		totalOrders: number;
+		averageOrderValue: number;
+		totalShipping: number;
+		totalDiscounts: number;
+		totalTax: number;
+		totalSubtotal: number;
+		totalPostageCost: number;
+		bySource: Record<string, SourceData>;
+	}
+
+	interface DailyData {
+		formattedDate: string;
+		salesData: {
+			totalSales: number;
+			totalProfit: number;
+			orderCount: number;
+			averageOrderValue: number;
+			totalShipping: number;
+			totalDiscount: number;
+			totalTax: number;
+			totalSubtotal: number;
+			totalPostageCost: number;
+		};
+	}
+
+	interface FinancialData {
+		summary: FinancialSummary;
+		dailyData: DailyData[];
+	}
+
 	// Default to last 7 days
 	const today = new Date();
 	const sevenDaysAgo = new Date();
@@ -10,7 +48,7 @@
 	let endDate = today.toISOString().split('T')[0];
 	let loading = false;
 	let error: string | null = null;
-	let financialData: any = null;
+	let financialData: FinancialData | null = null;
 
 	async function fetchFinancialData() {
 		loading = true;
@@ -88,6 +126,29 @@
 					<h3>Total Discounts</h3>
 					<p>£{formatNumber(financialData.summary.totalDiscounts)}</p>
 				</div>
+				<div class="summary-item">
+					<h3>Total Tax</h3>
+					<p>£{formatNumber(financialData.summary.totalTax)}</p>
+				</div>
+				<div class="summary-item">
+					<h3>Total Subtotal</h3>
+					<p>£{formatNumber(financialData.summary.totalSubtotal)}</p>
+				</div>
+				<div class="summary-item">
+					<h3>Total Postage Cost</h3>
+					<p>£{formatNumber(financialData.summary.totalPostageCost)}</p>
+				</div>
+			</div>
+
+			<h2>Sales by Source</h2>
+			<div class="source-grid">
+				{#each Object.entries(financialData?.summary?.bySource || {}) as [source, data]}
+					<div class="source-item">
+						<h3>{source}</h3>
+						<p>Orders: {(data as SourceData).count}</p>
+						<p>Sales: £{formatNumber((data as SourceData).sales)}</p>
+					</div>
+				{/each}
 			</div>
 
 			<h2>Daily Breakdown</h2>
@@ -102,6 +163,9 @@
 							<th>Avg Order</th>
 							<th>Shipping</th>
 							<th>Discounts</th>
+							<th>Tax</th>
+							<th>Subtotal</th>
+							<th>Postage Cost</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -114,6 +178,9 @@
 								<td>£{formatNumber(day.salesData.averageOrderValue)}</td>
 								<td>£{formatNumber(day.salesData.totalShipping)}</td>
 								<td>£{formatNumber(day.salesData.totalDiscount)}</td>
+								<td>£{formatNumber(day.salesData.totalTax)}</td>
+								<td>£{formatNumber(day.salesData.totalSubtotal)}</td>
+								<td>£{formatNumber(day.salesData.totalPostageCost)}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -178,55 +245,64 @@
 		margin-bottom: 30px;
 	}
 
-	.summary-item {
+	.source-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 20px;
+		margin-bottom: 30px;
+	}
+
+	.source-item {
+		background-color: #f3f4f6;
 		padding: 15px;
-		background-color: #f8fafc;
-		border: 1px solid #e2e8f0;
 		border-radius: 8px;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+	}
+
+	.summary-item {
+		background-color: #ffffff;
+		padding: 15px;
+		border-radius: 8px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 	}
 
 	.summary-item h3 {
-		font-size: 0.9em;
-		color: #64748b;
+		color: #4b5563;
+		font-size: 0.875rem;
 		margin: 0 0 8px 0;
 	}
 
 	.summary-item p {
-		font-size: 1.5em;
+		color: #111827;
+		font-size: 1.5rem;
 		font-weight: 600;
 		margin: 0;
-		color: #0f172a;
 	}
 
 	.table-container {
 		overflow-x: auto;
+		margin-top: 20px;
 	}
 
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		margin-top: 20px;
+		white-space: nowrap;
 	}
 
 	th,
 	td {
 		padding: 12px;
-		text-align: right;
-		border-bottom: 1px solid #e2e8f0;
-	}
-
-	th:first-child,
-	td:first-child {
 		text-align: left;
+		border-bottom: 1px solid #e5e7eb;
 	}
 
 	th {
-		background-color: #f8fafc;
+		background-color: #f9fafb;
 		font-weight: 600;
-		color: #475569;
 	}
 
 	tr:hover {
-		background-color: #f8fafc;
+		background-color: #f9fafb;
 	}
 </style>
