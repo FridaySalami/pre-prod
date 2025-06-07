@@ -91,6 +91,7 @@ export async function callLinnworksApi<T>(endpoint: string, method: 'GET' | 'POS
     options.body = JSON.stringify(body);
   }
 
+  // Always use HTTPS for API calls
   const url = `${auth.server}/api/${endpoint}`;
   console.log(`Making API call to ${url} with method ${method}`);
 

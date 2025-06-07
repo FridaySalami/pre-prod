@@ -3,6 +3,7 @@ import NodeCache from 'node-cache';
 
 // Create a cache with TTL of 1 hour
 const orderCountCache = new NodeCache({ stdTTL: 3600 });
+const stockItemsCache = new NodeCache({ stdTTL: 3600 }); // Cache for stock items
 
 interface DateRange {
   fromDate: string;
@@ -22,12 +23,27 @@ export interface DailyOrderCount {
 }
 
 // Define a new interface to capture the order source
+interface OrderItem {
+  ItemNumber?: string;
+  ItemName?: string;
+  SKU?: string;
+  Quantity?: number;
+  ItemValue?: number;
+  StockItemId?: number;
+}
+
 interface ProcessedOrderData {
   nOrderId: number;
   Source: string;
-  dProcessedOn?: string; // Add this field
-  dProcessed?: string;   // Add this field
-  // Other fields from Linnworks that might be useful
+  OrderId?: string;
+  Items?: OrderItem[];
+  fTotalCharge?: number;
+  fPostageCost?: number;
+  Status?: number;
+  PostalServiceName?: string;
+  dProcessedOn?: string;
+  dProcessed?: string;
+  extendedProperties?: Record<string, string>;  // Added extended properties support
 }
 
 // Update this interface to include Data with proper typing
@@ -42,10 +58,36 @@ interface ProcessedOrdersResponse {
   [key: string]: any;
 }
 
+interface StockItem {
+  ItemNumber: string;
+  ItemTitle: string;
+  Quantity: number;
+  SKU: string;
+  RetailPrice: number;
+  PurchasePrice: number;
+  StockItemId: number;
+  ItemDescription?: string;
+}
+
+interface OrderDetails {
+  OrderId: string;
+  NumOrderId: number;
+  FullyPaid: boolean;
+  Status: number;
+  Items: Array<{
+    OrderId: string;
+    StockItemId: number;
+    SKU: string;
+    ItemNumber: string;
+    Quantity: number;
+    PricePerUnit: number;
+  }>;
+}
+
 // Helper function with retry logic for rate limiting
 async function callApiWithRetry<T>(fn: () => Promise<T>, maxRetries = 3, initialDelay = 1000): Promise<T> {
   let retries = 0;
-  
+
   while (true) {
     try {
       return await fn();
@@ -70,29 +112,29 @@ async function getDayOrderCountByChannel(dayStart: Date, dayEnd: Date, channel: 
   try {
     // Create cache key
     const cacheKey = `${dayStart.toISOString()}_${dayEnd.toISOString()}_${channel}`;
-    
+
     // Check if we have a cached result
     const cachedCount = orderCountCache.get(cacheKey);
     if (cachedCount !== undefined) {
       console.log(`Using cached count for ${channel} on ${dayStart.toDateString()}: ${cachedCount}`);
       return cachedCount as number;
     }
-    
+
     // Get total count for this day first
     const totalCount = await getDayOrderCount(dayStart, dayEnd);
-    
+
     // If no orders for this day, return zero for all channels
     if (totalCount === 0) {
       console.log(`No orders found for ${dayStart.toDateString()}, returning 0 for ${channel}`);
       orderCountCache.set(cacheKey, 0);
       return 0;
     }
-    
+
     // For now, use estimated percentages based on typical e-commerce patterns
     // These are placeholder values until the API can provide actual data
     let percentage = 0;
-    
-    switch(channel.toUpperCase()) {
+
+    switch (channel.toUpperCase()) {
       case 'AMAZON':
         percentage = 0.65; // Amazon ~65% of orders
         break;
@@ -105,15 +147,15 @@ async function getDayOrderCountByChannel(dayStart: Date, dayEnd: Date, channel: 
       default:
         percentage = 0.05; // Other ~5% of orders
     }
-    
+
     // Calculate the estimated channel count
     const channelCount = Math.round(totalCount * percentage);
-    
+
     console.log(`Estimated ${channel} count for ${dayStart.toDateString()}: ${channelCount} (${percentage * 100}% of ${totalCount} total)`);
-    
+
     // Cache the result
     orderCountCache.set(cacheKey, channelCount);
-    
+
     return channelCount;
   } catch (error) {
     console.error(`Error getting ${channel} count for ${dayStart.toDateString()}:`, error);
@@ -126,36 +168,36 @@ async function getDayOrderCount(dayStart: Date, dayEnd: Date): Promise<number> {
   try {
     // Create cache key
     const cacheKey = `${dayStart.toISOString()}_${dayEnd.toISOString()}_TOTAL`;
-    
+
     // Check if we have a cached result
     const cachedCount = orderCountCache.get(cacheKey);
     if (cachedCount !== undefined) {
       console.log(`Using cached count for TOTAL on ${dayStart.toDateString()}: ${cachedCount}`);
       return cachedCount as number;
     }
-    
+
     // If not in cache, make the API call
     console.log(`Fetching TOTAL orders for ${dayStart.toDateString()}`);
-    
+
     const searchRequest = {
-      DateField: "processed", 
+      DateField: "processed",
       FromDate: dayStart.toISOString(),
       ToDate: dayEnd.toISOString(),
       PageNumber: 1,
       ResultsPerPage: 20
     };
-    
+
     const result = await callApiWithRetry(() => callLinnworksApi<ProcessedOrdersResponse>(
-      'ProcessedOrders/SearchProcessedOrders', 
-      'POST', 
+      'ProcessedOrders/SearchProcessedOrders',
+      'POST',
       { request: searchRequest }
     ));
-    
+
     const count = result?.ProcessedOrders?.TotalEntries || 0;
-    
+
     // Save to cache
     orderCountCache.set(cacheKey, count);
-    
+
     return count;
   } catch (error) {
     console.error(`Error getting total count for ${dayStart.toDateString()}:`, error);
@@ -209,7 +251,7 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
     const currentDate = new Date(startDate);
     while (currentDate <= endDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
-      
+
       // Initialize counts for this day
       ordersByDay[dateStr] = {
         total: 0,
@@ -218,19 +260,19 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
         shopify: 0,
         other: 0
       };
-      
+
       // Format the date for display
-      const options: Intl.DateTimeFormatOptions = { 
-        weekday: 'long', 
-        month: 'short', 
-        day: 'numeric' 
+      const options: Intl.DateTimeFormatOptions = {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric'
       };
-      
+
       // Add to days array - we'll populate counts later
       days.push({
         date: dateStr,
-        count: 0, // Will update this later
-        formattedDate: currentDate.toLocaleDateString('en-US', options),
+        count: 0 // Will update this later
+        , formattedDate: currentDate.toLocaleDateString('en-US', options),
         channels: {
           amazon: 0,
           ebay: 0,
@@ -238,7 +280,7 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
           other: 0
         }
       });
-      
+
       // Move to next day
       currentDate.setDate(currentDate.getDate() + 1);
     }
@@ -248,26 +290,26 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
     for (const day of days) {
       const dayStart = new Date(day.date);
       dayStart.setHours(0, 0, 0, 0);
-      
+
       const dayEnd = new Date(day.date);
       dayEnd.setHours(23, 59, 59, 999);
-      
+
       // Get total order count for this day
       const totalCount = await getDayOrderCount(dayStart, dayEnd);
       day.count = totalCount;
-      
+
       // Get channel-specific counts
       if (day.channels) {
         day.channels.amazon = await getDayOrderCountByChannel(dayStart, dayEnd, 'AMAZON');
         day.channels.ebay = await getDayOrderCountByChannel(dayStart, dayEnd, 'EBAY');
         day.channels.shopify = await getDayOrderCountByChannel(dayStart, dayEnd, 'SHOPIFY');
-        
+
         // Calculate other as the difference between total and known channels
         const knownChannels = day.channels.amazon + day.channels.ebay + day.channels.shopify;
         day.channels.other = Math.max(0, totalCount - knownChannels);
       }
     }
-    
+
     return days;
   } catch (error) {
     console.error('Error getting daily order counts:', error);
@@ -281,22 +323,178 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
 export function getCurrentWeekRange(): DateRange {
   const now = new Date();
   const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  
+
   // Calculate days to subtract to get to Monday (if today is Sunday, subtract 6 days)
   const daysToMonday = currentDay === 0 ? 6 : currentDay - 1;
-  
+
   // Calculate start of week (Monday)
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - daysToMonday);
   startOfWeek.setHours(0, 0, 0, 0);
-  
+
   // Calculate end of week (Sunday)
   const endOfWeek = new Date(startOfWeek);
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   endOfWeek.setHours(23, 59, 59, 999);
-  
+
   return {
     fromDate: startOfWeek.toISOString(),
     toDate: endOfWeek.toISOString()
   };
+}
+
+/**
+ * Get stock items by their SKUs with batch processing
+ */
+async function getStockItems(skus: string[]): Promise<Map<string, StockItem>> {
+  const BATCH_SIZE = 100; // Linnworks API recommendation
+  const stockItemsMap = new Map<string, StockItem>();
+  const uniqueSkus = Array.from(new Set(skus)); // Remove duplicates
+  const uncachedSkus: string[] = [];
+
+  // Check cache first
+  for (const sku of uniqueSkus) {
+    const cachedItem = stockItemsCache.get(sku);
+    if (cachedItem) {
+      stockItemsMap.set(sku, cachedItem as StockItem);
+    } else {
+      uncachedSkus.push(sku);
+    }
+  }
+
+  if (uncachedSkus.length > 0) {
+    try {
+      // Process SKUs in batches
+      for (let i = 0; i < uncachedSkus.length; i += BATCH_SIZE) {
+        const batch = uncachedSkus.slice(i, i + BATCH_SIZE);
+
+        // Add exponential backoff for rate limiting
+        const items = await callApiWithRetry(
+          () => callLinnworksApi<StockItem[]>(
+            'Inventory/GetInventoryItemsByIds',
+            'POST',
+            { request: { StockItemIds: batch } }
+          ),
+          5, // Increase max retries for large batches
+          2000 // Increase initial delay
+        );
+
+        // Cache and store results
+        items.forEach(item => {
+          if (item.SKU) { // Ensure SKU exists
+            stockItemsCache.set(item.SKU, item);
+            stockItemsMap.set(item.SKU, item);
+          }
+        });
+
+        // Add a small delay between batches to avoid rate limiting
+        if (i + BATCH_SIZE < uncachedSkus.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching stock items:', error);
+      // Continue with partial results rather than failing completely
+    }
+  }
+
+  return stockItemsMap;
+}
+
+/**
+ * Get detailed order information
+ */
+async function getOrderDetails(orderId: string): Promise<OrderDetails | null> {
+  try {
+    const details = await callApiWithRetry(() => callLinnworksApi<OrderDetails>(
+      'Orders/GetOrderById',
+      'POST',
+      {
+        request: {
+          OrderId: orderId,
+          LoadItems: true,
+          LoadOrderProperties: true
+        }
+      }
+    ));
+    return details;
+  } catch (error) {
+    console.error(`Error fetching order details for order ${orderId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Get daily orders for a specific date range with optional SKU filter
+ */
+export async function getDailyOrders(
+  startDate: Date,
+  endDate: Date,
+  skuFilter?: string
+): Promise<ProcessedOrderData[]> {
+  try {
+    console.log(`Getting daily orders from ${startDate.toISOString()} to ${endDate.toISOString()}${skuFilter ? ` with SKU filter: ${skuFilter}` : ''}`);
+
+    let allOrders: ProcessedOrderData[] = [];
+    let currentPage = 1;
+    let hasMorePages = true;
+
+    // Step 1: Get list of orders using SearchProcessedOrdersPaged
+    while (hasMorePages) {
+      const searchRequest = {
+        DateField: "PROCESSED",
+        FromDate: startDate.toISOString(),
+        ToDate: endDate.toISOString(),
+        PageNumber: currentPage,
+        ResultsPerPage: 100, // Reduced to avoid rate limiting
+        SearchTerm: "", // Empty string to match all
+        SearchField: "REFERENCE", // Required field even if not searching
+        ExactMatch: false,
+        SearchTypes: [], // Empty array means all types
+        Filters: [] // No additional filters
+      };
+
+      const result = await callApiWithRetry(() => callLinnworksApi<ProcessedOrdersResponse>(
+        'ProcessedOrders/SearchProcessedOrders',
+        'POST',
+        { request: searchRequest }
+      ));
+
+      if (!result?.ProcessedOrders?.Data) {
+        console.log('API Response:', JSON.stringify(result, null, 2));
+        console.log('No order data returned from API');
+        return [];
+      }
+
+      // Add this page's orders to our collection
+      allOrders = allOrders.concat(result.ProcessedOrders.Data);
+
+      console.log(`Retrieved page ${currentPage} with ${result.ProcessedOrders.Data.length} orders. Total entries: ${result.ProcessedOrders.TotalEntries}`);
+
+      // Check if there are more pages
+      if (result.ProcessedOrders.TotalPages && currentPage < result.ProcessedOrders.TotalPages) {
+        currentPage++;
+      } else {
+        hasMorePages = false;
+      }
+
+      // Add a small delay between pages to avoid rate limiting
+      if (hasMorePages) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    console.log(`Retrieved ${allOrders.length} total orders`);
+
+    // If we have a SKU filter but no items data, we can't filter by SKU
+    if (skuFilter) {
+      console.log('Warning: Cannot apply SKU filter without order details');
+    }
+
+    return allOrders;
+
+  } catch (error) {
+    console.error('Error getting daily orders:', error);
+    throw error;
+  }
 }
