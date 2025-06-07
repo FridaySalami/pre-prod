@@ -1,21 +1,31 @@
 import { callLinnworksApi } from './linnworksClient.server';
-import NodeCache from 'node-cache'; // Adjust the import based on your project structure
+import NodeCache from 'node-cache';
 
 // Create a cache with TTL of 1 hour
 const financialCache = new NodeCache({ stdTTL: 3600 });
 
-interface PerformanceData {
-  OrderCount: number;
-  TotalOrderValue: number;
-  TotalProfitValue: number;
-  AverageOrderValue: number;
-  TotalShippingCost: number;
-  TotalDiscountValue: number;
-  Date: string;
+interface ProcessedOrderData {
+  dProcessedOn?: string;
+  dProcessed?: string;
+  fTotalCharge?: number;
+  fPostageCost?: number;
+  fTotalDiscount?: number;
+  fTax?: number;
+  Source?: string;
+  SubSource?: string;
+  PostageCostExTax?: number;
+  Subtotal?: number;
+  CountryTaxRate?: number;
 }
 
 interface FinancialResponse {
-  SalesPerformance: PerformanceData[];
+  ProcessedOrders?: {
+    TotalEntries?: number;
+    TotalPages?: number;
+    EntriesPerPage?: number;
+    PageNumber?: number;
+    Data?: ProcessedOrderData[];
+  };
 }
 
 interface DailySalesData {
@@ -28,6 +38,15 @@ interface DailySalesData {
     averageOrderValue: number;
     totalShipping: number;
     totalDiscount: number;
+    totalTax: number;
+    totalSubtotal: number;
+    totalPostageCost: number;
+    bySource: {
+      [source: string]: {
+        count: number;
+        sales: number;
+      };
+    };
   };
 }
 
@@ -58,12 +77,20 @@ export async function getDailyFinancialData(startDate: Date, endDate: Date): Pro
     const now = new Date();
     now.setHours(23, 59, 59, 999); // End of today
 
-    if (startDate > now || endDate > now) {
-      throw new Error("Cannot fetch financial data for future dates");
+    // Convert dates to start of day for comparison
+    const startOfStartDate = new Date(startDate);
+    startOfStartDate.setHours(0, 0, 0, 0);
+    const startOfEndDate = new Date(endDate);
+    startOfEndDate.setHours(0, 0, 0, 0);
+    const startOfNow = new Date(now);
+    startOfNow.setHours(0, 0, 0, 0);
+
+    if (startOfStartDate > startOfNow) {
+      throw new Error("Start date cannot be in the future");
     }
 
     // Ensure endDate is not after today
-    const adjustedEndDate = endDate > now ? now : endDate;
+    const adjustedEndDate = startOfEndDate > startOfNow ? now : endDate;
 
     console.log(`Getting financial data from ${startDate.toISOString()} to ${adjustedEndDate.toISOString()}`);
 
@@ -73,62 +100,116 @@ export async function getDailyFinancialData(startDate: Date, endDate: Date): Pro
       return cachedData as DailySalesData[];
     }
 
-    // Using the Orders/GetSalesPerformance endpoint for financial data
-    const result = await callApiWithRetry(() => callLinnworksApi<FinancialResponse>(
-      'Orders/GetSalesPerformance',  // More reliable endpoint for financial data
-      'POST',
-      {
-        "FromDate": startDate.toISOString(),
-        "ToDate": adjustedEndDate.toISOString(),
-        "Source": "",  // Empty string means all sources
-        "SubSource": "", // Empty string means all sub-sources
-        "LocationId": 0, // 0 means all locations
-        "Currency": "GBP",
-        "DateField": "PROCESSED", // Could be "RECEIVED" or "PROCESSED"
-        "ReportType": "SUMMARY", // Get summary data
-        "AdditionalFilters": []  // No additional filters
+    // Using the ProcessedOrders/SearchProcessedOrders endpoint with pagination
+    let allOrders: ProcessedOrderData[] = [];
+    let currentPage = 1;
+    let hasMorePages = true;
+
+    while (hasMorePages) {
+      const result = await callApiWithRetry(() => callLinnworksApi<FinancialResponse>(
+        'ProcessedOrders/SearchProcessedOrders',
+        'POST',
+        {
+          request: {
+            DateField: "processed",
+            FromDate: startDate.toISOString(),
+            ToDate: adjustedEndDate.toISOString(),
+            PageNumber: currentPage,
+            ResultsPerPage: 500, // API maximum limit
+            AdditionalFilters: [],
+            ExtraFields: [
+              "PostalServiceCost",
+              "TotalCharge",
+              "Source",
+              "SubSource",
+              "PostageCostExTax",
+              "Subtotal",
+              "CountryTaxRate",
+              "fTax"
+            ],
+            OrderStates: []
+          }
+        }
+      ));
+
+      if (!result?.ProcessedOrders?.Data) {
+        console.log('No processed orders returned from API');
+        return [];
       }
-    ));
 
-    if (!result?.SalesPerformance) {
-      console.log('No financial data returned from API');
-      return [];
+      // Add this page's orders to our collection
+      allOrders = allOrders.concat(result.ProcessedOrders.Data);
+
+      console.log(`Retrieved page ${currentPage} with ${result.ProcessedOrders.Data.length} orders. Total entries: ${result.ProcessedOrders.TotalEntries}`);
+
+      // Check if there are more pages
+      if (result.ProcessedOrders.TotalPages && currentPage < result.ProcessedOrders.TotalPages) {
+        currentPage++;
+      } else {
+        hasMorePages = false;
+      }
+
+      // Safety check - if we've fetched all available orders, stop
+      if (allOrders.length >= (result.ProcessedOrders.TotalEntries || 0)) {
+        console.log('Retrieved all available orders');
+        hasMorePages = false;
+      }
     }
 
-    // Create daily summaries from performance data
+    // Create daily summaries from order data
     const dailyData: DailySalesData[] = [];
-    const performanceByDate = new Map<string, PerformanceData>();
+    const ordersByDate = new Map<string, ProcessedOrderData[]>();
 
-    // Index performance data by date
-    if (result?.SalesPerformance) {
-      result.SalesPerformance.forEach(perfData => {
-        const dateStr = new Date(perfData.Date).toISOString().split('T')[0];
-        performanceByDate.set(dateStr, perfData);
-      });
-    }
+    // Group orders by date
+    allOrders.forEach(order => {
+      const processedDate = order.dProcessedOn || order.dProcessed;
+      if (processedDate) {
+        const dateStr = new Date(processedDate).toISOString().split('T')[0];
+        const orders = ordersByDate.get(dateStr) || [];
+        orders.push(order);
+        ordersByDate.set(dateStr, orders);
+      }
+    });
 
     // Create daily summaries for the requested date range
     const currentDate = new Date(startDate);
     while (currentDate <= endDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
-      const perfData = performanceByDate.get(dateStr) || {
-        OrderCount: 0,
-        TotalOrderValue: 0,
-        TotalProfitValue: 0,
-        AverageOrderValue: 0,
-        TotalShippingCost: 0,
-        TotalDiscountValue: 0,
-        Date: dateStr
-      };
+      const orders = ordersByDate.get(dateStr) || [];
 
-      // Map performance data to daily totals
+      // Calculate daily totals from orders
+      const totalSales = orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.fTotalCharge || 0), 0);
+      const totalOrders = orders.length;
+
+      // Group orders by source
+      const ordersBySource = orders.reduce((acc, order) => {
+        const source = order.Source || 'Unknown';
+        if (!acc[source]) {
+          acc[source] = { count: 0, sales: 0 };
+        }
+        acc[source].count++;
+        acc[source].sales += order.fTotalCharge || 0;
+        return acc;
+      }, {} as Record<string, { count: number; sales: number; }>);
+
+      // Map order data to daily totals
+      console.log(`Processing data for ${dateStr}:`, {
+        orderCount: orders.length,
+        totalCharges: orders.map(o => o.fTotalCharge || 0),
+        totalAmount: totalSales
+      });
+
       const salesData = {
-        totalSales: perfData.TotalOrderValue,
-        totalProfit: perfData.TotalProfitValue,
-        orderCount: perfData.OrderCount,
-        averageOrderValue: perfData.AverageOrderValue,
-        totalShipping: perfData.TotalShippingCost,
-        totalDiscount: perfData.TotalDiscountValue
+        totalSales: totalSales,
+        totalProfit: 0, // Set to 0 since profit data comes from Sage
+        orderCount: totalOrders,
+        averageOrderValue: totalOrders > 0 ? totalSales / totalOrders : 0,
+        totalShipping: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.fPostageCost || 0), 0),
+        totalDiscount: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.fTotalDiscount || 0), 0),
+        totalTax: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.fTax || 0), 0),
+        totalSubtotal: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.Subtotal || 0), 0),
+        totalPostageCost: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.PostageCostExTax || 0), 0),
+        bySource: ordersBySource
       };
 
       // Format the date for display

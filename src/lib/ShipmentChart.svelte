@@ -84,6 +84,10 @@
 	}
 
 	// Add this helper function to determine if a metric is a percentage metric
+	function isCurrencyMetric(metricName: string): boolean {
+		return metricName === '2.0 Total Sales'; // This will be formatted with £ symbol
+	}
+
 	function isPercentageMetric(metricName: string): boolean {
 		return (
 			metricName.includes('%') ||
@@ -154,6 +158,13 @@
 			isHeader: true,
 			values: new Array(daysCount).fill(0),
 			metricField: null
+		},
+		{
+			name: '2.0 Total Sales',
+			values: new Array(daysCount).fill(0),
+			metricField: 'total_sales',
+			isReadOnly: true,
+			tooltip: 'Total sales value for all orders from all channels each day.'
 		},
 		{
 			name: '2.1 Linnworks Total Orders',
@@ -390,6 +401,14 @@
 		if (isPercentageMetric(metricName)) {
 			return formatPercentage(value);
 		}
+		if (isCurrencyMetric(metricName)) {
+			return new Intl.NumberFormat('en-GB', {
+				style: 'currency',
+				currency: 'GBP',
+				minimumFractionDigits: 2,
+				maximumFractionDigits: 2
+			}).format(value);
+		}
 		return formatNumber(value);
 	}
 
@@ -465,18 +484,20 @@
 				.lte('date', endDateStr)
 				.order('date');
 
-			// NEW: Fetch Linnworks completed orders data for previous week
+			// Fetch Linnworks and financial data for previous week
 			let linnworksOrdersData: LinnworksOrderData[] = [];
+			let prevWeekFinancialData: any = null;
 			try {
 				console.log(
-					'Fetching previous week Linnworks data for date range:',
+					'Fetching previous week Linnworks and financial data for date range:',
 					startDateStr,
 					'to',
 					endDateStr
 				);
-				const linnworksResponse = await fetch(
-					`/api/linnworks/weeklyOrderCounts?startDate=${startDateStr}&endDate=${endDateStr}`
-				);
+				const [linnworksResponse, financialResponse] = await Promise.all([
+					fetch(`/api/linnworks/weeklyOrderCounts?startDate=${startDateStr}&endDate=${endDateStr}`),
+					fetch(`/api/linnworks/financialData?startDate=${startDateStr}&endDate=${endDateStr}`)
+				]);
 
 				if (!linnworksResponse.ok) {
 					throw new Error(
@@ -484,18 +505,26 @@
 					);
 				}
 
-				const linnworksData = await linnworksResponse.json();
+				const [linnworksData, financialJson] = await Promise.all([
+					linnworksResponse.json(),
+					financialResponse.json()
+				]);
+
 				linnworksOrdersData = linnworksData.dailyOrders || [];
-				console.log('Fetched previous week Linnworks data:', linnworksOrdersData);
+				prevWeekFinancialData = financialJson.dailyData || [];
+				console.log('Fetched previous week data:', {
+					orders: linnworksOrdersData,
+					financial: prevWeekFinancialData
+				});
 			} catch (err) {
-				console.error('Failed to fetch previous week Linnworks data:', err);
-				// Continue without Linnworks data
+				console.error('Failed to fetch previous week data:', err);
+				// Continue without Linnworks/financial data
 			}
 
 			// Create a lookup map
 			const dataByDay: Record<string, any> = {};
 			prevWeekMetricsData?.forEach((record) => {
-				dataByDay[record.date] = record;
+				dataByDay[record.date] = { ...record };
 
 				// Replace scheduled_hours with data from hours service if available
 				const hoursRecord = scheduledHoursData.find((h) => h.date === record.date);
@@ -529,6 +558,14 @@
 					dataByDay[date].linnworks_ebay_orders = dayData.channels.ebay;
 					dataByDay[date].linnworks_shopify_orders = dayData.channels.shopify;
 					dataByDay[date].linnworks_other_orders = dayData.channels.other;
+				}
+			});
+
+			// Add financial data to the lookup map
+			prevWeekFinancialData?.forEach((dayData: any) => {
+				const date = dayData.date;
+				if (dataByDay[date]) {
+					dataByDay[date].total_sales = dayData.salesData.totalSales;
 				}
 			});
 
@@ -680,13 +717,15 @@
 				new Date(sundayStr)
 			);
 
-			// NEW: Fetch Linnworks completed orders data
+			// Fetch Linnworks orders and financial data
 			let linnworksOrdersData: LinnworksOrderData[] = [];
+			let financialData: any = null;
 			try {
 				console.log('Fetching Linnworks data for date range:', mondayStr, 'to', sundayStr);
-				const linnworksResponse = await fetch(
-					`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`
-				);
+				const [linnworksResponse, financialResponse] = await Promise.all([
+					fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
+					fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
+				]);
 
 				if (!linnworksResponse.ok) {
 					throw new Error(
@@ -694,9 +733,23 @@
 					);
 				}
 
-				const linnworksData = await linnworksResponse.json();
+				if (!linnworksResponse.ok || !financialResponse.ok) {
+					throw new Error(
+						`API Error - Orders: ${linnworksResponse.status}, Financial: ${financialResponse.status}`
+					);
+				}
+
+				const [linnworksData, financialJson] = await Promise.all([
+					linnworksResponse.json(),
+					financialResponse.json()
+				]);
+
 				linnworksOrdersData = linnworksData.dailyOrders || [];
-				console.log('Fetched Linnworks data:', linnworksOrdersData);
+				financialData = financialJson.dailyData || [];
+				console.log('Fetched Linnworks data:', {
+					orders: linnworksOrdersData,
+					financial: financialData
+				});
 			} catch (err) {
 				console.error('Failed to fetch Linnworks data:', err);
 				// Continue without Linnworks data
@@ -742,6 +795,29 @@
 				}
 			});
 
+			// Add financial data
+			interface FinancialDayData {
+				date: string;
+				formattedDate: string;
+				salesData: {
+					totalSales: number;
+				};
+			}
+
+			financialData?.forEach((dayData: FinancialDayData) => {
+				const date = dayData.date; // Using the ISO date string directly
+				if (dataByDay[date]) {
+					dataByDay[date].total_sales = dayData.salesData.totalSales;
+				} else {
+					console.log('Missing data for date:', date, 'in dataByDay');
+				}
+			});
+
+			console.log('Financial data mapping:', {
+				financialData,
+				dataByDay
+			});
+
 			// Reset metrics to default values
 			let updatedMetrics = JSON.parse(JSON.stringify(metrics));
 
@@ -760,10 +836,13 @@
 						if (metric.metricField === 'shipments_packed') {
 							dbField = 'shipments'; // Correct field name from schema
 						}
-
 						if (dayData[dbField] !== undefined) {
 							const newValues = [...metric.values];
-							newValues[i] = dayData[dbField] || 0;
+							if (dbField === 'total_sales') {
+								newValues[i] = dayData.total_sales || 0;
+							} else {
+								newValues[i] = dayData[dbField] || 0;
+							}
 							return { ...metric, values: newValues };
 						}
 						return metric;
@@ -1341,8 +1420,9 @@
 								: previousTotalsComputed[metricIndex]}
 							previousTotal={previousTotalsComputed[metricIndex]}
 							isReadOnly={metric.isReadOnly}
-							tooltip={metric.tooltip}
+							isCurrency={isCurrencyMetric(metric.name)}
 							isPercentage={isPercentageMetric(metric.name)}
+							tooltip={metric.tooltip}
 						/>
 					{/if}
 				{/each}
