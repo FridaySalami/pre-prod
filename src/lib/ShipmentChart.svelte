@@ -1356,78 +1356,115 @@
 <!-- Card Container for Dashboard Table -->
 <div class="card">
 	<div class="dashboard-container">
-		<table>
-			<thead>
-				<tr class="table-header">
-					<th class="metric-name-header">Week {getWeekNumber(displayedMonday)}</th>
-					{#each weekDates as date, i}
-						<th
-							class:current-day={isCurrentWeek && i === currentDayIndex}
-							class:highlight-column={isCurrentWeek && i === currentDayIndex}
-						>
-							{date.toLocaleDateString(undefined, { weekday: 'long' })}
-						</th>
+		{#if isLoading}
+			<div class="skeleton-container">
+				<!-- Header skeleton -->
+				<div class="skeleton-header">
+					<div class="skeleton-nav">
+						<div class="skeleton-button"></div>
+						<div class="skeleton-text w-40"></div>
+						<div class="skeleton-button"></div>
+					</div>
+					<div class="skeleton-export"></div>
+				</div>
+
+				<!-- Table skeleton -->
+				<div class="table-skeleton">
+					<div class="skeleton-row header">
+						<div class="skeleton-cell w-48"></div>
+						{#each Array(7) as _, i}
+							<div class="skeleton-cell"></div>
+						{/each}
+						<div class="skeleton-cell"></div>
+						<div class="skeleton-cell"></div>
+					</div>
+
+					{#each Array(8) as _, i}
+						<div class="skeleton-row">
+							<div class="skeleton-cell w-48"></div>
+							{#each Array(7) as _, j}
+								<div class="skeleton-cell"></div>
+							{/each}
+							<div class="skeleton-cell"></div>
+							<div class="skeleton-cell"></div>
+						</div>
 					{/each}
-					<th class="multiline-header">Current<br />Week Total</th>
-					<th class="multiline-header">By This Time<br />Last Week</th>
-					<th>WoW % Change</th>
-					<th class="multiline-header">Previous<br />Week Total</th>
-				</tr>
-				<tr class="table-header sub-header">
-					<th></th>
-					{#each weekDates as date, i}
-						<th class:highlight-column={isCurrentWeek && i === currentDayIndex}>
-							{date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
-						</th>
-					{/each}
-					<th></th>
-					<th></th>
-					<th></th>
-					<th></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each metrics as metric, metricIndex}
-					{#if metric.isHeader}
-						<tr class="section-header">
-							<td colspan="12">{metric.name}</td>
-						</tr>
-					{:else if metric.isSpacer}
-						<tr class="spacer-row">
-							<td colspan="12"></td>
-						</tr>
-					{:else}
-						<svelte:component
-							this={MetricRow}
-							name={metric.name}
-							values={metric.metricField === null ? computedMetrics[metricIndex] : metric.values}
-							{metricIndex}
-							{currentDayIndex}
-							{isCurrentWeek}
-							wowChange={computeWoWChange(
-								currentTotals[metricIndex],
-								isCurrentWeek
+				</div>
+			</div>
+		{:else}
+			<table>
+				<thead>
+					<tr class="table-header">
+						<th class="metric-name-header">Week {getWeekNumber(displayedMonday)}</th>
+						{#each weekDates as date, i}
+							<th
+								class:current-day={isCurrentWeek && i === currentDayIndex}
+								class:highlight-column={isCurrentWeek && i === currentDayIndex}
+							>
+								{date.toLocaleDateString(undefined, { weekday: 'long' })}
+							</th>
+						{/each}
+						<th class="multiline-header">Current<br />Week Total</th>
+						<th class="multiline-header">By This Time<br />Last Week</th>
+						<th>WoW % Change</th>
+						<th class="multiline-header">Previous<br />Week Total</th>
+					</tr>
+					<tr class="table-header sub-header">
+						<th></th>
+						{#each weekDates as date, i}
+							<th class:highlight-column={isCurrentWeek && i === currentDayIndex}>
+								{date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
+							</th>
+						{/each}
+						<th></th>
+						<th></th>
+						<th></th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each metrics as metric, metricIndex}
+						{#if metric.isHeader}
+							<tr class="section-header">
+								<td colspan="12">{metric.name}</td>
+							</tr>
+						{:else if metric.isSpacer}
+							<tr class="spacer-row">
+								<td colspan="12"></td>
+							</tr>
+						{:else}
+							<svelte:component
+								this={MetricRow}
+								name={metric.name}
+								values={metric.metricField === null ? computedMetrics[metricIndex] : metric.values}
+								{metricIndex}
+								{currentDayIndex}
+								{isCurrentWeek}
+								wowChange={computeWoWChange(
+									currentTotals[metricIndex],
+									isCurrentWeek
+										? partialPreviousTotalsComputed[metricIndex]
+										: previousTotalsComputed[metricIndex],
+									metric.name === '1.3 Actual Hours Worked' ||
+										metric.name === '1.6 Packing Errors' ||
+										metric.name === '1.7 Packing Errors DPMO'
+								)}
+								{handleInputChange}
+								currentTotal={currentTotals[metricIndex]}
+								byThisTimeLastWeek={isCurrentWeek
 									? partialPreviousTotalsComputed[metricIndex]
-									: previousTotalsComputed[metricIndex],
-								metric.name === '1.3 Actual Hours Worked' ||
-									metric.name === '1.6 Packing Errors' ||
-									metric.name === '1.7 Packing Errors DPMO'
-							)}
-							{handleInputChange}
-							currentTotal={currentTotals[metricIndex]}
-							byThisTimeLastWeek={isCurrentWeek
-								? partialPreviousTotalsComputed[metricIndex]
-								: previousTotalsComputed[metricIndex]}
-							previousTotal={previousTotalsComputed[metricIndex]}
-							isReadOnly={metric.isReadOnly}
-							isCurrency={isCurrencyMetric(metric.name)}
-							isPercentage={isPercentageMetric(metric.name)}
-							tooltip={metric.tooltip}
-						/>
-					{/if}
-				{/each}
-			</tbody>
-		</table>
+									: previousTotalsComputed[metricIndex]}
+								previousTotal={previousTotalsComputed[metricIndex]}
+								isReadOnly={metric.isReadOnly}
+								isCurrency={isCurrencyMetric(metric.name)}
+								isPercentage={isPercentageMetric(metric.name)}
+								tooltip={metric.tooltip}
+							/>
+						{/if}
+					{/each}
+				</tbody>
+			</table>
+		{/if}
 	</div>
 </div>
 
@@ -1717,6 +1754,103 @@
 		table td:first-child {
 			width: 140px;
 			min-width: 140px;
+		}
+	}
+
+	.skeleton-container {
+		background: white;
+		border-radius: 8px;
+		padding: 20px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.skeleton-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 20px;
+	}
+
+	.skeleton-nav {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+	}
+
+	.skeleton-button {
+		width: 120px;
+		height: 36px;
+		background: #f0f0f0;
+		border-radius: 6px;
+		animation: pulse 1.5s ease-in-out infinite;
+	}
+
+	.skeleton-text {
+		height: 24px;
+		background: #f0f0f0;
+		border-radius: 4px;
+		animation: pulse 1.5s ease-in-out infinite;
+	}
+
+	.skeleton-export {
+		width: 150px;
+		height: 36px;
+		background: #f0f0f0;
+		border-radius: 6px;
+		animation: pulse 1.5s ease-in-out infinite;
+	}
+
+	.table-skeleton {
+		width: 100%;
+		border-spacing: 0;
+		border-collapse: collapse;
+	}
+
+	.skeleton-row {
+		display: flex;
+		border-bottom: 1px solid #f0f0f0;
+	}
+
+	.skeleton-row.header {
+		background: #fafafa;
+	}
+
+	.skeleton-cell {
+		flex: 1;
+		height: 40px;
+		padding: 8px;
+		display: flex;
+		align-items: center;
+	}
+
+	.skeleton-cell::before {
+		content: '';
+		width: 80%;
+		height: 16px;
+		background: #f0f0f0;
+		border-radius: 4px;
+		animation: pulse 1.5s ease-in-out infinite;
+	}
+
+	.w-48 {
+		width: 200px;
+		min-width: 180px;
+		max-width: 220px;
+	}
+
+	.w-40 {
+		width: 160px;
+	}
+
+	@keyframes pulse {
+		0% {
+			opacity: 0.6;
+		}
+		50% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0.6;
 		}
 	}
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ExportOrdersCsv from '$lib/ExportOrdersCsv.svelte';
+	import ItemSku from '$lib/ItemSku.svelte'; // Import the new component
 	import type { ProcessedOrder } from './types';
 
 	export let orders: ProcessedOrder[] = [];
@@ -43,6 +44,8 @@
 						<th class="text-left">ORDER #</th>
 						<th class="text-left">SOURCE</th>
 						<th class="text-left">REFERENCE</th>
+						<th class="text-left">ITEMS & SKUs</th>
+						<!-- New Column -->
 						<th class="text-left">SHIPPING METHOD</th>
 						<th class="text-right">TOTAL</th>
 						<th class="text-right">BREAKDOWN</th>
@@ -64,6 +67,16 @@
 									{order.ReferenceNum}
 								{:else}
 									{order.OrderId || 'No reference'}
+								{/if}
+							</td>
+							<td class="text-left items-skus">
+								<!-- Cell for Items and SKUs -->
+								{#if order.Items && order.Items.length > 0}
+									{#each order.Items as item}
+										<ItemSku {item} />
+									{/each}
+								{:else}
+									No items in this order.
 								{/if}
 							</td>
 							<td class="text-left shipping-method">
@@ -178,6 +191,12 @@
 	.order-reference {
 		font-size: 0.875rem;
 		color: #4b5563;
+	}
+
+	.items-skus {
+		font-size: 0.875rem;
+		color: #4b5563;
+		min-width: 200px; /* Adjust as needed */
 	}
 
 	.shipping-method {
