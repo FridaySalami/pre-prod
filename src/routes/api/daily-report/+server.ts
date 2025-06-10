@@ -28,6 +28,11 @@ interface DailyReportData {
 		amazonSales: number;
 		ebaySales: number;
 		shopifySales: number;
+		// Formatted currency strings
+		totalSalesFormatted: string;
+		amazonSalesFormatted: string;
+		ebaySalesFormatted: string;
+		shopifySalesFormatted: string;
 		// Sales breakdown percentages
 		amazonSalesPercent: number;
 		ebaySalesPercent: number;
@@ -53,6 +58,11 @@ interface DailyReportData {
 		ebayAOV: number;
 		shopifyAOV: number;
 		shipmentsPerHour: number;
+		// Formatted currency strings
+		averageOrderValueFormatted: string;
+		amazonAOVFormatted: string;
+		ebayAOVFormatted: string;
+		shopifyAOVFormatted: string;
 	};
 	
 	// Status information
@@ -144,6 +154,10 @@ export const GET: RequestHandler = async ({ url }) => {
 				amazonSales: 0,
 				ebaySales: 0,
 				shopifySales: 0,
+				totalSalesFormatted: '£0.00',
+				amazonSalesFormatted: '£0.00',
+				ebaySalesFormatted: '£0.00',
+				shopifySalesFormatted: '£0.00',
 				amazonSalesPercent: 0,
 				ebaySalesPercent: 0,
 				shopifySalesPercent: 0
@@ -164,7 +178,11 @@ export const GET: RequestHandler = async ({ url }) => {
 				amazonAOV: 0,
 				ebayAOV: 0,
 				shopifyAOV: 0,
-				shipmentsPerHour: 0
+				shipmentsPerHour: 0,
+				averageOrderValueFormatted: '£0.00',
+				amazonAOVFormatted: '£0.00',
+				ebayAOVFormatted: '£0.00',
+				shopifyAOVFormatted: '£0.00'
 			},
 			
 			status: {
@@ -186,16 +204,24 @@ export const GET: RequestHandler = async ({ url }) => {
 				laborUtilization: reviewData.labor_utilization || 0
 			};
 			
-			// Sales data
+			// Sales data with proper formatting
 			const totalSales = reviewData.total_sales || 0;
+			const amazonSales = reviewData.amazon_sales || 0;
+			const ebaySales = reviewData.ebay_sales || 0;
+			const shopifySales = reviewData.shopify_sales || 0;
+			
 			response.sales = {
 				totalSales,
-				amazonSales: reviewData.amazon_sales || 0,
-				ebaySales: reviewData.ebay_sales || 0,
-				shopifySales: reviewData.shopify_sales || 0,
-				amazonSalesPercent: totalSales > 0 ? Math.round((reviewData.amazon_sales / totalSales) * 100 * 10) / 10 : 0,
-				ebaySalesPercent: totalSales > 0 ? Math.round((reviewData.ebay_sales / totalSales) * 100 * 10) / 10 : 0,
-				shopifySalesPercent: totalSales > 0 ? Math.round((reviewData.shopify_sales / totalSales) * 100 * 10) / 10 : 0
+				amazonSales,
+				ebaySales,
+				shopifySales,
+				totalSalesFormatted: `£${totalSales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				amazonSalesFormatted: `£${amazonSales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				ebaySalesFormatted: `£${ebaySales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				shopifySalesFormatted: `£${shopifySales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				amazonSalesPercent: totalSales > 0 ? Math.round((amazonSales / totalSales) * 100 * 10) / 10 : 0,
+				ebaySalesPercent: totalSales > 0 ? Math.round((ebaySales / totalSales) * 100 * 10) / 10 : 0,
+				shopifySalesPercent: totalSales > 0 ? Math.round((shopifySales / totalSales) * 100 * 10) / 10 : 0
 			};
 			
 			// Orders data
@@ -210,20 +236,29 @@ export const GET: RequestHandler = async ({ url }) => {
 			};
 			
 			// Calculated metrics
+			const avgOrderValue = response.orders.totalOrders > 0 
+				? Math.round((totalSales / response.orders.totalOrders) * 100) / 100 
+				: 0;
+			const amazonAOV = response.orders.amazonOrders > 0 
+				? Math.round((response.sales.amazonSales / response.orders.amazonOrders) * 100) / 100 
+				: 0;
+			const ebayAOV = response.orders.ebayOrders > 0 
+				? Math.round((response.sales.ebaySales / response.orders.ebayOrders) * 100) / 100 
+				: 0;
+			const shopifyAOV = response.orders.shopifyOrders > 0 
+				? Math.round((response.sales.shopifySales / response.orders.shopifyOrders) * 100) / 100 
+				: 0;
+			
 			response.metrics = {
-				averageOrderValue: response.orders.totalOrders > 0 
-					? Math.round((totalSales / response.orders.totalOrders) * 100) / 100 
-					: 0,
-				amazonAOV: response.orders.amazonOrders > 0 
-					? Math.round((response.sales.amazonSales / response.orders.amazonOrders) * 100) / 100 
-					: 0,
-				ebayAOV: response.orders.ebayOrders > 0 
-					? Math.round((response.sales.ebaySales / response.orders.ebayOrders) * 100) / 100 
-					: 0,
-				shopifyAOV: response.orders.shopifyOrders > 0 
-					? Math.round((response.sales.shopifySales / response.orders.shopifyOrders) * 100) / 100 
-					: 0,
-				shipmentsPerHour: reviewData.labor_efficiency || 0
+				averageOrderValue: avgOrderValue,
+				amazonAOV,
+				ebayAOV,
+				shopifyAOV,
+				shipmentsPerHour: reviewData.labor_efficiency || 0,
+				averageOrderValueFormatted: `£${avgOrderValue.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				amazonAOVFormatted: `£${amazonAOV.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				ebayAOVFormatted: `£${ebayAOV.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+				shopifyAOVFormatted: `£${shopifyAOV.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 			};
 			
 			response.status.dataComplete = true;
