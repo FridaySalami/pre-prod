@@ -106,103 +106,16 @@ async function callApiWithRetry<T>(fn: () => Promise<T>, maxRetries = 3, initial
   }
 }
 
-// Helper function with caching
-// Update to use a more robust approach that does filtering in our code
+// These helper functions are kept for API compatibility with existing code but are no longer used
+// by the optimized getDailyOrderCounts function
 async function getDayOrderCountByChannel(dayStart: Date, dayEnd: Date, channel: string): Promise<number> {
-  try {
-    // Create cache key
-    const cacheKey = `${dayStart.toISOString()}_${dayEnd.toISOString()}_${channel}`;
-
-    // Check if we have a cached result
-    const cachedCount = orderCountCache.get(cacheKey);
-    if (cachedCount !== undefined) {
-      console.log(`Using cached count for ${channel} on ${dayStart.toDateString()}: ${cachedCount}`);
-      return cachedCount as number;
-    }
-
-    // Get total count for this day first
-    const totalCount = await getDayOrderCount(dayStart, dayEnd);
-
-    // If no orders for this day, return zero for all channels
-    if (totalCount === 0) {
-      console.log(`No orders found for ${dayStart.toDateString()}, returning 0 for ${channel}`);
-      orderCountCache.set(cacheKey, 0);
-      return 0;
-    }
-
-    // For now, use estimated percentages based on typical e-commerce patterns
-    // These are placeholder values until the API can provide actual data
-    let percentage = 0;
-
-    switch (channel.toUpperCase()) {
-      case 'AMAZON':
-        percentage = 0.65; // Amazon ~65% of orders
-        break;
-      case 'EBAY':
-        percentage = 0.20; // eBay ~20% of orders
-        break;
-      case 'SHOPIFY':
-        percentage = 0.10; // Shopify ~10% of orders
-        break;
-      default:
-        percentage = 0.05; // Other ~5% of orders
-    }
-
-    // Calculate the estimated channel count
-    const channelCount = Math.round(totalCount * percentage);
-
-    console.log(`Estimated ${channel} count for ${dayStart.toDateString()}: ${channelCount} (${percentage * 100}% of ${totalCount} total)`);
-
-    // Cache the result
-    orderCountCache.set(cacheKey, channelCount);
-
-    return channelCount;
-  } catch (error) {
-    console.error(`Error getting ${channel} count for ${dayStart.toDateString()}:`, error);
-    return 0;
-  }
+  console.log(`getDayOrderCountByChannel is deprecated. Use the optimized getDailyOrderCounts instead.`);
+  return 0;
 }
 
-// Add this helper function for total counts for a specific day
 async function getDayOrderCount(dayStart: Date, dayEnd: Date): Promise<number> {
-  try {
-    // Create cache key
-    const cacheKey = `${dayStart.toISOString()}_${dayEnd.toISOString()}_TOTAL`;
-
-    // Check if we have a cached result
-    const cachedCount = orderCountCache.get(cacheKey);
-    if (cachedCount !== undefined) {
-      console.log(`Using cached count for TOTAL on ${dayStart.toDateString()}: ${cachedCount}`);
-      return cachedCount as number;
-    }
-
-    // If not in cache, make the API call
-    console.log(`Fetching TOTAL orders for ${dayStart.toDateString()}`);
-
-    const searchRequest = {
-      DateField: "processed",
-      FromDate: dayStart.toISOString(),
-      ToDate: dayEnd.toISOString(),
-      PageNumber: 1,
-      ResultsPerPage: 20
-    };
-
-    const result = await callApiWithRetry(() => callLinnworksApi<ProcessedOrdersResponse>(
-      'ProcessedOrders/SearchProcessedOrders',
-      'POST',
-      { request: searchRequest }
-    ));
-
-    const count = result?.ProcessedOrders?.TotalEntries || 0;
-
-    // Save to cache
-    orderCountCache.set(cacheKey, count);
-
-    return count;
-  } catch (error) {
-    console.error(`Error getting total count for ${dayStart.toDateString()}:`, error);
-    return 0;
-  }
+  console.log(`getDayOrderCount is deprecated. Use the optimized getDailyOrderCounts instead.`);
+  return 0;
 }
 
 // Get all daily order counts for a date range, including channel breakdown
@@ -210,56 +123,21 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
   try {
     console.log(`Getting daily order counts from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-    // Make ONE API call to get ALL orders for the entire date range
-    const searchRequest = {
-      DateField: "processed",
-      FromDate: startDate.toISOString(),
-      ToDate: endDate.toISOString(),
-      PageNumber: 1,
-      ResultsPerPage: 500, // Changed from 1000 to 500 (API maximum limit)
-      // No Source filter - we'll filter the results ourselves
-    };
-
-    console.log('Making single API call for all orders in date range');
-    const result = await callApiWithRetry(() => callLinnworksApi<ProcessedOrdersResponse>(
-      'ProcessedOrders/SearchProcessedOrders',
-      'POST',
-      { request: searchRequest }
-    ));
-
-    // Check if we have data
-    if (!result?.ProcessedOrders?.Data) {
-      console.log('No order data returned from API');
-      return [];
+    // Generate cache key for the entire week
+    const cacheKey = `weekly_counts_${startDate.toISOString()}_${endDate.toISOString()}`;
+    const cachedData = orderCountCache.get(cacheKey);
+    if (cachedData) {
+      console.log('Using cached weekly order counts data');
+      return cachedData as DailyOrderCount[];
     }
 
-    // Get the orders and process them by day and source
-    const allOrders = result.ProcessedOrders.Data;
-    console.log(`Retrieved ${allOrders.length} orders out of ${result.ProcessedOrders.TotalEntries} total`);
-
-    // Now organize by day
-    const ordersByDay: Record<string, {
-      total: number,
-      amazon: number,
-      ebay: number,
-      shopify: number,
-      other: number
-    }> = {};
-
-    // Initialize days
+    // Initialize days structure
     const days: DailyOrderCount[] = [];
     const currentDate = new Date(startDate);
+
+    // Build the days array with formatted dates
     while (currentDate <= endDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
-
-      // Initialize counts for this day
-      ordersByDay[dateStr] = {
-        total: 0,
-        amazon: 0,
-        ebay: 0,
-        shopify: 0,
-        other: 0
-      };
 
       // Format the date for display
       const options: Intl.DateTimeFormatOptions = {
@@ -271,8 +149,8 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
       // Add to days array - we'll populate counts later
       days.push({
         date: dateStr,
-        count: 0 // Will update this later
-        , formattedDate: currentDate.toLocaleDateString('en-US', options),
+        count: 0, // Will update this later
+        formattedDate: currentDate.toLocaleDateString('en-US', options),
         channels: {
           amazon: 0,
           ebay: 0,
@@ -285,30 +163,77 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // Get the total order counts for each day directly using the API and caching
-    // This is more reliable than trying to count from a limited dataset
+    // Fetch data for the whole date range with pagination to avoid rate limits
+    const ordersByDate: Record<string, {
+      total: number;
+      bySource: Record<string, number>;
+    }> = {};
+
+    // Initialize order counts structure for each day
+    days.forEach(day => {
+      ordersByDate[day.date] = {
+        total: 0,
+        bySource: {}
+      };
+    });
+
+    // Make paginated API calls to get ALL orders for the entire date range
+    await fetchAllOrdersWithPagination(startDate, endDate, (orders) => {
+      // Process each batch of orders
+      for (const order of orders) {
+        // Get the processed date
+        const processedDate = order.dProcessedOn || order.dProcessed;
+        if (!processedDate) continue;
+
+        const dateStr = new Date(processedDate).toISOString().split('T')[0];
+
+        // Only process if it's within our date range
+        if (ordersByDate[dateStr]) {
+          // Increment total count
+          ordersByDate[dateStr].total++;
+
+          // Process by source
+          const source = (order.Source || 'unknown').toLowerCase();
+          if (!ordersByDate[dateStr].bySource[source]) {
+            ordersByDate[dateStr].bySource[source] = 0;
+          }
+          ordersByDate[dateStr].bySource[source]++;
+        }
+      }
+    });
+
+    // Update each day with the counted data
     for (const day of days) {
-      const dayStart = new Date(day.date);
-      dayStart.setHours(0, 0, 0, 0);
+      const dateData = ordersByDate[day.date];
 
-      const dayEnd = new Date(day.date);
-      dayEnd.setHours(23, 59, 59, 999);
+      // Set total count
+      day.count = dateData.total;
 
-      // Get total order count for this day
-      const totalCount = await getDayOrderCount(dayStart, dayEnd);
-      day.count = totalCount;
-
-      // Get channel-specific counts
+      // Set channel counts
       if (day.channels) {
-        day.channels.amazon = await getDayOrderCountByChannel(dayStart, dayEnd, 'AMAZON');
-        day.channels.ebay = await getDayOrderCountByChannel(dayStart, dayEnd, 'EBAY');
-        day.channels.shopify = await getDayOrderCountByChannel(dayStart, dayEnd, 'SHOPIFY');
+        // Calculate Amazon count (combining variations of the name)
+        day.channels.amazon = Object.entries(dateData.bySource)
+          .filter(([source]) => source.includes('amazon') || source === 'amz')
+          .reduce((sum, [_, count]) => sum + count, 0);
 
-        // Calculate other as the difference between total and known channels
-        const knownChannels = day.channels.amazon + day.channels.ebay + day.channels.shopify;
-        day.channels.other = Math.max(0, totalCount - knownChannels);
+        // Calculate eBay count
+        day.channels.ebay = Object.entries(dateData.bySource)
+          .filter(([source]) => source.includes('ebay'))
+          .reduce((sum, [_, count]) => sum + count, 0);
+
+        // Calculate Shopify count
+        day.channels.shopify = Object.entries(dateData.bySource)
+          .filter(([source]) => source.includes('shopify'))
+          .reduce((sum, [_, count]) => sum + count, 0);
+
+        // Calculate Others (everything not counted above)
+        day.channels.other = day.count - day.channels.amazon - day.channels.ebay - day.channels.shopify;
       }
     }
+
+    // Cache the results for future use
+    orderCountCache.set(cacheKey, days, 3600); // Cache for 1 hour
+    console.log(`Cached order counts data for date range ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
     return days;
   } catch (error) {
@@ -497,4 +422,96 @@ export async function getDailyOrders(
     console.error('Error getting daily orders:', error);
     throw error;
   }
+}
+
+/**
+ * Fetches all orders with pagination to avoid API rate limits
+ * @param startDate The start date for the order query
+ * @param endDate The end date for the order query
+ * @param batchProcessor A callback function to process each batch of orders
+ */
+async function fetchAllOrdersWithPagination(
+  startDate: Date,
+  endDate: Date,
+  batchProcessor: (orders: ProcessedOrderData[]) => void
+): Promise<void> {
+  let currentPage = 1;
+  let hasMorePages = true;
+  let totalProcessed = 0;
+  let delayBetweenRequests = 500; // Start with a small delay, will increase if rate limited
+
+  console.log('Starting paginated fetch of all orders');
+
+  while (hasMorePages) {
+    try {
+      // Avoid overwhelming the API by adding a delay between requests
+      if (currentPage > 1) {
+        console.log(`Waiting ${delayBetweenRequests}ms before next request`);
+        await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+      }
+
+      console.log(`Fetching page ${currentPage} of orders from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+      const searchRequest = {
+        DateField: "processed",
+        FromDate: startDate.toISOString(),
+        ToDate: endDate.toISOString(),
+        PageNumber: currentPage,
+        ResultsPerPage: 250, // Fetch a good number of results per page to reduce total API calls
+        ExtraFields: ["Source"] // Ensure we get the Source field
+      };
+
+      const result = await callApiWithRetry(
+        () => callLinnworksApi<ProcessedOrdersResponse>(
+          'ProcessedOrders/SearchProcessedOrders',
+          'POST',
+          { request: searchRequest }
+        ),
+        3,  // max retries
+        2000 // initial delay
+      );
+
+      if (!result?.ProcessedOrders?.Data || result.ProcessedOrders.Data.length === 0) {
+        console.log('No more orders to process');
+        break;
+      }
+
+      const batch = result.ProcessedOrders.Data;
+      const totalPages = result.ProcessedOrders.TotalPages || 1;
+      const totalEntries = result.ProcessedOrders.TotalEntries || 0;
+
+      console.log(`Retrieved page ${currentPage}/${totalPages} with ${batch.length} orders. Total entries: ${totalEntries}`);
+
+      // Process this batch of orders
+      batchProcessor(batch);
+
+      totalProcessed += batch.length;
+
+      // Check if there are more pages
+      if (result.ProcessedOrders.TotalPages && currentPage < result.ProcessedOrders.TotalPages) {
+        currentPage++;
+
+        // If we're starting to get rate limited, increase the delay between requests
+        if (currentPage % 5 === 0) {
+          delayBetweenRequests = Math.min(delayBetweenRequests * 1.5, 5000); // Gradually increase delay up to 5 seconds max
+        }
+      } else {
+        hasMorePages = false;
+      }
+    } catch (error: any) {
+      if (error.message && error.message.includes('429')) {
+        // If we hit a rate limit that our retry mechanism couldn't handle,
+        // let's increase the delay dramatically and try again
+        delayBetweenRequests = Math.min(delayBetweenRequests * 2, 10000);
+        console.log(`Rate limit hit. Increasing delay to ${delayBetweenRequests}ms and retrying`);
+        await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+      } else {
+        // For non-rate-limit errors, stop the pagination
+        console.error('Error during paginated fetch:', error);
+        hasMorePages = false;
+      }
+    }
+  }
+
+  console.log(`Completed paginated fetch. Processed ${totalProcessed} orders total.`);
 }

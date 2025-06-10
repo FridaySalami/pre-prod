@@ -85,7 +85,12 @@
 
 	// Add this helper function to determine if a metric is a percentage metric
 	function isCurrencyMetric(metricName: string): boolean {
-		return metricName === '2.0 Total Sales'; // This will be formatted with £ symbol
+		return (
+			metricName === '2.0 Total Sales' ||
+			metricName === '2.0.1 Amazon Sales' ||
+			metricName === '2.0.2 eBay Sales' ||
+			metricName === '2.0.3 Shopify Sales'
+		); // These will be formatted with £ symbol
 	}
 
 	function isPercentageMetric(metricName: string): boolean {
@@ -167,6 +172,30 @@
 			tooltip: 'Total sales value for all orders from all channels each day.'
 		},
 		{
+			name: '2.0.1 Amazon Sales',
+			values: new Array(daysCount).fill(0),
+			metricField: 'amazon_sales',
+			isReadOnly: true,
+			isSubItem: true,
+			tooltip: 'Total sales value from Amazon orders each day.'
+		},
+		{
+			name: '2.0.2 eBay Sales',
+			values: new Array(daysCount).fill(0),
+			metricField: 'ebay_sales',
+			isReadOnly: true,
+			isSubItem: true,
+			tooltip: 'Total sales value from eBay orders each day.'
+		},
+		{
+			name: '2.0.3 Shopify Sales',
+			values: new Array(daysCount).fill(0),
+			metricField: 'shopify_sales',
+			isReadOnly: true,
+			isSubItem: true,
+			tooltip: 'Total sales value from Shopify orders each day.'
+		},
+		{
 			name: '2.1 Linnworks Total Orders',
 			values: new Array(daysCount).fill(0),
 			metricField: 'linnworks_completed_orders',
@@ -199,14 +228,6 @@
 			tooltip: 'Number of completed Shopify orders each day.'
 		},
 		{
-			name: '2.1.4 Other Orders',
-			values: new Array(daysCount).fill(0),
-			metricField: 'linnworks_other_orders',
-			isReadOnly: true,
-			isSubItem: true,
-			tooltip: 'Number of orders from other channels each day.'
-		},
-		{
 			name: '2.2 Channel Percentage Distribution',
 			isHeader: true,
 			values: new Array(daysCount).fill(0),
@@ -232,18 +253,22 @@
 			metricField: null,
 			isReadOnly: true,
 			tooltip: 'Percentage of orders coming from Shopify channel.'
-		},
-		{
-			name: '2.2.4 Other Orders %',
-			values: new Array(daysCount).fill(0),
-			metricField: null,
-			isReadOnly: true,
-			tooltip: 'Percentage of orders coming from other channels.'
 		}
 	];
 
+	// Create spacer for after Other Sales
+	let salesOrdersSpacer: ExtendedMetric = {
+		name: '',
+		isSpacer: true,
+		values: new Array(daysCount).fill(0),
+		metricField: null
+	};
+
+	// Insert the spacer after 2.0.3 Shopify Sales (at index 5)
+	let financialsWithSpacer = [...b2bMetrics.slice(0, 5), salesOrdersSpacer, ...b2bMetrics.slice(5)];
+
 	// Combine sections.
-	let metrics: ExtendedMetric[] = [...b2cMetrics, spacer, ...b2bMetrics];
+	let metrics: ExtendedMetric[] = [...b2cMetrics, spacer, ...financialsWithSpacer];
 
 	// Week navigation and date calculations.
 	let weekOffset: number = 0;
@@ -356,16 +381,7 @@
 			return weekDates.map((_, i) =>
 				totalOrders[i] > 0 ? Math.round((shopifyOrders[i] / totalOrders[i]) * 10000) / 100 : 0
 			);
-		} else if (metric.name === '2.2.4 Other Orders %') {
-			const totalOrders =
-				metrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
-				new Array(daysCount).fill(0);
-			const otherOrders =
-				metrics.find((m) => m.name === '2.1.4 Other Orders')?.values ??
-				new Array(daysCount).fill(0);
-			return weekDates.map((_, i) =>
-				totalOrders[i] > 0 ? Math.round((otherOrders[i] / totalOrders[i]) * 10000) / 100 : 0
-			);
+			// Other Orders % calculation removed
 		}
 		return metric.values;
 	});
@@ -440,8 +456,7 @@
 				metric.name === '1.8 Order Accuracy (%)' ||
 				metric.name === '2.2.1 Amazon Orders %' ||
 				metric.name === '2.2.2 eBay Orders %' ||
-				metric.name === '2.2.3 Shopify Orders %' ||
-				metric.name === '2.2.4 Other Orders %'
+				metric.name === '2.2.3 Shopify Orders %'
 			) {
 				// For error metrics and channel percentages, compute average
 				return computeMetricAverage(currentSlice, weekDates.slice(0, end + 1), {
@@ -566,6 +581,12 @@
 				const date = dayData.date;
 				if (dataByDay[date]) {
 					dataByDay[date].total_sales = dayData.salesData.totalSales;
+
+					// Add channel-specific sales data
+					dataByDay[date].amazon_sales = dayData.salesData.amazonSales || 0;
+					dataByDay[date].ebay_sales = dayData.salesData.ebaySales || 0;
+					dataByDay[date].shopify_sales = dayData.salesData.shopifySales || 0;
+					dataByDay[date].other_sales = dayData.salesData.otherSales || 0;
 				}
 			});
 
@@ -675,8 +696,7 @@
 			if (
 				metric.name === '2.2.1 Amazon Orders %' ||
 				metric.name === '2.2.2 eBay Orders %' ||
-				metric.name === '2.2.3 Shopify Orders %' ||
-				metric.name === '2.2.4 Other Orders %'
+				metric.name === '2.2.3 Shopify Orders %'
 			) {
 				return computeMetricAverage(slicedValues, slicedDates, {
 					ignoreZeros: false,
@@ -801,6 +821,10 @@
 				formattedDate: string;
 				salesData: {
 					totalSales: number;
+					amazonSales?: number;
+					ebaySales?: number;
+					shopifySales?: number;
+					otherSales?: number;
 				};
 			}
 
@@ -808,6 +832,12 @@
 				const date = dayData.date; // Using the ISO date string directly
 				if (dataByDay[date]) {
 					dataByDay[date].total_sales = dayData.salesData.totalSales;
+
+					// Add channel-specific sales data
+					dataByDay[date].amazon_sales = dayData.salesData.amazonSales || 0;
+					dataByDay[date].ebay_sales = dayData.salesData.ebaySales || 0;
+					dataByDay[date].shopify_sales = dayData.salesData.shopifySales || 0;
+					dataByDay[date].other_sales = dayData.salesData.otherSales || 0;
 				} else {
 					console.log('Missing data for date:', date, 'in dataByDay');
 				}
@@ -1296,16 +1326,6 @@
 					new Array(daysCount).fill(0);
 				return previousWeekDates.map((_, i) =>
 					totalOrders[i] > 0 ? Math.round((shopifyOrders[i] / totalOrders[i]) * 10000) / 100 : 0
-				);
-			} else if (metric.name === '2.2.4 Other Orders %') {
-				const totalOrders =
-					previousWeekMetrics[metrics.findIndex((m) => m.name === '2.1 Linnworks Total Orders')] ??
-					new Array(daysCount).fill(0);
-				const otherOrders =
-					previousWeekMetrics[metrics.findIndex((m) => m.name === '2.1.4 Other Orders')] ??
-					new Array(daysCount).fill(0);
-				return previousWeekDates.map((_, i) =>
-					totalOrders[i] > 0 ? Math.round((otherOrders[i] / totalOrders[i]) * 10000) / 100 : 0
 				);
 			}
 			return metric.values;
