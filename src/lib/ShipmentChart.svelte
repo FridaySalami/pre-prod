@@ -14,6 +14,10 @@
 	import { testDirectInsert } from '$lib/notesService';
 	import { showToast } from '$lib/toastStore';
 	import { getScheduledHoursForDateRange } from '$lib/schedule/hours-service';
+	import {
+		uploadDailyMetricReview,
+		transformMetricsForReview
+	} from '$lib/dailyMetricReviewService';
 
 	// Add this interface to your type definitions section at the top
 	interface LinnworksOrderData {
@@ -1102,6 +1106,260 @@
 		await loadPreviousWeekTotals(); // Ensure previous week data is reloaded.
 	}
 
+	// Helper function to fetch fresh current week data for upload (not for display)
+	async function fetchFreshCurrentWeekData(): Promise<ExtendedMetric[]> {
+		console.log('Fetching fresh current week data for upload...');
+
+		// Format dates for current week
+		const mondayStr = displayedMonday.toISOString().split('T')[0];
+		const sundayStr = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
+			.toISOString()
+			.split('T')[0];
+
+		// Fetch current week data from Supabase
+		const { data: currentWeekData, error } = await supabase
+			.from('daily_metrics')
+			.select('*')
+			.gte('date', mondayStr)
+			.lte('date', sundayStr)
+			.order('date');
+
+		if (error) {
+			console.error('Error fetching fresh current week data:', error);
+			throw error;
+		}
+
+		// Get scheduled hours from hours service
+		const scheduledHoursData = await getScheduledHoursForDateRange(
+			new Date(mondayStr),
+			new Date(sundayStr)
+		);
+
+		// Get fresh Linnworks and financial data for current week
+		const [linnworksResponse, financialResponse] = await Promise.all([
+			fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
+			fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
+		]);
+
+		const [linnworksData, financialJson] = await Promise.all([
+			linnworksResponse.json(),
+			financialResponse.json()
+		]);
+
+		const linnworksOrdersData = linnworksData.dailyOrders || [];
+		const financialData = financialJson.dailyData || [];
+
+		// Create a fresh copy of metrics for current week only
+		let freshMetrics = JSON.parse(JSON.stringify(metrics));
+
+		// Create lookup map for fresh data
+		const dataByDay: Record<string, any> = {};
+		currentWeekData?.forEach((record) => {
+			dataByDay[record.date] = { ...record };
+
+			// Add scheduled hours
+			const hoursRecord = scheduledHoursData.find((h) => h.date === record.date);
+			if (hoursRecord) {
+				dataByDay[record.date].scheduled_hours = hoursRecord.hours;
+			}
+		});
+
+		// Add any dates that exist in hours service but not in metrics
+		scheduledHoursData.forEach((hoursRecord) => {
+			if (!dataByDay[hoursRecord.date]) {
+				dataByDay[hoursRecord.date] = {
+					date: hoursRecord.date,
+					scheduled_hours: hoursRecord.hours
+				};
+			}
+		});
+
+		// Add fresh Linnworks data
+		linnworksOrdersData.forEach((dayData: LinnworksOrderData) => {
+			const date = dayData.date;
+			if (!dataByDay[date]) {
+				dataByDay[date] = { date };
+			}
+			dataByDay[date].linnworks_completed_orders = dayData.count;
+
+			if (dayData.channels) {
+				dataByDay[date].linnworks_amazon_orders = dayData.channels.amazon;
+				dataByDay[date].linnworks_ebay_orders = dayData.channels.ebay;
+				dataByDay[date].linnworks_shopify_orders = dayData.channels.shopify;
+				dataByDay[date].linnworks_other_orders = dayData.channels.other;
+			}
+		});
+
+		// Add fresh financial data
+		financialData?.forEach((dayData: any) => {
+			const date = dayData.date;
+			if (dataByDay[date]) {
+				dataByDay[date].total_sales = dayData.salesData.totalSales;
+				dataByDay[date].amazon_sales = dayData.salesData.amazonSales || 0;
+				dataByDay[date].ebay_sales = dayData.salesData.ebaySales || 0;
+				dataByDay[date].shopify_sales = dayData.salesData.shopifySales || 0;
+				dataByDay[date].other_sales = dayData.salesData.otherSales || 0;
+			}
+		});
+
+		// Populate fresh metrics with current week data
+		for (let i = 0; i < weekDates.length; i++) {
+			const dateStr = weekDates[i].toISOString().split('T')[0];
+			const dayData = dataByDay[dateStr];
+
+			if (dayData) {
+				freshMetrics = freshMetrics.map((metric: any) => {
+					if (!metric.metricField) return metric;
+
+					let dbField = metric.metricField;
+					if (metric.metricField === 'shipments_packed') {
+						dbField = 'shipments';
+					}
+					if (dayData[dbField] !== undefined) {
+						const newValues = [...metric.values];
+						if (dbField === 'total_sales') {
+							newValues[i] = dayData.total_sales || 0;
+						} else {
+							newValues[i] = dayData[dbField] || 0;
+						}
+						return { ...metric, values: newValues };
+					}
+					return metric;
+				});
+			}
+		}
+
+		console.log('Fetched fresh current week data:', freshMetrics);
+		return freshMetrics;
+	}
+
+	// Helper function to compute current week metrics from fresh data
+	function computeCurrentWeekMetrics(freshMetrics: ExtendedMetric[]): number[][] {
+		console.log('Computing current week metrics from fresh data...');
+
+		return freshMetrics.map((metric: ExtendedMetric, idx): number[] => {
+			if (!metric.values) return [];
+
+			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
+				const shipments =
+					freshMetrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+					new Array(daysCount).fill(0);
+				const hours =
+					freshMetrics.find((m) => m.name === '1.3 Actual Hours Worked')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) =>
+					hours[i] > 0 ? Math.round((shipments[i] / hours[i]) * 100) / 100 : 0
+				);
+			} else if (metric.name === '1.5 Labor Utilization (%)') {
+				const actualHours =
+					freshMetrics.find((m) => m.name === '1.3 Actual Hours Worked')?.values ??
+					new Array(daysCount).fill(0);
+				const scheduledHrs =
+					freshMetrics.find((m) => m.name === '1.2 Scheduled Hours')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) =>
+					scheduledHrs[i] > 0 ? Math.round((actualHours[i] / scheduledHrs[i]) * 10000) / 100 : 0
+				);
+			} else if (metric.name === '1.7 Packing Errors DPMO') {
+				const shipments =
+					freshMetrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+					new Array(daysCount).fill(0);
+				const defects =
+					freshMetrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) =>
+					shipments[i] > 0 ? Math.round((defects[i] / shipments[i]) * 1000000) : 0
+				);
+			} else if (metric.name === '1.8 Order Accuracy (%)') {
+				const shipments =
+					freshMetrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+					new Array(daysCount).fill(0);
+				const defects =
+					freshMetrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) =>
+					shipments[i] > 0
+						? Math.round(((shipments[i] - defects[i]) / shipments[i]) * 10000) / 100
+						: 0
+				);
+			} else if (metric.name === '2.2.1 Amazon Orders %') {
+				const totalOrders =
+					freshMetrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
+					new Array(daysCount).fill(0);
+				const amazonOrders =
+					freshMetrics.find((m) => m.name === '2.1.1 Amazon Orders')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) =>
+					totalOrders[i] > 0 ? Math.round((amazonOrders[i] / totalOrders[i]) * 10000) / 100 : 0
+				);
+			} else if (metric.name === '2.2.2 eBay Orders %') {
+				const totalOrders =
+					freshMetrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
+					new Array(daysCount).fill(0);
+				const ebayOrders =
+					freshMetrics.find((m) => m.name === '2.1.2 eBay Orders')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) =>
+					totalOrders[i] > 0 ? Math.round((ebayOrders[i] / totalOrders[i]) * 10000) / 100 : 0
+				);
+			} else if (metric.name === '2.2.3 Shopify Orders %') {
+				const totalOrders =
+					freshMetrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
+					new Array(daysCount).fill(0);
+				const shopifyOrders =
+					freshMetrics.find((m) => m.name === '2.1.3 Shopify Orders')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) =>
+					totalOrders[i] > 0 ? Math.round((shopifyOrders[i] / totalOrders[i]) * 10000) / 100 : 0
+				);
+			}
+			return metric.values;
+		});
+	}
+
+	// Function to upload current week's data to daily_metric_review table
+	async function uploadMetricReview() {
+		try {
+			loading = true;
+			console.log('Starting daily metric review upload - fetching fresh current week data...');
+
+			// Step 1: Re-fetch fresh current week data (not the displayed data which is for WoW)
+			const currentWeekMetrics = await fetchFreshCurrentWeekData();
+
+			// Step 2: Compute current week metrics from fresh data
+			const currentWeekComputedMetrics = computeCurrentWeekMetrics(currentWeekMetrics);
+
+			// Step 3: Transform current week data for upload
+			const reviewData = transformMetricsForReview(
+				currentWeekMetrics,
+				weekDates,
+				currentWeekComputedMetrics
+			);
+
+			console.log('Transformed fresh current week data for upload:', reviewData);
+
+			// Step 4: Upload to Supabase
+			const success = await uploadDailyMetricReview(reviewData);
+
+			if (success) {
+				showToast(
+					`Successfully uploaded daily metric review for week ${weekDates[0].toLocaleDateString()} - ${weekDates[6].toLocaleDateString()}`,
+					'success',
+					4000
+				);
+			}
+
+			// Step 5: Continue normal display flow (reload previous week data for WoW calculations)
+			console.log('Upload completed, reloading display data...');
+			await loadPreviousWeekTotals();
+		} catch (err) {
+			console.error('Error uploading metric review:', err);
+			showToast('Failed to upload daily metric review', 'error');
+		} finally {
+			loading = false;
+		}
+	}
+
 	// Function to test the database connection and table
 	async function runTest() {
 		console.log('Running direct insert test...');
@@ -1347,6 +1605,19 @@
 	</div>
 
 	<div class="export-container">
+		<button
+			class="upload-review-btn"
+			on:click={uploadMetricReview}
+			disabled={loading}
+			title="Upload current week's metrics to daily_metric_review table"
+		>
+			{#if loading}
+				Uploading...
+			{:else}
+				📊 Upload Review
+			{/if}
+		</button>
+
 		<ExportCsv
 			metrics={exportMetrics}
 			{weekDates}
@@ -1872,5 +2143,41 @@
 		100% {
 			opacity: 0.6;
 		}
+	}
+
+	/* Upload review button styling */
+	.upload-review-btn {
+		background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+		color: white;
+		border: none;
+		padding: 8px 16px;
+		border-radius: 8px;
+		font-weight: 500;
+		font-size: 0.9em;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-right: 12px;
+		box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);
+	}
+
+	.upload-review-btn:hover:not(:disabled) {
+		background: linear-gradient(135deg, #5856eb 0%, #7c3aed 100%);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
+	}
+
+	.upload-review-btn:disabled {
+		background: #d1d5db;
+		cursor: not-allowed;
+		transform: none;
+		box-shadow: none;
+	}
+
+	.upload-review-btn:active:not(:disabled) {
+		transform: translateY(0);
+		box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);
 	}
 </style>

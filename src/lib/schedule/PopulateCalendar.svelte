@@ -1,4 +1,4 @@
-<script context="module">
+<script context="module" lang="ts">
 	// Interface definitions for type checking
 	interface Employee {
 		id: string;
