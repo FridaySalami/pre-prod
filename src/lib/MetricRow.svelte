@@ -29,6 +29,22 @@
 	export let isPercentage = false; // New prop to indicate if this is a percentage metric
 	export let isCurrency = false; // New prop to indicate if this is a currency metric
 
+	// Determine if this row should have a color block based on the metric name
+	const isSalesMetric = name.startsWith('2.0');
+	const isOrdersMetric = name.startsWith('2.1');
+	const isPercentageMetric = name.startsWith('2.2');
+
+	// Special handling for headers
+	const isSalesHeader =
+		(isHeader && name === 'B2C Amazon Financials') || (isHeader && name.startsWith('2.0'));
+	const isOrdersHeader = isHeader && name.startsWith('2.1');
+	const isPercentageHeader = isHeader && name.startsWith('2.2');
+
+	// Apply background to rows but not spacers
+	const hasSalesBackground = (isSalesMetric && !isSpacer) || isSalesHeader;
+	const hasOrdersBackground = (isOrdersMetric && !isSpacer) || isOrdersHeader;
+	const hasPercentageBackground = (isPercentageMetric && !isSpacer) || isPercentageHeader;
+
 	export let metricIndex: number;
 	export let wowChange: string;
 
@@ -59,7 +75,13 @@
 	}
 </script>
 
-<tr class="metric-row">
+<tr
+	class="metric-row"
+	class:sales-row={hasSalesBackground}
+	class:orders-row={hasOrdersBackground}
+	class:percentage-row={hasPercentageBackground}
+	class:header-row={isHeader}
+>
 	<td class="metric-name">
 		{name}
 		{#if tooltip}
@@ -322,5 +344,56 @@
 
 	.highlight-column::after {
 		right: 0;
+	}
+
+	/* Subtle color blocking for sales and orders metrics */
+	/* Color blocking for metrics rows */
+	tr.sales-row:not(.header-row) {
+		background-color: rgba(173, 216, 230, 0.15); /* Light blue */
+	}
+
+	tr.orders-row:not(.header-row) {
+		background-color: rgba(144, 238, 144, 0.15); /* Light green */
+	}
+
+	tr.percentage-row:not(.header-row) {
+		background-color: rgba(255, 228, 181, 0.15); /* Light peach/orange */
+	}
+
+	/* Styling for header rows */
+	tr.metric-row.sales-row.header-row {
+		background-color: rgba(173, 216, 230, 0.25); /* Slightly darker blue for sales headers */
+	}
+
+	tr.metric-row.orders-row.header-row {
+		background-color: rgba(144, 238, 144, 0.25); /* Slightly darker green for orders headers */
+	}
+
+	/* Percentage distribution section */
+	.percentage-row {
+		background-color: rgba(255, 228, 181, 0.15); /* Light peach/orange */
+	}
+
+	tr.metric-row.percentage-row.header-row {
+		background-color: rgba(255, 228, 181, 0.25); /* Slightly darker peach for percentage headers */
+	}
+
+	/* Ensure subheading rows have proper styling even with background color */
+	.sales-row td,
+	.orders-row td {
+		position: relative;
+		z-index: 0;
+	}
+
+	/* Preserve highlight effects */
+	.sales-row .highlight-column,
+	.orders-row .highlight-column,
+	.percentage-row .highlight-column {
+		background-color: rgba(53, 176, 123, 0.08);
+	}
+
+	/* Add visual separation between sections */
+	tr.metric-row.header-row {
+		border-top: 6px solid #f9fafb;
 	}
 </style>

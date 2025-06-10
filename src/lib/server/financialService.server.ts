@@ -41,6 +41,11 @@ interface DailySalesData {
     totalTax: number;
     totalSubtotal: number;
     totalPostageCost: number;
+    // Channel specific sales
+    amazonSales: number;
+    ebaySales: number;
+    shopifySales: number;
+    otherSales: number;
     bySource: {
       [source: string]: {
         count: number;
@@ -192,6 +197,25 @@ export async function getDailyFinancialData(startDate: Date, endDate: Date): Pro
         return acc;
       }, {} as Record<string, { count: number; sales: number; }>);
 
+      // Calculate sales by channel
+      const amazonSales = orders.reduce((sum, order) => {
+        const source = order.Source?.toLowerCase() || '';
+        return (source.includes('amazon') || source === 'amz') ? sum + (order.fTotalCharge || 0) : sum;
+      }, 0);
+
+      const ebaySales = orders.reduce((sum, order) => {
+        const source = order.Source?.toLowerCase() || '';
+        return source.includes('ebay') ? sum + (order.fTotalCharge || 0) : sum;
+      }, 0);
+
+      const shopifySales = orders.reduce((sum, order) => {
+        const source = order.Source?.toLowerCase() || '';
+        return source.includes('shopify') ? sum + (order.fTotalCharge || 0) : sum;
+      }, 0);
+
+      // Other sales are everything not from Amazon, eBay, or Shopify
+      const otherSales = totalSales - amazonSales - ebaySales - shopifySales;
+
       // Map order data to daily totals
       console.log(`Processing data for ${dateStr}:`, {
         orderCount: orders.length,
@@ -209,6 +233,11 @@ export async function getDailyFinancialData(startDate: Date, endDate: Date): Pro
         totalTax: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.fTax || 0), 0),
         totalSubtotal: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.Subtotal || 0), 0),
         totalPostageCost: orders.reduce((sum: number, order: ProcessedOrderData) => sum + (order.PostageCostExTax || 0), 0),
+        // Channel specific sales
+        amazonSales,
+        ebaySales,
+        shopifySales,
+        otherSales,
         bySource: ordersBySource
       };
 

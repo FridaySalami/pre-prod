@@ -47,7 +47,12 @@ export async function GET({ url }) {
       averageOrderValue: dailyFinancialData.reduce((sum, day) => sum + day.salesData.averageOrderValue, 0) /
         (dailyFinancialData.length || 1),
       totalShipping: dailyFinancialData.reduce((sum, day) => sum + day.salesData.totalShipping, 0),
-      totalDiscounts: dailyFinancialData.reduce((sum, day) => sum + day.salesData.totalDiscount, 0)
+      totalDiscounts: dailyFinancialData.reduce((sum, day) => sum + day.salesData.totalDiscount, 0),
+      // Channel specific sales totals
+      amazonSales: dailyFinancialData.reduce((sum, day) => sum + day.salesData.amazonSales, 0),
+      ebaySales: dailyFinancialData.reduce((sum, day) => sum + day.salesData.ebaySales, 0),
+      shopifySales: dailyFinancialData.reduce((sum, day) => sum + day.salesData.shopifySales, 0),
+      otherSales: dailyFinancialData.reduce((sum, day) => sum + day.salesData.otherSales, 0)
     };
 
     return json({
