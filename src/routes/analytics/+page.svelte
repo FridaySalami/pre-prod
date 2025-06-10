@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import OrdersList from '$lib/OrdersList.svelte';
+	import DuplicatedDailyProducts from '$lib/DuplicatedDailyProducts.svelte';
 
 	interface ProcessedOrder {
 		nOrderId: number;
@@ -21,8 +22,8 @@
 
 	let selectedTab = 'daily';
 	let startDate = new Date().toISOString().split('T')[0];
-	let endDate = startDate; // Default end date same as start date
-	let searchSku = ''; // Add SKU search state
+	let endDate = startDate;
+	let searchSku = '';
 	let dailyOrders: ProcessedOrder[] = [];
 	let isLoading = false;
 	let error: string | null = null;
@@ -58,11 +59,12 @@
 
 	// Fetch initial data
 	onMount(() => {
-		fetchDailyOrders(startDate, endDate);
+		if (selectedTab === 'daily') {
+			fetchDailyOrders(startDate, endDate);
+		}
 	});
 
 	function handleDateChange() {
-		// Ensure endDate is not before startDate
 		if (new Date(endDate) < new Date(startDate)) {
 			endDate = startDate;
 		}
@@ -101,6 +103,13 @@
 				on:click={() => (selectedTab = 'overview')}
 			>
 				Overview
+			</button>
+			<button
+				class="tab-button"
+				class:active={selectedTab === 'duplicatedDaily'}
+				on:click={() => (selectedTab = 'duplicatedDaily')}
+			>
+				Duplicated Daily Products
 			</button>
 		</div>
 
@@ -155,6 +164,8 @@
 
 				<OrdersList orders={dailyOrders} loading={isLoading} {error} />
 			</div>
+		{:else if selectedTab === 'duplicatedDaily'}
+			<DuplicatedDailyProducts />
 		{:else}
 			<div class="overview">
 				<p>Analytics overview coming soon...</p>
