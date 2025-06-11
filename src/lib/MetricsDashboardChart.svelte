@@ -99,7 +99,7 @@
 			case 'orders':
 				return value.toString();
 			case 'efficiency':
-				return `${value.toFixed(1)}%`;
+				return value.toFixed(1);
 			default:
 				return value.toString();
 		}
@@ -112,7 +112,7 @@
 			case 'orders':
 				return 'Orders';
 			case 'efficiency':
-				return 'Efficiency';
+				return 'Shipments Per Hour';
 			default:
 				return 'Value';
 		}
@@ -142,7 +142,7 @@
 				}
 				return value.toString();
 			case 'efficiency':
-				return `${value.toFixed(1)}`;
+				return value.toFixed(1);
 			default:
 				return value.toString();
 		}
@@ -242,7 +242,7 @@
 					? 'bg-green-600 hover:bg-green-700'
 					: 'hover:bg-green-50 hover:text-green-600 hover:border-green-200'}
 			>
-				Efficiency
+				Shipments/Hour
 			</Button>
 		</div>
 	</CardHeader>

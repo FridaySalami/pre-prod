@@ -123,7 +123,7 @@ export async function load({ url }) {
       // Fix labor efficiency calculation by excluding zero values (Sundays and non-working days)
       laborEfficiency: (() => {
         const workingDays = dailyData.filter(day => (day.labor_efficiency || 0) > 0);
-        return workingDays.length > 0 
+        return workingDays.length > 0
           ? workingDays.reduce((sum, day) => sum + (day.labor_efficiency || 0), 0) / workingDays.length
           : 0;
       })(),
