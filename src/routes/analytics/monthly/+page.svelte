@@ -49,6 +49,10 @@
 	let { data } = $props();
 
 	let isLoading = $state(false);
+	let toastMessage = $state('');
+	let toastType: 'success' | 'error' | '' = $state('');
+	let toastVisible = $state(false);
+
 	/** Available years for the year selector */
 	let availableYears: number[] = $state([]);
 
@@ -73,14 +77,21 @@
 
 	// Update state when data prop changes
 	$effect(() => {
+		console.log('$effect triggered, new data received:', {
+			selectedYear: data.selectedYear,
+			selectedMonth: data.selectedMonth
+		});
 		selectedYear = data.selectedYear;
 		selectedMonth = data.selectedMonth;
 		monthlyData = data.monthlyData ? [data.monthlyData] : [];
 		dailyData = data.dailyData || [];
 		error = data.error;
-		// Reset loading state when new data arrives
+		// Only reset loading state after a brief delay to ensure user sees the indicator
 		if (isLoading) {
-			isLoading = false;
+			console.log('Resetting isLoading to false after delay');
+			setTimeout(() => {
+				isLoading = false;
+			}, 500); // Give user time to see the loading state
 		}
 	});
 
@@ -89,22 +100,78 @@
 	// ===========================================
 
 	/**
+	 * Show toast notification
+	 */
+	function showToast(message: string, type: 'success' | 'error') {
+		toastMessage = message;
+		toastType = type;
+		toastVisible = true;
+
+		// Auto-hide after 3 seconds
+		setTimeout(() => {
+			toastVisible = false;
+		}, 3000);
+	}
+
+	/**
 	 * Handle month/year selection changes
 	 * Updates URL and triggers data reload
 	 */
 	async function handleMonthChange() {
+		console.log('handleMonthChange called, setting isLoading to true');
 		isLoading = true;
+
+		// Add a minimum loading time to ensure user sees the indicator
+		const minLoadingTime = new Promise((resolve) => setTimeout(resolve, 800));
+
 		try {
 			// Navigate to the same page with new query parameters
 			const url = new URL($page.url);
 			url.searchParams.set('year', selectedYear.toString());
 			url.searchParams.set('month', selectedMonth.toString());
-			await goto(url.toString(), { invalidateAll: true });
+
+			const navigationPromise = goto(url.toString(), { invalidateAll: true });
+
+			// Wait for both navigation and minimum loading time
+			await Promise.all([navigationPromise, minLoadingTime]);
+
+			showToast('Data updated successfully', 'success');
 		} catch (err) {
 			console.error('Error updating month:', err);
-		} finally {
-			isLoading = false;
+			showToast('Failed to update data', 'error');
 		}
+		// Note: isLoading will be set to false in the $effect when new data arrives
+	}
+
+	/**
+	 * Force refresh the current month's data
+	 * Adds a timestamp parameter to force cache invalidation
+	 */
+	async function handleRefresh() {
+		console.log('handleRefresh called, setting isLoading to true');
+		isLoading = true;
+
+		// Add a minimum loading time to ensure user sees the indicator
+		const minLoadingTime = new Promise((resolve) => setTimeout(resolve, 800));
+
+		try {
+			// Add a timestamp parameter to force cache invalidation
+			const url = new URL($page.url);
+			url.searchParams.set('year', selectedYear.toString());
+			url.searchParams.set('month', selectedMonth.toString());
+			url.searchParams.set('t', Date.now().toString());
+
+			const navigationPromise = goto(url.toString(), { invalidateAll: true });
+
+			// Wait for both navigation and minimum loading time
+			await Promise.all([navigationPromise, minLoadingTime]);
+
+			showToast('Data refreshed successfully', 'success');
+		} catch (err) {
+			console.error('Error refreshing data:', err);
+			showToast('Failed to refresh data', 'error');
+		}
+		// Note: isLoading will be set to false in the $effect when new data arrives
 	}
 
 	// ===========================================
@@ -162,10 +229,59 @@
 
 <svelte:head>
 	<title>Monthly Analytics Dashboard</title>
+	<style>
+		@keyframes loading-bar {
+			0% {
+				width: 0%;
+			}
+			50% {
+				width: 70%;
+			}
+			100% {
+				width: 100%;
+			}
+		}
+	</style>
 </svelte:head>
 
 <!-- Wrap the entire component in shadcn-scope to isolate styles -->
 <div class="shadcn-scope">
+	<!-- Progress Bar -->
+	{#if isLoading}
+		<div class="fixed top-0 left-0 right-0 z-50 h-1 bg-gray-200">
+			<div
+				class="h-full bg-blue-600 animate-pulse duration-1000"
+				style="animation: loading-bar 2s infinite;"
+			></div>
+		</div>
+	{/if}
+
+	<!-- Global Loading Overlay for improved UX -->
+	{#if isLoading}
+		<div
+			class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center"
+		>
+			<div class="flex flex-col items-center gap-3 bg-card p-6 rounded-lg shadow-lg border">
+				<svg
+					class="animate-spin h-8 w-8 text-blue-600"
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+				>
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+					></circle>
+					<path
+						class="opacity-75"
+						fill="currentColor"
+						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+					></path>
+				</svg>
+				<div class="text-sm font-medium text-foreground">Loading analytics data...</div>
+				<div class="text-xs text-muted-foreground">Please wait while we fetch your data</div>
+			</div>
+		</div>
+	{/if}
+
 	<div class="container mx-auto p-6 space-y-6">
 		<!-- Header -->
 		<div class="flex justify-between items-center">
@@ -178,7 +294,32 @@
 		<!-- Month/Year Selector -->
 		<Card>
 			<CardHeader>
-				<CardTitle>Select Period</CardTitle>
+				<CardTitle class="flex items-center gap-2">
+					Select Period
+					{#if isLoading}
+						<svg
+							class="animate-spin h-4 w-4 text-blue-600"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<circle
+								class="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								stroke-width="4"
+							></circle>
+							<path
+								class="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+							></path>
+						</svg>
+						<span class="text-sm font-normal text-blue-600">Loading data...</span>
+					{/if}
+				</CardTitle>
 			</CardHeader>
 			<CardContent>
 				<div class="flex gap-4 items-end">
@@ -188,7 +329,8 @@
 							id="year-select"
 							bind:value={selectedYear}
 							onchange={handleMonthChange}
-							class="px-3 py-2 border border-input rounded-md bg-background"
+							disabled={isLoading}
+							class="px-3 py-2 border border-input rounded-md bg-background disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							{#each availableYears as year}
 								<option value={year}>{year}</option>
@@ -201,7 +343,8 @@
 							id="month-select"
 							bind:value={selectedMonth}
 							onchange={handleMonthChange}
-							class="px-3 py-2 border border-input rounded-md bg-background"
+							disabled={isLoading}
+							class="px-3 py-2 border border-input rounded-md bg-background disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							{#each Array(12) as _, i}
 								<option value={i + 1}>
@@ -210,12 +353,50 @@
 							{/each}
 						</select>
 					</div>
-					<Button 
-						on:click={handleMonthChange} 
+					<Button
+						onclick={handleRefresh}
 						disabled={isLoading}
-						class="bg-blue-600 hover:bg-blue-700 text-white"
+						class="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
 					>
-						{isLoading ? 'Loading...' : 'Refresh'}
+						{#if isLoading}
+							<svg
+								class="animate-spin h-4 w-4"
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+							>
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
+							</svg>
+							Loading...
+						{:else}
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-4 w-4"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+								/>
+							</svg>
+							Refresh
+						{/if}
 					</Button>
 				</div>
 			</CardContent>
@@ -428,7 +609,7 @@
 										<TableCell>{formatCurrency(day.ebay_sales || 0)}</TableCell>
 										<TableCell>{formatCurrency(day.shopify_sales || 0)}</TableCell>
 										<TableCell>{formatNumber(day.linnworks_total_orders || 0)}</TableCell>
-										<TableCell>{(day.labor_efficiency || 0).toFixed(2)}</TableCell>
+										<TableCell>{(day.labor_efficiency || 0).toFixed(1)}</TableCell>
 									</TableRow>
 								{/each}
 							{:else}
@@ -444,4 +625,54 @@
 			</Card>
 		{/if}
 	</div>
+
+	<!-- Toast Notification -->
+	{#if toastVisible}
+		<div
+			class="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-2 duration-300"
+			class:bg-green-50={toastType === 'success'}
+			class:border-green-200={toastType === 'success'}
+			class:text-green-800={toastType === 'success'}
+			class:bg-red-50={toastType === 'error'}
+			class:border-red-200={toastType === 'error'}
+			class:text-red-800={toastType === 'error'}
+		>
+			<div class="flex items-center gap-3 p-4 border rounded-lg shadow-lg bg-card">
+				{#if toastType === 'success'}
+					<svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M5 13l4 4L19 7"
+						/>
+					</svg>
+				{:else}
+					<svg class="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						/>
+					</svg>
+				{/if}
+				<span class="text-sm font-medium">{toastMessage}</span>
+				<button
+					onclick={() => (toastVisible = false)}
+					class="ml-2 text-gray-400 hover:text-gray-600"
+					aria-label="Close notification"
+				>
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						/>
+					</svg>
+				</button>
+			</div>
+		</div>
+	{/if}
 </div>
