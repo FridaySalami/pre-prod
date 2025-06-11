@@ -99,6 +99,13 @@
 			</button>
 			<button
 				class="tab-button"
+				class:active={selectedTab === 'monthly'}
+				on:click={() => (window.location.href = '/analytics/monthly')}
+			>
+				Monthly Dashboard
+			</button>
+			<button
+				class="tab-button"
 				class:active={selectedTab === 'overview'}
 				on:click={() => (selectedTab = 'overview')}
 			>
