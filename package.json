@@ -38,9 +38,23 @@
 		"@supabase/auth-helpers-sveltekit": "^0.13.0",
 		"@supabase/ssr": "^0.5.2",
 		"@supabase/supabase-js": "^2.48.1",
+		"@tailwindcss/aspect-ratio": "^0.4.2",
+		"@tailwindcss/forms": "^0.5.10",
+		"@tailwindcss/postcss": "^4.1.8",
+		"@tailwindcss/typography": "^0.5.16",
+		"autoprefixer": "^10.4.21",
 		"chart.js": "^4.4.8",
+		"clsx": "^2.1.1",
+		"d3-scale": "^4.0.2",
 		"date-fns": "^4.1.0",
 		"dotenv": "^16.5.0",
-		"node-cache": "^5.1.2"
+		"layerchart": "^1.0.11",
+		"lucide-svelte": "^0.514.0",
+		"node-cache": "^5.1.2",
+		"postcss": "^8.5.4",
+		"shadcn-svelte": "^1.0.2",
+		"tailwind-merge": "^3.3.1",
+		"tailwind-variants": "^1.0.0",
+		"tailwindcss": "^4.1.8"
 	}
 }
