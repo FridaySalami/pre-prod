@@ -15,9 +15,10 @@
 		TableRow,
 		TableHead,
 		TableCell,
-		Skeleton,
-		MonthlyChart
+		Skeleton
 	} from '$lib/shadcn/components';
+	import MonthlyChart from '$lib/shadcn/components/ui/MonthlyChart.svelte';
+	import MetricsDashboardChart from '$lib/MetricsDashboardChart.svelte';
 
 	// ===========================================
 	// Type Definitions
@@ -31,6 +32,7 @@
 		shopify_sales: number;
 		linnworks_total_orders: number;
 		labor_efficiency: number;
+		actual_hours_worked?: number;
 	}
 
 	interface MonthlyMetrics {
@@ -208,7 +210,11 @@
 							{/each}
 						</select>
 					</div>
-					<Button on:click={handleMonthChange} disabled={isLoading}>
+					<Button 
+						on:click={handleMonthChange} 
+						disabled={isLoading}
+						class="bg-blue-600 hover:bg-blue-700 text-white"
+					>
 						{isLoading ? 'Loading...' : 'Refresh'}
 					</Button>
 				</div>
@@ -391,11 +397,7 @@
 
 			<!-- Daily Sales Chart -->
 			{#if dailyData.length > 0}
-				<Card>
-					<CardContent class="p-0">
-						<MonthlyChart data={dailyData} class="w-full" />
-					</CardContent>
-				</Card>
+				<MetricsDashboardChart data={dailyData} title="Daily Sales Visualization" class="w-full" />
 			{/if}
 
 			<!-- Daily Breakdown Table -->

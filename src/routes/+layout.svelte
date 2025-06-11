@@ -278,6 +278,17 @@
 					</a>
 				</li>
 
+				<!-- Monthly Analytics Link -->
+				<li>
+					<a
+						href="/analytics/monthly"
+						class:active={currentPath && currentPath.includes('/analytics/monthly')}
+					>
+						<i class="material-icons-outlined menu-icon">trending_up</i>
+						<span class="label">Monthly Analytics</span>
+					</a>
+				</li>
+
 				<!-- Kaizen Projects Link -->
 				<li>
 					<a
