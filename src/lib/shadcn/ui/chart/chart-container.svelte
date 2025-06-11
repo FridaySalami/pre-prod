@@ -1,5 +1,5 @@
 <script>
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/shadcn/utils/index.js";
 	import ChartStyle from "./chart-style.svelte";
 	import { setChartContext } from "./chart-utils.js";
 

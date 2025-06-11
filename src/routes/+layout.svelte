@@ -9,6 +9,7 @@
 	import { toastStore } from '$lib/toastStore';
 	import { fade } from 'svelte/transition';
 	import { page } from '$app/stores';
+	import CommandMenu from '$lib/CommandMenu.svelte';
 	let currentPath = '';
 
 	// Subscribe to the page store to get the current path
@@ -19,6 +20,7 @@
 	// Initialize session as undefined
 	let session: any = undefined;
 	let loggingOut = false;
+	let commandMenuOpen = false;
 
 	// Toast notification system
 	let toastVisible = false;
@@ -160,15 +162,28 @@
 		}
 	}
 
-	let isUserMenuOpen = false;
-
 	// Close dropdown when clicking outside
 	function handleClickOutside(event: MouseEvent) {
-		if (isUserMenuOpen) {
-			const dropdown = document.querySelector('.user-dropdown');
-			if (dropdown && !dropdown.contains(event.target as Node)) {
-				isUserMenuOpen = false;
+		if (commandMenuOpen) {
+			const commandContainer = document.querySelector('.command-menu-container');
+			const commandDropdown = document.querySelector('.command-dropdown');
+			if (
+				commandContainer &&
+				commandDropdown &&
+				!commandContainer.contains(event.target as Node) &&
+				!commandDropdown.contains(event.target as Node)
+			) {
+				commandMenuOpen = false;
 			}
+		}
+	}
+
+	// Global keyboard shortcut handler
+	function handleGlobalKeydown(event: KeyboardEvent) {
+		// Cmd+K or Ctrl+K to toggle command menu
+		if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+			event.preventDefault();
+			commandMenuOpen = !commandMenuOpen;
 		}
 	}
 
@@ -219,12 +234,14 @@
 		// Call the async function without awaiting it here
 		checkUserPasswordStatus();
 
-		// Add event listener synchronously
+		// Add event listeners synchronously
 		document.addEventListener('click', handleClickOutside);
+		document.addEventListener('keydown', handleGlobalKeydown);
 
 		// Return cleanup function directly
 		return () => {
 			document.removeEventListener('click', handleClickOutside);
+			document.removeEventListener('keydown', handleGlobalKeydown);
 		};
 	});
 
@@ -329,55 +346,18 @@
 				<span class="header-subtitle">Operations Dashboard</span>
 			</div>
 			<div class="header-right">
-				{#if session}
-					<div class="user-dropdown">
-						<button class="user-badge" on:click={() => (isUserMenuOpen = !isUserMenuOpen)}>
-							<i class="material-icons-outlined user-icon">account_circle</i>
-							<span class="user-email">{session.user.email}</span>
-							<i class="material-icons-outlined dropdown-arrow">expand_more</i>
-						</button>
-
-						{#if isUserMenuOpen}
-							<div class="dropdown-menu" transition:fade={{ duration: 150 }}>
-								<a href="/profile" class="dropdown-item">
-									<i class="material-icons-outlined">person</i>
-									My Profile
-								</a>
-								<a href="/account-settings" class="dropdown-item">
-									<i class="material-icons-outlined">settings</i>
-									Account Settings
-								</a>
-								<a href="/change-password" class="dropdown-item">
-									<i class="material-icons-outlined">lock</i>
-									Change Password
-								</a>
-								<div class="dropdown-section">
-									<div class="dropdown-section-title">Appearance</div>
-									<label class="dropdown-item appearance-option">
-										<input type="radio" name="theme" value="light" checked />
-										<i class="material-icons-outlined">light_mode</i>
-										Light Mode
-									</label>
-									<label class="dropdown-item appearance-option disabled">
-										<input type="radio" name="theme" value="dark" disabled />
-										<i class="material-icons-outlined">dark_mode</i>
-										Dark Mode
-										<span class="coming-soon">Coming Soon</span>
-									</label>
-								</div>
-								<a href="/help" class="dropdown-item">
-									<i class="material-icons-outlined">help_outline</i>
-									Help & Support
-								</a>
-								<div class="dropdown-divider"></div>
-								<button class="dropdown-item logout-item" on:click={handleLogout}>
-									<i class="material-icons-outlined">logout</i>
-									Logout
-								</button>
-							</div>
-						{/if}
-					</div>
-				{/if}
+				<!-- Command Menu Button Container -->
+				<div class="command-menu-container">
+					<button
+						class="command-menu-button"
+						onclick={() => (commandMenuOpen = !commandMenuOpen)}
+						title="Search (⌘K)"
+					>
+						<i class="material-icons-outlined">search</i>
+						<span class="command-menu-text">Search</span>
+						<span class="shortcut-hint">⌘K</span>
+					</button>
+				</div>
 			</div>
 		</header>
 
@@ -391,7 +371,7 @@
 					</p>
 					<div class="banner-actions">
 						<a href="/set-password" class="banner-button">Complete Setup</a>
-						<button class="banner-dismiss" on:click={dismissPasswordBanner}>
+						<button class="banner-dismiss" onclick={dismissPasswordBanner}>
 							<i class="material-icons-outlined">close</i>
 						</button>
 					</div>
@@ -409,12 +389,15 @@
 	<div id="toast-container" class:visible={toastVisible}>
 		<div class="toast {toastType}">
 			<span>{toastMessage}</span>
-			<button on:click={() => (toastVisible = false)}>
+			<button onclick={() => (toastVisible = false)}>
 				<i class="material-icons-outlined">close</i>
 			</button>
 		</div>
 	</div>
 </div>
+
+<!-- Command Menu Component -->
+<CommandMenu bind:open={commandMenuOpen} on:close={() => (commandMenuOpen = false)} />
 
 {#if loggingOut}
 	<div class="logout-overlay">
@@ -484,32 +467,66 @@
 		font-weight: 400;
 	}
 
-	.user-badge {
+	.header-right {
 		display: flex;
 		align-items: center;
-		background-color: #f3f4f6;
+		gap: 16px;
+	}
+
+	.command-menu-container {
+		position: relative;
+	}
+
+	.command-menu-button {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		background-color: #f9fafb;
+		border: 1px solid #e5e7eb;
+		border-radius: 8px;
 		padding: 8px 16px;
-		border-radius: 24px;
-		gap: 8px;
-		border: none;
+		color: #6b7280;
 		cursor: pointer;
 		font-family: inherit;
-		transition: background-color 0.2s ease;
+		font-size: 0.875rem;
+		transition: all 0.2s ease;
+		outline: none;
+		width: 280px; /* Fixed width to match dropdown */
+		min-width: 280px;
 	}
 
-	.user-badge:hover {
+	.command-menu-button:hover {
+		background-color: #f3f4f6;
+		border-color: #d1d5db;
+		color: #374151;
+	}
+
+	.command-menu-button:focus {
+		border-color: #004225;
+		box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.1);
+	}
+
+	.command-menu-button i {
+		font-size: 18px;
+		flex-shrink: 0;
+	}
+
+	.command-menu-text {
+		flex: 1;
+		text-align: left;
+		margin-left: 8px;
+	}
+
+	.shortcut-hint {
 		background-color: #e5e7eb;
-	}
-
-	.user-icon {
-		color: #4b5563;
-		font-size: 20px;
-	}
-
-	.user-email {
-		font-size: 0.85em;
-		color: #4b5563;
-		font-weight: 500;
+		color: #6b7280;
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 0.75rem;
+		font-family:
+			'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+		border: 1px solid #d1d5db;
 	}
 
 	/* Collapsible Sidebar */
@@ -818,107 +835,6 @@
 
 	.toast button:hover {
 		background-color: #f3f4f6;
-	}
-
-	.user-dropdown {
-		position: relative;
-	}
-
-	.dropdown-arrow {
-		font-size: 18px;
-		color: #6b7280;
-		margin-left: 4px;
-	}
-
-	.dropdown-menu {
-		position: absolute;
-		top: calc(100% + 8px);
-		right: 0;
-		background-color: white;
-		border-radius: 8px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-		border: 1px solid #e5e7eb;
-		width: 250px;
-		z-index: 1000;
-		overflow: hidden;
-		padding: 8px 0;
-	}
-
-	.dropdown-item {
-		display: flex;
-		align-items: center;
-		padding: 10px 16px;
-		color: #1f2937;
-		text-decoration: none;
-		font-size: 0.9em;
-		transition: background-color 0.2s ease;
-		cursor: pointer;
-		border: none;
-		background: none;
-		width: 100%;
-		text-align: left;
-		font-family: inherit;
-	}
-
-	.dropdown-item:hover {
-		background-color: #f9fafb;
-	}
-
-	.dropdown-item i {
-		margin-right: 12px;
-		font-size: 20px;
-		color: #6b7280;
-		flex-shrink: 0;
-	}
-
-	.dropdown-divider {
-		height: 1px;
-		background-color: #e5e7eb;
-		margin: 8px 0;
-	}
-
-	.dropdown-section {
-		padding: 8px 0;
-	}
-
-	.dropdown-section-title {
-		padding: 0 16px 8px;
-		font-size: 0.8em;
-		color: #6b7280;
-		font-weight: 500;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.appearance-option {
-		display: flex;
-		align-items: center;
-	}
-
-	.appearance-option input[type='radio'] {
-		margin-right: 12px;
-	}
-
-	.appearance-option.disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.coming-soon {
-		margin-left: auto;
-		font-size: 0.7em;
-		color: #6b7280;
-		background-color: #f3f4f6;
-		padding: 2px 6px;
-		border-radius: 10px;
-	}
-
-	.logout-item {
-		color: #b91c1c; /* Red color for logout */
-	}
-
-	.logout-item i {
-		color: #b91c1c;
 	}
 
 	.password-setup-banner {
