@@ -120,7 +120,13 @@ export async function load({ url }) {
       amazonSales: dailyData.reduce((sum, day) => sum + (day.amazon_sales || 0), 0),
       ebaySales: dailyData.reduce((sum, day) => sum + (day.ebay_sales || 0), 0),
       shopifySales: dailyData.reduce((sum, day) => sum + (day.shopify_sales || 0), 0),
-      laborEfficiency: dailyData.reduce((sum, day) => sum + (day.labor_efficiency || 0), 0) / dailyData.length,
+      // Fix labor efficiency calculation by excluding zero values (Sundays and non-working days)
+      laborEfficiency: (() => {
+        const workingDays = dailyData.filter(day => (day.labor_efficiency || 0) > 0);
+        return workingDays.length > 0 
+          ? workingDays.reduce((sum, day) => sum + (day.labor_efficiency || 0), 0) / workingDays.length
+          : 0;
+      })(),
       daysWithData: dailyData.length
     } : null;
 
