@@ -1,5 +1,5 @@
 <script>
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/shadcn/utils/index.js";
 	import { getPayloadConfigFromPayload, useChart } from "./chart-utils.js";
 	import { getTooltipContext, Tooltip as TooltipPrimitive } from "layerchart";
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
