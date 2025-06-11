@@ -18,4 +18,5 @@ export { default as TableCell } from "./ui/TableCell.svelte";
 export { default as ChartContainer } from "./ui/ChartContainer.svelte";
 export { default as ChartTooltip } from "./ui/ChartTooltip.svelte";
 export { default as MonthlyChart } from "./ui/MonthlyChart.svelte";
-export { getPayloadConfigFromPayload, type ChartConfig } from "./ui/chart-utils.js";
+export { Container, Tooltip } from "./ui/chart";
+export { type ChartConfig } from "./ui/chart-utils";

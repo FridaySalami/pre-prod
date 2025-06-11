@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chart Navigation Test Guide</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      color: #2563eb;
+    }
+
+    h2 {
+      color: #374151;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 5px;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 5px;
+      margin: 10px 0;
+    }
+
+    .success {
+      background: #d1fae5;
+      border: 1px solid #10b981;
+    }
+
+    .info {
+      background: #dbeafe;
+      border: 1px solid #3b82f6;
+    }
+
+    .test-step {
+      margin: 15px 0;
+      padding: 15px;
+      background: #f9fafb;
+      border-left: 4px solid #6366f1;
+    }
+
+    code {
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .url-link {
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .url-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>🚀 Chart Navigation Test Guide</h1>
+
+    <div class="status success">
+      <strong>✅ Status:</strong> All chart components have been successfully implemented with navigation functionality!
+    </div>
+
+    <h2>🧪 Test Pages Available</h2>
+
+    <div class="test-step">
+      <h3>1. Simple Charts Demo</h3>
+      <p><strong>URL:</strong> <a href="http://localhost:3005/simple-charts"
+          class="url-link">http://localhost:3005/simple-charts</a></p>
+      <p><strong>Features:</strong></p>
+      <ul>
+        <li>3 chart types with tab navigation</li>
+        <li>Real Supabase data integration with fallback sample data</li>
+        <li>Summary statistics display</li>
+        <li>Data table showing recent records</li>
+      </ul>
+      <p><strong>Charts Available:</strong></p>
+      <ul>
+        <li><code>Shadcn Bar Chart</code> - Multi-channel bar chart with hover effects</li>
+        <li><code>Area Chart</code> - Stacked area charts for sales and orders</li>
+        <li><code>Custom Chart</code> - Custom SVG visualization</li>
+      </ul>
+    </div>
+
+    <div class="test-step">
+      <h3>2. Dashboard Charts</h3>
+      <p><strong>URL:</strong> <a href="http://localhost:3005/dashboard/charts"
+          class="url-link">http://localhost:3005/dashboard/charts</a></p>
+      <p><strong>Features:</strong></p>
+      <ul>
+        <li>Interactive dashboard with metric toggles</li>
+        <li>Real-time data loading with error handling</li>
+        <li>Comprehensive metric summaries</li>
+      </ul>
+    </div>
+
+    <div class="test-step">
+      <h3>3. Enhanced Test Charts</h3>
+      <p><strong>URL:</strong> <a href="http://localhost:3005/shadcn-test/charts"
+          class="url-link">http://localhost:3005/shadcn-test/charts</a></p>
+      <p><strong>Features:</strong></p>
+      <ul>
+        <li>5 different chart components with full navigation</li>
+        <li>Sample data for consistent testing</li>
+        <li>All chart types in one place</li>
+      </ul>
+      <p><strong>Charts Available:</strong></p>
+      <ul>
+        <li><code>Interactive Dashboard</code> - MetricsDashboardChart with toggles</li>
+        <li><code>Shadcn Bar Chart</code> - ShadcnChart with channel breakdown</li>
+        <li><code>Area Chart</code> - DailyMetricAreaChart with dual displays</li>
+        <li><code>Custom Chart</code> - DailyMetricChart with SVG rendering</li>
+        <li><code>Enhanced Monthly</code> - EnhancedMonthlyChart with aggregation modes</li>
+      </ul>
+    </div>
+
+    <h2>🔧 How to Test Chart Navigation</h2>
+
+    <div class="test-step">
+      <h3>Step 1: Open a Test Page</h3>
+      <p>Navigate to any of the URLs above. The server should be running on <code>localhost:3005</code>.</p>
+    </div>
+
+    <div class="test-step">
+      <h3>Step 2: Test Button Navigation</h3>
+      <p>Look for the row of buttons at the top of each page. Click each button to switch between chart types:</p>
+      <ul>
+        <li>The active button should be highlighted (darker background)</li>
+        <li>The chart should change immediately when you click a button</li>
+        <li>Each chart should display different visualizations of the same data</li>
+      </ul>
+    </div>
+
+    <div class="test-step">
+      <h3>Step 3: Verify Data Loading</h3>
+      <p>Check that data is loading properly:</p>
+      <ul>
+        <li>Look for the "Refresh Data" button in the top right</li>
+        <li>Charts should show realistic sales data</li>
+        <li>If no database data is available, sample data will be used automatically</li>
+      </ul>
+    </div>
+
+    <h2>📊 Chart Components Overview</h2>
+
+    <div class="status info">
+      <strong>ℹ️ Info:</strong> All chart components are located in <code>src/lib/</code> and use shadcn-svelte styling
+      with Tailwind CSS.
+    </div>
+
+    <div class="test-step">
+      <h3>Chart Component Files</h3>
+      <ul>
+        <li><code>ShadcnChart.svelte</code> - Multi-channel bar chart with currency formatting</li>
+        <li><code>DailyMetricAreaChart.svelte</code> - Stacked area chart with channel breakdown</li>
+        <li><code>MetricsDashboardChart.svelte</code> - Interactive dashboard with metric toggles</li>
+        <li><code>DailyMetricChart.svelte</code> - Custom SVG multi-channel visualization</li>
+        <li><code>EnhancedMonthlyChart.svelte</code> - Advanced chart with aggregation modes</li>
+      </ul>
+    </div>
+
+    <div class="test-step">
+      <h3>Data Service</h3>
+      <ul>
+        <li><code>chartDataService.ts</code> - Data fetching, formatting, and summary calculations</li>
+        <li>Includes Supabase integration with fallback sample data</li>
+        <li>Currency formatting for UK market (GBP)</li>
+        <li>Date formatting and data validation</li>
+      </ul>
+    </div>
+
+    <h2>✅ Expected Behavior</h2>
+
+    <div class="test-step">
+      <p>When everything is working correctly, you should see:</p>
+      <ul>
+        <li><strong>Button Highlighting:</strong> Active chart button has darker background</li>
+        <li><strong>Instant Switching:</strong> Charts change immediately when buttons are clicked</li>
+        <li><strong>Data Display:</strong> All charts show the same underlying data in different formats</li>
+        <li><strong>Responsive Design:</strong> Charts adapt to different screen sizes</li>
+        <li><strong>Loading States:</strong> Proper loading indicators while data is fetched</li>
+        <li><strong>Error Handling:</strong> Clear error messages if data loading fails</li>
+      </ul>
+    </div>
+
+    <div class="status success">
+      <strong>🎉 Success!</strong> If you can navigate between different chart types using the buttons, the
+      implementation is working correctly!
+    </div>
+
+    <h2>🐛 Troubleshooting</h2>
+
+    <div class="test-step">
+      <p>If navigation isn't working:</p>
+      <ol>
+        <li>Check the browser console for JavaScript errors</li>
+        <li>Verify the server is running on port 3005</li>
+        <li>Refresh the page to clear any cached state</li>
+        <li>Try a different browser or incognito mode</li>
+      </ol>
+    </div>
+
+    <p><em>Last updated: June 11, 2025</em></p>
+  </div>
+</body>
+
+</html>
