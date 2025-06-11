@@ -10,6 +10,8 @@
 	import { fade } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import CommandMenu from '$lib/CommandMenu.svelte';
+	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
+	import AppSidebar from '$lib/AppSidebar.svelte';
 	let currentPath = '';
 
 	// Subscribe to the page store to get the current path
@@ -238,10 +240,18 @@
 		document.addEventListener('click', handleClickOutside);
 		document.addEventListener('keydown', handleGlobalKeydown);
 
+		// Add custom logout event listener
+		const handleCustomLogout = (event: Event) => {
+			const customEvent = event as CustomEvent;
+			handleLogout(customEvent.detail);
+		};
+		document.addEventListener('app-logout', handleCustomLogout);
+
 		// Return cleanup function directly
 		return () => {
 			document.removeEventListener('click', handleClickOutside);
 			document.removeEventListener('keydown', handleGlobalKeydown);
+			document.removeEventListener('app-logout', handleCustomLogout);
 		};
 	});
 
@@ -265,125 +275,52 @@
 </svelte:head>
 
 <div class="app-container" class:has-banner={showPasswordBanner}>
-	<aside class="sidebar">
-		<div class="sidebar-logo">
-			<span class="app-icon">P</span>
-		</div>
-		<nav>
-			<ul>
-				<!-- Home/Landing Link -->
-				<li>
-					<a href="/landing" class:active={currentPath === '/landing'}>
-						<i class="material-icons-outlined menu-icon">home</i>
-						<span class="label">Home</span>
-					</a>
-				</li>
-
-				<!-- Dashboard Link -->
-				<li>
-					<a href="/dashboard" class:active={currentPath === '/dashboard'}>
-						<i class="material-icons-outlined menu-icon">dashboard</i>
-						<span class="label">Dashboard</span>
-					</a>
-				</li>
-
-				<!-- Analytics Link -->
-				<li>
-					<a href="/analytics" class:active={currentPath === '/analytics'}>
-						<i class="material-icons-outlined menu-icon">analytics</i>
-						<span class="label">Analytics</span>
-					</a>
-				</li>
-
-				<!-- Monthly Analytics Link -->
-				<li>
-					<a
-						href="/analytics/monthly"
-						class:active={currentPath && currentPath.includes('/analytics/monthly')}
-					>
-						<i class="material-icons-outlined menu-icon">trending_up</i>
-						<span class="label">Monthly Analytics</span>
-					</a>
-				</li>
-
-				<!-- Kaizen Projects Link -->
-				<li>
-					<a
-						href="/kaizen-projects"
-						class:active={currentPath && currentPath.includes('/kaizen-projects')}
-					>
-						<i class="material-icons-outlined menu-icon">assignment</i>
-						<span class="label">Kaizen Projects</span>
-					</a>
-				</li>
-
-				<!-- Process Map Link -->
-				<li>
-					<a href="/process-map" class:active={currentPath && currentPath.includes('/process-map')}>
-						<i class="material-icons-outlined menu-icon">account_tree</i>
-						<span class="label">Process Map</span>
-					</a>
-				</li>
-
-				<!-- Schedules Link -->
-				<li>
-					<a href="/schedules" class:active={currentPath && currentPath.includes('/schedules')}>
-						<i class="material-icons-outlined menu-icon">calendar_today</i>
-						<span class="label">Schedules</span>
-					</a>
-				</li>
-
-				<!-- Any other navigation items -->
-			</ul>
-		</nav>
-	</aside>
-
-	<div class="content-wrapper">
-		<header class="site-header">
-			<div class="header-left">
-				<h1>Parkers Foodservice</h1>
-				<div class="header-divider"></div>
-				<span class="header-subtitle">Operations Dashboard</span>
-			</div>
-			<div class="header-right">
-				<!-- Command Menu Button Container -->
-				<div class="command-menu-container">
-					<button
-						class="command-menu-button"
-						onclick={() => (commandMenuOpen = !commandMenuOpen)}
-						title="Search (⌘K)"
-					>
-						<i class="material-icons-outlined">search</i>
-						<span class="command-menu-text">Search</span>
-						<span class="shortcut-hint">⌘K</span>
-					</button>
+	<Sidebar.Provider class="" style="">
+		<AppSidebar />
+		<main class="sidebar-main">
+			<header class="site-header">
+				<div class="header-left">
+					<Sidebar.Trigger class="" onclick={() => {}} />
 				</div>
-			</div>
-		</header>
-
-		<!-- Add below header -->
-		<main class="site-main">
-			{#if showPasswordBanner}
-				<div class="password-setup-banner" transition:fade={{ duration: 300 }}>
-					<p>
-						<i class="material-icons-outlined banner-icon">info</i>
-						Complete your account setup by setting a password
-					</p>
-					<div class="banner-actions">
-						<a href="/set-password" class="banner-button">Complete Setup</a>
-						<button class="banner-dismiss" onclick={dismissPasswordBanner}>
-							<i class="material-icons-outlined">close</i>
+				<div class="header-right">
+					<!-- Command Menu Button Container -->
+					<div class="command-menu-container">
+						<button
+							class="command-menu-button"
+							onclick={() => (commandMenuOpen = !commandMenuOpen)}
+							title="Search (⌘K)"
+						>
+							<i class="material-icons-outlined">search</i>
+							<span class="command-menu-text">Search</span>
+							<span class="shortcut-hint">⌘K</span>
 						</button>
 					</div>
 				</div>
-			{/if}
-			<slot />
-		</main>
+			</header>
 
-		<footer class="site-footer">
-			<p>Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a></p>
-		</footer>
-	</div>
+			<div class="main-content">
+				{#if showPasswordBanner}
+					<div class="password-setup-banner" transition:fade={{ duration: 300 }}>
+						<p>
+							<i class="material-icons-outlined banner-icon">info</i>
+							Complete your account setup by setting a password
+						</p>
+						<div class="banner-actions">
+							<a href="/set-password" class="banner-button">Complete Setup</a>
+							<button class="banner-dismiss" onclick={dismissPasswordBanner}>
+								<i class="material-icons-outlined">close</i>
+							</button>
+						</div>
+					</div>
+				{/if}
+				<slot />
+			</div>
+
+			<footer class="site-footer">
+				<p>Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a></p>
+			</footer>
+		</main>
+	</Sidebar.Provider>
 
 	<!-- Add Toast Container Here -->
 	<div id="toast-container" class:visible={toastVisible}>
@@ -424,6 +361,19 @@
 		-moz-osx-font-smoothing: grayscale;
 	}
 
+	.app-container {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.sidebar-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		min-height: 100vh;
+	}
+
 	/* Header with gradient background */
 	.site-header {
 		background-color: white;
@@ -444,6 +394,7 @@
 	.header-left {
 		display: flex;
 		align-items: center;
+		gap: 16px;
 	}
 
 	.header-left h1 {
@@ -529,142 +480,13 @@
 		border: 1px solid #d1d5db;
 	}
 
-	/* Collapsible Sidebar */
-	.sidebar {
-		position: fixed;
-		top: 0;
-		bottom: 0;
-		left: 0;
-		width: 64px;
-		background-color: #fff;
-		border-right: 1px solid #e5e7eb;
-		/* Remove overflow: hidden; which is causing issues */
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Apple-like easing */
-		z-index: 1000;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.sidebar:hover {
-		width: 220px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Add subtle shadow when expanded */
-	}
-
-	.sidebar-logo {
-		height: 64px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-bottom: 1px solid #f3f4f6;
-	}
-
-	.app-icon {
-		width: 32px;
-		height: 32px;
-		background-color: #004225; /* Flat color instead of gradient */
-		color: white;
-		border-radius: 10px; /* Slightly more rounded */
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-weight: 600; /* Slightly bolder */
-		font-size: 18px;
-		letter-spacing: 0.02em; /* Subtle letter spacing */
-		box-shadow: 0 2px 4px rgba(0, 66, 37, 0.2); /* Subtle shadow */
-	}
-
-	.sidebar nav {
-		flex: 1;
-		/* Change from overflow-y: auto to overflow: hidden when collapsed */
-		overflow: hidden;
-	}
-
-	.sidebar:hover nav {
-		overflow-y: auto; /* Show scrollbar only when needed and hovered */
-	}
-
-	.sidebar nav ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.sidebar nav ul li {
-		border-bottom: 1px solid #f3f4f6; /* Lighter border */
-	}
-
-	.sidebar nav ul li a {
-		display: flex;
-		align-items: center;
-		padding: 12px 16px; /* Increased padding */
-		color: #1f2937; /* Darker text */
-		text-decoration: none;
-		font-weight: 500;
-		transition: all 0.2s ease;
-		border-left: 3px solid transparent; /* For selected state indicator */
-	}
-
-	.sidebar nav ul li a:hover {
-		background-color: rgba(53, 176, 123, 0.1); /* More subtle hover color */
-	}
-
-	.menu-icon {
-		font-size: 22px; /* Slightly smaller */
-		margin-right: 12px;
-		color: #6b7280; /* Lighter gray for inactive */
-		flex-shrink: 0;
-	}
-
-	.label {
-		opacity: 0;
-		transition: opacity 0.2s ease;
-		white-space: nowrap;
-		font-size: 0.9em;
-	}
-
-	.sidebar:hover .label {
-		opacity: 1;
-	}
-
-	.sidebar-logout {
-		border-top: 1px solid #e5e7eb;
-		padding: 12px 8px; /* Reduced horizontal padding from 16px to 8px */
-		margin-top: 16px;
-		margin-bottom: 20px;
-		width: 100%;
-		overflow: hidden; /* Prevent content from overflowing */
-	}
-
-	.logout-button {
-		display: flex;
-		align-items: center;
-		width: calc(100% - 2px); /* Account for border */
-		padding: 10px 8px; /* Reduced horizontal padding from 12px to 8px */
-		color: #1f2937;
-		background: transparent;
-		border: 1px solid #e5e7eb;
-		border-radius: 6px;
-		font-weight: 500;
-		font-size: 0.9em;
-		transition: all 0.2s ease;
-		cursor: pointer;
-		overflow: hidden; /* Prevent content from overflowing */
-	}
-
-	.logout-button:hover {
-		background-color: rgba(239, 68, 68, 0.1); /* Subtle red for logout */
-		border-color: rgba(239, 68, 68, 0.2);
-		color: rgb(185, 28, 28);
-	}
-
 	/* Main Content */
-	.site-main {
+	.main-content {
 		flex: 1;
 		padding: 20px;
-		padding-top: 10px; /* Reduced top padding */
+		padding-top: 10px;
 		background-color: #f9fafb;
-		width: 100%; /* Takes full width of content-wrapper */
-		margin-left: 0; /* Remove this as it's redundant with content-wrapper margin */
+		width: 100%;
 	}
 
 	/* Footer */
@@ -678,8 +500,8 @@
 		display: flex;
 		justify-content: flex-end;
 		align-items: center;
-		z-index: 999; /* Ensure it stays above content but below modals */
-		width: 100%; /* Make sure it extends full width */
+		z-index: 999;
+		width: 100%;
 		position: sticky;
 		bottom: 0;
 	}
@@ -709,8 +531,8 @@
 		left: 0;
 		width: 100%;
 		height: 100%;
-		background: rgba(255, 255, 255, 0.9); /* More opaque */
-		backdrop-filter: blur(4px); /* Apple-like blur effect */
+		background: rgba(255, 255, 255, 0.9);
+		backdrop-filter: blur(4px);
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
@@ -719,7 +541,7 @@
 	}
 
 	.logout-spinner {
-		border: 4px solid rgba(0, 66, 37, 0.1); /* Thinner, more subtle spinner */
+		border: 4px solid rgba(0, 66, 37, 0.1);
 		border-top: 4px solid #004225;
 		border-radius: 50%;
 		width: 40px;
@@ -738,42 +560,9 @@
 
 	.logout-overlay p {
 		margin-top: 1rem;
-		font-size: 1rem; /* Slightly smaller */
-		font-weight: 500; /* Medium weight */
+		font-size: 1rem;
+		font-weight: 500;
 		color: #004225;
-	}
-
-	.app-container {
-		display: flex;
-		min-height: 100vh;
-	}
-
-	.content-wrapper {
-		flex: 1;
-		margin-left: 64px; /* Match sidebar width */
-		display: flex;
-		flex-direction: column;
-		min-height: 100vh;
-		width: calc(100% - 64px); /* Ensure it takes up the remaining width */
-	}
-
-	/* Add these style tweaks to hide scrollbar when not needed */
-	.sidebar nav::-webkit-scrollbar {
-		width: 4px;
-	}
-
-	.sidebar nav::-webkit-scrollbar-track {
-		background: transparent;
-	}
-
-	.sidebar nav::-webkit-scrollbar-thumb {
-		background-color: rgba(107, 114, 128, 0.3);
-		border-radius: 4px;
-	}
-
-	/* Only show scrollbar on hover */
-	.sidebar:not(:hover) nav::-webkit-scrollbar {
-		display: none;
 	}
 
 	/* Toast notification system */
@@ -805,19 +594,19 @@
 		align-items: center;
 		justify-content: space-between;
 		font-size: 0.9em;
-		border-left: 4px solid #3b82f6; /* Default blue for info */
+		border-left: 4px solid #3b82f6;
 	}
 
 	.toast.success {
-		border-left-color: #10b981; /* Green for success */
+		border-left-color: #10b981;
 	}
 
 	.toast.warning {
-		border-left-color: #f59e0b; /* Yellow for warning */
+		border-left-color: #f59e0b;
 	}
 
 	.toast.error {
-		border-left-color: #ef4444; /* Red for error */
+		border-left-color: #ef4444;
 	}
 
 	.toast button {
@@ -905,12 +694,8 @@
 		color: white;
 	}
 
-	/* Adjust content-wrapper to account for banner */
-	.app-container.has-banner .sidebar {
-		top: 33px; /* Height of banner */
-	}
-
-	.app-container.has-banner .content-wrapper {
-		margin-top: 33px; /* Height of banner */
+	/* Adjust for banner */
+	.app-container.has-banner {
+		padding-top: 33px;
 	}
 </style>
