@@ -4,6 +4,17 @@
 	import { userSession } from '$lib/sessionStore';
 	import { format, addDays, isWeekend } from 'date-fns';
 	import { supabase } from '$lib/supabaseClient';
+	import {
+		Card,
+		CardHeader,
+		CardTitle,
+		CardContent,
+		Skeleton,
+		Alert,
+		AlertTitle,
+		AlertDescription,
+		Badge
+	} from '$lib/shadcn/components';
 
 	// Add authentication check
 	// Start with session as undefined (unknown)
@@ -1141,20 +1152,27 @@
 	<div class="dashboard-container">
 		<!-- Show any global messages -->
 		{#if loadingStatus}
-			<div class="global-loading-banner">
-				<div class="loading-spinner-small"></div>
-				<p>{loadingStatus}</p>
-			</div>
+			<Alert variant="info" class="mb-6">
+				<AlertDescription class="flex items-center gap-2">
+					<div class="loading-spinner-small"></div>
+					{loadingStatus}
+				</AlertDescription>
+			</Alert>
 		{/if}
 
 		{#if hasError}
-			<div class="global-error-banner">
-				<div class="error-icon">⚠️</div>
-				<p>{errorMessage}</p>
-				<button on:click={() => window.location.reload()} class="refresh-button">
-					Refresh Page
-				</button>
-			</div>
+			<Alert variant="destructive" class="mb-6">
+				<AlertTitle>Error</AlertTitle>
+				<AlertDescription class="flex items-center justify-between">
+					<span>{errorMessage}</span>
+					<button
+						on:click={() => window.location.reload()}
+						class="text-sm underline hover:no-underline ml-4"
+					>
+						Refresh Page
+					</button>
+				</AlertDescription>
+			</Alert>
 		{/if}
 
 		<div class="dashboard-header">
@@ -1165,378 +1183,492 @@
 		</div>
 
 		<!-- Yesterday's Performance - Full width metrics card at top -->
-		<div class="card metrics-header-card">
-			<h2>
-				Yesterday's Performance
-				<span class="date-badge">{format(addDays(today, -1), 'do MMM')}</span>
-			</h2>
-
-			{#if isLoading.metrics}
-				<div class="loading-placeholder">
-					<div class="loading-bar"></div>
-					<div class="loading-bar"></div>
-					<div class="loading-bar"></div>
-					<div class="loading-bar"></div>
-					<div class="loading-bar"></div>
-					<div class="loading-bar"></div>
-				</div>
-			{:else}
-				<!-- Comprehensive metrics from daily_metric_review table -->
-				<div class="comprehensive-metrics">
-					<!-- B2C Amazon Fulfillment Section -->
-					<div class="metrics-section">
-						<h3 class="section-title">Fulfillment Operations</h3>
-						<div class="metrics-grid">
-							<div class="metric-item">
-								<div class="metric-label">Shipments Packed</div>
-								<div class="metric-value">{metrics.shipmentsPacked}</div>
+		<Card class="metrics-header-card mb-4">
+			<CardHeader class="pb-2">
+				<CardTitle class="text-base font-medium text-slate-800 flex items-center gap-2">
+					Yesterday's Performance
+					<Badge variant="secondary" class="text-xs">
+						{format(addDays(today, -1), 'do MMM')}
+					</Badge>
+				</CardTitle>
+			</CardHeader>
+			<CardContent class="pt-0 pb-2">
+				{#if isLoading.metrics}
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+						{#each Array(6) as _}
+							<div class="space-y-1">
+								<Skeleton class="h-3 w-24" />
+								<Skeleton class="h-5 w-16" />
 							</div>
-
-							<div class="metric-item">
-								<div class="metric-label">Hours Worked</div>
-								<div class="metric-value">{metrics.actualHoursWorked.toFixed(1)}h</div>
-							</div>
-
-							<div class="metric-item">
-								<div class="metric-label">Labor Efficiency</div>
-								<div class="metric-value">{metrics.laborEfficiency.toFixed(1)}/hr</div>
-							</div>
-
-							{#if metrics.laborUtilization > 0}
-								<div class="metric-item">
-									<div class="metric-label">Labor Utilization</div>
-									<div class="metric-value">{metrics.laborUtilization.toFixed(1)}%</div>
-								</div>
-							{/if}
-						</div>
+						{/each}
 					</div>
+				{:else}
+					<!-- Comprehensive metrics from daily_metric_review table -->
+					<div class="space-y-3">
+						<!-- B2C Amazon Fulfillment Section -->
+						<div class="space-y-2">
+							<h3
+								class="text-xs font-medium text-slate-600 uppercase tracking-wide border-b border-slate-200 pb-1"
+							>
+								Fulfillment Operations
+							</h3>
+							<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+								<Card class="border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100">
+									<CardContent class="pt-2 pb-2">
+										<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
+											Shipments Packed
+										</div>
+										<div class="text-lg font-bold text-slate-900">{metrics.shipmentsPacked}</div>
+									</CardContent>
+								</Card>
 
-					<!-- Sales Section -->
-					{#if metrics.totalSales > 0}
-						<div class="metrics-section">
-							<h3 class="section-title">Sales Performance</h3>
-							<div class="metrics-grid">
-								<div class="metric-item total-sales">
-									<div class="metric-label">Total Sales</div>
-									<div class="metric-value">
-										£{metrics.totalSales.toLocaleString('en-GB', {
-											minimumFractionDigits: 2,
-											maximumFractionDigits: 2
-										})}
-									</div>
-								</div>
+								<Card>
+									<CardContent class="pt-2 pb-2">
+										<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
+											Hours Worked
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.actualHoursWorked.toFixed(1)}h
+										</div>
+									</CardContent>
+								</Card>
 
-								<div class="metric-item amazon">
-									<div class="metric-label">Amazon Sales</div>
-									<div class="metric-value">
-										£{metrics.amazonSales.toLocaleString('en-GB', {
-											minimumFractionDigits: 2,
-											maximumFractionDigits: 2
-										})}
-									</div>
-								</div>
+								<Card>
+									<CardContent class="pt-2 pb-2">
+										<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
+											Labor Efficiency
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.laborEfficiency.toFixed(1)}/hr
+										</div>
+									</CardContent>
+								</Card>
 
-								<div class="metric-item ebay">
-									<div class="metric-label">eBay Sales</div>
-									<div class="metric-value">
-										£{metrics.ebaySales.toLocaleString('en-GB', {
-											minimumFractionDigits: 2,
-											maximumFractionDigits: 2
-										})}
-									</div>
-								</div>
-
-								<div class="metric-item shopify">
-									<div class="metric-label">Shopify Sales</div>
-									<div class="metric-value">
-										£{metrics.shopifySales.toLocaleString('en-GB', {
-											minimumFractionDigits: 2,
-											maximumFractionDigits: 2
-										})}
-									</div>
-								</div>
+								{#if metrics.laborUtilization > 0}
+									<Card>
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
+												Labor Utilization
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.laborUtilization.toFixed(1)}%
+											</div>
+										</CardContent>
+									</Card>
+								{/if}
 							</div>
 						</div>
-					{/if}
 
-					<!-- Orders Section -->
-					{#if metrics.linnworksTotalOrders > 0}
-						<div class="metrics-section">
-							<h3 class="section-title">Order Volume</h3>
-							<div class="metrics-grid">
-								<div class="metric-item total-orders">
-									<div class="metric-label">Total Orders</div>
-									<div class="metric-value">{metrics.linnworksTotalOrders}</div>
-								</div>
+						<!-- Sales Section -->
+						{#if metrics.totalSales > 0}
+							<div class="space-y-2">
+								<h3
+									class="text-xs font-medium text-slate-600 uppercase tracking-wide border-b border-slate-200 pb-1"
+								>
+									Sales Performance
+								</h3>
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+									<Card class="border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 border-2">
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												Total Sales
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												£{metrics.totalSales.toLocaleString('en-GB', {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})}
+											</div>
+										</CardContent>
+									</Card>
 
-								<div class="metric-item amazon">
-									<div class="metric-label">Amazon Orders</div>
-									<div class="metric-value">
-										{metrics.linnworksAmazonOrders}
-										{#if metrics.amazonOrdersPercent > 0}
-											<span class="percentage">({metrics.amazonOrdersPercent.toFixed(1)}%)</span>
-										{/if}
-									</div>
-								</div>
+									<Card
+										class="border-yellow-200 bg-gradient-to-br from-yellow-50 to-yellow-100 border-2"
+									>
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												Amazon Sales
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												£{metrics.amazonSales.toLocaleString('en-GB', {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})}
+											</div>
+										</CardContent>
+									</Card>
 
-								<div class="metric-item ebay">
-									<div class="metric-label">eBay Orders</div>
-									<div class="metric-value">
-										{metrics.linnworksEbayOrders}
-										{#if metrics.ebayOrdersPercent > 0}
-											<span class="percentage">({metrics.ebayOrdersPercent.toFixed(1)}%)</span>
-										{/if}
-									</div>
-								</div>
+									<Card class="border-red-200 bg-gradient-to-br from-red-50 to-red-100 border-2">
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												eBay Sales
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												£{metrics.ebaySales.toLocaleString('en-GB', {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})}
+											</div>
+										</CardContent>
+									</Card>
 
-								<div class="metric-item shopify">
-									<div class="metric-label">Shopify Orders</div>
-									<div class="metric-value">
-										{metrics.linnworksShopifyOrders}
-										{#if metrics.shopifyOrdersPercent > 0}
-											<span class="percentage">({metrics.shopifyOrdersPercent.toFixed(1)}%)</span>
-										{/if}
-									</div>
+									<Card
+										class="border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 border-2"
+									>
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												Shopify Sales
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												£{metrics.shopifySales.toLocaleString('en-GB', {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})}
+											</div>
+										</CardContent>
+									</Card>
 								</div>
 							</div>
-						</div>
-					{/if}
+						{/if}
 
-					<!-- Fallback message if no comprehensive data -->
-					{#if metrics.totalSales === 0 && metrics.linnworksTotalOrders === 0}
-						<div class="metrics-section">
-							<div class="fallback-message">
-								<p><strong>Note:</strong> Comprehensive metrics not available for yesterday.</p>
-								<p>
-									Showing basic fulfillment data. Upload current week's metrics from the dashboard
-									to see complete performance data.
-								</p>
+						<!-- Orders Section -->
+						{#if metrics.linnworksTotalOrders > 0}
+							<div class="space-y-2">
+								<h3
+									class="text-xs font-medium text-slate-600 uppercase tracking-wide border-b border-slate-200 pb-1"
+								>
+									Order Volume
+								</h3>
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+									<Card
+										class="border-green-200 bg-gradient-to-br from-green-50 to-green-100 border-2"
+									>
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												Total Orders
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksTotalOrders}
+											</div>
+										</CardContent>
+									</Card>
+
+									<Card
+										class="border-yellow-200 bg-gradient-to-br from-yellow-50 to-yellow-100 border-2"
+									>
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												Amazon Orders
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksAmazonOrders}
+												{#if metrics.amazonOrdersPercent > 0}
+													<span class="text-sm font-medium text-slate-600 ml-2">
+														({metrics.amazonOrdersPercent.toFixed(1)}%)
+													</span>
+												{/if}
+											</div>
+										</CardContent>
+									</Card>
+
+									<Card class="border-red-200 bg-gradient-to-br from-red-50 to-red-100 border-2">
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												eBay Orders
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksEbayOrders}
+												{#if metrics.ebayOrdersPercent > 0}
+													<span class="text-sm font-medium text-slate-600 ml-2">
+														({metrics.ebayOrdersPercent.toFixed(1)}%)
+													</span>
+												{/if}
+											</div>
+										</CardContent>
+									</Card>
+
+									<Card
+										class="border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 border-2"
+									>
+										<CardContent class="pt-2 pb-2">
+											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
+												Shopify Orders
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksShopifyOrders}
+												{#if metrics.shopifyOrdersPercent > 0}
+													<span class="text-sm font-medium text-slate-600 ml-2">
+														({metrics.shopifyOrdersPercent.toFixed(1)}%)
+													</span>
+												{/if}
+											</div>
+										</CardContent>
+									</Card>
+								</div>
 							</div>
-						</div>
-					{/if}
-				</div>
-			{/if}
-		</div>
+						{/if}
+
+						<!-- Fallback message if no comprehensive data -->
+						{#if metrics.totalSales === 0 && metrics.linnworksTotalOrders === 0}
+							<Alert variant="warning">
+								<AlertTitle>Note</AlertTitle>
+								<AlertDescription>
+									Comprehensive metrics not available for yesterday. Showing basic fulfillment data.
+									Upload current week's metrics from the dashboard to see complete performance data.
+								</AlertDescription>
+							</Alert>
+						{/if}
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
 
 		<!-- Main dashboard grid layout -->
 		<div class="dashboard-grid">
 			<!-- Left Column - Main column now contains only weekly staff & upcoming leave -->
 			<div class="main-column">
 				<!-- Weekly Staff View - stays at the top of left column -->
-				<div class="card weekly-staff-card">
-					<h2>This Week's Staffing</h2>
-					<!-- Weekly staff content... -->
-					{#if isLoading.staff}
-						<div class="loading-placeholder">
-							<div class="loading-bar"></div>
-						</div>
-					{:else if weeklyStaff.length === 0}
-						<p class="empty-state">No staff scheduled this week</p>
-					{:else}
-						<div class="weekly-staff-grid">
-							{#each weeklyStaff as dayData, index}
-								<div
-									class="day-column"
-									class:today={format(dayData.date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')}
-								>
-									<div class="day-header">
-										<div class="day-name">{dayData.dayOfWeek}</div>
-										<div class="day-date">{format(dayData.date, 'do MMM')}</div>
-										<!-- Add this debug info temporarily -->
-										<div class="day-debug" style="font-size: 0.7rem; color: #999;">
-											{format(dayData.date, 'yyyy-MM-dd')}
+				<Card class="weekly-staff-card mb-6">
+					<CardHeader>
+						<CardTitle>This Week's Staffing</CardTitle>
+					</CardHeader>
+					<CardContent>
+						{#if isLoading.staff}
+							<div class="space-y-4">
+								<Skeleton class="h-4 w-full" />
+								<Skeleton class="h-4 w-3/4" />
+								<Skeleton class="h-4 w-1/2" />
+							</div>
+						{:else if weeklyStaff.length === 0}
+							<p class="text-muted-foreground text-center py-8">No staff scheduled this week</p>
+						{:else}
+							<div class="weekly-staff-grid">
+								{#each weeklyStaff as dayData, index}
+									<div
+										class="day-column"
+										class:today={format(dayData.date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')}
+									>
+										<div class="day-header">
+											<div class="day-name">{dayData.dayOfWeek}</div>
+											<div class="day-date">{format(dayData.date, 'do MMM')}</div>
+											<!-- Add this debug info temporarily -->
+											<div class="day-debug" style="font-size: 0.7rem; color: #999;">
+												{format(dayData.date, 'yyyy-MM-dd')}
+											</div>
 										</div>
-									</div>
 
-									{#if dayData.staff.length === 0}
-										<div class="day-empty">No staff</div>
-									{:else}
-										<!-- Calculate active staff count (excluding those on leave) -->
-										{@const activeStaffCount = dayData.staff.filter(
-											(person) => !person.onLeave
-										).length}
-
-										<!-- Show active count, not total count -->
-										<div class="staff-count">{activeStaffCount}</div>
-
-										<ul class="staff-list compact">
-											{#each groupStaffByRole(dayData.staff) as { role, staff }, i}
-												{#if i > 0}
-													<li class="role-separator"></li>
-												{/if}
-												{#each staff as person}
-													<li class="staff-item compact" class:on-leave={person.onLeave}>
-														<span class="staff-name">
-															{#if person.onLeave}
-																<span class="leave-icon" aria-label="On leave">🌴</span>
-															{/if}
-															{person.name}
-														</span>
-													</li>
-												{/each}
-											{/each}
-										</ul>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</div>
-
-				<!-- Upcoming Leave - moved to left column under weekly staff -->
-				<div class="card">
-					<h2>Upcoming Leave</h2>
-					<!-- Upcoming leave content... -->
-					{#if isLoading.leave}
-						<div class="loading-placeholder">
-							<div class="loading-bar"></div>
-						</div>
-					{:else if leaveRanges.length === 0}
-						<p class="empty-state">No upcoming leave scheduled</p>
-					{:else}
-						<div class="leave-list-container">
-							{#each leaveRanges as leaveGroup}
-								<div class="leave-section">
-									<div class="leave-date-header">
-										{#if leaveGroup.isRange}
-											{#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
-												{format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(
-													leaveGroup.endDate,
-													'EEEE, do MMMM'
-												)}
-											{:else}
-												Invalid Date Range
-											{/if}
-										{:else if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
-											{format(leaveGroup.startDate, 'EEEE, do MMMM')}
+										{#if dayData.staff.length === 0}
+											<div class="day-empty">No staff</div>
 										{:else}
-											Invalid Date
+											<!-- Calculate active staff count (excluding those on leave) -->
+											{@const activeStaffCount = dayData.staff.filter(
+												(person) => !person.onLeave
+											).length}
+
+											<!-- Show active count, not total count -->
+											<div class="staff-count">{activeStaffCount}</div>
+
+											<ul class="staff-list compact">
+												{#each groupStaffByRole(dayData.staff) as { role, staff }, i}
+													{#if i > 0}
+														<li class="role-separator"></li>
+													{/if}
+													{#each staff as person}
+														<li class="staff-item compact" class:on-leave={person.onLeave}>
+															<span class="staff-name">
+																{#if person.onLeave}
+																	<span class="leave-icon" aria-label="On leave">🌴</span>
+																{/if}
+																{person.name}
+															</span>
+														</li>
+													{/each}
+												{/each}
+											</ul>
 										{/if}
 									</div>
-									<ul class="leave-staff-list simple">
-										{#each leaveGroup.staff as person}
-											<li class="leave-staff-item simple">
-												{person.name}
-											</li>
-										{/each}
-									</ul>
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</div>
+								{/each}
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- Upcoming Leave - moved to left column under weekly staff -->
+				<Card class="mb-6">
+					<CardHeader>
+						<CardTitle>Upcoming Leave</CardTitle>
+					</CardHeader>
+					<CardContent>
+						{#if isLoading.leave}
+							<div class="space-y-3">
+								<Skeleton class="h-4 w-full" />
+								<Skeleton class="h-4 w-2/3" />
+								<Skeleton class="h-4 w-1/3" />
+							</div>
+						{:else if leaveRanges.length === 0}
+							<p class="text-muted-foreground text-center py-8">No upcoming leave scheduled</p>
+						{:else}
+							<div class="leave-list-container">
+								{#each leaveRanges as leaveGroup}
+									<div class="leave-section">
+										<div class="leave-date-header">
+											{#if leaveGroup.isRange}
+												{#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
+													{format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(
+														leaveGroup.endDate,
+														'EEEE, do MMMM'
+													)}
+												{:else}
+													Invalid Date Range
+												{/if}
+											{:else if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
+												{format(leaveGroup.startDate, 'EEEE, do MMMM')}
+											{:else}
+												Invalid Date
+											{/if}
+										</div>
+										<ul class="leave-staff-list simple">
+											{#each leaveGroup.staff as person}
+												<li class="leave-staff-item simple">
+													{person.name}
+												</li>
+											{/each}
+										</ul>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
 			</div>
 
 			<!-- Right Column - Now contains weather at top & performance metrics below -->
 			<div class="sidebar-column">
 				<!-- Weather Widget - moved to top of right column -->
-				<div class="card">
-					<div class="widget-header">
-						<h2>Weather</h2>
-						<span class="location-badge">{weatherData?.location?.name || 'Southampton'}, UK</span>
-					</div>
-					<!-- Weather content... -->
-					{#if isLoading.weather}
-						<div class="loading-placeholder center">
-							<div class="loading-circle"></div>
+				<Card class="mb-6">
+					<CardHeader class="pb-3">
+						<div class="flex items-center justify-between">
+							<CardTitle>Weather</CardTitle>
+							<Badge variant="secondary">
+								{weatherData?.location?.name || 'Southampton'}, UK
+							</Badge>
 						</div>
-					{:else if weatherError}
-						<div class="error-state">{weatherError}</div>
-					{:else if weatherData}
-						<div class="weather-content">
-							<!-- Today's Weather -->
-							<div class="weather-main">
-								<div class="weather-icon-temp">
-									<img
-										src={weatherData.current.condition.icon.replace('64x64', '128x128')}
-										alt={weatherData.current.condition.text}
-										class="weather-icon"
-									/>
-									<div>
-										<div class="weather-temp">{weatherData.current.temp_c}°C</div>
-										<div class="weather-condition">{weatherData.current.condition.text}</div>
-
-										<!-- High/Low Temperature -->
-										{#if weatherData.forecast?.forecastday?.[0]?.day}
-											{@const maxTemp = Math.max(
-												weatherData.current.temp_c,
-												weatherData.forecast.forecastday[0].day.maxtemp_c
-											)}
-											<div class="high-low">
-												<span class="high">H: {maxTemp.toFixed(0)}°</span>
-												<span class="low"
-													>L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(0)}°</span
-												>
-											</div>
-										{/if}
+					</CardHeader>
+					<CardContent>
+						{#if isLoading.weather}
+							<div class="space-y-4">
+								<div class="flex items-center space-x-4">
+									<Skeleton class="h-16 w-16 rounded-full" />
+									<div class="space-y-2">
+										<Skeleton class="h-6 w-20" />
+										<Skeleton class="h-4 w-32" />
 									</div>
 								</div>
-								<div class="weather-updated">
-									<span>Updated</span>
-									{weatherData.current.last_updated.split(' ')[1]}
+								<div class="grid grid-cols-2 gap-4">
+									<Skeleton class="h-4 w-full" />
+									<Skeleton class="h-4 w-full" />
 								</div>
 							</div>
+						{:else if weatherError}
+							<div class="text-destructive text-center py-4">{weatherError}</div>
+						{:else if weatherData}
+							<div class="weather-content">
+								<!-- Today's Weather -->
+								<div class="weather-main">
+									<div class="weather-icon-temp">
+										<img
+											src={weatherData.current.condition.icon.replace('64x64', '128x128')}
+											alt={weatherData.current.condition.text}
+											class="weather-icon"
+										/>
+										<div>
+											<div class="weather-temp">{weatherData.current.temp_c}°C</div>
+											<div class="weather-condition">{weatherData.current.condition.text}</div>
 
-							<!-- Weather Details for Today -->
-							<div class="weather-details">
-								<div class="weather-detail-item">
-									<div class="detail-label">Feels like</div>
-									<div class="detail-value">{weatherData.current.feelslike_c}°C</div>
-								</div>
-								<div class="weather-detail-item">
-									<div class="detail-label">Humidity</div>
-									<div class="detail-value">{weatherData.current.humidity}%</div>
-								</div>
-								<div class="weather-detail-item">
-									<div class="detail-label">Wind</div>
-									<div class="detail-value">
-										{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}
-									</div>
-								</div>
-								<div class="weather-detail-item">
-									<div class="detail-label">Rain chance</div>
-									<div class="detail-value">
-										{weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
-									</div>
-								</div>
-							</div>
-
-							<!-- Tomorrow's Forecast -->
-							{#if weatherData.forecast?.forecastday?.[1]?.day}
-								<div class="tomorrow-forecast">
-									<div class="tomorrow-header">
-										<span>Tomorrow</span>
-										<span>{format(tomorrow, 'EEE, do')}</span>
-									</div>
-									<div class="tomorrow-content">
-										<div class="tomorrow-icon-temp">
-											<img
-												src={weatherData.forecast.forecastday[1].day.condition.icon}
-												alt={weatherData.forecast.forecastday[1].day.condition.text}
-												class="tomorrow-icon"
-											/>
-											<div class="tomorrow-condition">
-												{weatherData.forecast.forecastday[1].day.condition.text}
-											</div>
+											<!-- High/Low Temperature -->
+											{#if weatherData.forecast?.forecastday?.[0]?.day}
+												{@const maxTemp = Math.max(
+													weatherData.current.temp_c,
+													weatherData.forecast.forecastday[0].day.maxtemp_c
+												)}
+												<div class="high-low">
+													<span class="high">H: {maxTemp.toFixed(0)}°</span>
+													<span class="low"
+														>L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(
+															0
+														)}°</span
+													>
+												</div>
+											{/if}
 										</div>
-										<div class="tomorrow-temps">
-											<div class="tomorrow-high">
-												H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
-											</div>
-											<div class="tomorrow-low">
-												L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
-											</div>
-											<div class="tomorrow-rain">
-												<span class="rain-icon">💧</span>
-												{weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
-											</div>
+									</div>
+									<div class="weather-updated">
+										<span>Updated</span>
+										{weatherData.current.last_updated.split(' ')[1]}
+									</div>
+								</div>
+
+								<!-- Weather Details for Today -->
+								<div class="weather-details">
+									<div class="weather-detail-item">
+										<div class="detail-label">Feels like</div>
+										<div class="detail-value">{weatherData.current.feelslike_c}°C</div>
+									</div>
+									<div class="weather-detail-item">
+										<div class="detail-label">Humidity</div>
+										<div class="detail-value">{weatherData.current.humidity}%</div>
+									</div>
+									<div class="weather-detail-item">
+										<div class="detail-label">Wind</div>
+										<div class="detail-value">
+											{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}
+										</div>
+									</div>
+									<div class="weather-detail-item">
+										<div class="detail-label">Rain chance</div>
+										<div class="detail-value">
+											{weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
 										</div>
 									</div>
 								</div>
-							{/if}
-						</div>
-					{/if}
-				</div>
+
+								<!-- Tomorrow's Forecast -->
+								{#if weatherData.forecast?.forecastday?.[1]?.day}
+									<div class="tomorrow-forecast">
+										<div class="tomorrow-header">
+											<span>Tomorrow</span>
+											<span>{format(tomorrow, 'EEE, do')}</span>
+										</div>
+										<div class="tomorrow-content">
+											<div class="tomorrow-icon-temp">
+												<img
+													src={weatherData.forecast.forecastday[1].day.condition.icon}
+													alt={weatherData.forecast.forecastday[1].day.condition.text}
+													class="tomorrow-icon"
+												/>
+												<div class="tomorrow-condition">
+													{weatherData.forecast.forecastday[1].day.condition.text}
+												</div>
+											</div>
+											<div class="tomorrow-temps">
+												<div class="tomorrow-high">
+													H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
+												</div>
+												<div class="tomorrow-low">
+													L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
+												</div>
+												<div class="tomorrow-rain">
+													<span class="rain-icon">💧</span>
+													{weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
+												</div>
+											</div>
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
 			</div>
 		</div>
 	</div>
@@ -1548,18 +1680,6 @@
 {/if}
 
 <style>
-	/* Global status banners */
-	.global-loading-banner {
-		background-color: #f2f9ff;
-		border: 1px solid #d0e8ff;
-		border-radius: 8px;
-		padding: 12px 16px;
-		display: flex;
-		align-items: center;
-		margin-bottom: 16px;
-		animation: fadeIn 0.3s ease;
-	}
-
 	.loading-spinner-small {
 		width: 16px;
 		height: 16px;
@@ -1567,39 +1687,6 @@
 		border-radius: 50%;
 		border-top-color: #007aff;
 		animation: spin 1s ease-in-out infinite;
-		margin-right: 12px;
-	}
-
-	.global-error-banner {
-		background-color: #fff5f5;
-		border: 1px solid #ffebeb;
-		border-radius: 8px;
-		padding: 12px 16px;
-		display: flex;
-		align-items: center;
-		margin-bottom: 16px;
-		animation: fadeIn 0.3s ease;
-	}
-
-	.error-icon {
-		margin-right: 12px;
-		font-size: 18px;
-	}
-
-	.refresh-button {
-		margin-left: auto;
-		background-color: #007aff;
-		color: white;
-		border: none;
-		border-radius: 6px;
-		padding: 6px 12px;
-		font-size: 14px;
-		cursor: pointer;
-		transition: background-color 0.2s;
-	}
-
-	.refresh-button:hover {
-		background-color: #0066cc;
 	}
 
 	@keyframes fadeIn {
@@ -1610,6 +1697,12 @@
 		to {
 			opacity: 1;
 			transform: translateY(0);
+		}
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
 		}
 	}
 
@@ -1676,313 +1769,12 @@
 		gap: 24px;
 	}
 
-	/* Card Styles */
-	.card {
-		background: white;
-		border-radius: 12px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-		padding: 20px;
-		margin-bottom: 24px;
-		border: 1px solid #e5e5e7;
-	}
-
-	/* Header metrics card - full width with enhanced styling */
-	.metrics-header-card {
-		background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-		border: 1px solid #e2e8f0;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-		margin-bottom: 32px;
-		overflow: visible; /* Ensure cards aren't clipped */
-		position: relative;
-		z-index: 5; /* Lower than metric items */
-	}
-
-	.comprehensive-metrics {
-		overflow: visible; /* Allow metric cards to overflow if needed */
-		position: relative;
-		z-index: 1; /* Base layer */
-	}
-
-	.metrics-section {
-		margin-bottom: 24px;
-		overflow: visible; /* Allow metric cards to overflow */
-		position: relative;
-		z-index: 2; /* Above comprehensive-metrics but below metric items */
-	}
-
-	.section-title {
-		font-size: 1rem;
-		font-weight: 600;
-		color: #374151;
-		margin-bottom: 12px;
-		position: relative;
-		z-index: 1; /* Lowest layer within sections */
-	}
-
-	.metrics-header-card h2 {
-		font-size: 1.3rem;
-		font-weight: 600;
-		color: #1e293b;
-		margin-bottom: 20px;
-	}
-
-	.metrics-header-card .date-badge {
-		font-size: 0.9rem;
-		background: #64748b;
-		color: white;
-		padding: 2px 8px;
-		border-radius: 4px;
-		margin-left: 12px;
-	}
-
-	h2 {
-		font-size: 1.1rem;
-		font-weight: 500;
-		color: #1d1d1f;
-		margin: 0 0 16px 0;
-		padding: 0;
-	}
-
-	.date-badge {
-		font-size: 0.85rem;
-		font-weight: normal;
-		color: #86868b;
-		margin-left: 8px;
-	}
-
 	/* Staff List Styles */
 	.staff-list {
 		list-style: none;
 		padding: 0;
 		margin: 0;
 	}
-
-	/* Comprehensive metrics styles */
-	.comprehensive-metrics {
-		display: flex;
-		flex-direction: column;
-		gap: 24px;
-	}
-
-	/* Enhanced styling for header metrics card */
-	.metrics-header-card .comprehensive-metrics {
-		gap: 28px;
-	}
-
-	.metrics-section {
-		border-radius: 8px;
-		overflow: visible; /* Allow content to show above */
-		position: relative;
-		z-index: 5;
-	}
-
-	.section-title {
-		font-size: 0.9rem;
-		font-weight: 600;
-		color: #475569;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		margin: 0 0 16px 0;
-		padding-bottom: 8px;
-		border-bottom: 2px solid #e2e8f0;
-	}
-
-	/* Enhanced metrics grid for header card */
-	.metrics-header-card .metrics-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-		gap: 16px;
-	}
-
-	.metrics-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-		gap: 12px;
-		overflow: visible; /* Allow cards to overflow the grid */
-		position: relative;
-		z-index: 3; /* Above sections but below metric items */
-	}
-
-	.metric-item {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		padding: 16px;
-		background: white;
-		border-radius: 8px;
-		border: 1px solid #e2e8f0;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-		min-width: 0; /* Allow shrinking */
-		overflow: visible; /* Allow content to show */
-		position: relative;
-		z-index: 10; /* High z-index to ensure it's above other elements */
-	}
-
-	/* Enhanced color schemes for better visibility in header */
-	.metric-item.total-sales {
-		background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-		border: 2px solid #3b82f6;
-		box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
-		z-index: 15; /* Even higher for colored cards */
-	}
-
-	.metric-item.total-orders {
-		background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
-		border: 2px solid #22c55e;
-		box-shadow: 0 2px 8px rgba(34, 197, 94, 0.15);
-		z-index: 15;
-	}
-
-	.metric-item.amazon {
-		background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-		border: 2px solid #f59e0b;
-		box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
-		z-index: 15;
-	}
-
-	.metric-item.ebay {
-		background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-		border: 2px solid #ef4444;
-		box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
-		z-index: 15;
-	}
-
-	.metric-item.shopify {
-		background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
-		border: 2px solid #8b5cf6;
-		box-shadow: 0 2px 8px rgba(139, 92, 246, 0.15);
-		z-index: 20; /* Higher z-index specifically for Shopify */
-		position: relative; /* Ensure positioning context */
-		transform: translateZ(0); /* Force hardware acceleration and new stacking context */
-	}
-
-	/* Enhanced text styling for colored metric cards */
-	.metric-item.total-sales .metric-label,
-	.metric-item.total-orders .metric-label,
-	.metric-item.amazon .metric-label,
-	.metric-item.ebay .metric-label,
-	.metric-item.shopify .metric-label {
-		color: #1e293b;
-		font-weight: 700;
-	}
-
-	.metric-item.total-sales .metric-value,
-	.metric-item.total-orders .metric-value,
-	.metric-item.amazon .metric-value,
-	.metric-item.ebay .metric-value,
-	.metric-item.shopify .metric-value {
-		color: #0f172a;
-		font-weight: 800;
-	}
-
-	.metric-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #64748b;
-		text-transform: uppercase;
-		letter-spacing: 0.025em;
-		margin-bottom: 6px;
-		line-height: 1.2;
-		word-break: break-word; /* Allow breaking long words */
-		hyphens: auto; /* Enable hyphenation */
-	}
-
-	.metric-value {
-		font-size: 1.4rem;
-		font-weight: 700;
-		color: #0f172a;
-		line-height: 1.2;
-		word-break: break-word; /* Allow breaking long values */
-		overflow-wrap: break-word; /* Modern browsers */
-	}
-
-	/* Enhanced styling for header card metrics */
-	.metrics-header-card .metric-value {
-		font-size: 1.6rem;
-		font-weight: 800;
-	}
-
-	.percentage {
-		font-size: 0.9rem;
-		font-weight: 500;
-		color: #64748b;
-		margin-left: 6px;
-	}
-
-	.fallback-message {
-		background: #fef9e7;
-		border: 1px solid #f3e8aa;
-		border-radius: 8px;
-		padding: 20px;
-		text-align: center;
-	}
-
-	.fallback-message p {
-		margin: 0 0 10px 0;
-		color: #92400e;
-		font-size: 0.95rem;
-		line-height: 1.5;
-	}
-
-	.fallback-message p:last-child {
-		margin-bottom: 0;
-	}
-
-	/* Responsive adjustments for comprehensive metrics */
-	@media (max-width: 1200px) {
-		.metrics-header-card .metrics-grid {
-			grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-			gap: 14px;
-		}
-
-		.metrics-grid {
-			grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-		}
-	}
-
-	@media (max-width: 768px) {
-		.metrics-grid,
-		.metrics-header-card .metrics-grid {
-			grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-			gap: 10px;
-		}
-
-		.metric-item {
-			padding: 14px;
-		}
-
-		.metric-value,
-		.metrics-header-card .metric-value {
-			font-size: 1.3rem;
-		}
-
-		.section-title {
-			font-size: 0.8rem;
-		}
-	}
-
-	@media (max-width: 600px) {
-		.metrics-grid,
-		.metrics-header-card .metrics-grid {
-			grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-			gap: 8px;
-		}
-
-		.metric-item {
-			padding: 12px;
-		}
-
-		.metric-value,
-		.metrics-header-card .metric-value {
-			font-size: 1.1rem;
-		}
-
-		.metric-label {
-			font-size: 0.7rem;
-		}
-	}
-
-	/* Legacy metrics list styles (keep for backward compatibility) */
 
 	.staff-item {
 		display: flex;
@@ -2095,21 +1887,6 @@
 	}
 
 	/* Weather Widget Styles */
-	.widget-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 16px;
-	}
-
-	.location-badge {
-		font-size: 0.7rem;
-		color: #86868b;
-		background: #f5f5f7;
-		padding: 3px 8px;
-		border-radius: 12px;
-	}
-
 	.weather-main {
 		display: flex;
 		justify-content: space-between;
@@ -2193,44 +1970,6 @@
 		color: #007aff;
 	}
 
-	/* Loading States */
-	.loading-placeholder {
-		padding: 16px 0;
-	}
-
-	.loading-bar {
-		height: 12px;
-		width: 100%;
-		background-color: #f5f5f7;
-		border-radius: 6px;
-		margin-bottom: 12px;
-		animation: pulse 1.5s infinite;
-	}
-
-	.loading-circle {
-		height: 50px;
-		width: 50px;
-		background-color: #f5f5f7;
-		border-radius: 50%;
-		animation: pulse 1.5s infinite;
-	}
-
-	.center {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		padding: 32px 0;
-	}
-
-	/* Empty and Error States */
-	.empty-state,
-	.error-state {
-		color: #86868b;
-		text-align: center;
-		padding: 24px 0;
-		font-size: 0.95rem;
-	}
-
 	/* Animation */
 	@keyframes pulse {
 		0% {
@@ -2302,18 +2041,12 @@
 		color: #1d1d1f;
 	}
 
-	/* You can remove or comment out the old grid-based leave styles if not used elsewhere */
-
 	/* Weekly Staff Grid Styles */
 	.weekly-staff-grid {
 		display: grid;
 		grid-template-columns: repeat(6, 1fr);
 		gap: 12px;
 		margin-top: 16px;
-	}
-
-	.weekly-staff-card {
-		margin-bottom: 24px;
 	}
 
 	.day-column {

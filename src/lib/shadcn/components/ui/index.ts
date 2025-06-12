@@ -7,6 +7,10 @@ export { default as CardContent } from "./CardContent.svelte";
 export { default as Skeleton } from "./Skeleton.svelte";
 export { default as Input } from "./Input.svelte";
 export { default as Select } from "./Select.svelte";
+export { default as Alert } from "./Alert.svelte";
+export { default as AlertTitle } from "./AlertTitle.svelte";
+export { default as AlertDescription } from "./AlertDescription.svelte";
+export { default as Badge } from "./Badge.svelte";
 
 // Table Components
 export { default as Table } from "./Table.svelte";
