@@ -317,7 +317,9 @@
 			</div>
 
 			<footer class="site-footer">
-				<p>Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a></p>
+				<p>
+					Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a>
+				</p>
 			</footer>
 		</main>
 	</Sidebar.Provider>
@@ -395,14 +397,6 @@
 		display: flex;
 		align-items: center;
 		gap: 16px;
-	}
-
-	.header-left h1 {
-		margin: 0;
-		font-size: 1.25em;
-		font-weight: 600;
-		color: #004225;
-		letter-spacing: -0.01em;
 	}
 
 	.header-divider {

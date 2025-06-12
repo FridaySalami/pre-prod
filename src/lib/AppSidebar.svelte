@@ -60,7 +60,9 @@
 		<div class="flex flex-col items-center px-4 py-3 gap-2">
 			<div class="app-icon">P</div>
 			<div class="app-name group-data-[collapsible=icon]:sr-only text-center">
-				<div class="font-semibold text-sidebar-foreground text-sm leading-tight">Parkers Foodservice</div>
+				<div class="font-semibold text-sidebar-foreground text-sm leading-tight">
+					Parkers Foodservice
+				</div>
 				<div class="text-xs text-sidebar-foreground/60">Operations Dashboard</div>
 			</div>
 		</div>
@@ -97,10 +99,10 @@
 	<Sidebar.Footer class="">
 		<Sidebar.Menu class="">
 			<Sidebar.MenuItem class="">
-				<Sidebar.MenuButton 
+				<Sidebar.MenuButton
 					class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
-					children={() => {}} 
-					tooltipContent="Logout" 
+					children={() => {}}
+					tooltipContent="Logout"
 					tooltipContentProps={{}}
 				>
 					{#snippet child({ props }: { props: any })}
@@ -142,17 +144,17 @@
 	}
 
 	/* Ensure text is hidden when sidebar is collapsed */
-	:global([data-collapsible="icon"]) span:not(.sr-only) {
+	:global([data-collapsible='icon']) span:not(.sr-only) {
 		display: none !important;
 	}
 
 	/* Make sure icons are centered when collapsed */
-	:global([data-collapsible="icon"]) .flex.items-center {
+	:global([data-collapsible='icon']) .flex.items-center {
 		justify-content: center;
 	}
 
 	/* Hide the app-name completely when collapsed */
-	:global([data-collapsible="icon"]) .app-name {
+	:global([data-collapsible='icon']) .app-name {
 		display: none !important;
 	}
 </style>
