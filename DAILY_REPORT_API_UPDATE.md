@@ -78,11 +78,12 @@ The response now includes detailed labor breakdown metrics that can be used for:
 - **Management vs. operational hours tracking**
 
 ### Labor Efficiency Calculation
-Note: Labor efficiency now uses the updated formula:
+The API now uses the updated formula that matches the dashboard:
 - **New:** `Shipments ÷ (Packing Hours + Picking Hours)`
 - **Old:** `Shipments ÷ Total Hours`
+- **Fallback:** Uses total hours when role breakdown data is unavailable
 
-This provides a more accurate measure of direct fulfillment efficiency.
+This provides a more accurate measure of direct fulfillment efficiency by excluding management hours from the calculation.
 
 ## Files Updated
 - ✅ `src/routes/api/daily-report/+server.ts` - API endpoint with new fields

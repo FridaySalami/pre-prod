@@ -17,6 +17,11 @@
 			icon: 'home'
 		},
 		{
+			title: 'Employee Hours',
+			url: '/employee-hours',
+			icon: 'schedule'
+		},
+		{
 			title: 'Dashboard',
 			url: '/dashboard',
 			icon: 'dashboard'
@@ -46,11 +51,6 @@
 			url: '/schedules',
 			icon: 'calendar_today'
 		},
-		{
-			title: 'Employee Hours',
-			url: '/employee-hours',
-			icon: 'schedule'
-		}
 	];
 
 	async function handleLogout() {
