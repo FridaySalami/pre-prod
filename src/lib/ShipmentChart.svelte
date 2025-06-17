@@ -521,6 +521,14 @@
 					ignoreZeros: false,
 					excludeSundays: true
 				});
+			} else if (
+				metric.name === '1.1 Shipments Packed' ||
+				metric.name === '1.3.1 Management Hours Used' ||
+				metric.name === '1.3.2 Packing Hours Used' ||
+				metric.name === '1.3.3 Picking Hours Used'
+			) {
+				// For shipments packed and role breakdown hours, sum the values (they're additive totals)
+				return currentSlice.reduce((acc, v) => acc + v, 0);
 			} else {
 				return 0;
 			}
@@ -774,6 +782,15 @@
 					? Math.round((totActualHours / totScheduledHours) * 10000) / 100
 					: 0;
 			}
+			// For shipments packed and role breakdown hours, sum the values (they're additive totals)
+			if (
+				metric.name === '1.1 Shipments Packed' ||
+				metric.name === '1.3.1 Management Hours Used' ||
+				metric.name === '1.3.2 Packing Hours Used' ||
+				metric.name === '1.3.3 Picking Hours Used'
+			) {
+				return previousWeekMetrics[idx].reduce((acc, v) => acc + v, 0);
+			}
 			// For other computed metrics, average over all days of the previous week
 			return computeMetricAverage(previousWeekMetrics[idx], previousWeekDates, {
 				ignoreZeros: false,
@@ -828,6 +845,15 @@
 				return totalScheduledHours > 0
 					? Math.round((totalActualHours / totalScheduledHours) * 10000) / 100
 					: 0;
+			}
+			// For shipments packed and role breakdown hours, sum the values (they're additive totals)
+			if (
+				metric.name === '1.1 Shipments Packed' ||
+				metric.name === '1.3.1 Management Hours Used' ||
+				metric.name === '1.3.2 Packing Hours Used' ||
+				metric.name === '1.3.3 Picking Hours Used'
+			) {
+				return slicedValues.reduce((acc, v) => acc + v, 0);
 			}
 			// For other metrics that need special averaging
 			if (
