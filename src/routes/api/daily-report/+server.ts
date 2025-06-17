@@ -206,13 +206,18 @@ export const GET: RequestHandler = async ({ url }) => {
     // Populate data from comprehensive source if available
     if (reviewData) {
       // Fulfillment data
+      const managementHours = reviewData.management_hours_used || 0;
+      const packingHours = reviewData.packing_hours_used || 0;
+      const pickingHours = reviewData.picking_hours_used || 0;
+      const calculatedTotalHours = managementHours + packingHours + pickingHours;
+
       response.fulfillment = {
         shipmentsPacked: reviewData.shipments_packed || 0,
         scheduledHours: reviewData.scheduled_hours || 0,
-        totalHoursUsed: reviewData.actual_hours_worked || 0,
-        managementHoursUsed: reviewData.management_hours_used || 0,
-        packingHoursUsed: reviewData.packing_hours_used || 0,
-        pickingHoursUsed: reviewData.picking_hours_used || 0,
+        totalHoursUsed: calculatedTotalHours > 0 ? calculatedTotalHours : (reviewData.actual_hours_worked || 0),
+        managementHoursUsed: managementHours,
+        packingHoursUsed: packingHours,
+        pickingHoursUsed: pickingHours,
         laborEfficiency: reviewData.labor_efficiency || 0,
         laborUtilization: reviewData.labor_utilization_percent || 0
       };
