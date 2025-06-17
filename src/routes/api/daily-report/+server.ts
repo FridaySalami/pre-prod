@@ -204,21 +204,27 @@ export const GET: RequestHandler = async ({ url }) => {
     };
 
     // Populate data from comprehensive source if available
-    if (reviewData) {
-      // Fulfillment data
+    if (reviewData) {      // Fulfillment data
       const managementHours = reviewData.management_hours_used || 0;
       const packingHours = reviewData.packing_hours_used || 0;
       const pickingHours = reviewData.picking_hours_used || 0;
       const calculatedTotalHours = managementHours + packingHours + pickingHours;
-
+      
+      // Calculate labor efficiency using packing + picking hours only (like dashboard)
+      const directLaborHours = packingHours + pickingHours;
+      const shipmentsPacked = reviewData.shipments_packed || 0;
+      const calculatedLaborEfficiency = directLaborHours > 0 
+        ? Math.round((shipmentsPacked / directLaborHours) * 100) / 100 
+        : 0;
+      
       response.fulfillment = {
-        shipmentsPacked: reviewData.shipments_packed || 0,
+        shipmentsPacked: shipmentsPacked,
         scheduledHours: reviewData.scheduled_hours || 0,
         totalHoursUsed: calculatedTotalHours > 0 ? calculatedTotalHours : (reviewData.actual_hours_worked || 0),
         managementHoursUsed: managementHours,
         packingHoursUsed: packingHours,
         pickingHoursUsed: pickingHours,
-        laborEfficiency: reviewData.labor_efficiency || 0,
+        laborEfficiency: calculatedLaborEfficiency,
         laborUtilization: reviewData.labor_utilization_percent || 0
       };
 
@@ -290,6 +296,7 @@ export const GET: RequestHandler = async ({ url }) => {
         managementHoursUsed: 0, // Not available in fallback data
         packingHoursUsed: 0, // Not available in fallback data
         pickingHoursUsed: 0, // Not available in fallback data
+        // Fallback: use total hours since we don't have role breakdown
         laborEfficiency: fallbackData.hours_worked > 0
           ? Math.round((fallbackData.shipments / fallbackData.hours_worked) * 100) / 100
           : 0,
