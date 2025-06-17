@@ -3,6 +3,17 @@ import { showToast } from './toastStore';
 
 export interface DailyMetricReviewData {
   date: string;
+
+  // Labor metrics (1.x series)
+  shipments_packed: number; // 1.1 (now auto-populated from Linnworks orders)
+  scheduled_hours: number; // 1.2
+  actual_hours_worked: number; // 1.3 Total Hours Used (keeping column name for compatibility)
+  management_hours_used: number; // 1.3.1
+  packing_hours_used: number; // 1.3.2  
+  picking_hours_used: number; // 1.3.3
+  labor_efficiency: number; // 1.4 (shipments per hour)
+  labor_utilization_percent: number; // 1.5 (%)
+
   // Sales metrics (2.0 series)
   total_sales: number;
   amazon_sales: number;
@@ -19,10 +30,6 @@ export interface DailyMetricReviewData {
   amazon_orders_percent: number;
   ebay_orders_percent: number;
   shopify_orders_percent: number;
-
-  // Labor metrics (1.x series)
-  actual_hours_worked: number;
-  labor_efficiency: number; // shipments per hour
 }
 
 /**
@@ -43,10 +50,13 @@ export async function uploadDailyMetricReview(data: DailyMetricReviewData[]): Pr
       const sample = data[0];
       console.log('Data type validation:');
       console.log('date is string:', typeof sample.date === 'string');
+      console.log('shipments_packed is number:', typeof sample.shipments_packed === 'number');
+      console.log('scheduled_hours is number:', typeof sample.scheduled_hours === 'number');
+      console.log('actual_hours_worked is number:', typeof sample.actual_hours_worked === 'number');
+      console.log('management_hours_used is number:', typeof sample.management_hours_used === 'number');
       console.log('total_sales is number:', typeof sample.total_sales === 'number');
       console.log('linnworks_total_orders is number:', typeof sample.linnworks_total_orders === 'number');
       console.log('amazon_orders_percent is number:', typeof sample.amazon_orders_percent === 'number');
-      console.log('actual_hours_worked is number:', typeof sample.actual_hours_worked === 'number');
       console.log('labor_efficiency is number:', typeof sample.labor_efficiency === 'number');
     }
 
@@ -69,9 +79,11 @@ export async function uploadDailyMetricReview(data: DailyMetricReviewData[]): Pr
       console.log('Trying simplified upload with essential fields only...');
       const simplifiedData = data.map(record => ({
         date: record.date,
+        shipments_packed: record.shipments_packed,
+        scheduled_hours: record.scheduled_hours,
+        actual_hours_worked: record.actual_hours_worked,
         total_sales: record.total_sales,
-        linnworks_total_orders: record.linnworks_total_orders,
-        actual_hours_worked: record.actual_hours_worked
+        linnworks_total_orders: record.linnworks_total_orders
       }));
 
       const { error: simpleError } = await supabase
@@ -115,22 +127,32 @@ export function transformMetricsForReview(
   // Find metric indices by name
   const findMetricIndex = (name: string) => metrics.findIndex(m => m.name === name);
 
+  // Labor metrics (1.x series)
+  const shipmentsPackedIdx = findMetricIndex('1.1 Shipments Packed');
+  const scheduledHoursIdx = findMetricIndex('1.2 Scheduled Hours');
+  const totalHoursIdx = findMetricIndex('1.3 Total Hours Used');
+  const managementHoursIdx = findMetricIndex('1.3.1 Management Hours Used');
+  const packingHoursIdx = findMetricIndex('1.3.2 Packing Hours Used');
+  const pickingHoursIdx = findMetricIndex('1.3.3 Picking Hours Used');
+  const laborEfficiencyIdx = findMetricIndex('1.4 Labor Efficiency (shipments/hour)');
+  const laborUtilizationIdx = findMetricIndex('1.5 Labor Utilization (%)');
+
+  // Sales metrics (2.0 series)
   const totalSalesIdx = findMetricIndex('2.0 Total Sales');
   const amazonSalesIdx = findMetricIndex('2.0.1 Amazon Sales');
   const ebaySalesIdx = findMetricIndex('2.0.2 eBay Sales');
   const shopifySalesIdx = findMetricIndex('2.0.3 Shopify Sales');
 
+  // Orders metrics (2.1 series)
   const totalOrdersIdx = findMetricIndex('2.1 Linnworks Total Orders');
   const amazonOrdersIdx = findMetricIndex('2.1.1 Amazon Orders');
   const ebayOrdersIdx = findMetricIndex('2.1.2 eBay Orders');
   const shopifyOrdersIdx = findMetricIndex('2.1.3 Shopify Orders');
 
+  // Percentage metrics (2.2 series)
   const amazonPercentIdx = findMetricIndex('2.2.1 Amazon Orders %');
   const ebayPercentIdx = findMetricIndex('2.2.2 eBay Orders %');
   const shopifyPercentIdx = findMetricIndex('2.2.3 Shopify Orders %');
-
-  const actualHoursIdx = findMetricIndex('1.3 Actual Hours Worked');
-  const laborEfficiencyIdx = findMetricIndex('1.4 Labor Efficiency (shipments/hour)');
 
   for (let dayIndex = 0; dayIndex < weekDates.length; dayIndex++) {
     const date = weekDates[dayIndex];
@@ -138,6 +160,16 @@ export function transformMetricsForReview(
 
     const dayData: DailyMetricReviewData = {
       date: dateStr,
+
+      // Labor metrics (1.x series)
+      shipments_packed: shipmentsPackedIdx >= 0 ? (metrics[shipmentsPackedIdx].values[dayIndex] || 0) : 0,
+      scheduled_hours: scheduledHoursIdx >= 0 ? (metrics[scheduledHoursIdx].values[dayIndex] || 0) : 0,
+      actual_hours_worked: totalHoursIdx >= 0 ? (metrics[totalHoursIdx].values[dayIndex] || 0) : 0,
+      management_hours_used: managementHoursIdx >= 0 ? (metrics[managementHoursIdx].values[dayIndex] || 0) : 0,
+      packing_hours_used: packingHoursIdx >= 0 ? (metrics[packingHoursIdx].values[dayIndex] || 0) : 0,
+      picking_hours_used: pickingHoursIdx >= 0 ? (metrics[pickingHoursIdx].values[dayIndex] || 0) : 0,
+      labor_efficiency: laborEfficiencyIdx >= 0 ? (computedMetrics[laborEfficiencyIdx]?.[dayIndex] || 0) : 0,
+      labor_utilization_percent: laborUtilizationIdx >= 0 ? (computedMetrics[laborUtilizationIdx]?.[dayIndex] || 0) : 0,
 
       // Sales data (2.0 series)
       total_sales: totalSalesIdx >= 0 ? (metrics[totalSalesIdx].values[dayIndex] || 0) : 0,
@@ -154,11 +186,7 @@ export function transformMetricsForReview(
       // Percentage distribution (2.2 series - from computed metrics)
       amazon_orders_percent: amazonPercentIdx >= 0 ? (computedMetrics[amazonPercentIdx]?.[dayIndex] || 0) : 0,
       ebay_orders_percent: ebayPercentIdx >= 0 ? (computedMetrics[ebayPercentIdx]?.[dayIndex] || 0) : 0,
-      shopify_orders_percent: shopifyPercentIdx >= 0 ? (computedMetrics[shopifyPercentIdx]?.[dayIndex] || 0) : 0,
-
-      // Labor metrics (1.x series)
-      actual_hours_worked: actualHoursIdx >= 0 ? (metrics[actualHoursIdx].values[dayIndex] || 0) : 0,
-      labor_efficiency: laborEfficiencyIdx >= 0 ? (computedMetrics[laborEfficiencyIdx]?.[dayIndex] || 0) : 0
+      shopify_orders_percent: shopifyPercentIdx >= 0 ? (computedMetrics[shopifyPercentIdx]?.[dayIndex] || 0) : 0
     };
 
     reviewData.push(dayData);

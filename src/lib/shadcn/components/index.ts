@@ -5,6 +5,7 @@ export { default as CardHeader } from "./ui/CardHeader.svelte";
 export { default as CardTitle } from "./ui/CardTitle.svelte";
 export { default as CardContent } from "./ui/CardContent.svelte";
 export { default as Input } from "./ui/Input.svelte";
+export { default as Textarea } from "./ui/Textarea.svelte";
 export { default as Select } from "./ui/Select.svelte";
 export { default as Skeleton } from "./ui/Skeleton.svelte";
 export { default as Alert } from "./ui/Alert.svelte";
