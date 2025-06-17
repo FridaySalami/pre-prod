@@ -12,7 +12,7 @@ The `fulfillment` object now includes additional labor metrics:
 fulfillment: {
   shipmentsPacked: number;          // 1.1 - Auto-populated from Linnworks
   scheduledHours: number;           // 1.2 - Total scheduled hours
-  actualHoursWorked: number;        // 1.3 - Total hours used
+  totalHoursUsed: number;           // 1.3 - Total hours used (was actualHoursWorked)
   managementHoursUsed: number;      // 1.3.1 - Management role hours
   packingHoursUsed: number;         // 1.3.2 - Packing/Associate hours  
   pickingHoursUsed: number;         // 1.3.3 - Picking role hours
@@ -30,7 +30,7 @@ fulfillment: {
   "fulfillment": {
     "shipmentsPacked": 528,
     "scheduledHours": 42.5,
-    "actualHoursWorked": 29,
+    "totalHoursUsed": 29,
     "managementHoursUsed": 13,
     "packingHoursUsed": 14,
     "pickingHoursUsed": 2,

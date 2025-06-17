@@ -18,7 +18,7 @@ interface DailyReportData {
   fulfillment: {
     shipmentsPacked: number;
     scheduledHours: number;
-    actualHoursWorked: number;
+    totalHoursUsed: number;
     managementHoursUsed: number;
     packingHoursUsed: number;
     pickingHoursUsed: number;
@@ -152,7 +152,7 @@ export const GET: RequestHandler = async ({ url }) => {
       fulfillment: {
         shipmentsPacked: 0,
         scheduledHours: 0,
-        actualHoursWorked: 0,
+        totalHoursUsed: 0,
         managementHoursUsed: 0,
         packingHoursUsed: 0,
         pickingHoursUsed: 0,
@@ -209,7 +209,7 @@ export const GET: RequestHandler = async ({ url }) => {
       response.fulfillment = {
         shipmentsPacked: reviewData.shipments_packed || 0,
         scheduledHours: reviewData.scheduled_hours || 0,
-        actualHoursWorked: reviewData.actual_hours_worked || 0,
+        totalHoursUsed: reviewData.actual_hours_worked || 0,
         managementHoursUsed: reviewData.management_hours_used || 0,
         packingHoursUsed: reviewData.packing_hours_used || 0,
         pickingHoursUsed: reviewData.picking_hours_used || 0,
@@ -281,7 +281,7 @@ export const GET: RequestHandler = async ({ url }) => {
       response.fulfillment = {
         shipmentsPacked: fallbackData.shipments || 0,
         scheduledHours: fallbackData.scheduled_hours || 0,
-        actualHoursWorked: fallbackData.hours_worked || 0,
+        totalHoursUsed: fallbackData.hours_worked || 0,
         managementHoursUsed: 0, // Not available in fallback data
         packingHoursUsed: 0, // Not available in fallback data
         pickingHoursUsed: 0, // Not available in fallback data
