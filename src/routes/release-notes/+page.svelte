@@ -5,12 +5,317 @@
 <main class="release-notes">
 	<header class="release-header">
 		<h1>Release Notes</h1>
-		<p class="version-info">Latest Version: 1.1 | Release Date: June 12, 2025</p>
+		<p class="version-info">Latest Version: 1.2 | Release Date: June 17, 2025</p>
 	</header>
 
 	<!-- Accordion container for different versions -->
 	<div class="release-container">
-		<Accordion.Root type="multiple" class="release-accordion" value={['v1.1']}>
+		<Accordion.Root type="multiple" class="release-accordion" value={['v1.2']}>
+			<!-- Version 1.2 Release Notes -->
+			<Accordion.Item value="v1.2" class="version-section">
+				<Accordion.Trigger class="version-header">
+					<div class="version-title">
+						<div class="version-info-left">
+							<h2>Version 1.2</h2>
+							<span class="version-date">June 17, 2025</span>
+						</div>
+					</div>
+				</Accordion.Trigger>
+				<Accordion.Content class="version-content">
+					<section class="release-section">
+						<h3>Employee Hours Integration & Data Migration</h3>
+						<ul class="feature-list">
+							<li>
+								Migrated employee hours tracking from manual entry to automated Supabase-based
+								system with dedicated daily_employee_hours table
+							</li>
+							<li>
+								Created comprehensive TypeScript service layer (dailyHoursService.ts) for employee
+								hours management with full CRUD operations
+							</li>
+							<li>
+								Implemented role-based hour tracking with dedicated columns for Management, Packing,
+								and Picking positions
+							</li>
+							<li>
+								Built intuitive Employee Hours management page with real-time data validation and
+								error handling
+							</li>
+							<li>
+								Added automated daily metric review system with structured data persistence for
+								historical tracking
+							</li>
+							<li>Integrated Make.com automation for seamless data import from external systems</li>
+							<li>
+								Enhanced data integrity with proper TypeScript typing and validation throughout the
+								service layer
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Dashboard Transformation & Metrics Overhaul</h3>
+						<ul class="feature-list">
+							<li>
+								Completely refactored ShipmentChart.svelte to use API-driven data instead of manual
+								entries
+							</li>
+							<li>
+								Replaced manual "Actual Hours Worked" with automated "Total Hours Used" calculation
+								from employee hours data
+							</li>
+							<li>
+								Added comprehensive role-based hour breakdowns: Management Hours Used, Packing Hours
+								Used, and Picking Hours Used
+							</li>
+							<li>
+								Updated labor efficiency calculations to focus on productive hours (Packing +
+								Picking only, excluding Management)
+							</li>
+							<li>
+								Transformed "Shipments Packed" metric to use API total orders data for improved
+								accuracy and consistency
+							</li>
+							<li>
+								Implemented read-only metric system for automated calculations while maintaining
+								manual override capabilities where needed
+							</li>
+							<li>
+								Enhanced week-over-week percentage calculations with proper role-based breakdowns
+								and totals
+							</li>
+							<li>
+								Fixed current week and previous week totals to accurately sum role breakdown metrics
+							</li>
+							<li>
+								Added comprehensive error handling and data validation throughout the dashboard
+								calculations
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>API & Export System Enhancement</h3>
+						<ul class="feature-list">
+							<li>
+								Updated daily report API endpoint (+server.ts) to include all new role-based metrics
+								and naming conventions
+							</li>
+							<li>
+								Enhanced CSV export functionality to reflect new metric structure with proper column
+								headers and data formatting
+							</li>
+							<li>
+								Integrated real-time data synchronization between dashboard metrics and export
+								systems
+							</li>
+							<li>
+								Implemented consistent metric naming across all API endpoints and reporting
+								interfaces
+							</li>
+							<li>Added comprehensive data validation and error handling for all API operations</li>
+							<li>Created detailed documentation for API changes and migration procedures</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Sidebar Navigation Enhancement</h3>
+						<ul class="feature-list">
+							<li>
+								Integrated modern shadcn/ui sidebar components for improved consistency and
+								maintainability
+							</li>
+							<li>
+								Added visual separators between logical navigation groups for better information
+								hierarchy
+							</li>
+							<li>
+								Implemented smooth hover effects with icon scaling animations and background
+								transitions
+							</li>
+							<li>
+								Enhanced active state visualization with border highlights and subtle pulse
+								animations
+							</li>
+							<li>
+								Added comprehensive tooltip system for collapsed sidebar states with proper
+								positioning
+							</li>
+							<li>
+								Improved accessibility with proper ARIA attributes and keyboard navigation support
+							</li>
+							<li>
+								Created TypeScript type guards for navigation items ensuring type safety and
+								maintainability
+							</li>
+							<li>
+								Optimized CSS animations with hardware acceleration and performance considerations
+							</li>
+							<li>
+								Added ripple effects on click interactions for modern, responsive user feedback
+							</li>
+							<li>
+								Fixed separator visibility issues with robust fallback styling and cross-browser
+								compatibility
+							</li>
+							<li>
+								Implemented intelligent mobile sidebar behavior with auto-close on navigation and
+								click-outside functionality
+							</li>
+							<li>
+								Added responsive mobile detection system that adjusts sidebar behavior based on
+								screen size (768px breakpoint)
+							</li>
+							<li>
+								Enhanced mobile navigation flow with automatic sidebar closure when users tap
+								navigation links or click outside the sidebar area
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Mobile Experience Optimization</h3>
+						<ul class="feature-list">
+							<li>
+								Completely redesigned Employee Hours page for mobile-first experience with
+								scrollbar-free navigation
+							</li>
+							<li>
+								Eliminated fixed height constraints and nested scrollbars in favor of natural
+								content flow and single-page scrolling
+							</li>
+							<li>
+								Implemented touch-friendly interface with minimum 44px touch targets for all
+								interactive elements following iOS Human Interface Guidelines
+							</li>
+							<li>
+								Enhanced input field experience with 16px+ font sizes to prevent unwanted iOS zoom
+								and improved tap targets for hour entry
+							</li>
+							<li>
+								Added comprehensive responsive breakpoints: 768px (tablets), 480px (small phones),
+								and 900px+ (large phones) for optimal viewing across all devices
+							</li>
+							<li>
+								Transformed employee input cards to single-column layout on mobile with centered
+								controls and improved readability
+							</li>
+							<li>
+								Optimized role breakdown section for mobile with stacked layout and larger touch
+								targets for better thumb navigation
+							</li>
+							<li>
+								Enhanced button interactions with proper touch feedback, removed tap highlights, and
+								full-width controls on small screens
+							</li>
+							<li>
+								Implemented progressive enhancement where mobile layouts gracefully degrade while
+								maintaining full functionality
+							</li>
+							<li>
+								Added intelligent sidebar auto-close functionality that detects mobile usage and
+								closes navigation after link clicks or outside taps
+							</li>
+							<li>
+								Created seamless mobile navigation experience with proper state management and
+								smooth transitions between pages
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Database Schema & Service Architecture</h3>
+						<ul class="feature-list">
+							<li>
+								Designed and implemented daily_employee_hours table schema with proper indexing and
+								constraints
+							</li>
+							<li>
+								Created daily_metric_review table for comprehensive metric tracking and historical
+								analysis
+							</li>
+							<li>
+								Built robust dailyMetricReviewService.ts with full CRUD operations and data
+								validation
+							</li>
+							<li>
+								Implemented proper error handling and transaction management for data integrity
+							</li>
+							<li>
+								Added comprehensive TypeScript interfaces for all database entities and service
+								responses
+							</li>
+							<li>
+								Created efficient query patterns for optimal database performance and data retrieval
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Documentation & Quality Assurance</h3>
+						<ul class="feature-list">
+							<li>
+								Created comprehensive documentation files: DAILY_METRIC_REVIEW_UPDATE.md,
+								DAILY_REPORT_API_UPDATE.md, SHIPMENTS_PACKED_API_FIX.md
+							</li>
+							<li>
+								Implemented systematic error checking after each major change to ensure code quality
+							</li>
+							<li>
+								Added detailed inline code comments explaining complex calculations and business
+								logic
+							</li>
+							<li>Created migration guides for transitioning from manual to automated systems</li>
+							<li>
+								Validated all changes with real production data through Make.com integration testing
+							</li>
+							<li>Ensured backward compatibility while implementing new automated features</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Performance & User Experience</h3>
+						<ul class="feature-list">
+							<li>
+								Optimized database queries for faster dashboard loading with role-based calculations
+							</li>
+							<li>
+								Improved real-time data synchronization between components and external systems
+							</li>
+							<li>
+								Enhanced loading states and error boundaries for better user experience during data
+								operations
+							</li>
+							<li>Reduced manual data entry requirements through comprehensive automation</li>
+							<li>
+								Implemented efficient caching strategies for frequently accessed employee hours data
+							</li>
+							<li>Added progressive enhancement for sidebar animations and interactions</li>
+							<li>
+								Eliminated scrollbar dependencies on mobile devices for more intuitive navigation
+								patterns
+							</li>
+							<li>
+								Improved mobile performance by removing fixed height containers and complex overflow
+								calculations
+							</li>
+							<li>
+								Enhanced touch interaction responsiveness with optimized event handling and reduced
+								layout thrashing
+							</li>
+							<li>
+								Implemented intelligent mobile detection and responsive behavior that adapts to
+								device capabilities and screen sizes
+							</li>
+							<li>
+								Optimized font sizes and spacing for mobile readability while maintaining desktop
+								design consistency
+							</li>
+						</ul>
+					</section>
+				</Accordion.Content>
+			</Accordion.Item>
+
 			<!-- Version 1.1 Release Notes -->
 			<Accordion.Item value="v1.1" class="version-section">
 				<Accordion.Trigger class="version-header">

@@ -1,13 +1,81 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
 	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 
-	let currentPath = '';
+	let currentPath = $state('');
+	let isMobile = $state(false);
 
 	// Subscribe to the page store to get the current path
 	page.subscribe((value) => {
 		currentPath = value.url.pathname;
+		// Close sidebar when navigating on mobile by triggering the sidebar state
+		if (isMobile && typeof document !== 'undefined') {
+			// Use a small delay to ensure navigation has started
+			setTimeout(() => {
+				const trigger = document.querySelector('[data-sidebar="trigger"]') as HTMLButtonElement;
+				if (trigger && document.querySelector('[data-state="open"]')) {
+					trigger.click();
+				}
+			}, 50);
+		}
 	});
+
+	// Check if we're on mobile
+	onMount(() => {
+		const checkMobile = () => {
+			isMobile = window.innerWidth < 768;
+		};
+
+		checkMobile();
+		window.addEventListener('resize', checkMobile);
+
+		// Add click outside handler for mobile
+		const handleClickOutside = (event: MouseEvent) => {
+			if (!isMobile) return;
+
+			const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+			const trigger = document.querySelector('[data-sidebar="trigger"]');
+			const content = document.querySelector('[data-sidebar="content"]');
+
+			// Check if sidebar is open
+			const isOpen = document.querySelector('[data-state="open"]');
+			if (!isOpen) return;
+
+			// If click is outside sidebar, trigger, and content - close sidebar
+			if (
+				sidebar &&
+				!sidebar.contains(event.target as Node) &&
+				trigger &&
+				!trigger.contains(event.target as Node) &&
+				content &&
+				!content.contains(event.target as Node)
+			) {
+				const triggerBtn = trigger as HTMLButtonElement;
+				triggerBtn.click();
+			}
+		};
+
+		document.addEventListener('click', handleClickOutside);
+
+		return () => {
+			window.removeEventListener('resize', checkMobile);
+			document.removeEventListener('click', handleClickOutside);
+		};
+	});
+
+	// Handle navigation link clicks
+	function handleNavClick() {
+		if (isMobile && typeof document !== 'undefined') {
+			// Close sidebar on mobile by triggering the sidebar button
+			setTimeout(() => {
+				const trigger = document.querySelector('[data-sidebar="trigger"]') as HTMLButtonElement;
+				if (trigger && document.querySelector('[data-state="open"]')) {
+					trigger.click();
+				}
+			}, 100); // Small delay to allow navigation to start
+		}
+	}
 
 	// Type definitions for navigation items
 	type NavigationItem = {
@@ -83,10 +151,20 @@
 		// Import the logout functionality from the layout
 		const event = new MouseEvent('click');
 		window.dispatchEvent(new CustomEvent('app-logout', { detail: event }));
+
+		// Close sidebar on mobile after logout
+		if (isMobile && typeof document !== 'undefined') {
+			setTimeout(() => {
+				const trigger = document.querySelector('[data-sidebar="trigger"]') as HTMLButtonElement;
+				if (trigger && document.querySelector('[data-state="open"]')) {
+					trigger.click();
+				}
+			}, 100);
+		}
 	}
 </script>
 
-<Sidebar.Root collapsible="icon" class="min-h-screen">
+<Sidebar.Root collapsible="icon" class="min-h-screen" data-sidebar="sidebar">
 	<Sidebar.Header class="">
 		<div
 			class="flex flex-col items-center px-4 py-3 gap-2 transition-all duration-200 hover:bg-sidebar-accent/50 rounded-lg mx-2"
@@ -101,7 +179,7 @@
 		</div>
 	</Sidebar.Header>
 
-	<Sidebar.Content class="">
+	<Sidebar.Content class="" data-sidebar="content">
 		<Sidebar.Group class="">
 			<Sidebar.GroupContent class="">
 				<Sidebar.Menu class="">
@@ -121,7 +199,12 @@
 									tooltipContentProps={{}}
 								>
 									{#snippet child({ props }: { props: any })}
-										<a href={item.url} {...props} class="flex items-center gap-3 w-full group">
+										<a
+											href={item.url}
+											{...props}
+											class="flex items-center gap-3 w-full group"
+											onclick={handleNavClick}
+										>
 											<i
 												class="material-icons-outlined text-lg shrink-0 transition-all duration-200 group-hover:scale-110"
 												>{item.icon}</i
