@@ -209,14 +209,14 @@ export const GET: RequestHandler = async ({ url }) => {
       const packingHours = reviewData.packing_hours_used || 0;
       const pickingHours = reviewData.picking_hours_used || 0;
       const calculatedTotalHours = managementHours + packingHours + pickingHours;
-      
+
       // Calculate labor efficiency using packing + picking hours only (like dashboard)
       const directLaborHours = packingHours + pickingHours;
       const shipmentsPacked = reviewData.shipments_packed || 0;
-      const calculatedLaborEfficiency = directLaborHours > 0 
-        ? Math.round((shipmentsPacked / directLaborHours) * 100) / 100 
+      const calculatedLaborEfficiency = directLaborHours > 0
+        ? Math.round((shipmentsPacked / directLaborHours) * 100) / 100
         : 0;
-      
+
       response.fulfillment = {
         shipmentsPacked: shipmentsPacked,
         scheduledHours: reviewData.scheduled_hours || 0,

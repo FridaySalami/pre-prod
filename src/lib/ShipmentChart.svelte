@@ -348,7 +348,7 @@
 
 		if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
 			const shipments =
-				metrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+				metrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
 				new Array(daysCount).fill(0);
 			const packingHours =
 				metrics.find((m) => m.name === '1.3.2 Packing Hours Used')?.values ??
@@ -374,7 +374,7 @@
 			);
 		} else if (metric.name === '1.7 Packing Errors DPMO') {
 			const shipments =
-				metrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+				metrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
 				new Array(daysCount).fill(0);
 			const defects =
 				metrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
@@ -384,7 +384,7 @@
 			);
 		} else if (metric.name === '1.8 Order Accuracy (%)') {
 			const shipments =
-				metrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+				metrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
 				new Array(daysCount).fill(0);
 			const defects =
 				metrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
@@ -743,10 +743,9 @@
 			// For Labor Efficiency and Utilization, compute using totals
 			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
 				const totShipments =
-					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.1 Shipments Packed')]?.reduce(
-						(acc, val) => acc + val,
-						0
-					) ?? 0;
+					previousWeekMetrics[
+						metrics.findIndex((m) => m.name === '2.1 Linnworks Total Orders')
+					]?.reduce((acc, val) => acc + val, 0) ?? 0;
 				const totPackingHours =
 					previousWeekMetrics[
 						metrics.findIndex((m) => m.name === '1.3.2 Packing Hours Used')
@@ -799,7 +798,7 @@
 		if (metric.metricField === null) {
 			// For Labor Efficiency and Utilization, compute using total values for the period
 			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
-				const shipmentIdx = metrics.findIndex((m) => m.name === '1.1 Shipments Packed');
+				const shipmentIdx = metrics.findIndex((m) => m.name === '2.1 Linnworks Total Orders');
 				const packingHoursIdx = metrics.findIndex((m) => m.name === '1.3.2 Packing Hours Used');
 				const pickingHoursIdx = metrics.findIndex((m) => m.name === '1.3.3 Picking Hours Used');
 
@@ -1448,7 +1447,7 @@
 
 			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
 				const shipments =
-					freshMetrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+					freshMetrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
 					new Array(daysCount).fill(0);
 				const packingHours =
 					freshMetrics.find((m) => m.name === '1.3.2 Packing Hours Used')?.values ??
@@ -1474,7 +1473,7 @@
 				);
 			} else if (metric.name === '1.7 Packing Errors DPMO') {
 				const shipments =
-					freshMetrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+					freshMetrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
 					new Array(daysCount).fill(0);
 				const defects =
 					freshMetrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
@@ -1484,7 +1483,7 @@
 				);
 			} else if (metric.name === '1.8 Order Accuracy (%)') {
 				const shipments =
-					freshMetrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
+					freshMetrics.find((m) => m.name === '2.1 Linnworks Total Orders')?.values ??
 					new Array(daysCount).fill(0);
 				const defects =
 					freshMetrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
@@ -1617,7 +1616,7 @@
 			// For Labor Efficiency, we need to keep track of both shipments and hours for accurate averaging
 			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
 				const shipments =
-					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.1 Shipments Packed')] ??
+					previousWeekMetrics[metrics.findIndex((m) => m.name === '2.1 Linnworks Total Orders')] ??
 					new Array(daysCount).fill(0);
 				const packingHours =
 					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.3.2 Packing Hours Used')] ??
