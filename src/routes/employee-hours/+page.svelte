@@ -508,6 +508,9 @@
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s ease;
+		/* Enhanced touch target for mobile */
+		min-height: 44px;
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	.reset-button:hover {
@@ -528,6 +531,9 @@
 		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s ease;
+		/* Enhanced touch target for mobile */
+		min-height: 44px;
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	.save-button:hover:not(:disabled) {
@@ -632,7 +638,7 @@
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
-		max-height: calc(70vh - 80px);
+		/* Remove fixed height constraints for natural flow */
 	}
 
 	.employee-input-section h2 {
@@ -646,8 +652,7 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 		gap: 10px;
-		max-height: calc(70vh - 140px);
-		overflow-y: auto;
+		/* Remove fixed height constraints - let content flow naturally */
 		padding-right: 4px;
 	}
 
@@ -799,6 +804,11 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		/* Enhanced touch targets for mobile */
+		min-height: 44px;
+		min-width: 44px;
+		-webkit-tap-highlight-color: transparent;
+		user-select: all;
 	}
 
 	.hours-input:focus {
@@ -833,7 +843,7 @@
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 		display: flex;
 		flex-direction: column;
-		max-height: calc(70vh - 80px);
+		/* Remove fixed height constraints for natural flow */
 	}
 
 	.breakdown-section h2 {
@@ -847,7 +857,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		overflow-y: auto;
+		/* Remove scrollbar - let content flow naturally */
 		flex: 1;
 	}
 
@@ -963,27 +973,55 @@
 	@media (max-width: 1024px) {
 		.main-content {
 			grid-template-columns: 1fr;
-			grid-template-rows: 1fr auto;
+			grid-template-rows: auto auto;
+			gap: 16px;
 		}
-		.breakdown-section {
-			max-height: calc(45vh - 60px);
-			overflow-y: auto;
+
+		.employee-input-section {
+			max-height: none;
+			overflow: visible;
 		}
 
 		.employee-grid {
-			max-height: calc(45vh - 80px);
+			max-height: none;
+			overflow-y: visible;
+			/* Let content flow naturally */
+		}
+
+		.breakdown-section {
+			max-height: none;
+			overflow: visible;
+		}
+	}
+
+	/* Enhanced mobile experience for larger phones */
+	@media (max-width: 900px) and (min-width: 481px) {
+		.employee-grid {
+			grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+			gap: 12px;
+		}
+
+		.employee-card {
+			max-width: none;
+		}
+
+		.hours-input {
+			width: 65px;
+			height: 42px;
+			font-size: 16px;
 		}
 	}
 
 	@media (max-width: 768px) {
 		.container {
-			padding: 12px;
+			padding: 8px;
 		}
 
 		.header {
 			flex-direction: column;
-			gap: 12px;
+			gap: 16px;
 			align-items: stretch;
+			padding: 16px;
 		}
 
 		.header h1 {
@@ -993,43 +1031,248 @@
 
 		.date-picker {
 			justify-content: center;
+			flex-wrap: wrap;
+			gap: 8px;
+		}
+
+		.date-input {
+			flex: 1;
+			min-width: 140px;
+			font-size: 16px; /* Prevents zoom on iOS */
+		}
+
+		.save-button,
+		.reset-button {
+			padding: 10px 16px;
+			font-size: 14px;
+		}
+
+		.status-bar {
+			margin-bottom: 12px;
+		}
+
+		.status-content {
+			padding: 12px 16px;
+			font-size: 14px;
+		}
+
+		.main-content {
+			gap: 20px;
+			/* Remove any height constraints on mobile */
+			grid-template-rows: auto auto;
+		}
+
+		.employee-input-section {
+			max-height: none;
+			overflow: visible;
+		}
+
+		.employee-input-section h2,
+		.breakdown-section h2 {
+			font-size: 1.25rem;
+			margin-bottom: 12px;
+		}
+
+		.employee-grid {
+			grid-template-columns: 1fr;
+			/* Remove all height constraints and scrollbars */
+			max-height: none;
+			overflow-y: visible;
+			gap: 8px;
+		}
+
+		.employee-card {
+			max-width: none;
+			margin-bottom: 0;
+		}
+
+		.employee-content {
+			padding: 12px 16px;
+			gap: 16px;
+		}
+
+		.employee-name {
+			font-size: 16px; /* Better readability on mobile */
+			line-height: 1.4;
+		}
+
+		.role-badge {
+			font-size: 0.7rem;
+			padding: 4px 8px;
+		}
+
+		.hours-input {
+			width: 70px;
+			height: 44px; /* Better touch target */
+			font-size: 18px; /* Easier to read and prevents zoom */
+			text-align: center;
+		}
+
+		.breakdown-section {
+			/* Remove height constraints */
+			max-height: none;
+			overflow: visible;
+		}
+
+		.role-item {
+			padding: 12px 16px;
+		}
+
+		.role-name {
+			font-size: 16px;
+		}
+
+		.employee-count {
+			font-size: 14px;
+		}
+
+		.hours-value {
+			font-size: 18px;
+		}
+
+		.bottom-stats {
+			gap: 16px;
+			padding: 16px;
+			margin-top: 16px;
+		}
+
+		.stat-item {
+			padding: 12px 16px;
+		}
+
+		.stat-value {
+			font-size: 1.5rem;
+		}
+
+		.stat-label {
+			font-size: 14px;
+		}
+
+		.stat-item.highlight .stat-value {
+			font-size: 1.75rem;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.container {
+			padding: 4px;
+		}
+
+		.header {
+			gap: 12px;
+			padding: 12px;
+		}
+
+		.header h1 {
+			font-size: 1.25rem;
+		}
+
+		.date-picker {
+			flex-direction: column;
+			gap: 12px;
+		}
+
+		.date-input {
+			width: 100%;
+			padding: 12px;
+			font-size: 16px;
+		}
+
+		.save-button,
+		.reset-button {
+			width: 100%;
+			padding: 12px;
+			justify-content: center;
 		}
 
 		.main-content {
 			gap: 16px;
 		}
 
+		.employee-input-section h2,
+		.breakdown-section h2 {
+			font-size: 1.1rem;
+			text-align: center;
+		}
+
+		/* Remove all height constraints for natural flow */
 		.employee-grid {
-			grid-template-columns: 1fr;
-			max-height: calc(40vh - 60px);
+			max-height: none;
+			overflow-y: visible;
 		}
 
-		.employee-card {
-			padding: 10px 12px;
-		}
-
-		.bottom-stats {
-			gap: 20px;
-		}
-
-		.stat-value {
-			font-size: 1.25rem;
-		}
-
-		.stat-item.highlight .stat-value {
-			font-size: 1.5rem;
-		}
-	}
-
-	@media (max-width: 480px) {
-		.bottom-stats {
+		.employee-content {
 			flex-direction: column;
 			gap: 12px;
+			text-align: center;
+		}
+
+		.employee-info {
+			align-items: center;
+			width: 100%;
+		}
+
+		.employee-name {
+			font-size: 16px;
+			text-align: center;
+		}
+
+		.role-badge {
+			align-self: center;
+		}
+
+		.input-container {
+			width: 100%;
+		}
+
+		.hours-input {
+			width: 100%;
+			max-width: 120px;
+			height: 48px;
+			font-size: 20px;
+		}
+
+		/* Natural flowing layout for breakdown */
+		.breakdown-section {
+			max-height: none;
+			overflow: visible;
+		}
+
+		.role-item {
+			flex-direction: column;
+			gap: 8px;
+			text-align: center;
+			padding: 16px;
+		}
+
+		.role-info {
+			flex-direction: column;
+			gap: 4px;
+		}
+
+		.role-hours {
+			justify-content: center;
+		}
+
+		.bottom-stats {
+			flex-direction: column;
+			gap: 8px;
+			padding: 12px;
 		}
 
 		.stat-item {
 			flex-direction: row;
 			justify-content: space-between;
+			align-items: center;
+			padding: 16px;
+		}
+
+		.stat-value {
+			font-size: 1.5rem;
+		}
+
+		.stat-item.highlight .stat-value {
+			font-size: 2rem;
 		}
 	}
 </style>
