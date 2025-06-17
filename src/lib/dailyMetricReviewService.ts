@@ -5,7 +5,7 @@ export interface DailyMetricReviewData {
   date: string;
 
   // Labor metrics (1.x series)
-  shipments_packed: number; // 1.1 (now auto-populated from Linnworks orders)
+  shipments_packed: number; // 1.1 (now uses API total orders data, not manual entry)
   scheduled_hours: number; // 1.2
   actual_hours_worked: number; // 1.3 Total Hours Used (keeping column name for compatibility)
   management_hours_used: number; // 1.3.1
@@ -162,7 +162,7 @@ export function transformMetricsForReview(
       date: dateStr,
 
       // Labor metrics (1.x series)
-      shipments_packed: shipmentsPackedIdx >= 0 ? (metrics[shipmentsPackedIdx].values[dayIndex] || 0) : 0,
+      shipments_packed: totalOrdersIdx >= 0 ? (metrics[totalOrdersIdx].values[dayIndex] || 0) : 0, // CHANGED: Use API total orders instead of manual shipments
       scheduled_hours: scheduledHoursIdx >= 0 ? (metrics[scheduledHoursIdx].values[dayIndex] || 0) : 0,
       actual_hours_worked: totalHoursIdx >= 0 ? (metrics[totalHoursIdx].values[dayIndex] || 0) : 0,
       management_hours_used: managementHoursIdx >= 0 ? (metrics[managementHoursIdx].values[dayIndex] || 0) : 0,
