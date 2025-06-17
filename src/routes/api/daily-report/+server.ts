@@ -17,7 +17,11 @@ interface DailyReportData {
   // Fulfillment Operations
   fulfillment: {
     shipmentsPacked: number;
+    scheduledHours: number;
     actualHoursWorked: number;
+    managementHoursUsed: number;
+    packingHoursUsed: number;
+    pickingHoursUsed: number;
     laborEfficiency: number;
     laborUtilization: number;
   };
@@ -147,7 +151,11 @@ export const GET: RequestHandler = async ({ url }) => {
 
       fulfillment: {
         shipmentsPacked: 0,
+        scheduledHours: 0,
         actualHoursWorked: 0,
+        managementHoursUsed: 0,
+        packingHoursUsed: 0,
+        pickingHoursUsed: 0,
         laborEfficiency: 0,
         laborUtilization: 0
       },
@@ -199,12 +207,14 @@ export const GET: RequestHandler = async ({ url }) => {
     if (reviewData) {
       // Fulfillment data
       response.fulfillment = {
-        shipmentsPacked: reviewData.actual_hours_worked && reviewData.labor_efficiency
-          ? Math.round(reviewData.actual_hours_worked * reviewData.labor_efficiency)
-          : 0,
+        shipmentsPacked: reviewData.shipments_packed || 0,
+        scheduledHours: reviewData.scheduled_hours || 0,
         actualHoursWorked: reviewData.actual_hours_worked || 0,
+        managementHoursUsed: reviewData.management_hours_used || 0,
+        packingHoursUsed: reviewData.packing_hours_used || 0,
+        pickingHoursUsed: reviewData.picking_hours_used || 0,
         laborEfficiency: reviewData.labor_efficiency || 0,
-        laborUtilization: reviewData.labor_utilization || 0
+        laborUtilization: reviewData.labor_utilization_percent || 0
       };
 
       // Sales data with proper formatting
@@ -270,7 +280,11 @@ export const GET: RequestHandler = async ({ url }) => {
     else if (fallbackData) {
       response.fulfillment = {
         shipmentsPacked: fallbackData.shipments || 0,
+        scheduledHours: fallbackData.scheduled_hours || 0,
         actualHoursWorked: fallbackData.hours_worked || 0,
+        managementHoursUsed: 0, // Not available in fallback data
+        packingHoursUsed: 0, // Not available in fallback data
+        pickingHoursUsed: 0, // Not available in fallback data
         laborEfficiency: fallbackData.hours_worked > 0
           ? Math.round((fallbackData.shipments / fallbackData.hours_worked) * 100) / 100
           : 0,

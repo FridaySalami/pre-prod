@@ -45,6 +45,11 @@
 			title: 'Schedules',
 			url: '/schedules',
 			icon: 'calendar_today'
+		},
+		{
+			title: 'Employee Hours',
+			url: '/employee-hours',
+			icon: 'schedule'
 		}
 	];
 

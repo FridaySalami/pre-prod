@@ -1,0 +1,1035 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { getEmployees, type Employee } from '$lib/employeeHoursService';
+	import {
+		saveDailyHours,
+		getDailyHours,
+		checkHoursExist,
+		type DailyEmployeeHour
+	} from '$lib/dailyHoursService';
+
+	// Reactive state
+	let employees: Employee[] = $state([]);
+	let selectedDate = $state(new Date().toISOString().split('T')[0]);
+	let employeeHours: Record<string, number> = $state({});
+	let loading = $state(false);
+	let saving = $state(false);
+	let saveStatus = $state('');
+	let error = $state('');
+	let hasExistingData = $state(false);
+	let savedHours: Record<string, number> = $state({}); // Track last saved state
+
+	// Derived calculations
+	let employeesWithHours = $derived(() => {
+		return employees
+			.map((employee) => ({
+				...employee,
+				hours: employeeHours[employee.id] || 0
+			}))
+			.sort((a, b) => {
+				// First sort by role priority (Manager/Supervisor/B2C Accounts Manager first, then Associates, then others)
+				const roleOrder: Record<string, number> = {
+					Manager: 1,
+					Supervisor: 1,
+					'B2C Accounts Manager': 1,
+					Associate: 2,
+					Picking: 3
+				};
+				const aOrder = roleOrder[a.role || ''] || 4;
+				const bOrder = roleOrder[b.role || ''] || 4;
+
+				if (aOrder !== bOrder) {
+					return aOrder - bOrder;
+				}
+
+				// Then sort alphabetically by surname
+				const aSurname = a.name.split(' ').pop() || '';
+				const bSurname = b.name.split(' ').pop() || '';
+				return aSurname.localeCompare(bSurname);
+			});
+	});
+
+	let roleBreakdown = $derived(() => {
+		const breakdown: Record<string, { employees: number; totalHours: number }> = {};
+
+		employeesWithHours().forEach((emp) => {
+			const role = emp.role || 'Unknown';
+			if (!breakdown[role]) {
+				breakdown[role] = { employees: 0, totalHours: 0 };
+			}
+			breakdown[role].employees += 1;
+			breakdown[role].totalHours += emp.hours;
+		});
+
+		return breakdown;
+	});
+
+	let grandTotal = $derived(() => {
+		return Object.values(roleBreakdown()).reduce((total, role) => total + role.totalHours, 0);
+	});
+
+	// Check if current hours differ from last saved state
+	let hasUnsavedChanges = $derived.by(() => {
+		if (saveStatus === 'success') return false; // Don't show changes message right after save
+
+		return employees.some((emp) => {
+			const currentHours = employeeHours[emp.id] || 0;
+			const lastSavedHours = savedHours[emp.id] || 0;
+			return currentHours !== lastSavedHours;
+		});
+	});
+
+	onMount(async () => {
+		await loadEmployees();
+		await loadExistingHours();
+	});
+
+	async function loadEmployees() {
+		try {
+			loading = true;
+			error = '';
+			employees = await getEmployees();
+			// Initialize hours for all employees to 0
+			const initialHours: Record<string, number> = {};
+			employees.forEach((emp) => {
+				initialHours[emp.id] = 0;
+			});
+			employeeHours = initialHours;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load employees';
+			console.error('Error loading employees:', err);
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function loadExistingHours() {
+		try {
+			const existingHours = await getDailyHours(selectedDate);
+			hasExistingData = existingHours.length > 0;
+
+			if (hasExistingData) {
+				const hoursMap: Record<string, number> = {};
+				existingHours.forEach((record) => {
+					hoursMap[record.employee_id] = record.hours_worked;
+				});
+				employeeHours = { ...employeeHours, ...hoursMap };
+				savedHours = { ...hoursMap }; // Store the loaded state as "saved"
+			} else {
+				// Reset saved hours if no existing data
+				const resetHours: Record<string, number> = {};
+				employees.forEach((emp) => {
+					resetHours[emp.id] = 0;
+				});
+				savedHours = resetHours;
+			}
+		} catch (err) {
+			console.error('Error loading existing hours:', err);
+			// Don't show error to user for this, just log it
+		}
+	}
+
+	function updateEmployeeHours(employeeId: string, hours: number) {
+		employeeHours = {
+			...employeeHours,
+			[employeeId]: hours
+		};
+	}
+
+	function resetAllHours() {
+		const resetHours: Record<string, number> = {};
+		employees.forEach((emp) => {
+			resetHours[emp.id] = 0;
+		});
+		employeeHours = resetHours;
+	}
+
+	function formatDate(dateStr: string): string {
+		return new Date(dateStr).toLocaleDateString('en-US', {
+			weekday: 'long',
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		});
+	}
+
+	async function saveHours() {
+		try {
+			saving = true;
+			saveStatus = '';
+
+			// Map employees to ensure role is always a string
+			const employeesForSave = employees.map((emp) => ({
+				id: emp.id,
+				name: emp.name,
+				role: emp.role || 'Unknown'
+			}));
+
+			const result = await saveDailyHours(
+				employeeHours,
+				employeesForSave,
+				selectedDate,
+				'system' // You could replace this with actual user info
+			);
+
+			if (result.success) {
+				saveStatus = 'success';
+				hasExistingData = true;
+				savedHours = { ...employeeHours }; // Store current state as saved
+				setTimeout(() => {
+					saveStatus = '';
+				}, 3000);
+			} else {
+				saveStatus = 'error';
+				error = result.error || 'Failed to save hours';
+			}
+		} catch (err) {
+			saveStatus = 'error';
+			error = err instanceof Error ? err.message : 'Failed to save hours';
+			console.error('Error saving hours:', err);
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function onDateChange() {
+		// Reset hours and load data for new date
+		const resetHours: Record<string, number> = {};
+		employees.forEach((emp) => {
+			resetHours[emp.id] = 0;
+		});
+		employeeHours = resetHours;
+		saveStatus = ''; // Clear any success messages
+
+		// Load existing hours for the new date
+		await loadExistingHours();
+	}
+</script>
+
+<div class="container">
+	<!-- Compact Header -->
+	<div class="header">
+		<h1>Employee Hours</h1>
+		<div class="date-picker">
+			<input
+				id="date-input"
+				type="date"
+				bind:value={selectedDate}
+				onchange={onDateChange}
+				class="date-input"
+			/>
+			<button class="save-button" onclick={saveHours} disabled={saving}>
+				{#if saving}
+					<svg
+						class="animate-spin"
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path
+							d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.49-8.49l2.83-2.83"
+						/>
+					</svg>
+					Saving...
+				{:else}
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+						<polyline points="17,21 17,13 7,13 7,21" />
+						<polyline points="7,3 7,8 15,8" />
+					</svg>
+					{hasExistingData ? 'Update Hours' : 'Save Hours'}
+				{/if}
+			</button>
+			<button class="reset-button" onclick={resetAllHours}>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<polyline points="1 4 1 10 7 10"></polyline>
+					<polyline points="23 20 23 14 17 14"></polyline>
+					<path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+				</svg>
+				Reset All
+			</button>
+		</div>
+	</div>
+
+	<!-- Persistent status bar to prevent layout jumping -->
+	<div class="status-bar">
+		{#if saveStatus === 'success'}
+			<div class="status-content success">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+					<polyline points="22,4 12,14.01 9,11.01" />
+				</svg>
+				Hours saved successfully for {formatDate(selectedDate)}
+			</div>
+		{:else if hasExistingData && hasUnsavedChanges}
+			<div class="status-content info">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<circle cx="12" cy="12" r="10" />
+					<path d="M12,16 L12,12" />
+					<path d="M12,8 L12.01,8" />
+				</svg>
+				Existing data found for {formatDate(selectedDate)} - Click "Update Hours" to save changes
+			</div>
+		{:else if error}
+			<div class="status-content error">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<circle cx="12" cy="12" r="10" />
+					<line x1="15" y1="9" x2="9" y2="15" />
+					<line x1="9" y1="9" x2="15" y2="15" />
+				</svg>
+				{error}
+			</div>
+		{:else}
+			<div class="status-content neutral">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<path
+						d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.49-8.49l2.83-2.83"
+					/>
+				</svg>
+				Ready to enter hours for {formatDate(selectedDate)}
+			</div>
+		{/if}
+	</div>
+
+	{#if loading}
+		<div class="loading">
+			<div class="spinner"></div>
+			<p>Loading...</p>
+		</div>
+	{:else}
+		<!-- Main Content Area -->
+		<div class="main-content">
+			<!-- Employee Input Section (Left Half) -->
+			<div class="employee-input-section">
+				<h2>Enter Hours</h2>
+				<div class="employee-grid">
+					{#each employeesWithHours() as employee, index}
+						{#if index === 0 || (employeesWithHours()[index - 1].role !== employee.role && (employee.role === 'Associate' || employee.role === 'Picking'))}
+							<div class="role-separator">
+								{#if employee.role === 'Associate'}
+									<span>Associates</span>
+								{:else if employee.role === 'Picking'}
+									<span>Picking Team</span>
+								{/if}
+							</div>
+						{/if}
+						<div class="employee-card {employee.hours > 0 ? 'has-hours' : ''}">
+							<div class="employee-content">
+								<div class="employee-info">
+									<div class="employee-name">{employee.name}</div>
+									<div
+										class="role-badge role-{employee.role?.toLowerCase().replace(' ', '-') ||
+											'unknown'}"
+									>
+										{employee.role || 'Unknown'}
+									</div>
+								</div>
+								<div class="input-container">
+									<input
+										type="number"
+										min="0"
+										max="24"
+										step="0.5"
+										value={employee.hours}
+										oninput={(e) => {
+											const target = e.target as HTMLInputElement;
+											const hours = parseFloat(target.value) || 0;
+											updateEmployeeHours(employee.id, hours);
+										}}
+										onfocus={(e) => {
+											const target = e.target as HTMLInputElement;
+											// Use setTimeout to ensure selection happens after focus completes
+											setTimeout(() => {
+												target.select();
+											}, 0);
+										}}
+										onclick={(e) => {
+											const target = e.target as HTMLInputElement;
+											target.select();
+										}}
+										class="hours-input"
+										placeholder="0"
+									/>
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+
+			<!-- Role Breakdown (Right Half) -->
+			<div class="breakdown-section">
+				<h2>Hours by Role</h2>
+				<div class="role-list">
+					{#each Object.entries(roleBreakdown()) as [role, data]}
+						<div class="role-item">
+							<div class="role-info">
+								<span class="role-name">{role}</span>
+								<span class="employee-count"
+									>{data.employees} employee{data.employees !== 1 ? 's' : ''}</span
+								>
+							</div>
+							<div class="role-hours">
+								<span class="hours-value">{data.totalHours.toFixed(1)}</span>
+								<span class="hours-unit">hrs</span>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+		</div>
+
+		<!-- Bottom Stats Bar -->
+		<div class="bottom-stats">
+			<div class="stat-item">
+				<span class="stat-value">{employees.length}</span>
+				<span class="stat-label">Total Employees</span>
+			</div>
+			<div class="stat-item">
+				<span class="stat-value">{employeesWithHours().filter((e) => e.hours > 0).length}</span>
+				<span class="stat-label">Working Today</span>
+			</div>
+			<div class="stat-item highlight">
+				<span class="stat-value">{grandTotal().toFixed(1)}</span>
+				<span class="stat-label">Total Hours</span>
+			</div>
+		</div>
+	{/if}
+</div>
+
+<style>
+	.container {
+		max-width: 1400px;
+		margin: 0 auto;
+		padding: 16px;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* Compact Header */
+	.header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 16px;
+		padding: 12px 16px;
+		background: white;
+		border-radius: 8px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.header h1 {
+		font-size: 1.75rem;
+		font-weight: 600;
+		color: #1f2937;
+		margin: 0;
+	}
+
+	.date-picker {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.date-input {
+		padding: 8px 12px;
+		border: 1px solid #d1d5db;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		background: white;
+	}
+
+	.date-input:focus {
+		outline: none;
+		border-color: #3b82f6;
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+	}
+
+	.reset-button {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		background: #f3f4f6;
+		color: #6b7280;
+		border: 1px solid #d1d5db;
+		padding: 6px 12px;
+		border-radius: 6px;
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.reset-button:hover {
+		background: #e5e7eb;
+		color: #374151;
+	}
+
+	.save-button {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		background: #3b82f6;
+		color: white;
+		border: 1px solid #3b82f6;
+		padding: 8px 16px;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.save-button:hover:not(:disabled) {
+		background: #2563eb;
+		border-color: #2563eb;
+		box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+	}
+
+	.save-button:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
+	}
+
+	/* Persistent Status Bar */
+	.status-bar {
+		margin-bottom: 16px;
+		min-height: 48px;
+		display: flex;
+		align-items: center;
+		border-radius: 8px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		transition: all 0.3s ease;
+	}
+
+	.status-content {
+		padding: 12px 16px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		border-radius: 8px;
+		transition: all 0.3s ease;
+	}
+
+	.status-content.success {
+		background: #f0f9ff;
+		border: 1px solid #0ea5e9;
+		color: #0c4a6e;
+	}
+
+	.status-content.info {
+		background: #fefce8;
+		border: 1px solid #facc15;
+		color: #a16207;
+	}
+
+	.status-content.error {
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		color: #b91c1c;
+	}
+
+	.status-content.neutral {
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
+		color: #6b7280;
+	}
+
+	.loading {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 12px;
+		padding: 32px;
+		color: #6b7280;
+	}
+
+	.spinner {
+		width: 32px;
+		height: 32px;
+		border: 2px solid #e5e7eb;
+		border-top: 2px solid #3b82f6;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
+	}
+
+	/* Main Content Layout */
+	.main-content {
+		display: grid;
+		grid-template-columns: 1fr 400px;
+		gap: 16px;
+		min-height: 0;
+	}
+
+	/* Employee Input Section (Left) */
+	.employee-input-section {
+		background: white;
+		border-radius: 8px;
+		padding: 12px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		max-height: calc(70vh - 80px);
+	}
+
+	.employee-input-section h2 {
+		margin: 0 0 8px 0;
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: #1f2937;
+	}
+
+	.employee-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 10px;
+		max-height: calc(70vh - 140px);
+		overflow-y: auto;
+		padding-right: 4px;
+	}
+
+	.role-separator {
+		grid-column: 1 / -1;
+		padding: 6px 0 2px 0;
+		margin: 2px 0;
+		border-top: 1px solid #e5e7eb;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #6b7280;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.employee-card {
+		background: white;
+		border: 1px solid #e5e7eb;
+		border-radius: 8px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		transition: all 0.2s ease;
+		cursor: pointer;
+		max-width: 280px;
+		height: auto;
+	}
+
+	.employee-content {
+		padding: 16px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		min-height: auto;
+	}
+
+	.employee-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	}
+
+	.employee-card.has-hours {
+		background: rgba(59, 130, 246, 0.15);
+		border-color: rgba(59, 130, 246, 0.4);
+		border-width: 2px;
+		box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+		transform: translateY(-1px);
+	}
+
+	.employee-card.has-hours:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 6px 16px rgba(59, 130, 246, 0.2);
+	}
+
+	.employee-info {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 6px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.employee-name {
+		font-weight: 600;
+		color: #1f2937;
+		font-size: 0.875rem;
+		line-height: 1.3;
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+	}
+
+	.employee-card.has-hours .employee-name {
+		color: #1e40af;
+		font-weight: 700;
+	}
+
+	.role-badge {
+		display: inline-block;
+		padding: 3px 8px;
+		border-radius: 12px;
+		font-size: 0.65rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.025em;
+		line-height: 1;
+		white-space: nowrap;
+		align-self: flex-start;
+	}
+
+	.input-container {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.role-badge.role-manager {
+		background: #dbeafe;
+		color: #1e40af;
+	}
+
+	.role-badge.role-supervisor {
+		background: #d1fae5;
+		color: #047857;
+	}
+
+	.role-badge.role-team-lead {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	.role-badge.role-associate {
+		background: #e0e7ff;
+		color: #3730a3;
+	}
+
+	.role-badge.role-trainee {
+		background: #fce7f3;
+		color: #be185d;
+	}
+
+	.role-badge.role-unknown {
+		background: #f3f4f6;
+		color: #6b7280;
+	}
+
+	.role-badge.role-b2c-accounts-manager {
+		background: #fdf2f8;
+		color: #9d174d;
+	}
+
+	.role-badge.role-picking {
+		background: #fff7ed;
+		color: #c2410c;
+	}
+
+	.hours-input {
+		width: 60px;
+		height: 38px;
+		padding: 8px;
+		border: 1.5px solid #d1d5db;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-align: center;
+		background: white;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.hours-input:focus {
+		outline: none;
+		border-color: #3b82f6;
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+	}
+
+	.employee-card.has-hours .hours-input {
+		background: #dbeafe;
+		border-color: #3b82f6;
+		color: #1e40af;
+		font-weight: 700;
+	}
+
+	.hours-input::-webkit-outer-spin-button,
+	.hours-input::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+
+	.hours-input[type='number'] {
+		appearance: textfield;
+		-moz-appearance: textfield;
+	}
+
+	/* Role Breakdown Section (Right) */
+	.breakdown-section {
+		background: white;
+		border-radius: 8px;
+		padding: 12px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		display: flex;
+		flex-direction: column;
+		max-height: calc(70vh - 80px);
+	}
+
+	.breakdown-section h2 {
+		margin: 0 0 8px 0;
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: #1f2937;
+	}
+
+	.role-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		overflow-y: auto;
+		flex: 1;
+	}
+
+	.role-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 10px;
+		border: 1px solid #e5e7eb;
+		border-radius: 6px;
+		background: #f9fafb;
+		transition: all 0.2s ease;
+	}
+
+	.role-item:hover {
+		border-color: #d1d5db;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+	}
+
+	.role-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.role-name {
+		font-weight: 600;
+		color: #1f2937;
+		font-size: 0.8rem;
+	}
+
+	.employee-count {
+		font-size: 0.7rem;
+		color: #6b7280;
+		font-weight: 500;
+	}
+
+	.role-hours {
+		display: flex;
+		align-items: baseline;
+		gap: 4px;
+	}
+
+	.hours-value {
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: #3b82f6;
+	}
+
+	.hours-unit {
+		font-size: 0.75rem;
+		color: #6b7280;
+		font-weight: 500;
+	}
+
+	/* Bottom Stats Bar */
+	.bottom-stats {
+		display: flex;
+		justify-content: center;
+		gap: 30px;
+		margin-top: 6px;
+		padding: 10px 14px;
+		background: white;
+		border-radius: 8px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.stat-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.stat-item.highlight {
+		background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+		color: white;
+		padding: 10px 16px;
+		border-radius: 8px;
+		box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+	}
+
+	.stat-value {
+		font-size: 1.25rem;
+		font-weight: 800;
+		color: #1f2937;
+	}
+
+	.stat-item.highlight .stat-value {
+		color: white;
+		font-size: 1.5rem;
+	}
+
+	.stat-label {
+		font-size: 0.75rem;
+		color: #6b7280;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.stat-item.highlight .stat-label {
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	/* Responsive Design */
+	@media (max-width: 1200px) {
+		.main-content {
+			grid-template-columns: 1fr 350px;
+		}
+	}
+
+	@media (max-width: 1024px) {
+		.main-content {
+			grid-template-columns: 1fr;
+			grid-template-rows: 1fr auto;
+		}
+		.breakdown-section {
+			max-height: calc(45vh - 60px);
+			overflow-y: auto;
+		}
+
+		.employee-grid {
+			max-height: calc(45vh - 80px);
+		}
+	}
+
+	@media (max-width: 768px) {
+		.container {
+			padding: 12px;
+		}
+
+		.header {
+			flex-direction: column;
+			gap: 12px;
+			align-items: stretch;
+		}
+
+		.header h1 {
+			font-size: 1.5rem;
+			text-align: center;
+		}
+
+		.date-picker {
+			justify-content: center;
+		}
+
+		.main-content {
+			gap: 16px;
+		}
+
+		.employee-grid {
+			grid-template-columns: 1fr;
+			max-height: calc(40vh - 60px);
+		}
+
+		.employee-card {
+			padding: 10px 12px;
+		}
+
+		.bottom-stats {
+			gap: 20px;
+		}
+
+		.stat-value {
+			font-size: 1.25rem;
+		}
+
+		.stat-item.highlight .stat-value {
+			font-size: 1.5rem;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.bottom-stats {
+			flex-direction: column;
+			gap: 12px;
+		}
+
+		.stat-item {
+			flex-direction: row;
+			justify-content: space-between;
+		}
+	}
+</style>

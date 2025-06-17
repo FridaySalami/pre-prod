@@ -18,6 +18,7 @@
 		uploadDailyMetricReview,
 		transformMetricsForReview
 	} from '$lib/dailyMetricReviewService';
+	import { getDailyHours } from '$lib/dailyHoursService';
 
 	// Add this interface to your type definitions section at the top
 	interface LinnworksOrderData {
@@ -117,9 +118,10 @@
 		{
 			name: '1.1 Shipments Packed',
 			values: new Array(daysCount).fill(0),
-			metricField: 'shipments', // CHANGED from "shipments_packed" to match database column name
-			isReadOnly: false,
-			tooltip: 'Daily count of shipments packed and shipped.'
+			metricField: null, // Changed to null since this will be auto-populated from Linnworks orders data
+			isReadOnly: true, // Changed to read-only since this will be auto-populated
+			tooltip:
+				'Daily count of shipments packed and shipped. Automatically matches Linnworks Total Orders (2.1).'
 		},
 		{
 			name: '1.2 Scheduled Hours',
@@ -130,25 +132,53 @@
 				'Total scheduled work hours based on employee availability from the schedule page. This is automatically calculated and can only be modified by updating employee schedules and leave.'
 		},
 		{
-			name: '1.3 Actual Hours Worked',
+			name: '1.3 Total Hours Used',
 			values: new Array(daysCount).fill(0),
 			metricField: 'hours_worked', // CHANGED from "actual_hours_worked" to match database column name
-			isReadOnly: false,
-			tooltip: 'Actual labor hours used for packing operations.'
+			isReadOnly: true, // Changed to read-only since this will be auto-populated
+			tooltip:
+				'Total labor hours from employee time tracking. Automatically calculated from daily employee hours data.'
+		},
+		{
+			name: '1.3.1 Management Hours Used',
+			values: new Array(daysCount).fill(0),
+			metricField: null,
+			isReadOnly: true,
+			isSubItem: true,
+			tooltip:
+				'Total hours for management roles (Supervisor, Manager, B2C Accounts Manager). Automatically calculated from daily employee hours data.'
+		},
+		{
+			name: '1.3.2 Packing Hours Used',
+			values: new Array(daysCount).fill(0),
+			metricField: null,
+			isReadOnly: true,
+			isSubItem: true,
+			tooltip:
+				'Total hours for packing roles (all Associate positions). Automatically calculated from daily employee hours data.'
+		},
+		{
+			name: '1.3.3 Picking Hours Used',
+			values: new Array(daysCount).fill(0),
+			metricField: null,
+			isReadOnly: true,
+			isSubItem: true,
+			tooltip:
+				'Total hours for picking roles. Automatically calculated from daily employee hours data.'
 		},
 		{
 			name: '1.4 Labor Efficiency (shipments/hour)',
 			values: new Array(daysCount).fill(0),
 			metricField: null,
 			tooltip:
-				'Calculated as Shipments Packed ÷ Actual Hours Worked. Measures the number of shipments processed per labor hour.'
+				'Calculated as Shipments Packed ÷ (Packing Hours Used + Picking Hours Used). Measures the number of shipments processed per direct fulfillment labor hour.'
 		},
 		{
 			name: '1.5 Labor Utilization (%)',
 			values: new Array(daysCount).fill(0),
 			metricField: null,
 			tooltip:
-				'Calculated as (Actual Hours Worked ÷ Scheduled Hours) × 100. Measures how efficiently scheduled labor hours are being used.'
+				'Calculated as (Total Hours Used ÷ Scheduled Hours) × 100. Measures how efficiently scheduled labor hours are being used.'
 		}
 	];
 
@@ -279,6 +309,10 @@
 	const msPerDay = 24 * 60 * 60 * 1000;
 	let loading = false;
 
+	// Add missing variables for the template
+	let isLoading = false;
+	let loadError: string | null = null;
+
 	$: displayedMonday = (() => {
 		const currentMonday = getMonday(new Date());
 		return new Date(currentMonday.getTime() + weekOffset * 7 * msPerDay);
@@ -316,15 +350,21 @@
 			const shipments =
 				metrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
 				new Array(daysCount).fill(0);
-			const hours =
-				metrics.find((m) => m.name === '1.3 Actual Hours Worked')?.values ??
+			const packingHours =
+				metrics.find((m) => m.name === '1.3.2 Packing Hours Used')?.values ??
 				new Array(daysCount).fill(0);
-			return weekDates.map((_, i) =>
-				hours[i] > 0 ? Math.round((shipments[i] / hours[i]) * 100) / 100 : 0
-			);
+			const pickingHours =
+				metrics.find((m) => m.name === '1.3.3 Picking Hours Used')?.values ??
+				new Array(daysCount).fill(0);
+			return weekDates.map((_, i) => {
+				const totalPackingPickingHours = (packingHours[i] || 0) + (pickingHours[i] || 0);
+				return totalPackingPickingHours > 0
+					? Math.round((shipments[i] / totalPackingPickingHours) * 100) / 100
+					: 0;
+			});
 		} else if (metric.name === '1.5 Labor Utilization (%)') {
 			const actualHours =
-				metrics.find((m) => m.name === '1.3 Actual Hours Worked')?.values ??
+				metrics.find((m) => m.name === '1.3 Total Hours Used')?.values ??
 				new Array(daysCount).fill(0);
 			const scheduledHrs =
 				metrics.find((m) => m.name === '1.2 Scheduled Hours')?.values ??
@@ -414,6 +454,20 @@
 
 		// Format the change value
 		return `${change > 0 ? '+' : ''}${change.toFixed(2)}%`;
+	});
+
+	$: exportMetrics = metrics.map((metric: ExtendedMetric, idx) => {
+		if (metric.isHeader || metric.isSpacer) {
+			return metric;
+		} else if (metric.metricField === null) {
+			// For computed metrics, replace values with the computed values
+			return {
+				...metric,
+				values: computedMetrics[idx] || metric.values
+			};
+		} else {
+			return metric;
+		}
 	});
 
 	// Add a function to format metric values with appropriate units
@@ -594,6 +648,29 @@
 				}
 			});
 
+			// Fetch employee hours data for previous week
+			let prevEmployeeHoursData: Record<string, number> = {};
+			let prevEmployeeRoleBreakdowns: Record<
+				string,
+				{
+					management: number;
+					packing: number;
+					picking: number;
+				}
+			> = {};
+			try {
+				const prevWeekStartDate = previousWeekDates[0];
+				const prevWeekEndDate = previousWeekDates[previousWeekDates.length - 1];
+				const hoursResult = await loadEmployeeHoursForDateRange(prevWeekStartDate, prevWeekEndDate);
+				prevEmployeeHoursData = hoursResult.totalHours;
+				prevEmployeeRoleBreakdowns = hoursResult.roleBreakdowns;
+				console.log('Fetched previous week employee hours data:', prevEmployeeHoursData);
+				console.log('Fetched previous week role breakdowns:', prevEmployeeRoleBreakdowns);
+			} catch (err) {
+				console.error('Failed to fetch previous week employee hours data:', err);
+				// Continue without employee hours data
+			}
+
 			// Process data for each day
 			for (let i = 0; i < previousWeekDates.length; i++) {
 				const dateStr = previousWeekDates[i].toISOString().split('T')[0];
@@ -610,6 +687,49 @@
 						totals[idx] += val;
 					}
 				});
+
+				// Populate employee hours data for previous week (overrides database values)
+				const totalHoursMetricIndex = metrics.findIndex((m) => m.name === '1.3 Total Hours Used');
+				if (totalHoursMetricIndex !== -1 && prevEmployeeHoursData[dateStr] !== undefined) {
+					previousWeekMetrics[totalHoursMetricIndex][i] = prevEmployeeHoursData[dateStr] || 0;
+					// Update totals accordingly
+					totals[totalHoursMetricIndex] += prevEmployeeHoursData[dateStr] || 0;
+				}
+
+				// Populate role breakdown hours for previous week
+				const roleBreakdown = prevEmployeeRoleBreakdowns[dateStr];
+				if (roleBreakdown) {
+					const managementHoursIndex = metrics.findIndex(
+						(m) => m.name === '1.3.1 Management Hours Used'
+					);
+					if (managementHoursIndex !== -1) {
+						previousWeekMetrics[managementHoursIndex][i] = roleBreakdown.management || 0;
+						totals[managementHoursIndex] += roleBreakdown.management || 0;
+					}
+
+					const packingHoursIndex = metrics.findIndex((m) => m.name === '1.3.2 Packing Hours Used');
+					if (packingHoursIndex !== -1) {
+						previousWeekMetrics[packingHoursIndex][i] = roleBreakdown.packing || 0;
+						totals[packingHoursIndex] += roleBreakdown.packing || 0;
+					}
+
+					const pickingHoursIndex = metrics.findIndex((m) => m.name === '1.3.3 Picking Hours Used');
+					if (pickingHoursIndex !== -1) {
+						previousWeekMetrics[pickingHoursIndex][i] = roleBreakdown.picking || 0;
+						totals[pickingHoursIndex] += roleBreakdown.picking || 0;
+					}
+				}
+
+				// Populate shipments packed with Linnworks Total Orders data for previous week (auto-sync)
+				const shipmentsPackedIndex = metrics.findIndex((m) => m.name === '1.1 Shipments Packed');
+				const linnworksOrdersIndex = metrics.findIndex(
+					(m) => m.name === '2.1 Linnworks Total Orders'
+				);
+				if (shipmentsPackedIndex !== -1 && linnworksOrdersIndex !== -1) {
+					const ordersValue = previousWeekMetrics[linnworksOrdersIndex][i] || 0;
+					previousWeekMetrics[shipmentsPackedIndex][i] = ordersValue;
+					totals[shipmentsPackedIndex] += ordersValue;
+				}
 			}
 
 			previousTotals = totals;
@@ -627,17 +747,25 @@
 						(acc, val) => acc + val,
 						0
 					) ?? 0;
-				const totHours =
+				const totPackingHours =
 					previousWeekMetrics[
-						metrics.findIndex((m) => m.name === '1.3 Actual Hours Worked')
+						metrics.findIndex((m) => m.name === '1.3.2 Packing Hours Used')
 					]?.reduce((acc, val) => acc + val, 0) ?? 0;
-				return totHours > 0 ? Math.round((totShipments / totHours) * 100) / 100 : 0;
+				const totPickingHours =
+					previousWeekMetrics[
+						metrics.findIndex((m) => m.name === '1.3.3 Picking Hours Used')
+					]?.reduce((acc, val) => acc + val, 0) ?? 0;
+				const totPackingPickingHours = totPackingHours + totPickingHours;
+				return totPackingPickingHours > 0
+					? Math.round((totShipments / totPackingPickingHours) * 100) / 100
+					: 0;
 			}
 			if (metric.name === '1.5 Labor Utilization (%)') {
 				const totActualHours =
-					previousWeekMetrics[
-						metrics.findIndex((m) => m.name === '1.3 Actual Hours Worked')
-					]?.reduce((acc, val) => acc + val, 0) ?? 0;
+					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.3 Total Hours Used')]?.reduce(
+						(acc, val) => acc + val,
+						0
+					) ?? 0;
 				const totScheduledHours =
 					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.2 Scheduled Hours')]?.reduce(
 						(acc, val) => acc + val,
@@ -672,18 +800,24 @@
 			// For Labor Efficiency and Utilization, compute using total values for the period
 			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
 				const shipmentIdx = metrics.findIndex((m) => m.name === '1.1 Shipments Packed');
-				const hoursIdx = metrics.findIndex((m) => m.name === '1.3 Actual Hours Worked');
+				const packingHoursIdx = metrics.findIndex((m) => m.name === '1.3.2 Packing Hours Used');
+				const pickingHoursIdx = metrics.findIndex((m) => m.name === '1.3.3 Picking Hours Used');
 
 				const shipments = previousWeekMetrics[shipmentIdx]?.slice(0, end + 1) ?? [];
-				const hours = previousWeekMetrics[hoursIdx]?.slice(0, end + 1) ?? [];
+				const packingHours = previousWeekMetrics[packingHoursIdx]?.slice(0, end + 1) ?? [];
+				const pickingHours = previousWeekMetrics[pickingHoursIdx]?.slice(0, end + 1) ?? [];
 
 				const totalShipments = shipments.reduce((acc, val) => acc + val, 0);
-				const totalHours = hours.reduce((acc, val) => acc + val, 0);
+				const totalPackingHours = packingHours.reduce((acc, val) => acc + val, 0);
+				const totalPickingHours = pickingHours.reduce((acc, val) => acc + val, 0);
+				const totalPackingPickingHours = totalPackingHours + totalPickingHours;
 
-				return totalHours > 0 ? Math.round((totalShipments / totalHours) * 100) / 100 : 0;
+				return totalPackingPickingHours > 0
+					? Math.round((totalShipments / totalPackingPickingHours) * 100) / 100
+					: 0;
 			}
 			if (metric.name === '1.5 Labor Utilization (%)') {
-				const actualHoursIdx = metrics.findIndex((m) => m.name === '1.3 Actual Hours Worked');
+				const actualHoursIdx = metrics.findIndex((m) => m.name === '1.3 Total Hours Used');
 				const scheduledHoursIdx = metrics.findIndex((m) => m.name === '1.2 Scheduled Hours');
 
 				const actualHours = previousWeekMetrics[actualHoursIdx]?.slice(0, end + 1) ?? [];
@@ -779,6 +913,28 @@
 				// Continue without Linnworks data
 			}
 
+			// Fetch employee hours data
+			let employeeHoursData: Record<string, number> = {};
+			let employeeRoleBreakdowns: Record<
+				string,
+				{
+					management: number;
+					packing: number;
+					picking: number;
+				}
+			> = {};
+			try {
+				const sundayDate = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000);
+				const hoursResult = await loadEmployeeHoursForDateRange(displayedMonday, sundayDate);
+				employeeHoursData = hoursResult.totalHours;
+				employeeRoleBreakdowns = hoursResult.roleBreakdowns;
+				console.log('Fetched employee hours data:', employeeHoursData);
+				console.log('Fetched role breakdowns:', employeeRoleBreakdowns);
+			} catch (err) {
+				console.error('Failed to fetch employee hours data:', err);
+				// Continue without employee hours data
+			}
+
 			// Create a lookup map for database records
 			const dataByDay: Record<string, any> = {};
 			currentWeekData?.forEach((record) => {
@@ -852,8 +1008,11 @@
 				dataByDay
 			});
 
-			// Reset metrics to default values
-			let updatedMetrics = JSON.parse(JSON.stringify(metrics));
+			// Reset metrics to default values (initialize with zeros)
+			let updatedMetrics = metrics.map((metric) => ({
+				...metric,
+				values: new Array(daysCount).fill(0)
+			}));
 
 			// Populate with data from database and APIs
 			for (let i = 0; i < weekDates.length; i++) {
@@ -862,8 +1021,8 @@
 
 				if (dayData) {
 					// Update each metric with database values
-					updatedMetrics = updatedMetrics.map((metric: any) => {
-						if (!metric.metricField) return metric;
+					updatedMetrics.forEach((metric: any, metricIndex: number) => {
+						if (!metric.metricField) return;
 
 						// Map metricField to actual database column names
 						let dbField = metric.metricField;
@@ -871,16 +1030,58 @@
 							dbField = 'shipments'; // Correct field name from schema
 						}
 						if (dayData[dbField] !== undefined) {
-							const newValues = [...metric.values];
 							if (dbField === 'total_sales') {
-								newValues[i] = dayData.total_sales || 0;
+								updatedMetrics[metricIndex].values[i] = dayData.total_sales || 0;
 							} else {
-								newValues[i] = dayData[dbField] || 0;
+								updatedMetrics[metricIndex].values[i] = dayData[dbField] || 0;
 							}
-							return { ...metric, values: newValues };
 						}
-						return metric;
 					});
+				}
+
+				// Populate employee hours data (overrides database values for this metric)
+				const totalHoursMetricIndex = updatedMetrics.findIndex(
+					(m) => m.name === '1.3 Total Hours Used'
+				);
+				if (totalHoursMetricIndex !== -1 && employeeHoursData[dateStr] !== undefined) {
+					updatedMetrics[totalHoursMetricIndex].values[i] = employeeHoursData[dateStr] || 0;
+				}
+
+				// Populate role breakdown hours
+				const roleBreakdown = employeeRoleBreakdowns[dateStr];
+				if (roleBreakdown) {
+					const managementHoursIndex = updatedMetrics.findIndex(
+						(m) => m.name === '1.3.1 Management Hours Used'
+					);
+					if (managementHoursIndex !== -1) {
+						updatedMetrics[managementHoursIndex].values[i] = roleBreakdown.management || 0;
+					}
+
+					const packingHoursIndex = updatedMetrics.findIndex(
+						(m) => m.name === '1.3.2 Packing Hours Used'
+					);
+					if (packingHoursIndex !== -1) {
+						updatedMetrics[packingHoursIndex].values[i] = roleBreakdown.packing || 0;
+					}
+
+					const pickingHoursIndex = updatedMetrics.findIndex(
+						(m) => m.name === '1.3.3 Picking Hours Used'
+					);
+					if (pickingHoursIndex !== -1) {
+						updatedMetrics[pickingHoursIndex].values[i] = roleBreakdown.picking || 0;
+					}
+				}
+
+				// Populate shipments packed with Linnworks Total Orders data (auto-sync)
+				const shipmentsPackedIndex = updatedMetrics.findIndex(
+					(m) => m.name === '1.1 Shipments Packed'
+				);
+				const linnworksOrdersIndex = updatedMetrics.findIndex(
+					(m) => m.name === '2.1 Linnworks Total Orders'
+				);
+				if (shipmentsPackedIndex !== -1 && linnworksOrdersIndex !== -1) {
+					updatedMetrics[shipmentsPackedIndex].values[i] =
+						updatedMetrics[linnworksOrdersIndex].values[i] || 0;
 				}
 			}
 
@@ -1082,10 +1283,15 @@
 			return m;
 		});
 
-		// Save the updated metric for this specific day
+		// Save the updated metric for this specific day and reload fresh data
 		saveMetricsForDay(dayIndex)
-			.then(() => {
-				// Quietly show success message
+			.then(async () => {
+				// Reload all data to ensure fresh API data and computed metrics are updated
+				await tick();
+				await loadMetrics();
+				await loadPreviousWeekTotals();
+
+				// Show success message
 				showToast(
 					`Updated ${metric.name} for ${weekDates[dayIndex].toLocaleDateString(undefined, { weekday: 'long' })}`,
 					'success',
@@ -1244,15 +1450,21 @@
 				const shipments =
 					freshMetrics.find((m) => m.name === '1.1 Shipments Packed')?.values ??
 					new Array(daysCount).fill(0);
-				const hours =
-					freshMetrics.find((m) => m.name === '1.3 Actual Hours Worked')?.values ??
+				const packingHours =
+					freshMetrics.find((m) => m.name === '1.3.2 Packing Hours Used')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) =>
-					hours[i] > 0 ? Math.round((shipments[i] / hours[i]) * 100) / 100 : 0
-				);
+				const pickingHours =
+					freshMetrics.find((m) => m.name === '1.3.3 Picking Hours Used')?.values ??
+					new Array(daysCount).fill(0);
+				return weekDates.map((_, i) => {
+					const totalPackingPickingHours = (packingHours[i] || 0) + (pickingHours[i] || 0);
+					return totalPackingPickingHours > 0
+						? Math.round((shipments[i] / totalPackingPickingHours) * 100) / 100
+						: 0;
+				});
 			} else if (metric.name === '1.5 Labor Utilization (%)') {
 				const actualHours =
-					freshMetrics.find((m) => m.name === '1.3 Actual Hours Worked')?.values ??
+					freshMetrics.find((m) => m.name === '1.3 Total Hours Used')?.values ??
 					new Array(daysCount).fill(0);
 				const scheduledHrs =
 					freshMetrics.find((m) => m.name === '1.2 Scheduled Hours')?.values ??
@@ -1400,142 +1612,6 @@
 		runTest();
 	});
 
-	let showMetricsPanel = false;
-	let selectedMetricIndex = -1;
-	let selectedDayIndex = -1;
-	let panelNoteData: any = {};
-	let notesMap: Record<string, any> = {};
-	let activeNote: NoteData | null = null;
-	let activeNoteId: string | null = null;
-	let activeMetricId: string | null = null;
-	let activeDayId: string | null = null;
-
-	$: exportMetrics = metrics.map((metric: ExtendedMetric, idx) => {
-		if (metric.isHeader || metric.isSpacer) {
-			return metric;
-		} else if (metric.metricField === null) {
-			// For computed metrics, replace values with the computed values
-			return {
-				...metric,
-				values: computedMetrics[idx] || metric.values
-			};
-		} else {
-			return metric;
-		}
-	});
-
-	// Add this to your existing variables
-	let isLoading = true;
-	let loadError: string | null = null;
-
-	// Fix the query in loadMetricsData function
-	async function loadMetricsData() {
-		isLoading = true;
-		loadError = null;
-
-		try {
-			console.log('Loading metrics data from Supabase...');
-
-			// Get the selected week's dates for querying
-			const start = weekDates[0];
-			const end = weekDates[weekDates.length - 1];
-
-			console.log(`Fetching data for week: ${start.toISOString()} to ${end.toISOString()}`);
-
-			// CHANGE THIS: Use 'daily_metrics' instead of 'metrics'
-			const { data, error } = await supabase
-				.from('daily_metrics') // Changed from 'metrics' to 'daily_metrics'
-				.select('*')
-				.gte('date', start.toISOString().split('T')[0])
-				.lte('date', end.toISOString().split('T')[0])
-				.order('date', { ascending: true });
-
-			if (error) {
-				console.error('Supabase query error:', error);
-				loadError = error.message;
-				return;
-			}
-
-			console.log(`Loaded ${data?.length || 0} records from Supabase`);
-			console.log('Sample data:', data?.slice(0, 2));
-
-			// Map the data to metrics
-			if (data && data.length > 0) {
-				// Group by date
-				const metricsByDate = data.reduce((acc, item) => {
-					const dateStr = item.date;
-					if (!acc[dateStr]) acc[dateStr] = [];
-					acc[dateStr].push(item);
-					return acc;
-				}, {});
-
-				// Now update the metrics with the data
-				metrics = metrics.map((metric, idx) => {
-					// Skip headers and spacers
-					if (metric.isHeader || metric.isSpacer) return metric;
-
-					// Only update metrics that have a corresponding field in the database
-					if (!metric.metricField) return metric;
-
-					const newValues = [...metric.values];
-
-					// For each day in our week
-					weekDates.forEach((date, dayIndex) => {
-						const dateStr = date.toISOString().split('T')[0];
-						const dayData = metricsByDate[dateStr];
-
-						if (dayData && dayData.length > 0) {
-							// Fix the 'd' parameter type
-							const matchingRecord = dayData.find((d: Record<string, any>) =>
-								d.hasOwnProperty(metric.metricField as string)
-							);
-
-							if (matchingRecord && metric.metricField) {
-								// Add null check for metricField
-								console.log(
-									`Found data for ${metric.name} on ${dateStr}:`,
-									matchingRecord[metric.metricField]
-								);
-								newValues[dayIndex] = matchingRecord[metric.metricField] || 0;
-							}
-						}
-					});
-
-					return {
-						...metric,
-						values: newValues
-					};
-				});
-
-				console.log('Updated metrics with Supabase data');
-				// Check specific metrics we're concerned about
-				const shipmentsPacked = metrics.find((m) => m.name === '1.1 Shipments Packed');
-				const actualHours = metrics.find((m) => m.name === '1.3 Actual Hours Worked');
-				const packingErrors = metrics.find((m) => m.name === '1.6 Packing Errors');
-
-				console.log('1.1 Shipments Packed values:', shipmentsPacked?.values);
-				console.log('1.3 Actual Hours Worked values:', actualHours?.values);
-				console.log('1.6 Packing Errors values:', packingErrors?.values);
-			}
-		} catch (err: unknown) {
-			// Type the error as unknown
-			console.error('Error loading metrics data:', err);
-			loadError = err instanceof Error ? err.message : String(err);
-		} finally {
-			isLoading = false;
-		}
-	}
-
-	// Call this in onMount to load data when the component initializes
-	onMount(() => {
-		loadMetricsData();
-	});
-
-	// Also add a watcher for weekDates to reload data when the week changes
-	$: if (weekDates && weekDates.length > 0) {
-		loadMetricsData();
-	}
-
 	$: previousWeekMetrics = metrics.map((metric: ExtendedMetric, idx): number[] => {
 		if (metric.metricField === null) {
 			// For Labor Efficiency, we need to keep track of both shipments and hours for accurate averaging
@@ -1543,14 +1619,20 @@
 				const shipments =
 					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.1 Shipments Packed')] ??
 					new Array(daysCount).fill(0);
-				const hours =
-					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.3 Actual Hours Worked')] ??
+				const packingHours =
+					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.3.2 Packing Hours Used')] ??
+					new Array(daysCount).fill(0);
+				const pickingHours =
+					previousWeekMetrics[metrics.findIndex((m) => m.name === '1.3.3 Picking Hours Used')] ??
 					new Array(daysCount).fill(0);
 
 				// For daily efficiency values
-				const dailyEfficiency = previousWeekDates.map((_, i) =>
-					hours[i] > 0 ? Math.round((shipments[i] / hours[i]) * 100) / 100 : 0
-				);
+				const dailyEfficiency = previousWeekDates.map((_, i) => {
+					const totalPackingPickingHours = (packingHours[i] || 0) + (pickingHours[i] || 0);
+					return totalPackingPickingHours > 0
+						? Math.round((shipments[i] / totalPackingPickingHours) * 100) / 100
+						: 0;
+				});
 
 				return dailyEfficiency;
 			}
@@ -1590,6 +1672,85 @@
 		}
 		return metric.values;
 	});
+
+	/**
+	 * Get total hours worked for each day in a date range from employee hours table
+	 * Returns both total hours and role-based breakdowns
+	 */
+	async function loadEmployeeHoursForDateRange(
+		startDate: Date,
+		endDate: Date
+	): Promise<{
+		totalHours: Record<string, number>;
+		roleBreakdowns: Record<
+			string,
+			{
+				management: number;
+				packing: number;
+				picking: number;
+			}
+		>;
+	}> {
+		try {
+			const startDateStr = startDate.toISOString().split('T')[0];
+			const endDateStr = endDate.toISOString().split('T')[0];
+
+			const { data, error } = await supabase
+				.from('daily_employee_hours')
+				.select('work_date, hours_worked, employee_role')
+				.gte('work_date', startDateStr)
+				.lte('work_date', endDateStr);
+
+			if (error) {
+				console.error('Error fetching employee hours:', error);
+				return { totalHours: {}, roleBreakdowns: {} };
+			}
+
+			// Group by date and sum hours
+			const totalHours: Record<string, number> = {};
+			const roleBreakdowns: Record<
+				string,
+				{
+					management: number;
+					packing: number;
+					picking: number;
+				}
+			> = {};
+
+			data?.forEach((record) => {
+				const date = record.work_date;
+				const hours = record.hours_worked || 0;
+				const role = record.employee_role?.toLowerCase() || '';
+
+				// Initialize if needed
+				if (!totalHours[date]) {
+					totalHours[date] = 0;
+				}
+				if (!roleBreakdowns[date]) {
+					roleBreakdowns[date] = { management: 0, packing: 0, picking: 0 };
+				}
+
+				// Add to total
+				totalHours[date] += hours;
+
+				// Categorize by role
+				if (role.includes('supervisor') || role.includes('manager')) {
+					roleBreakdowns[date].management += hours;
+				} else if (role.includes('associate')) {
+					roleBreakdowns[date].packing += hours;
+				} else if (role.includes('picking')) {
+					roleBreakdowns[date].picking += hours;
+				}
+			});
+
+			return { totalHours, roleBreakdowns };
+		} catch (err) {
+			console.error('Error loading employee hours:', err);
+			return { totalHours: {}, roleBreakdowns: {} };
+		}
+	}
+
+	// ...existing code...
 </script>
 
 <!-- Week Navigation (aligned left) with Export button (aligned right) -->
@@ -1736,7 +1897,10 @@
 									isCurrentWeek
 										? partialPreviousTotalsComputed[metricIndex]
 										: previousTotalsComputed[metricIndex],
-									metric.name === '1.3 Actual Hours Worked' ||
+									metric.name === '1.3 Total Hours Used' ||
+										metric.name === '1.3.1 Management Hours Used' ||
+										metric.name === '1.3.2 Packing Hours Used' ||
+										metric.name === '1.3.3 Picking Hours Used' ||
 										metric.name === '1.6 Packing Errors' ||
 										metric.name === '1.7 Packing Errors DPMO'
 								)}
@@ -1747,6 +1911,7 @@
 									: previousTotalsComputed[metricIndex]}
 								previousTotal={previousTotalsComputed[metricIndex]}
 								isReadOnly={metric.isReadOnly}
+								isSubItem={metric.isSubItem}
 								isCurrency={isCurrencyMetric(metric.name)}
 								isPercentage={isPercentageMetric(metric.name)}
 								tooltip={metric.tooltip}

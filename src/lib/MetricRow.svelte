@@ -23,6 +23,7 @@
 	export let isHeader = false;
 	export let isSpacer = false;
 	export let isReadOnly = false;
+	export let isSubItem = false; // Add support for sub-items
 	export let tooltip = '';
 	export let currentDayIndex = -1;
 	export let isCurrentWeek = true;
@@ -67,11 +68,7 @@
 
 	// Add this function to check if a metric is editable
 	function isEditableMetric(name: string): boolean {
-		return (
-			name === '1.1 Shipments Packed' ||
-			name === '1.3 Actual Hours Worked' ||
-			name === '1.6 Packing Errors'
-		);
+		return name === '1.1 Shipments Packed' || name === '1.6 Packing Errors';
 	}
 </script>
 
@@ -82,7 +79,7 @@
 	class:percentage-row={hasPercentageBackground}
 	class:header-row={isHeader}
 >
-	<td class="metric-name">
+	<td class="metric-name" class:sub-item={isSubItem}>
 		{name}
 		{#if tooltip}
 			<span class="tooltip-container">
@@ -114,7 +111,7 @@
 						handleInputChange(metricIndex, dayIndex, parseFloat(target.value));
 					}}
 					min="0"
-					step={name === '1.3 Actual Hours Worked' ? '0.25' : '1'}
+					step={name === '1.3 Total Hours Used' ? '0.25' : '1'}
 				/>
 				<!-- Add notes icon -->
 			{:else if isPercentage}
@@ -395,5 +392,10 @@
 	/* Add visual separation between sections */
 	tr.metric-row.header-row {
 		border-top: 6px solid #f9fafb;
+	}
+
+	/* Sub-item styling */
+	.metric-name.sub-item {
+		padding-left: 2rem;
 	}
 </style>
