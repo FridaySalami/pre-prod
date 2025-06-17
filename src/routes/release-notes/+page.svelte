@@ -220,6 +220,23 @@
 								Created seamless mobile navigation experience with proper state management and
 								smooth transitions between pages
 							</li>
+							<li>
+								Added comprehensive sorting functionality to OrdersList component with clickable
+								column headers for Order #, Source, Reference, Item Count, Shipping Method, and
+								Total
+							</li>
+							<li>
+								Implemented visual sort indicators with Material Icons showing sort direction and
+								active column with hover effects and smooth transitions
+							</li>
+							<li>
+								Enhanced table usability with sort status display showing current sort column and
+								direction, plus helpful hints for new users
+							</li>
+							<li>
+								Optimized order data display with intelligent sorting algorithms handling different
+								data types including numbers, text, and complex reference fields
+							</li>
 						</ul>
 					</section>
 

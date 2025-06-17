@@ -7,9 +7,85 @@
 	export let loading: boolean = false;
 	export let error: string | null = null;
 
+	// Sorting state
+	let sortColumn: string = '';
+	let sortDirection: 'asc' | 'desc' = 'asc';
+
+	// Sort function
+	function sortOrders(column: string) {
+		if (sortColumn === column) {
+			// If clicking the same column, toggle direction
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			// If clicking a new column, set to ascending
+			sortColumn = column;
+			sortDirection = 'asc';
+		}
+	}
+
+	// Sorted orders computed property
+	$: sortedOrders = [...orders].sort((a, b) => {
+		if (!sortColumn) return 0;
+
+		let aValue: any;
+		let bValue: any;
+
+		switch (sortColumn) {
+			case 'orderId':
+				aValue = a.nOrderId;
+				bValue = b.nOrderId;
+				break;
+			case 'source':
+				aValue = a.Source?.toLowerCase() || '';
+				bValue = b.Source?.toLowerCase() || '';
+				break;
+			case 'reference':
+				if (a.Source === 'AMAZON' && a.ExternalReference) {
+					aValue = a.ExternalReference.toLowerCase();
+				} else {
+					aValue = (a.ReferenceNum || a.OrderId || '').toLowerCase();
+				}
+				if (b.Source === 'AMAZON' && b.ExternalReference) {
+					bValue = b.ExternalReference.toLowerCase();
+				} else {
+					bValue = (b.ReferenceNum || b.OrderId || '').toLowerCase();
+				}
+				break;
+			case 'shipping':
+				aValue = a.PostalServiceName?.toLowerCase() || '';
+				bValue = b.PostalServiceName?.toLowerCase() || '';
+				break;
+			case 'total':
+				aValue = a.fTotalCharge || 0;
+				bValue = b.fTotalCharge || 0;
+				break;
+			case 'itemCount':
+				aValue = a.Items?.length || 0;
+				bValue = b.Items?.length || 0;
+				break;
+			default:
+				return 0;
+		}
+
+		// Handle comparison
+		if (aValue < bValue) {
+			return sortDirection === 'asc' ? -1 : 1;
+		}
+		if (aValue > bValue) {
+			return sortDirection === 'asc' ? 1 : -1;
+		}
+		return 0;
+	});
+
 	function formatCurrency(value: number | undefined): string {
 		if (value === undefined) return '£0.00';
 		return `£${value.toFixed(2)}`;
+	}
+
+	// Get sort icon for column
+	function getSortIcon(column: string): string {
+		if (sortColumn !== column) return 'unfold_more';
+		return sortDirection === 'asc' ? 'keyboard_arrow_up' : 'keyboard_arrow_down';
 	}
 
 	$: fileName = 'orders_export';
@@ -32,27 +108,82 @@
 		</div>
 	{:else}
 		<div class="table-container">
-			<!-- Export CSV Button -->
+			<!-- Export CSV Button and Sort Info -->
 			<div class="export-container">
-				<ExportOrdersCsv {orders} {fileName} buttonText="Export Orders to CSV" />
+				<div class="sort-info">
+					{#if sortColumn}
+						<span class="sort-indicator">
+							<i class="material-icons-outlined">sort</i>
+							Sorted by {sortColumn === 'orderId'
+								? 'Order ID'
+								: sortColumn === 'source'
+									? 'Source'
+									: sortColumn === 'reference'
+										? 'Reference'
+										: sortColumn === 'shipping'
+											? 'Shipping Method'
+											: sortColumn === 'total'
+												? 'Total'
+												: sortColumn === 'itemCount'
+													? 'Item Count'
+													: sortColumn}
+							({sortDirection === 'asc' ? 'A-Z' : 'Z-A'})
+						</span>
+					{:else}
+						<span class="sort-hint">
+							<i class="material-icons-outlined">info</i>
+							Click column headers to sort
+						</span>
+					{/if}
+				</div>
+				<ExportOrdersCsv orders={sortedOrders} {fileName} buttonText="Export Orders to CSV" />
 			</div>
 
 			<!-- Orders Table -->
 			<table>
 				<thead>
 					<tr>
-						<th class="text-left">ORDER #</th>
-						<th class="text-left">SOURCE</th>
-						<th class="text-left">REFERENCE</th>
-						<th class="text-left">ITEMS & SKUs</th>
-						<!-- New Column -->
-						<th class="text-left">SHIPPING METHOD</th>
-						<th class="text-right">TOTAL</th>
+						<th class="text-left sortable" onclick={() => sortOrders('orderId')}>
+							<div class="header-content">
+								<span>ORDER #</span>
+								<i class="material-icons-outlined sort-icon">{getSortIcon('orderId')}</i>
+							</div>
+						</th>
+						<th class="text-left sortable" onclick={() => sortOrders('source')}>
+							<div class="header-content">
+								<span>SOURCE</span>
+								<i class="material-icons-outlined sort-icon">{getSortIcon('source')}</i>
+							</div>
+						</th>
+						<th class="text-left sortable" onclick={() => sortOrders('reference')}>
+							<div class="header-content">
+								<span>REFERENCE</span>
+								<i class="material-icons-outlined sort-icon">{getSortIcon('reference')}</i>
+							</div>
+						</th>
+						<th class="text-left sortable" onclick={() => sortOrders('itemCount')}>
+							<div class="header-content">
+								<span>ITEMS & SKUs</span>
+								<i class="material-icons-outlined sort-icon">{getSortIcon('itemCount')}</i>
+							</div>
+						</th>
+						<th class="text-left sortable" onclick={() => sortOrders('shipping')}>
+							<div class="header-content">
+								<span>SHIPPING METHOD</span>
+								<i class="material-icons-outlined sort-icon">{getSortIcon('shipping')}</i>
+							</div>
+						</th>
+						<th class="text-right sortable" onclick={() => sortOrders('total')}>
+							<div class="header-content">
+								<span>TOTAL</span>
+								<i class="material-icons-outlined sort-icon">{getSortIcon('total')}</i>
+							</div>
+						</th>
 						<th class="text-right">BREAKDOWN</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each orders as order}
+					{#each sortedOrders as order}
 						<tr>
 							<td class="text-left order-id">
 								{order.nOrderId}
@@ -216,12 +347,61 @@
 
 	.export-container {
 		display: flex;
-		justify-content: flex-end;
+		justify-content: space-between;
+		align-items: center;
 		margin-bottom: 1rem;
-		padding-right: 1rem;
 		padding: 16px;
-		text-align: right;
 		background: #f9fafb;
 		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.sort-info {
+		display: flex;
+		align-items: center;
+		font-size: 0.875rem;
+		color: #6b7280;
+		gap: 0.5rem;
+	}
+
+	.sort-indicator {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-weight: 500;
+		color: #374151;
+	}
+
+	.sort-hint {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-style: italic;
+	}
+
+	.sortable {
+		cursor: pointer;
+		user-select: none;
+		transition: background-color 0.2s ease;
+	}
+
+	.sortable:hover {
+		background-color: #f3f4f6;
+	}
+
+	.header-content {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.sort-icon {
+		font-size: 1.125rem;
+		color: #9ca3af;
+		transition: color 0.2s ease;
+	}
+
+	.sortable:hover .sort-icon {
+		color: #6b7280;
 	}
 </style>
