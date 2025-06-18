@@ -150,10 +150,11 @@ export const POST: RequestHandler = async ({ request }) => {
       console.log('📝 Using default scheduled hours (40 hours per day)');
     }
 
-    // Step 4: Get employee hours (simplified)
-    console.log('📊 Step 4: Fetching employee hours...');
+    // Step 4: Get employee hours with role breakdown
+    console.log('📊 Step 4: Fetching employee hours with role breakdown...');
     const employeeStartTime = Date.now();
     let employeeHoursData: Record<string, number> = {};
+    let employeeRoleBreakdowns: Record<string, { management: number; packing: number; picking: number; }> = {};
 
     try {
       const startDateStr = mondayStr;
@@ -161,7 +162,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
       const { data, error } = await supabaseAdmin
         .from('daily_employee_hours')
-        .select('work_date, hours_worked')
+        .select('work_date, hours_worked, employee_role')
         .gte('work_date', startDateStr)
         .lte('work_date', endDateStr);
 
@@ -178,19 +179,40 @@ export const POST: RequestHandler = async ({ request }) => {
         console.log('🔍 Full Employee Hours Data from Supabase:');
         console.log(JSON.stringify(data, null, 2));
 
-        // Group by date and sum hours
+        // Group by date and sum hours, calculate role breakdowns
         data?.forEach((record) => {
           const date = record.work_date;
           const hours = record.hours_worked || 0;
+          const role = record.employee_role?.toLowerCase() || '';
+
+          // Initialize if needed
           if (!employeeHoursData[date]) {
             employeeHoursData[date] = 0;
           }
+          if (!employeeRoleBreakdowns[date]) {
+            employeeRoleBreakdowns[date] = { management: 0, packing: 0, picking: 0 };
+          }
+
+          // Add to total
           employeeHoursData[date] += hours;
+
+          // Categorize by role
+          if (role.includes('supervisor') || role.includes('manager')) {
+            employeeRoleBreakdowns[date].management += hours;
+          } else if (role.includes('associate')) {
+            employeeRoleBreakdowns[date].packing += hours;
+          } else if (role.includes('picking')) {
+            employeeRoleBreakdowns[date].picking += hours;
+          }
         });
 
         console.log('👥 Employee Hours Summary (by date):');
         Object.keys(employeeHoursData).forEach(date => {
+          const breakdown = employeeRoleBreakdowns[date] || { management: 0, packing: 0, picking: 0 };
           console.log(`   ${date}: ${employeeHoursData[date]} total hours`);
+          console.log(`     - Management: ${breakdown.management} hours`);
+          console.log(`     - Packing/Associate: ${breakdown.packing} hours`);
+          console.log(`     - Picking: ${breakdown.picking} hours`);
         });
 
         if (Object.keys(employeeHoursData).length === 0) {
@@ -209,6 +231,7 @@ export const POST: RequestHandler = async ({ request }) => {
       const dayData = linnworksData.dailyOrders?.find((d: any) => d.date === dateStr);
       const financialDayData = financialData.dailyData?.find((d: any) => d.date === dateStr);
       const scheduledHours = scheduledHoursData.find((h: any) => h.date === dateStr);
+      const roleBreakdown = employeeRoleBreakdowns[dateStr] || { management: 0, packing: 0, picking: 0 };
 
       const totalOrders = dayData?.count || 0;
       const amazonOrders = dayData?.channels?.amazon || 0;
@@ -224,9 +247,9 @@ export const POST: RequestHandler = async ({ request }) => {
         shipments_packed: totalOrders,
         scheduled_hours: schedHours,
         actual_hours_worked: actualHours, // Note: using actual_hours_worked, not total_hours_used
-        management_hours_used: 0,
-        packing_hours_used: 0,
-        picking_hours_used: 0,
+        management_hours_used: roleBreakdown.management,
+        packing_hours_used: roleBreakdown.packing,
+        picking_hours_used: roleBreakdown.picking,
         labor_efficiency: actualHours > 0 ? Math.round((totalOrders / actualHours) * 100) / 100 : 0,
         labor_utilization_percent: schedHours > 0 ? Math.round((actualHours / schedHours) * 100) : 0,
 
@@ -263,6 +286,9 @@ export const POST: RequestHandler = async ({ request }) => {
       console.log(`   Shipments: ${sample.shipments_packed}`);
       console.log(`   Scheduled Hours: ${sample.scheduled_hours}`);
       console.log(`   Actual Hours: ${sample.actual_hours_worked}`);
+      console.log(`   Management Hours: ${sample.management_hours_used}`);
+      console.log(`   Packing Hours: ${sample.packing_hours_used}`);
+      console.log(`   Picking Hours: ${sample.picking_hours_used}`);
       console.log(`   Labor Efficiency: ${sample.labor_efficiency}`);
       console.log(`   Labor Utilization: ${sample.labor_utilization_percent}%`);
       console.log(`   Total Sales: £${sample.total_sales}`);
@@ -307,7 +333,17 @@ export const POST: RequestHandler = async ({ request }) => {
     console.log(`   - Linnworks days with data: ${linnworksData.dailyOrders?.length || 0}/7`);
     console.log(`   - Financial days with data: ${financialData.dailyData?.length || 0}/7`);
     console.log(`   - Employee hours days: ${Object.keys(employeeHoursData).length}/7`);
+    console.log(`   - Role breakdown days: ${Object.keys(employeeRoleBreakdowns).length}/7`);
     console.log(`   - Scheduled hours days: ${scheduledHoursData.length}/7`);
+
+    // Show role breakdown totals
+    const totalManagementHours = Object.values(employeeRoleBreakdowns).reduce((sum, day) => sum + day.management, 0);
+    const totalPackingHours = Object.values(employeeRoleBreakdowns).reduce((sum, day) => sum + day.packing, 0);
+    const totalPickingHours = Object.values(employeeRoleBreakdowns).reduce((sum, day) => sum + day.picking, 0);
+    console.log('🎯 Role Breakdown Week Totals:');
+    console.log(`   - Management: ${totalManagementHours} hours`);
+    console.log(`   - Packing/Associate: ${totalPackingHours} hours`);
+    console.log(`   - Picking: ${totalPickingHours} hours`);
 
     return new Response(JSON.stringify({
       success: true,
