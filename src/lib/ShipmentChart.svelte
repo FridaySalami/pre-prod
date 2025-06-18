@@ -1181,9 +1181,10 @@
 	async function fetchFreshCurrentWeekData(): Promise<ExtendedMetric[]> {
 		console.log('🚀 Starting fetchFreshCurrentWeekData for upload...');
 
-		// Format dates for current week
-		const mondayStr = displayedMonday.toISOString().split('T')[0];
-		const sundayStr = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
+		// Get current week dates (not displayed week which could be previous week)
+		const currentMonday = getMonday(new Date());
+		const mondayStr = currentMonday.toISOString().split('T')[0];
+		const sundayStr = new Date(currentMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
 			.toISOString()
 			.split('T')[0];
 
@@ -1191,7 +1192,7 @@
 		const currentWeekEnd = new Date(sundayStr);
 		const weekRange = `${mondayStr} to ${sundayStr}`;
 
-		console.log(`📅 UPLOAD TARGET WEEK: ${weekRange}`);
+		console.log(`📅 UPLOAD TARGET WEEK (CURRENT WEEK): ${weekRange}`);
 		console.log(
 			`🎯 Current week validation bounds: ${currentWeekStart.toISOString()} to ${currentWeekEnd.toISOString()}`
 		);
@@ -1484,7 +1485,10 @@
 	}
 
 	// Helper function to compute current week metrics from fresh data
-	function computeCurrentWeekMetrics(freshMetrics: ExtendedMetric[]): number[][] {
+	function computeCurrentWeekMetrics(
+		freshMetrics: ExtendedMetric[],
+		currentWeekDates: Date[]
+	): number[][] {
 		console.log('Computing current week metrics from fresh data...');
 
 		return freshMetrics.map((metric: ExtendedMetric, idx): number[] => {
@@ -1500,7 +1504,7 @@
 				const pickingHours =
 					freshMetrics.find((m) => m.name === '1.3.3 Picking Hours Used')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) => {
+				return currentWeekDates.map((_, i) => {
 					const totalPackingPickingHours = (packingHours[i] || 0) + (pickingHours[i] || 0);
 					return totalPackingPickingHours > 0
 						? Math.round((shipments[i] / totalPackingPickingHours) * 100) / 100
@@ -1513,7 +1517,7 @@
 				const scheduledHrs =
 					freshMetrics.find((m) => m.name === '1.2 Scheduled Hours')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) =>
+				return currentWeekDates.map((_, i) =>
 					scheduledHrs[i] > 0 ? Math.round((actualHours[i] / scheduledHrs[i]) * 10000) / 100 : 0
 				);
 			} else if (metric.name === '1.7 Packing Errors DPMO') {
@@ -1523,7 +1527,7 @@
 				const defects =
 					freshMetrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) =>
+				return currentWeekDates.map((_, i) =>
 					shipments[i] > 0 ? Math.round((defects[i] / shipments[i]) * 1000000) : 0
 				);
 			} else if (metric.name === '1.8 Order Accuracy (%)') {
@@ -1533,7 +1537,7 @@
 				const defects =
 					freshMetrics.find((m) => m.name === '1.6 Packing Errors')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) =>
+				return currentWeekDates.map((_, i) =>
 					shipments[i] > 0
 						? Math.round(((shipments[i] - defects[i]) / shipments[i]) * 10000) / 100
 						: 0
@@ -1545,7 +1549,7 @@
 				const amazonOrders =
 					freshMetrics.find((m) => m.name === '2.1.1 Amazon Orders')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) =>
+				return currentWeekDates.map((_, i) =>
 					totalOrders[i] > 0 ? Math.round((amazonOrders[i] / totalOrders[i]) * 10000) / 100 : 0
 				);
 			} else if (metric.name === '2.2.2 eBay Orders %') {
@@ -1555,7 +1559,7 @@
 				const ebayOrders =
 					freshMetrics.find((m) => m.name === '2.1.2 eBay Orders')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) =>
+				return currentWeekDates.map((_, i) =>
 					totalOrders[i] > 0 ? Math.round((ebayOrders[i] / totalOrders[i]) * 10000) / 100 : 0
 				);
 			} else if (metric.name === '2.2.3 Shopify Orders %') {
@@ -1565,7 +1569,7 @@
 				const shopifyOrders =
 					freshMetrics.find((m) => m.name === '2.1.3 Shopify Orders')?.values ??
 					new Array(daysCount).fill(0);
-				return weekDates.map((_, i) =>
+				return currentWeekDates.map((_, i) =>
 					totalOrders[i] > 0 ? Math.round((shopifyOrders[i] / totalOrders[i]) * 10000) / 100 : 0
 				);
 			}
@@ -1582,13 +1586,24 @@
 			// Step 1: Re-fetch fresh current week data (not the displayed data which is for WoW)
 			const currentWeekMetrics = await fetchFreshCurrentWeekData();
 
+			// Generate current week dates for upload (not the displayed week dates)
+			const currentMonday = getMonday(new Date());
+			const currentWeekDates = Array.from({ length: 7 }, (_, i) => {
+				const date = new Date(currentMonday);
+				date.setDate(currentMonday.getDate() + i);
+				return date;
+			});
+
 			// Step 2: Compute current week metrics from fresh data
-			const currentWeekComputedMetrics = computeCurrentWeekMetrics(currentWeekMetrics);
+			const currentWeekComputedMetrics = computeCurrentWeekMetrics(
+				currentWeekMetrics,
+				currentWeekDates
+			);
 
 			// Step 3: Transform current week data for upload
 			const reviewData = transformMetricsForReview(
 				currentWeekMetrics,
-				weekDates,
+				currentWeekDates,
 				currentWeekComputedMetrics
 			);
 
@@ -1599,7 +1614,7 @@
 
 			if (success) {
 				showToast(
-					`Successfully uploaded daily metric review for week ${weekDates[0].toLocaleDateString()} - ${weekDates[6].toLocaleDateString()}`,
+					`Successfully uploaded daily metric review for week ${currentWeekDates[0].toLocaleDateString()} - ${currentWeekDates[6].toLocaleDateString()}`,
 					'success',
 					4000
 				);
