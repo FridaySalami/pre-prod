@@ -1192,6 +1192,13 @@
 		const currentWeekEnd = new Date(sundayStr);
 		const weekRange = `${mondayStr} to ${sundayStr}`;
 
+		// Generate current week dates array for upload
+		const currentWeekDates = Array.from({ length: 7 }, (_, i) => {
+			const date = new Date(currentMonday);
+			date.setDate(currentMonday.getDate() + i);
+			return date;
+		});
+
 		console.log(`📅 UPLOAD TARGET WEEK (CURRENT WEEK): ${weekRange}`);
 		console.log(
 			`🎯 Current week validation bounds: ${currentWeekStart.toISOString()} to ${currentWeekEnd.toISOString()}`
@@ -1239,8 +1246,17 @@
 		logDataSources(linnworksOrdersData, 'Linnworks Orders API', weekRange);
 		logDataSources(financialData, 'Financial Data API', weekRange);
 
-		// Create a fresh copy of metrics for current week only
+		// Create a fresh, clean metrics array for current week only (no previous week contamination)
 		let freshMetrics = JSON.parse(JSON.stringify(metrics));
+
+		// Reset all values to 0 to prevent previous week contamination
+		freshMetrics.forEach((metric: any) => {
+			if (metric.values && Array.isArray(metric.values)) {
+				metric.values = new Array(7).fill(0);
+			}
+		});
+
+		console.log('🧹 Created clean fresh metrics array with all zeros for current week');
 
 		// Create lookup map for fresh data
 		const dataByDay: Record<string, any> = {};
@@ -1282,8 +1298,8 @@
 		});
 
 		// Populate fresh metrics with current week data (API data only)
-		for (let i = 0; i < weekDates.length; i++) {
-			const dateStr = weekDates[i].toISOString().split('T')[0];
+		for (let i = 0; i < currentWeekDates.length; i++) {
+			const dateStr = currentWeekDates[i].toISOString().split('T')[0];
 			const dayData = dataByDay[dateStr];
 
 			// Populate scheduled hours from hours service
@@ -1419,8 +1435,8 @@
 			console.log(`✅ Employee hours data validated for current week upload`);
 
 			// Populate employee hours data into fresh metrics
-			for (let i = 0; i < weekDates.length; i++) {
-				const dateStr = weekDates[i].toISOString().split('T')[0];
+			for (let i = 0; i < currentWeekDates.length; i++) {
+				const dateStr = currentWeekDates[i].toISOString().split('T')[0];
 
 				// Total Hours Used
 				const totalHoursIndex = freshMetrics.findIndex(
@@ -1609,12 +1625,52 @@
 
 			console.log('Transformed fresh current week data for upload:', reviewData);
 
+			// Debug: Show each day's data before filtering
+			console.log('🔍 RAW DATA BEFORE FILTERING:');
+			reviewData.forEach((dayData, index) => {
+				console.log(`Day ${index + 1} (${dayData.date}):`, {
+					shipments: dayData.shipments_packed,
+					hours: dayData.actual_hours_worked,
+					sales: dayData.total_sales,
+					orders: dayData.linnworks_total_orders
+				});
+			});
+
+			// Filter out future dates - STRICT: only upload today and past days
+			const today = new Date();
+			today.setHours(23, 59, 59, 999); // End of today for comparison
+
+			console.log(`🕐 Today's date for filtering: ${today.toISOString().split('T')[0]}`);
+
+			const filteredReviewData = reviewData.filter((dayData) => {
+				const dataDate = new Date(dayData.date);
+				const isTodayOrPast = dataDate <= today;
+				const hasActualData =
+					dayData.shipments_packed > 0 ||
+					dayData.actual_hours_worked > 0 ||
+					dayData.total_sales > 0;
+
+				console.log(
+					`📅 Date ${dayData.date}: isTodayOrPast=${isTodayOrPast}, hasActualData=${hasActualData}, including=${isTodayOrPast}`
+				);
+
+				// STRICT: Only include dates that are today or in the past
+				// This prevents uploading future dates even if they have contaminated data
+				return isTodayOrPast;
+			});
+
+			console.log(
+				`🔍 Filtered upload data: ${filteredReviewData.length} records (was ${reviewData.length})`
+			);
+			console.log('Final filtered data for upload:', filteredReviewData);
+
 			// Step 4: Upload to Supabase
-			const success = await uploadDailyMetricReview(reviewData);
+			const success = await uploadDailyMetricReview(filteredReviewData);
 
 			if (success) {
+				const uploadedDates = filteredReviewData.map((d) => d.date).join(', ');
 				showToast(
-					`Successfully uploaded daily metric review for week ${currentWeekDates[0].toLocaleDateString()} - ${currentWeekDates[6].toLocaleDateString()}`,
+					`Successfully uploaded daily metric review for ${filteredReviewData.length} days: ${uploadedDates}`,
 					'success',
 					4000
 				);
