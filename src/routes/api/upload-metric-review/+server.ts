@@ -224,7 +224,7 @@ async function fetchFreshCurrentWeekData(): Promise<{ metrics: ExtendedMetric[],
 	// Get the base URL for internal API calls - Fixed for Netlify
 	const baseUrl = process.env.NODE_ENV === 'production' 
 		? `https://jackweston.netlify.app` 
-		: 'http://localhost:3001';
+		: 'http://localhost:3000';
 	
 	console.log(`🌐 Using base URL: ${baseUrl}`);
 	
