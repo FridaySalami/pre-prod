@@ -133,7 +133,7 @@
 
 		// Helper function to check if an employee is on leave
 		function getEmployeeLeave(employeeId: string, date: Date): LeaveRequest | null {
-			const dateStr = formatApiDate(date);
+			const dateStr = getLocalISODate(date);
 			const leave = leaveRequests.find(
 				(leave: LeaveRequest) =>
 					leave.employee_id === employeeId &&
