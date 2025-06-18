@@ -64,7 +64,9 @@
 	}
 
 	// Callback functions:
-	export let handleInputChange: (metricIndex: number, dayIndex: number, newValue?: number) => void;
+	export let handleInputChange:
+		| ((metricIndex: number, dayIndex: number, newValue?: number) => void)
+		| undefined = undefined;
 
 	// Add this function to check if a metric is editable
 	function isEditableMetric(name: string): boolean {
@@ -100,7 +102,7 @@
 				<strong>{value}</strong>
 			{:else if isSpacer}
 				<!-- Spacer formatting -->
-			{:else if isEditableMetric(name) && !isReadOnly}
+			{:else if isEditableMetric(name) && !isReadOnly && handleInputChange}
 				<!-- Editable input for metrics 1.1, 1.3, and 1.6 -->
 				<input
 					type="number"

@@ -11,7 +11,6 @@
 		getWowColor
 	} from './utils';
 	import MetricRow from './MetricRow.svelte';
-	import { testDirectInsert } from '$lib/notesService';
 	import { showToast } from '$lib/toastStore';
 	import { getScheduledHoursForDateRange } from '$lib/schedule/hours-service';
 	import {
@@ -42,13 +41,6 @@
 		isReadOnly?: boolean;
 		isSubItem?: boolean; // Add this line to fix the errors
 		tooltip?: string;
-	}
-	// Define the NoteData interface to resolve type errors.
-	interface NoteData {
-		id: string;
-		content: string;
-		createdAt: string;
-		updatedAt?: string;
 	}
 
 	const daysCount = 7;
@@ -557,14 +549,6 @@
 				new Date(endDateStr)
 			);
 
-			// Get other metrics from daily_metrics
-			const { data: prevWeekMetricsData } = await supabase
-				.from('daily_metrics')
-				.select('*')
-				.gte('date', startDateStr)
-				.lte('date', endDateStr)
-				.order('date');
-
 			// Fetch Linnworks and financial data for previous week
 			let linnworksOrdersData: LinnworksOrderData[] = [];
 			let prevWeekFinancialData: any = null;
@@ -602,26 +586,15 @@
 				// Continue without Linnworks/financial data
 			}
 
-			// Create a lookup map
+			// Create a lookup map for API data only
 			const dataByDay: Record<string, any> = {};
-			prevWeekMetricsData?.forEach((record) => {
-				dataByDay[record.date] = { ...record };
 
-				// Replace scheduled_hours with data from hours service if available
-				const hoursRecord = scheduledHoursData.find((h) => h.date === record.date);
-				if (hoursRecord) {
-					dataByDay[record.date].scheduled_hours = hoursRecord.hours;
-				}
-			});
-
-			// Add any dates that exist in hours service but not in metrics
+			// Add scheduled hours
 			scheduledHoursData.forEach((hoursRecord) => {
-				if (!dataByDay[hoursRecord.date]) {
-					dataByDay[hoursRecord.date] = {
-						date: hoursRecord.date,
-						scheduled_hours: hoursRecord.hours
-					};
-				}
+				dataByDay[hoursRecord.date] = {
+					date: hoursRecord.date,
+					scheduled_hours: hoursRecord.hours
+				};
 			});
 
 			// Add Linnworks data to the lookup map
@@ -684,17 +657,71 @@
 				const dateStr = previousWeekDates[i].toISOString().split('T')[0];
 				const data = dataByDay[dateStr];
 
-				metrics.forEach((metric, idx) => {
-					// For data rows (those with a non-null metricField), update the previous week values
-					if (metric.metricField !== null && data) {
-						let fieldName = metric.metricField;
-						if (fieldName === 'shipments_packed') fieldName = 'shipments';
+				// Only populate scheduled hours from hours service (no database metrics)
+				const scheduledHoursMetricIndex = metrics.findIndex(
+					(m) => m.name === '1.2 Scheduled Hours'
+				);
+				if (scheduledHoursMetricIndex !== -1 && data?.scheduled_hours !== undefined) {
+					previousWeekMetrics[scheduledHoursMetricIndex][i] = data.scheduled_hours || 0;
+					totals[scheduledHoursMetricIndex] += data.scheduled_hours || 0;
+				}
 
-						const val = data[fieldName] ?? 0;
-						previousWeekMetrics[idx][i] = val;
-						totals[idx] += val;
+				// Populate Linnworks and financial data for previous week
+				if (data) {
+					// Total Sales
+					const totalSalesIndex = metrics.findIndex((m) => m.name === '2.0 Total Sales');
+					if (totalSalesIndex !== -1 && data.total_sales !== undefined) {
+						previousWeekMetrics[totalSalesIndex][i] = data.total_sales || 0;
+						totals[totalSalesIndex] += data.total_sales || 0;
 					}
-				});
+
+					// Channel-specific sales
+					const amazonSalesIndex = metrics.findIndex((m) => m.name === '2.0.1 Amazon Sales');
+					if (amazonSalesIndex !== -1 && data.amazon_sales !== undefined) {
+						previousWeekMetrics[amazonSalesIndex][i] = data.amazon_sales || 0;
+						totals[amazonSalesIndex] += data.amazon_sales || 0;
+					}
+
+					const ebaySalesIndex = metrics.findIndex((m) => m.name === '2.0.2 eBay Sales');
+					if (ebaySalesIndex !== -1 && data.ebay_sales !== undefined) {
+						previousWeekMetrics[ebaySalesIndex][i] = data.ebay_sales || 0;
+						totals[ebaySalesIndex] += data.ebay_sales || 0;
+					}
+
+					const shopifySalesIndex = metrics.findIndex((m) => m.name === '2.0.3 Shopify Sales');
+					if (shopifySalesIndex !== -1 && data.shopify_sales !== undefined) {
+						previousWeekMetrics[shopifySalesIndex][i] = data.shopify_sales || 0;
+						totals[shopifySalesIndex] += data.shopify_sales || 0;
+					}
+
+					// Linnworks Total Orders
+					const linnworksTotalIndex = metrics.findIndex(
+						(m) => m.name === '2.1 Linnworks Total Orders'
+					);
+					if (linnworksTotalIndex !== -1 && data.linnworks_completed_orders !== undefined) {
+						previousWeekMetrics[linnworksTotalIndex][i] = data.linnworks_completed_orders || 0;
+						totals[linnworksTotalIndex] += data.linnworks_completed_orders || 0;
+					}
+
+					// Channel-specific orders
+					const amazonOrdersIndex = metrics.findIndex((m) => m.name === '2.1.1 Amazon Orders');
+					if (amazonOrdersIndex !== -1 && data.linnworks_amazon_orders !== undefined) {
+						previousWeekMetrics[amazonOrdersIndex][i] = data.linnworks_amazon_orders || 0;
+						totals[amazonOrdersIndex] += data.linnworks_amazon_orders || 0;
+					}
+
+					const ebayOrdersIndex = metrics.findIndex((m) => m.name === '2.1.2 eBay Orders');
+					if (ebayOrdersIndex !== -1 && data.linnworks_ebay_orders !== undefined) {
+						previousWeekMetrics[ebayOrdersIndex][i] = data.linnworks_ebay_orders || 0;
+						totals[ebayOrdersIndex] += data.linnworks_ebay_orders || 0;
+					}
+
+					const shopifyOrdersIndex = metrics.findIndex((m) => m.name === '2.1.3 Shopify Orders');
+					if (shopifyOrdersIndex !== -1 && data.linnworks_shopify_orders !== undefined) {
+						previousWeekMetrics[shopifyOrdersIndex][i] = data.linnworks_shopify_orders || 0;
+						totals[shopifyOrdersIndex] += data.linnworks_shopify_orders || 0;
+					}
+				}
 
 				// Populate employee hours data for previous week (overrides database values)
 				const totalHoursMetricIndex = metrics.findIndex((m) => m.name === '1.3 Total Hours Used');
@@ -881,19 +908,6 @@
 				.toISOString()
 				.split('T')[0];
 
-			// Fetch current week data
-			const { data: currentWeekData, error } = await supabase
-				.from('daily_metrics')
-				.select('*')
-				.gte('date', mondayStr)
-				.lte('date', sundayStr)
-				.order('date');
-
-			if (error) {
-				console.error('Error fetching metrics:', error);
-				throw error;
-			}
-
 			// Get scheduled hours from hours service
 			const scheduledHoursData = await getScheduledHoursForDateRange(
 				new Date(mondayStr),
@@ -960,26 +974,15 @@
 				// Continue without employee hours data
 			}
 
-			// Create a lookup map for database records
+			// Create a lookup map for API data
 			const dataByDay: Record<string, any> = {};
-			currentWeekData?.forEach((record) => {
-				dataByDay[record.date] = { ...record };
 
-				// Replace scheduled_hours with data from hours service if available
-				const hoursRecord = scheduledHoursData.find((h) => h.date === record.date);
-				if (hoursRecord) {
-					dataByDay[record.date].scheduled_hours = hoursRecord.hours;
-				}
-			});
-
-			// Add any dates that exist in hours service but not in metrics
+			// Add scheduled hours to lookup map
 			scheduledHoursData.forEach((hoursRecord) => {
-				if (!dataByDay[hoursRecord.date]) {
-					dataByDay[hoursRecord.date] = {
-						date: hoursRecord.date,
-						scheduled_hours: hoursRecord.hours
-					};
-				}
+				dataByDay[hoursRecord.date] = {
+					date: hoursRecord.date,
+					scheduled_hours: hoursRecord.hours
+				};
 			});
 
 			// Add Linnworks data to the lookup map
@@ -1039,29 +1042,72 @@
 				values: new Array(daysCount).fill(0)
 			}));
 
-			// Populate with data from database and APIs
+			// Populate with data from APIs only (no database fields)
 			for (let i = 0; i < weekDates.length; i++) {
 				const dateStr = weekDates[i].toISOString().split('T')[0];
 				const dayData = dataByDay[dateStr];
 
-				if (dayData) {
-					// Update each metric with database values
-					updatedMetrics.forEach((metric: any, metricIndex: number) => {
-						if (!metric.metricField) return;
+				// Populate scheduled hours from hours service
+				const scheduledHoursMetricIndex = updatedMetrics.findIndex(
+					(m) => m.name === '1.2 Scheduled Hours'
+				);
+				if (scheduledHoursMetricIndex !== -1 && dayData?.scheduled_hours !== undefined) {
+					updatedMetrics[scheduledHoursMetricIndex].values[i] = dayData.scheduled_hours || 0;
+				}
 
-						// Map metricField to actual database column names
-						let dbField = metric.metricField;
-						if (metric.metricField === 'shipments_packed') {
-							dbField = 'shipments'; // Correct field name from schema
-						}
-						if (dayData[dbField] !== undefined) {
-							if (dbField === 'total_sales') {
-								updatedMetrics[metricIndex].values[i] = dayData.total_sales || 0;
-							} else {
-								updatedMetrics[metricIndex].values[i] = dayData[dbField] || 0;
-							}
-						}
-					});
+				// Populate Linnworks orders data
+				if (dayData) {
+					// Total Sales
+					const totalSalesIndex = updatedMetrics.findIndex((m) => m.name === '2.0 Total Sales');
+					if (totalSalesIndex !== -1 && dayData.total_sales !== undefined) {
+						updatedMetrics[totalSalesIndex].values[i] = dayData.total_sales || 0;
+					}
+
+					// Channel-specific sales
+					const amazonSalesIndex = updatedMetrics.findIndex((m) => m.name === '2.0.1 Amazon Sales');
+					if (amazonSalesIndex !== -1 && dayData.amazon_sales !== undefined) {
+						updatedMetrics[amazonSalesIndex].values[i] = dayData.amazon_sales || 0;
+					}
+
+					const ebaySalesIndex = updatedMetrics.findIndex((m) => m.name === '2.0.2 eBay Sales');
+					if (ebaySalesIndex !== -1 && dayData.ebay_sales !== undefined) {
+						updatedMetrics[ebaySalesIndex].values[i] = dayData.ebay_sales || 0;
+					}
+
+					const shopifySalesIndex = updatedMetrics.findIndex(
+						(m) => m.name === '2.0.3 Shopify Sales'
+					);
+					if (shopifySalesIndex !== -1 && dayData.shopify_sales !== undefined) {
+						updatedMetrics[shopifySalesIndex].values[i] = dayData.shopify_sales || 0;
+					}
+
+					// Linnworks Total Orders
+					const linnworksTotalIndex = updatedMetrics.findIndex(
+						(m) => m.name === '2.1 Linnworks Total Orders'
+					);
+					if (linnworksTotalIndex !== -1 && dayData.linnworks_completed_orders !== undefined) {
+						updatedMetrics[linnworksTotalIndex].values[i] = dayData.linnworks_completed_orders || 0;
+					}
+
+					// Channel-specific orders
+					const amazonOrdersIndex = updatedMetrics.findIndex(
+						(m) => m.name === '2.1.1 Amazon Orders'
+					);
+					if (amazonOrdersIndex !== -1 && dayData.linnworks_amazon_orders !== undefined) {
+						updatedMetrics[amazonOrdersIndex].values[i] = dayData.linnworks_amazon_orders || 0;
+					}
+
+					const ebayOrdersIndex = updatedMetrics.findIndex((m) => m.name === '2.1.2 eBay Orders');
+					if (ebayOrdersIndex !== -1 && dayData.linnworks_ebay_orders !== undefined) {
+						updatedMetrics[ebayOrdersIndex].values[i] = dayData.linnworks_ebay_orders || 0;
+					}
+
+					const shopifyOrdersIndex = updatedMetrics.findIndex(
+						(m) => m.name === '2.1.3 Shopify Orders'
+					);
+					if (shopifyOrdersIndex !== -1 && dayData.linnworks_shopify_orders !== undefined) {
+						updatedMetrics[shopifyOrdersIndex].values[i] = dayData.linnworks_shopify_orders || 0;
+					}
 				}
 
 				// Populate employee hours data (overrides database values for this metric)
@@ -1123,212 +1169,6 @@
 		}
 	}
 
-	async function saveMetricsForDate(dateStr: string, metricsData: any) {
-		try {
-			console.log('Saving metrics for date:', dateStr, 'Data:', metricsData);
-
-			const { data, error } = await supabase
-				.from('daily_metrics')
-				.upsert(
-					{
-						date: dateStr,
-						...metricsData
-					},
-					{
-						onConflict: 'date'
-					}
-				)
-				.select(); // Chain select() to get the returned data
-
-			if (error) {
-				console.error('Error saving metrics:', error);
-			}
-
-			console.log('Metrics saved successfully');
-			return data;
-		} catch (err) {
-			console.error('Error in saveMetricsForDay:', err);
-			throw err;
-		}
-	}
-
-	async function saveMetricsForDay(dayIndex: number) {
-		try {
-			const dateStr = weekDates[dayIndex].toISOString().split('T')[0];
-
-			// Create a data object with exact database column names
-			const data: Record<string, any> = {
-				date: dateStr // Always include the date
-			};
-
-			// List of valid DB columns that exist in the daily_metrics table
-			const validColumns = [
-				'shipments',
-				'hours_worked',
-				'defects',
-				'scheduled_hours',
-				'dpmo',
-				'order_accuracy'
-			];
-
-			// Map metrics to database columns correctly based on your schema
-			metrics.forEach((metric: ExtendedMetric) => {
-				// Skip read-only fields, headers, spacers, and non-database fields
-				if (metric.isReadOnly || metric.isHeader || metric.isSpacer || !metric.metricField) return;
-
-				// Only save if there's a valid value AND the column exists in the database
-				if (metric.values[dayIndex] === null || metric.values[dayIndex] === undefined) {
-					return;
-				}
-
-				// Important: Check if this is a valid column before trying to save it
-				if (validColumns.includes(metric.metricField)) {
-					data[metric.metricField] = Number(metric.values[dayIndex]);
-				} else {
-					console.log(`Skipping save for non-existent column: ${metric.metricField}`);
-				}
-			});
-
-			console.log('Saving day data:', dateStr, data);
-
-			// Check if record exists first
-			const { data: existingRecord, error: fetchError } = await supabase
-				.from('daily_metrics')
-				.select('id')
-				.eq('date', dateStr)
-				.maybeSingle();
-
-			if (fetchError) {
-				console.error('Error checking for existing record:', fetchError);
-				showToast(
-					`Failed to check if record exists for ${dateStr}: ${fetchError.message}`,
-					'error'
-				);
-				throw fetchError;
-			}
-
-			let result;
-			if (existingRecord?.id) {
-				// Update existing record
-				result = await supabase.from('daily_metrics').update(data).eq('id', existingRecord.id);
-
-				if (result.error) {
-					console.error('Error updating metrics:', result.error);
-					showToast(`Failed to update data for ${dateStr}: ${result.error.message}`, 'error');
-					throw result.error;
-				}
-			} else {
-				// Insert new record
-				result = await supabase.from('daily_metrics').insert(data);
-
-				if (result.error) {
-					console.error('Error inserting metrics:', result.error);
-					showToast(`Failed to save data for ${dateStr}: ${result.error.message}`, 'error');
-					throw result.error;
-				}
-			}
-
-			// Ensure the toast is visible with a longer duration
-			showToast(
-				`Metrics for ${new Date(dateStr).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} updated`,
-				'success',
-				3000
-			);
-			return result;
-		} catch (err) {
-			console.error('Failed to save day:', dayIndex, err);
-			// Make sure error is displayed in the toast
-			showToast(
-				`Failed to save data: ${err instanceof Error ? err.message : 'Unknown error'}`,
-				'error',
-				5000
-			);
-			throw err;
-		}
-	}
-
-	async function saveAllMetrics() {
-		try {
-			loading = true;
-			console.log('Starting saveAllMetrics...');
-
-			for (let i = 0; i < weekDates.length; i++) {
-				await saveMetricsForDay(i);
-			}
-
-			await tick();
-			await loadMetrics();
-			await loadPreviousWeekTotals();
-
-			console.log('saveAllMetrics completed successfully');
-			showToast('All metrics saved successfully', 'success');
-			loading = false;
-		} catch (err) {
-			console.error('Failed to save all metrics:', err);
-			showToast('Failed to save all metrics', 'error');
-			loading = false;
-		}
-	}
-
-	function handleInputChange(metricIndex: number, dayIndex: number, newValue?: number) {
-		if (newValue === undefined) return;
-
-		console.log('Input changed:', {
-			metricIndex,
-			dayIndex,
-			date: weekDates[dayIndex].toISOString().split('T')[0],
-			metricName: metrics[metricIndex].name,
-			newValue
-		});
-
-		// Get metric and check if it's read-only or Linnworks data
-		const metric = metrics[metricIndex];
-		if (metric.isReadOnly) {
-			showToast(`"${metric.name}" is read-only. It's automatically updated.`, 'info');
-			return;
-		}
-
-		if (metric.metricField === 'linnworks_completed_orders') {
-			showToast(
-				`"${metric.name}" is retrieved from the Linnworks API and cannot be edited.`,
-				'info'
-			);
-			return;
-		}
-
-		// Update the metric value in the array
-		const newValues = [...metric.values];
-		newValues[dayIndex] = newValue;
-
-		// Create a new metrics array with the updated values
-		metrics = metrics.map((m, i) => {
-			if (i === metricIndex) {
-				return { ...m, values: newValues };
-			}
-			return m;
-		});
-
-		// Save the updated metric for this specific day and reload fresh data
-		saveMetricsForDay(dayIndex)
-			.then(async () => {
-				// Reload all data to ensure fresh API data and computed metrics are updated
-				await tick();
-				await loadMetrics();
-				await loadPreviousWeekTotals();
-
-				// Show success message
-				showToast(
-					`Updated ${metric.name} for ${weekDates[dayIndex].toLocaleDateString(undefined, { weekday: 'long' })}`,
-					'success',
-					2000
-				);
-			})
-			.catch((err) => {
-				console.error('Failed to save after input change:', err);
-				showToast(`Failed to save ${metric.name}`, 'error');
-			});
-	}
-
 	async function changeWeek(offset: number) {
 		weekOffset += offset;
 		await tick();
@@ -1339,7 +1179,7 @@
 
 	// Helper function to fetch fresh current week data for upload (not for display)
 	async function fetchFreshCurrentWeekData(): Promise<ExtendedMetric[]> {
-		console.log('Fetching fresh current week data for upload...');
+		console.log('🚀 Starting fetchFreshCurrentWeekData for upload...');
 
 		// Format dates for current week
 		const mondayStr = displayedMonday.toISOString().split('T')[0];
@@ -1347,26 +1187,32 @@
 			.toISOString()
 			.split('T')[0];
 
-		// Fetch current week data from Supabase
-		const { data: currentWeekData, error } = await supabase
-			.from('daily_metrics')
-			.select('*')
-			.gte('date', mondayStr)
-			.lte('date', sundayStr)
-			.order('date');
+		const currentWeekStart = new Date(mondayStr);
+		const currentWeekEnd = new Date(sundayStr);
+		const weekRange = `${mondayStr} to ${sundayStr}`;
 
-		if (error) {
-			console.error('Error fetching fresh current week data:', error);
-			throw error;
-		}
+		console.log(`📅 UPLOAD TARGET WEEK: ${weekRange}`);
+		console.log(
+			`🎯 Current week validation bounds: ${currentWeekStart.toISOString()} to ${currentWeekEnd.toISOString()}`
+		);
 
 		// Get scheduled hours from hours service
 		const scheduledHoursData = await getScheduledHoursForDateRange(
-			new Date(mondayStr),
-			new Date(sundayStr)
+			currentWeekStart,
+			currentWeekEnd
 		);
 
+		// Validate scheduled hours data
+		validateCurrentWeekData(
+			scheduledHoursData,
+			currentWeekStart,
+			currentWeekEnd,
+			'Scheduled Hours API'
+		);
+		logDataSources(scheduledHoursData, 'Scheduled Hours Service', weekRange);
+
 		// Get fresh Linnworks and financial data for current week
+		console.log(`🔄 Fetching Linnworks and Financial data for: ${weekRange}`);
 		const [linnworksResponse, financialResponse] = await Promise.all([
 			fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
 			fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
@@ -1380,29 +1226,30 @@
 		const linnworksOrdersData = linnworksData.dailyOrders || [];
 		const financialData = financialJson.dailyData || [];
 
+		// Validate API data for current week
+		validateCurrentWeekData(
+			linnworksOrdersData,
+			currentWeekStart,
+			currentWeekEnd,
+			'Linnworks Orders API'
+		);
+		validateCurrentWeekData(financialData, currentWeekStart, currentWeekEnd, 'Financial Data API');
+
+		logDataSources(linnworksOrdersData, 'Linnworks Orders API', weekRange);
+		logDataSources(financialData, 'Financial Data API', weekRange);
+
 		// Create a fresh copy of metrics for current week only
 		let freshMetrics = JSON.parse(JSON.stringify(metrics));
 
 		// Create lookup map for fresh data
 		const dataByDay: Record<string, any> = {};
-		currentWeekData?.forEach((record) => {
-			dataByDay[record.date] = { ...record };
 
-			// Add scheduled hours
-			const hoursRecord = scheduledHoursData.find((h) => h.date === record.date);
-			if (hoursRecord) {
-				dataByDay[record.date].scheduled_hours = hoursRecord.hours;
-			}
-		});
-
-		// Add any dates that exist in hours service but not in metrics
+		// Add scheduled hours
 		scheduledHoursData.forEach((hoursRecord) => {
-			if (!dataByDay[hoursRecord.date]) {
-				dataByDay[hoursRecord.date] = {
-					date: hoursRecord.date,
-					scheduled_hours: hoursRecord.hours
-				};
-			}
+			dataByDay[hoursRecord.date] = {
+				date: hoursRecord.date,
+				scheduled_hours: hoursRecord.hours
+			};
 		});
 
 		// Add fresh Linnworks data
@@ -1433,34 +1280,206 @@
 			}
 		});
 
-		// Populate fresh metrics with current week data
+		// Populate fresh metrics with current week data (API data only)
 		for (let i = 0; i < weekDates.length; i++) {
 			const dateStr = weekDates[i].toISOString().split('T')[0];
 			const dayData = dataByDay[dateStr];
 
-			if (dayData) {
-				freshMetrics = freshMetrics.map((metric: any) => {
-					if (!metric.metricField) return metric;
+			// Populate scheduled hours from hours service
+			if (dayData?.scheduled_hours !== undefined) {
+				const scheduledHoursIndex = freshMetrics.findIndex(
+					(m: any) => m.name === '1.2 Scheduled Hours'
+				);
+				if (scheduledHoursIndex !== -1) {
+					const newValues = [...freshMetrics[scheduledHoursIndex].values];
+					newValues[i] = dayData.scheduled_hours || 0;
+					freshMetrics[scheduledHoursIndex] = {
+						...freshMetrics[scheduledHoursIndex],
+						values: newValues
+					};
+				}
+			}
 
-					let dbField = metric.metricField;
-					if (metric.metricField === 'shipments_packed') {
-						dbField = 'shipments';
-					}
-					if (dayData[dbField] !== undefined) {
-						const newValues = [...metric.values];
-						if (dbField === 'total_sales') {
-							newValues[i] = dayData.total_sales || 0;
-						} else {
-							newValues[i] = dayData[dbField] || 0;
-						}
-						return { ...metric, values: newValues };
-					}
-					return metric;
-				});
+			// Populate Linnworks and financial data
+			if (dayData) {
+				// Total Sales
+				const totalSalesIndex = freshMetrics.findIndex((m: any) => m.name === '2.0 Total Sales');
+				if (totalSalesIndex !== -1 && dayData.total_sales !== undefined) {
+					const newValues = [...freshMetrics[totalSalesIndex].values];
+					newValues[i] = dayData.total_sales || 0;
+					freshMetrics[totalSalesIndex] = { ...freshMetrics[totalSalesIndex], values: newValues };
+				}
+
+				// Channel-specific sales
+				const amazonSalesIndex = freshMetrics.findIndex(
+					(m: any) => m.name === '2.0.1 Amazon Sales'
+				);
+				if (amazonSalesIndex !== -1 && dayData.amazon_sales !== undefined) {
+					const newValues = [...freshMetrics[amazonSalesIndex].values];
+					newValues[i] = dayData.amazon_sales || 0;
+					freshMetrics[amazonSalesIndex] = { ...freshMetrics[amazonSalesIndex], values: newValues };
+				}
+
+				const ebaySalesIndex = freshMetrics.findIndex((m: any) => m.name === '2.0.2 eBay Sales');
+				if (ebaySalesIndex !== -1 && dayData.ebay_sales !== undefined) {
+					const newValues = [...freshMetrics[ebaySalesIndex].values];
+					newValues[i] = dayData.ebay_sales || 0;
+					freshMetrics[ebaySalesIndex] = { ...freshMetrics[ebaySalesIndex], values: newValues };
+				}
+
+				const shopifySalesIndex = freshMetrics.findIndex(
+					(m: any) => m.name === '2.0.3 Shopify Sales'
+				);
+				if (shopifySalesIndex !== -1 && dayData.shopify_sales !== undefined) {
+					const newValues = [...freshMetrics[shopifySalesIndex].values];
+					newValues[i] = dayData.shopify_sales || 0;
+					freshMetrics[shopifySalesIndex] = {
+						...freshMetrics[shopifySalesIndex],
+						values: newValues
+					};
+				}
+
+				// Linnworks Total Orders
+				const linnworksTotalIndex = freshMetrics.findIndex(
+					(m: any) => m.name === '2.1 Linnworks Total Orders'
+				);
+				if (linnworksTotalIndex !== -1 && dayData.linnworks_completed_orders !== undefined) {
+					const newValues = [...freshMetrics[linnworksTotalIndex].values];
+					newValues[i] = dayData.linnworks_completed_orders || 0;
+					freshMetrics[linnworksTotalIndex] = {
+						...freshMetrics[linnworksTotalIndex],
+						values: newValues
+					};
+				}
+
+				// Channel-specific orders
+				const amazonOrdersIndex = freshMetrics.findIndex(
+					(m: any) => m.name === '2.1.1 Amazon Orders'
+				);
+				if (amazonOrdersIndex !== -1 && dayData.linnworks_amazon_orders !== undefined) {
+					const newValues = [...freshMetrics[amazonOrdersIndex].values];
+					newValues[i] = dayData.linnworks_amazon_orders || 0;
+					freshMetrics[amazonOrdersIndex] = {
+						...freshMetrics[amazonOrdersIndex],
+						values: newValues
+					};
+				}
+
+				const ebayOrdersIndex = freshMetrics.findIndex((m: any) => m.name === '2.1.2 eBay Orders');
+				if (ebayOrdersIndex !== -1 && dayData.linnworks_ebay_orders !== undefined) {
+					const newValues = [...freshMetrics[ebayOrdersIndex].values];
+					newValues[i] = dayData.linnworks_ebay_orders || 0;
+					freshMetrics[ebayOrdersIndex] = { ...freshMetrics[ebayOrdersIndex], values: newValues };
+				}
+
+				const shopifyOrdersIndex = freshMetrics.findIndex(
+					(m: any) => m.name === '2.1.3 Shopify Orders'
+				);
+				if (shopifyOrdersIndex !== -1 && dayData.linnworks_shopify_orders !== undefined) {
+					const newValues = [...freshMetrics[shopifyOrdersIndex].values];
+					newValues[i] = dayData.linnworks_shopify_orders || 0;
+					freshMetrics[shopifyOrdersIndex] = {
+						...freshMetrics[shopifyOrdersIndex],
+						values: newValues
+					};
+				}
 			}
 		}
 
-		console.log('Fetched fresh current week data:', freshMetrics);
+		// ⚠️ CRITICAL: Fetch fresh employee hours data for current week upload
+		console.log(`👥 Fetching Employee Hours data for upload: ${weekRange}`);
+		let employeeHoursData: Record<string, number> = {};
+		let employeeRoleBreakdowns: Record<
+			string,
+			{
+				management: number;
+				packing: number;
+				picking: number;
+			}
+		> = {};
+
+		try {
+			const hoursResult = await loadEmployeeHoursForDateRange(currentWeekStart, currentWeekEnd);
+			employeeHoursData = hoursResult.totalHours;
+			employeeRoleBreakdowns = hoursResult.roleBreakdowns;
+
+			// Validate employee hours data dates
+			Object.keys(employeeHoursData).forEach((dateStr) => {
+				const dataDate = new Date(dateStr);
+				const isInRange = dataDate >= currentWeekStart && dataDate <= currentWeekEnd;
+				if (!isInRange) {
+					const error = `❌ EMPLOYEE HOURS CONTAMINATION: Data for ${dateStr} is outside current week ${weekRange}`;
+					console.error(error);
+					throw new Error(error);
+				}
+			});
+
+			logDataSources(employeeHoursData, 'Employee Hours Service (Upload)', weekRange);
+			console.log(`✅ Employee hours data validated for current week upload`);
+
+			// Populate employee hours data into fresh metrics
+			for (let i = 0; i < weekDates.length; i++) {
+				const dateStr = weekDates[i].toISOString().split('T')[0];
+
+				// Total Hours Used
+				const totalHoursIndex = freshMetrics.findIndex(
+					(m: any) => m.name === '1.3 Total Hours Used'
+				);
+				if (totalHoursIndex !== -1 && employeeHoursData[dateStr] !== undefined) {
+					const newValues = [...freshMetrics[totalHoursIndex].values];
+					newValues[i] = employeeHoursData[dateStr] || 0;
+					freshMetrics[totalHoursIndex] = { ...freshMetrics[totalHoursIndex], values: newValues };
+					console.log(`📊 Upload: Set Total Hours for ${dateStr}: ${employeeHoursData[dateStr]}`);
+				}
+
+				// Role breakdown hours
+				const roleBreakdown = employeeRoleBreakdowns[dateStr];
+				if (roleBreakdown) {
+					// Management Hours
+					const managementIndex = freshMetrics.findIndex(
+						(m: any) => m.name === '1.3.1 Management Hours Used'
+					);
+					if (managementIndex !== -1) {
+						const newValues = [...freshMetrics[managementIndex].values];
+						newValues[i] = roleBreakdown.management || 0;
+						freshMetrics[managementIndex] = { ...freshMetrics[managementIndex], values: newValues };
+						console.log(
+							`📊 Upload: Set Management Hours for ${dateStr}: ${roleBreakdown.management}`
+						);
+					}
+
+					// Packing Hours
+					const packingIndex = freshMetrics.findIndex(
+						(m: any) => m.name === '1.3.2 Packing Hours Used'
+					);
+					if (packingIndex !== -1) {
+						const newValues = [...freshMetrics[packingIndex].values];
+						newValues[i] = roleBreakdown.packing || 0;
+						freshMetrics[packingIndex] = { ...freshMetrics[packingIndex], values: newValues };
+						console.log(`📊 Upload: Set Packing Hours for ${dateStr}: ${roleBreakdown.packing}`);
+					}
+
+					// Picking Hours
+					const pickingIndex = freshMetrics.findIndex(
+						(m: any) => m.name === '1.3.3 Picking Hours Used'
+					);
+					if (pickingIndex !== -1) {
+						const newValues = [...freshMetrics[pickingIndex].values];
+						newValues[i] = roleBreakdown.picking || 0;
+						freshMetrics[pickingIndex] = { ...freshMetrics[pickingIndex], values: newValues };
+						console.log(`📊 Upload: Set Picking Hours for ${dateStr}: ${roleBreakdown.picking}`);
+					}
+				}
+			}
+		} catch (err) {
+			console.error('❌ Failed to fetch or validate employee hours data for upload:', err);
+			throw new Error(`Employee hours data validation failed: ${err}`);
+		}
+
+		// Final validation of fresh metrics before return
+		validateMetricDataForUpload(freshMetrics, currentWeekStart, currentWeekEnd);
+
+		console.log('✅ Fresh current week data validated and ready for upload:', freshMetrics);
 		return freshMetrics;
 	}
 
@@ -1597,44 +1616,84 @@
 		}
 	}
 
-	// Function to test the database connection and table
-	async function runTest() {
-		console.log('Running direct insert test...');
-		const result = await testDirectInsert();
-		console.log('Test direct insert result:', result);
-	}
-
-	// Fix incomplete function definitions.
-	async function openNotePanel(metricIndex: number, dayIndex: number) {
-		console.log('Opening note panel for metric index:', metricIndex, 'day index:', dayIndex);
-		// Add implementation or leave as a placeholder.
-	}
-
-	function closeMetricsPanel() {
-		console.log('Closing metrics panel');
-		// Add implementation or leave as a placeholder.
-	}
-
-	async function handleUpdateNote(event: CustomEvent<{ updatedNote: NoteData }>) {
-		console.log('Handling note update:', event.detail.updatedNote);
-		// Add implementation or leave as a placeholder.
-	}
-
-	function flagClicked(metricIndex: number, dayIndex: number) {
-		console.log('Flag clicked for metric index:', metricIndex, 'day index:', dayIndex);
-		// Add implementation or leave as a placeholder.
-	}
-
 	// Helper function for formatting dates
 	function getFormattedDate(date: Date): string {
 		return date.toISOString().split('T')[0];
 	}
 
+	// Phase 1: Date validation guards for upload integrity
+	function validateCurrentWeekData(
+		data: any[],
+		expectedWeekStart: Date,
+		expectedWeekEnd: Date,
+		dataSource: string
+	): void {
+		const weekStartStr = getFormattedDate(expectedWeekStart);
+		const weekEndStr = getFormattedDate(expectedWeekEnd);
+
+		console.log(
+			`🔍 Validating ${dataSource} data for current week range: ${weekStartStr} to ${weekEndStr}`
+		);
+
+		data.forEach((dayData, index) => {
+			if (!dayData || !dayData.date) {
+				console.warn(`⚠️ Missing date in ${dataSource} data at index ${index}`);
+				return;
+			}
+
+			const dataDate = new Date(dayData.date);
+			const isInRange = dataDate >= expectedWeekStart && dataDate <= expectedWeekEnd;
+
+			if (!isInRange) {
+				const error = `❌ CONTAMINATION DETECTED: ${dataSource} contains data from ${dayData.date} which is outside current week range ${weekStartStr} to ${weekEndStr}`;
+				console.error(error);
+				throw new Error(error);
+			}
+
+			console.log(`✅ ${dataSource} data for ${dayData.date}: VALID (within current week)`);
+		});
+	}
+
+	function validateMetricDataForUpload(
+		metrics: ExtendedMetric[],
+		weekStartDate: Date,
+		weekEndDate: Date
+	): void {
+		console.log(
+			`🔍 Validating metrics data for upload - Current week: ${getFormattedDate(weekStartDate)} to ${getFormattedDate(weekEndDate)}`
+		);
+
+		metrics.forEach((metric, metricIndex) => {
+			if (!metric.values || metric.values.length === 0) return;
+
+			// Check if metric has any non-zero values outside current week
+			metric.values.forEach((value, dayIndex) => {
+				if (value !== 0 && dayIndex < weekDates.length) {
+					const dayDate = weekDates[dayIndex];
+					const isInRange = dayDate >= weekStartDate && dayDate <= weekEndDate;
+
+					if (!isInRange) {
+						const error = `❌ METRIC CONTAMINATION: ${metric.name} has value ${value} for ${getFormattedDate(dayDate)} which is outside current week`;
+						console.error(error);
+						throw new Error(error);
+					}
+				}
+			});
+		});
+
+		console.log(`✅ All metrics data validated for current week upload`);
+	}
+
+	function logDataSources(data: any, source: string, weekRange: string): void {
+		console.log(`📊 DATA SOURCE AUDIT: ${source}`);
+		console.log(`📅 Week Range: ${weekRange}`);
+		console.log(`📈 Sample Data:`, data);
+		console.log(`🔢 Data Count:`, Array.isArray(data) ? data.length : 'Single object');
+	}
+
 	onMount(() => {
 		loadMetrics();
 		loadPreviousWeekTotals();
-		// Run test to check if direct inserts work
-		runTest();
 	});
 
 	$: previousWeekMetrics = metrics.map((metric: ExtendedMetric, idx): number[] => {
@@ -1929,7 +1988,6 @@
 										metric.name === '1.6 Packing Errors' ||
 										metric.name === '1.7 Packing Errors DPMO'
 								)}
-								{handleInputChange}
 								currentTotal={currentTotals[metricIndex]}
 								byThisTimeLastWeek={isCurrentWeek
 									? partialPreviousTotalsComputed[metricIndex]
@@ -1947,13 +2005,6 @@
 			</table>
 		{/if}
 	</div>
-</div>
-
-<!-- Chart Footer: Save All Changes button aligned right -->
-<div class="chart-footer">
-	<button on:click={saveAllMetrics} disabled={loading}>
-		{loading ? 'Saving...' : 'Save All Changes'}
-	</button>
 </div>
 
 <style>
@@ -2101,37 +2152,6 @@
 		border-top: 1px solid #e5e7eb;
 		border-bottom: 1px solid #e5e7eb;
 		color: #004225; /* Darker green text for better contrast */
-	}
-
-	.chart-footer {
-		display: flex;
-		justify-content: flex-end; /* Align to the right */
-		padding: 12px 24px; /* Match the card's horizontal padding */
-		margin: 0 24px; /* Match the card's horizontal margin */
-	}
-
-	.chart-footer button {
-		background: #004225;
-		color: #fff;
-		border: none;
-		padding: 8px 14px;
-		font-size: 0.9em;
-		font-weight: 500; /* Medium weight instead of bold */
-		cursor: pointer;
-		border-radius: 6px; /* More rounded corners */
-		transition: all 0.2s ease;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Subtle shadow */
-	}
-
-	.chart-footer button:hover {
-		background: #006339; /* Slightly darker on hover for depth */
-		transform: translateY(-1px); /* Subtle lift effect */
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-	}
-
-	.chart-footer button:active {
-		transform: translateY(0); /* Press effect */
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 	}
 
 	/* Add subtle hover effect to table rows */
