@@ -221,10 +221,12 @@ async function fetchFreshCurrentWeekData(): Promise<{ metrics: ExtendedMetric[],
 	// Get fresh Linnworks and financial data for current week
 	console.log(`🔄 API: Fetching Linnworks and Financial data for: ${weekRange}`);
 	
-	// Get the base URL for internal API calls
+	// Get the base URL for internal API calls - Fixed for Netlify
 	const baseUrl = process.env.NODE_ENV === 'production' 
-		? `https://${process.env.VERCEL_URL || 'localhost:5173'}` 
-		: 'http://localhost:5173';
+		? `https://jackweston.netlify.app` 
+		: 'http://localhost:3001';
+	
+	console.log(`🌐 Using base URL: ${baseUrl}`);
 	
 	const [linnworksResponse, financialResponse] = await Promise.all([
 		fetch(`${baseUrl}/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
@@ -483,14 +485,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		const { weekOffset = 0 } = body as { weekOffset?: number };
+		console.log(`📊 API: Upload request for week offset: ${weekOffset}`);
 
 		// Step 1: Fetch fresh current week data (with optional week offset)
+		console.log('📥 API: Step 1 - Fetching fresh current week data...');
 		const { metrics: currentWeekMetrics, weekDates } = await fetchFreshCurrentWeekData();
 
 		// Step 2: Compute current week metrics from fresh data
+		console.log('🧮 API: Step 2 - Computing metrics from fresh data...');
 		const currentWeekComputedMetrics = computeCurrentWeekMetrics(currentWeekMetrics, weekDates);
 
 		// Step 3: Transform current week data for upload
+		console.log('🔄 API: Step 3 - Transforming data for upload...');
 		const reviewData = transformMetricsForReview(
 			currentWeekMetrics,
 			weekDates,
@@ -500,6 +506,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		console.log('API: Transformed fresh current week data for upload:', reviewData);
 
 		// Step 4: Upload to Supabase
+		console.log('☁️ API: Step 4 - Uploading to Supabase...');
 		const success = await uploadDailyMetricReview(reviewData);
 
 		if (success) {
@@ -521,10 +528,12 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	} catch (err) {
 		console.error('❌ API: Error uploading metric review:', err);
+		console.error('❌ API: Error stack:', err instanceof Error ? err.stack : 'No stack trace');
 		
 		return new Response(JSON.stringify({ 
 			success: false, 
 			error: err instanceof Error ? err.message : 'Unknown error occurred',
+			stack: err instanceof Error ? err.stack : undefined,
 			timestamp: new Date().toISOString()
 		}), {
 			status: 500,
