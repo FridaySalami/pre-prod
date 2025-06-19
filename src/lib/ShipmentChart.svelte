@@ -1228,9 +1228,9 @@
 
 		// Get fresh Linnworks and financial data for current week
 		console.log(`🔄 Fetching Linnworks and Financial data for: ${weekRange}`);
-		
+
 		let linnworksData, financialJson;
-		
+
 		if (preloadedData.usePreloaded && preloadedData.linnworks && preloadedData.financial) {
 			console.log('📦 Using preloaded data from dashboard');
 			linnworksData = preloadedData.linnworks;

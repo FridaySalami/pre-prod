@@ -158,7 +158,7 @@
 			}, 900);
 
 			// Phase 4: Linnworks API - will be completed when API actually finishes
-			// (no timeout here, it's handled by the console monitoring)
+			// (handled by the comprehensive validation system)
 
 			// Phase 5: Financial data (slow) - wait a bit longer since Linnworks timing is variable
 			setTimeout(() => {
@@ -166,33 +166,15 @@
 				animateProgress('financial', 100, 350);
 				updateLoadingMessage();
 
-				// Wait for both Linnworks completion and a minimum display time
-				const waitForCompletion = () => {
-					if (!loadingStates.linnworks && dashboardReady) {
-						// Keep the Linnworks status message visible during final completion
-						setTimeout(() => {
-							showLinnworksStatus = false; // Hide the status message
-
-							// Add an additional 0.5 second delay before loading the page
-							setTimeout(() => {
-								console.log('🎯 Dashboard loading complete - Preloaded data ready:', {
-									hasLinnworksData: !!preloadedChartData.linnworks,
-									hasFinancialData: !!preloadedChartData.financial,
-									usePreloaded: preloadedChartData.usePreloaded
-								});
-								loading = false;
-								showToast('Dashboard loaded successfully', 'success');
-							}, 500);
-						}, 1500);
-					} else {
-						// Check again in 200ms
-						setTimeout(waitForCompletion, 200);
-					}
-				};
-				waitForCompletion();
+				// Financial loading is complete, check if ready to render
+				checkIfReadyToRender();
 			}, 3000); // Increased timeout to give more time for Linnworks
 		} catch (err) {
 			handleError(err, 'initialize dashboard');
+			// Ensure we don't get stuck in loading state
+			apiResponsesComplete = true;
+			dataValidationPassed = true;
+			dashboardReady = true;
 			loading = false;
 		}
 	}
@@ -202,12 +184,123 @@
 	let linnworksDataQuality = { totalOrders: 0, expectedMinimum: 100 }; // Track data quality - expect at least 100 orders for a complete week
 	let activePollingInterval: NodeJS.Timeout | null = null; // Track active polling for cleanup
 
+	// Enhanced validation flags
+	let dataValidationPassed = false;
+	let minimumLoadTimeElapsed = false;
+	let apiResponsesComplete = false;
+
+	// Comprehensive data validation
+	function validateDataCompleteness(linnworksData: any, financialData: any): boolean {
+		console.log('🔍 Running comprehensive data validation...');
+
+		// Check 1: Basic structure validation
+		if (
+			!linnworksData ||
+			!linnworksData.dailyOrders ||
+			!financialData ||
+			!financialData.dailyData
+		) {
+			console.log('❌ Validation failed: Missing basic data structure');
+			return false;
+		}
+
+		// Check 2: Order count validation
+		const totalOrders = linnworksData.summary?.totalOrders || 0;
+		if (totalOrders < linnworksDataQuality.expectedMinimum) {
+			console.log('❌ Validation failed: Insufficient order count', {
+				totalOrders,
+				expected: linnworksDataQuality.expectedMinimum
+			});
+			return false;
+		}
+
+		// Check 3: Daily data completeness (should have 7 days)
+		const dailyOrdersCount = linnworksData.dailyOrders?.length || 0;
+		if (dailyOrdersCount < 7) {
+			console.log('❌ Validation failed: Incomplete daily data', { days: dailyOrdersCount });
+			return false;
+		}
+
+		// Check 4: Data distribution validation (at least some days should have orders)
+		const daysWithOrders = linnworksData.dailyOrders.filter((day: any) => day.count > 0).length;
+		if (daysWithOrders === 0) {
+			console.log('❌ Validation failed: No days with orders found');
+			return false;
+		}
+
+		// Check 5: Channel data validation (should have channel breakdown)
+		const hasChannelData = linnworksData.dailyOrders.some(
+			(day: any) =>
+				day.channels &&
+				(day.channels.amazon > 0 || day.channels.ebay > 0 || day.channels.shopify > 0)
+		);
+		if (!hasChannelData && totalOrders > 0) {
+			console.log('⚠️  Warning: No channel breakdown data found, but proceeding...');
+		}
+
+		// Check 6: Financial data validation
+		const financialDaysCount = financialData.dailyData?.length || 0;
+		if (financialDaysCount < 7) {
+			console.log('❌ Validation failed: Incomplete financial data', {
+				financialDays: financialDaysCount
+			});
+			return false;
+		}
+
+		console.log('✅ All data validation checks passed:', {
+			totalOrders,
+			dailyOrdersCount,
+			daysWithOrders,
+			hasChannelData,
+			financialDaysCount
+		});
+
+		return true;
+	}
+
+	// Ensure minimum loading time for better UX
+	function enforceMinimumLoadTime() {
+		setTimeout(() => {
+			minimumLoadTimeElapsed = true;
+			console.log('⏱️  Minimum load time elapsed');
+			checkIfReadyToRender();
+		}, 2500); // Minimum 2.5 seconds loading time
+	}
+
+	// Check if all conditions are met to render the dashboard
+	function checkIfReadyToRender() {
+		const allConditionsMet =
+			dataValidationPassed &&
+			minimumLoadTimeElapsed &&
+			apiResponsesComplete &&
+			linnworksApiCompleted &&
+			dashboardReady;
+
+		console.log('🎯 Checking render readiness:', {
+			dataValidationPassed,
+			minimumLoadTimeElapsed,
+			apiResponsesComplete,
+			linnworksApiCompleted,
+			dashboardReady,
+			allConditionsMet
+		});
+
+		if (allConditionsMet) {
+			console.log('🚀 All conditions met - Ready to render dashboard');
+			// Final delay before showing dashboard
+			setTimeout(() => {
+				loading = false;
+				showToast('Dashboard loaded successfully', 'success');
+			}, 500);
+		}
+	}
+
 	// Track data source status
 	let dataSourceStatus = {
 		linnworks: { isCached: false, isLoaded: false },
 		financial: { isCached: false, isLoaded: false }
 	};
-	
+
 	// Store preloaded data for ShipmentChart
 	let preloadedChartData = {
 		linnworks: null,
@@ -232,6 +325,9 @@
 
 			console.log('🔄 Starting dashboard data preload for week:', mondayStr, 'to', sundayStr);
 
+			// Start minimum load time enforcement
+			enforceMinimumLoadTime();
+
 			// Make initial API calls
 			const [linnworksResponse, financialResponse] = await Promise.all([
 				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
@@ -240,23 +336,32 @@
 
 			if (!linnworksResponse.ok || !financialResponse.ok) {
 				console.warn('Some API calls failed during preload, but continuing...');
+				apiResponsesComplete = true;
 				dashboardReady = true;
+				checkIfReadyToRender();
 				return;
-			}			const [linnworksData, financialData] = await Promise.all([
+			}
+			const [linnworksData, financialData] = await Promise.all([
 				linnworksResponse.json(),
 				financialResponse.json()
 			]);
-			
+
+			// Mark API responses as complete
+			apiResponsesComplete = true;
+
 			// Store preloaded data for ShipmentChart
 			preloadedChartData.linnworks = linnworksData;
 			preloadedChartData.financial = financialData;
 			preloadedChartData.usePreloaded = true;
-			
+
 			// Update data source status
 			dataSourceStatus.linnworks.isCached = linnworksData.isCached || false;
 			dataSourceStatus.linnworks.isLoaded = true;
 			dataSourceStatus.financial.isCached = financialData.isCached || false;
 			dataSourceStatus.financial.isLoaded = true;
+
+			// Run comprehensive data validation
+			dataValidationPassed = validateDataCompleteness(linnworksData, financialData);
 
 			// Check the quality of Linnworks data to determine if paginated fetch is complete
 			const totalOrders = linnworksData.summary?.totalOrders || 0;
@@ -277,18 +382,9 @@
 			// Update data quality tracking
 			linnworksDataQuality.totalOrders = totalOrders;
 
-			// For a typical week, we expect at least some orders if the business is operating
-			// If we have substantial data (> 100 orders for the week), likely paginated fetch is complete
-			// If not, we'll poll for better data
-			console.log('📊 Evaluating Linnworks data completeness:', {
-				totalOrders,
-				expectedMinimum: linnworksDataQuality.expectedMinimum,
-				isComplete: totalOrders >= linnworksDataQuality.expectedMinimum,
-				dailyOrdersStructure: !!linnworksData.dailyOrders
-			});
-
-			if (totalOrders >= linnworksDataQuality.expectedMinimum || dailyOrdersCount === 7) {
-				console.log('✅ Linnworks data appears complete on first fetch');
+			// If data validation passed and we have substantial data, mark as complete
+			if (dataValidationPassed && totalOrders >= linnworksDataQuality.expectedMinimum) {
+				console.log('✅ Linnworks data validation passed on first fetch');
 				linnworksApiCompleted = true;
 
 				// Mark the Linnworks loading phase as complete
@@ -301,14 +397,19 @@
 				}
 
 				dashboardReady = true;
+				checkIfReadyToRender();
 			} else {
-				console.log('⏳ Linnworks data seems incomplete, will poll for updates...');
+				console.log('⏳ Data validation failed or insufficient data, will poll for updates...');
 				// Start polling for better data
 				pollForCompleteData(mondayStr, sundayStr);
 			}
 		} catch (err) {
 			console.error('Error preloading dashboard data:', err);
-			dashboardReady = true; // Still show dashboard even if preload failed
+			// Set flags to allow rendering even if preload failed
+			apiResponsesComplete = true;
+			dataValidationPassed = true;
+			dashboardReady = true;
+			checkIfReadyToRender();
 		}
 	}
 
@@ -333,14 +434,18 @@
 				);
 				if (!response.ok) {
 					throw new Error('API call failed');
-				}				const data = await response.json();
+				}
+				const data = await response.json();
 				const totalOrders = data.summary?.totalOrders || 0;
-				
+
 				// Update preloaded data with improved data
 				preloadedChartData.linnworks = data;
-				
+
 				// Update cache status for subsequent polls
 				dataSourceStatus.linnworks.isCached = data.isCached || false;
+
+				// Re-validate data with updated information
+				dataValidationPassed = validateDataCompleteness(data, preloadedChartData.financial);
 
 				// Check if data has improved significantly
 				const dataImproved = totalOrders > linnworksDataQuality.totalOrders;
@@ -353,17 +458,19 @@
 					linnworksDataQuality.totalOrders = totalOrders;
 				}
 
-				// Complete if we have substantial data or reached max polls
-				if (hasSubstantialData || pollCount >= maxPolls) {
+				// Complete if validation passes and we have substantial data, or reached max polls
+				if ((dataValidationPassed && hasSubstantialData) || pollCount >= maxPolls) {
 					if (activePollingInterval) {
 						clearInterval(activePollingInterval);
 						activePollingInterval = null;
 					}
 
-					if (hasSubstantialData) {
-						console.log('✅ Linnworks data now appears complete');
+					if (dataValidationPassed && hasSubstantialData) {
+						console.log('✅ Linnworks data validation passed during polling');
 					} else {
 						console.log('⏰ Timeout reached, proceeding with available data');
+						// Force validation to pass if we timeout to prevent infinite loading
+						dataValidationPassed = true;
 					}
 
 					linnworksApiCompleted = true;
@@ -378,6 +485,7 @@
 					}
 
 					dashboardReady = true;
+					checkIfReadyToRender();
 				}
 			} catch (err) {
 				console.error('Error during Linnworks polling:', err);
