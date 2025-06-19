@@ -17,7 +17,7 @@
 		uploadDailyMetricReview,
 		transformMetricsForReview
 	} from '$lib/dailyMetricReviewService';
-	import { getDailyHours } from '$lib/dailyHoursService';
+	import { getDailyHours, getHoursDateRange } from '$lib/dailyHoursService';
 
 	// Add this interface to your type definitions section at the top
 	interface LinnworksOrderData {
@@ -45,8 +45,22 @@
 
 	// Props for preloaded data
 	export let preloadedData: {
-		linnworks?: any;
-		financial?: any;
+		currentWeek?: {
+			linnworks?: any;
+			financial?: any;
+		};
+		previousWeek?: {
+			linnworks?: any;
+			financial?: any;
+		};
+		employeeHours?: {
+			current?: any;
+			previous?: any;
+		};
+		scheduledHours?: {
+			current?: any;
+			previous?: any;
+		};
 		usePreloaded?: boolean;
 	} = { usePreloaded: false };
 
@@ -550,54 +564,145 @@
 				.toISOString()
 				.split('T')[0];
 
-			// Get scheduled hours from hours service
-			const scheduledHoursData = await getScheduledHoursForDateRange(
-				new Date(startDateStr),
-				new Date(endDateStr)
-			);
+			// Get scheduled hours and employee hours data
+			let scheduledHoursData: any[],
+				employeeHoursData: any[],
+				employeeRoleBreakdowns: Record<
+					string,
+					{ management: number; packing: number; picking: number }
+				>;
+
+			if (
+				preloadedData.usePreloaded &&
+				preloadedData.scheduledHours?.previous &&
+				preloadedData.employeeHours?.previous
+			) {
+				console.log('📦 Using preloaded previous week scheduled hours and employee data');
+				scheduledHoursData = preloadedData.scheduledHours.previous;
+				employeeHoursData = preloadedData.employeeHours.previous;
+				// Calculate role breakdowns from preloaded employee hours
+				employeeRoleBreakdowns = {};
+				employeeHoursData.forEach((entry: any) => {
+					const date = entry.date;
+					if (!employeeRoleBreakdowns[date]) {
+						employeeRoleBreakdowns[date] = {
+							management: 0,
+							packing: 0,
+							picking: 0
+						};
+					}
+					if (
+						entry.role === 'Supervisor' ||
+						entry.role === 'Manager' ||
+						entry.role === 'B2C Accounts Manager'
+					) {
+						employeeRoleBreakdowns[date].management += entry.hours_worked || 0;
+					} else if (entry.role === 'Packer') {
+						employeeRoleBreakdowns[date].packing += entry.hours_worked || 0;
+					} else if (entry.role === 'Picker') {
+						employeeRoleBreakdowns[date].picking += entry.hours_worked || 0;
+					}
+				});
+			} else {
+				console.log('🌐 Fetching previous week scheduled hours and employee data from services');
+				// Get scheduled hours from hours service
+				scheduledHoursData = await getScheduledHoursForDateRange(
+					new Date(startDateStr),
+					new Date(endDateStr)
+				);
+
+				// Fetch employee hours data for previous week
+				const prevWeekStartDate = previousWeekDates[0];
+				const prevWeekEndDate = previousWeekDates[previousWeekDates.length - 1];
+
+				employeeHoursData = await getHoursDateRange(
+					prevWeekStartDate.toISOString().split('T')[0],
+					prevWeekEndDate.toISOString().split('T')[0]
+				);
+				console.log('Fetched previous week employee hours data:', employeeHoursData);
+
+				// Calculate role breakdowns
+				employeeRoleBreakdowns = {};
+				employeeHoursData.forEach((entry: any) => {
+					const date = entry.date;
+					if (!employeeRoleBreakdowns[date]) {
+						employeeRoleBreakdowns[date] = {
+							management: 0,
+							packing: 0,
+							picking: 0
+						};
+					}
+					if (
+						entry.role === 'Supervisor' ||
+						entry.role === 'Manager' ||
+						entry.role === 'B2C Accounts Manager'
+					) {
+						employeeRoleBreakdowns[date].management += entry.hours_worked || 0;
+					} else if (entry.role === 'Packer') {
+						employeeRoleBreakdowns[date].packing += entry.hours_worked || 0;
+					} else if (entry.role === 'Picker') {
+						employeeRoleBreakdowns[date].picking += entry.hours_worked || 0;
+					}
+				});
+			}
 
 			// Fetch Linnworks and financial data for previous week
 			let linnworksOrdersData: LinnworksOrderData[] = [];
 			let prevWeekFinancialData: any = null;
-			try {
-				console.log(
-					'Fetching previous week Linnworks and financial data for date range:',
-					startDateStr,
-					'to',
-					endDateStr
-				);
-				const [linnworksResponse, financialResponse] = await Promise.all([
-					fetch(`/api/linnworks/weeklyOrderCounts?startDate=${startDateStr}&endDate=${endDateStr}`),
-					fetch(`/api/linnworks/financialData?startDate=${startDateStr}&endDate=${endDateStr}`)
-				]);
 
-				if (!linnworksResponse.ok) {
-					throw new Error(
-						`API Error ${linnworksResponse.status}: ${await linnworksResponse.text()}`
+			if (
+				preloadedData.usePreloaded &&
+				preloadedData.previousWeek?.linnworks &&
+				preloadedData.previousWeek?.financial
+			) {
+				console.log('📦 Using preloaded previous week Linnworks and financial data');
+				linnworksOrdersData = preloadedData.previousWeek.linnworks.dailyOrders || [];
+				prevWeekFinancialData = preloadedData.previousWeek.financial.dailyData || [];
+			} else {
+				console.log('🌐 Fetching previous week Linnworks and financial data from APIs');
+				try {
+					console.log(
+						'Fetching previous week Linnworks and financial data for date range:',
+						startDateStr,
+						'to',
+						endDateStr
 					);
+					const [linnworksResponse, financialResponse] = await Promise.all([
+						fetch(
+							`/api/linnworks/weeklyOrderCounts?startDate=${startDateStr}&endDate=${endDateStr}`
+						),
+						fetch(`/api/linnworks/financialData?startDate=${startDateStr}&endDate=${endDateStr}`)
+					]);
+
+					if (!linnworksResponse.ok) {
+						throw new Error(
+							`API Error ${linnworksResponse.status}: ${await linnworksResponse.text()}`
+						);
+					}
+
+					const [linnworksData, financialJson] = await Promise.all([
+						linnworksResponse.json(),
+						financialResponse.json()
+					]);
+
+					linnworksOrdersData = linnworksData.dailyOrders || [];
+					prevWeekFinancialData = financialJson.dailyData || [];
+
+					console.log('Fetched previous week data:', {
+						linnworksCount: linnworksOrdersData.length,
+						financialCount: prevWeekFinancialData.length
+					});
+				} catch (err) {
+					console.error('Failed to fetch previous week data:', err);
+					// Continue with empty arrays to show N/A in UI
 				}
-
-				const [linnworksData, financialJson] = await Promise.all([
-					linnworksResponse.json(),
-					financialResponse.json()
-				]);
-
-				linnworksOrdersData = linnworksData.dailyOrders || [];
-				prevWeekFinancialData = financialJson.dailyData || [];
-				console.log('Fetched previous week data:', {
-					orders: linnworksOrdersData,
-					financial: prevWeekFinancialData
-				});
-			} catch (err) {
-				console.error('Failed to fetch previous week data:', err);
-				// Continue without Linnworks/financial data
 			}
 
 			// Create a lookup map for API data only
 			const dataByDay: Record<string, any> = {};
 
 			// Add scheduled hours
-			scheduledHoursData.forEach((hoursRecord) => {
+			scheduledHoursData.forEach((hoursRecord: any) => {
 				dataByDay[hoursRecord.date] = {
 					date: hoursRecord.date,
 					scheduled_hours: hoursRecord.hours
@@ -635,29 +740,6 @@
 					dataByDay[date].other_sales = dayData.salesData.otherSales || 0;
 				}
 			});
-
-			// Fetch employee hours data for previous week
-			let prevEmployeeHoursData: Record<string, number> = {};
-			let prevEmployeeRoleBreakdowns: Record<
-				string,
-				{
-					management: number;
-					packing: number;
-					picking: number;
-				}
-			> = {};
-			try {
-				const prevWeekStartDate = previousWeekDates[0];
-				const prevWeekEndDate = previousWeekDates[previousWeekDates.length - 1];
-				const hoursResult = await loadEmployeeHoursForDateRange(prevWeekStartDate, prevWeekEndDate);
-				prevEmployeeHoursData = hoursResult.totalHours;
-				prevEmployeeRoleBreakdowns = hoursResult.roleBreakdowns;
-				console.log('Fetched previous week employee hours data:', prevEmployeeHoursData);
-				console.log('Fetched previous week role breakdowns:', prevEmployeeRoleBreakdowns);
-			} catch (err) {
-				console.error('Failed to fetch previous week employee hours data:', err);
-				// Continue without employee hours data
-			}
 
 			// Process data for each day
 			for (let i = 0; i < previousWeekDates.length; i++) {
@@ -732,14 +814,16 @@
 
 				// Populate employee hours data for previous week (overrides database values)
 				const totalHoursMetricIndex = metrics.findIndex((m) => m.name === '1.3 Total Hours Used');
-				if (totalHoursMetricIndex !== -1 && prevEmployeeHoursData[dateStr] !== undefined) {
-					previousWeekMetrics[totalHoursMetricIndex][i] = prevEmployeeHoursData[dateStr] || 0;
-					// Update totals accordingly
-					totals[totalHoursMetricIndex] += prevEmployeeHoursData[dateStr] || 0;
+				if (totalHoursMetricIndex !== -1) {
+					const totalHours = employeeHoursData
+						.filter((entry: any) => entry.date === dateStr)
+						.reduce((sum: number, entry: any) => sum + (entry.hours_worked || 0), 0);
+					previousWeekMetrics[totalHoursMetricIndex][i] = totalHours;
+					totals[totalHoursMetricIndex] += totalHours;
 				}
 
 				// Populate role breakdown hours for previous week
-				const roleBreakdown = prevEmployeeRoleBreakdowns[dateStr];
+				const roleBreakdown = employeeRoleBreakdowns[dateStr];
 				if (roleBreakdown) {
 					const managementHoursIndex = metrics.findIndex(
 						(m) => m.name === '1.3.1 Management Hours Used'
@@ -914,78 +998,112 @@
 			const sundayStr = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
 				.toISOString()
 				.split('T')[0];
+			// Get scheduled hours and employee hours data
+			let scheduledHoursData: any[],
+				employeeHoursDataRaw: any[],
+				employeeHoursData: Record<string, number>,
+				employeeRoleBreakdowns: Record<
+					string,
+					{ management: number; packing: number; picking: number }
+				>;
 
-			// Get scheduled hours from hours service
-			const scheduledHoursData = await getScheduledHoursForDateRange(
-				new Date(mondayStr),
-				new Date(sundayStr)
-			);
+			if (
+				preloadedData.usePreloaded &&
+				preloadedData.scheduledHours?.current &&
+				preloadedData.employeeHours?.current
+			) {
+				console.log('📦 Using preloaded current week scheduled hours and employee data');
+				scheduledHoursData = preloadedData.scheduledHours.current;
+				employeeHoursDataRaw = preloadedData.employeeHours.current;
+
+				// Calculate totals and role breakdowns from preloaded employee hours
+				employeeHoursData = {};
+				employeeRoleBreakdowns = {};
+
+				employeeHoursDataRaw.forEach((entry: any) => {
+					const date = entry.date;
+
+					// Calculate total hours by date
+					if (!employeeHoursData[date]) {
+						employeeHoursData[date] = 0;
+					}
+					employeeHoursData[date] += entry.hours_worked || 0;
+
+					// Calculate role breakdowns
+					if (!employeeRoleBreakdowns[date]) {
+						employeeRoleBreakdowns[date] = {
+							management: 0,
+							packing: 0,
+							picking: 0
+						};
+					}
+					if (
+						entry.role === 'Supervisor' ||
+						entry.role === 'Manager' ||
+						entry.role === 'B2C Accounts Manager'
+					) {
+						employeeRoleBreakdowns[date].management += entry.hours_worked || 0;
+					} else if (entry.role === 'Packer') {
+						employeeRoleBreakdowns[date].packing += entry.hours_worked || 0;
+					} else if (entry.role === 'Picker') {
+						employeeRoleBreakdowns[date].picking += entry.hours_worked || 0;
+					}
+				});
+			} else {
+				console.log('🌐 Fetching current week scheduled hours and employee data from services');
+				// Get scheduled hours from hours service
+				scheduledHoursData = await getScheduledHoursForDateRange(
+					new Date(mondayStr),
+					new Date(sundayStr)
+				);
+
+				// Fetch employee hours data
+				try {
+					const sundayDate = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000);
+					const hoursResult = await loadEmployeeHoursForDateRange(displayedMonday, sundayDate);
+					employeeHoursData = hoursResult.totalHours;
+					employeeRoleBreakdowns = hoursResult.roleBreakdowns;
+					console.log('Fetched employee hours data:', employeeHoursData);
+					console.log('Fetched role breakdowns:', employeeRoleBreakdowns);
+				} catch (err) {
+					console.error('Failed to fetch employee hours data:', err);
+					employeeHoursData = {};
+					employeeRoleBreakdowns = {};
+				}
+			}
 
 			// Fetch Linnworks orders and financial data
-			let linnworksOrdersData: LinnworksOrderData[] = [];
-			let financialData: any = null;
-			try {
-				console.log('Fetching Linnworks data for date range:', mondayStr, 'to', sundayStr);
+			let linnworksData: any, financialJson: any;
+
+			if (
+				preloadedData.usePreloaded &&
+				preloadedData.currentWeek?.linnworks &&
+				preloadedData.currentWeek?.financial
+			) {
+				console.log('📦 Using preloaded current week data from dashboard');
+				linnworksData = preloadedData.currentWeek.linnworks;
+				financialJson = preloadedData.currentWeek.financial;
+			} else {
+				console.log('🌐 Fetching fresh data from APIs');
 				const [linnworksResponse, financialResponse] = await Promise.all([
 					fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
 					fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
 				]);
 
-				if (!linnworksResponse.ok) {
-					throw new Error(
-						`API Error ${linnworksResponse.status}: ${await linnworksResponse.text()}`
-					);
-				}
-
-				if (!linnworksResponse.ok || !financialResponse.ok) {
-					throw new Error(
-						`API Error - Orders: ${linnworksResponse.status}, Financial: ${financialResponse.status}`
-					);
-				}
-
-				const [linnworksData, financialJson] = await Promise.all([
+				[linnworksData, financialJson] = await Promise.all([
 					linnworksResponse.json(),
 					financialResponse.json()
 				]);
-
-				linnworksOrdersData = linnworksData.dailyOrders || [];
-				financialData = financialJson.dailyData || [];
-				console.log('Fetched Linnworks data:', {
-					orders: linnworksOrdersData,
-					financial: financialData
-				});
-			} catch (err) {
-				console.error('Failed to fetch Linnworks data:', err);
-				// Continue without Linnworks data
 			}
 
-			// Fetch employee hours data
-			let employeeHoursData: Record<string, number> = {};
-			let employeeRoleBreakdowns: Record<
-				string,
-				{
-					management: number;
-					packing: number;
-					picking: number;
-				}
-			> = {};
-			try {
-				const sundayDate = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000);
-				const hoursResult = await loadEmployeeHoursForDateRange(displayedMonday, sundayDate);
-				employeeHoursData = hoursResult.totalHours;
-				employeeRoleBreakdowns = hoursResult.roleBreakdowns;
-				console.log('Fetched employee hours data:', employeeHoursData);
-				console.log('Fetched role breakdowns:', employeeRoleBreakdowns);
-			} catch (err) {
-				console.error('Failed to fetch employee hours data:', err);
-				// Continue without employee hours data
-			}
+			const linnworksOrdersData = linnworksData.dailyOrders || [];
+			const financialData = financialJson.dailyData || [];
 
 			// Create a lookup map for API data
 			const dataByDay: Record<string, any> = {};
 
 			// Add scheduled hours to lookup map
-			scheduledHoursData.forEach((hoursRecord) => {
+			scheduledHoursData.forEach((hoursRecord: any) => {
 				dataByDay[hoursRecord.date] = {
 					date: hoursRecord.date,
 					scheduled_hours: hoursRecord.hours
@@ -1231,10 +1349,14 @@
 
 		let linnworksData, financialJson;
 
-		if (preloadedData.usePreloaded && preloadedData.linnworks && preloadedData.financial) {
-			console.log('📦 Using preloaded data from dashboard');
-			linnworksData = preloadedData.linnworks;
-			financialJson = preloadedData.financial;
+		if (
+			preloadedData.usePreloaded &&
+			preloadedData.currentWeek?.linnworks &&
+			preloadedData.currentWeek?.financial
+		) {
+			console.log('📦 Using preloaded current week data from dashboard');
+			linnworksData = preloadedData.currentWeek.linnworks;
+			financialJson = preloadedData.currentWeek.financial;
 		} else {
 			console.log('🌐 Fetching fresh data from APIs');
 			const [linnworksResponse, financialResponse] = await Promise.all([
@@ -1279,7 +1401,7 @@
 		const dataByDay: Record<string, any> = {};
 
 		// Add scheduled hours
-		scheduledHoursData.forEach((hoursRecord) => {
+		scheduledHoursData.forEach((hoursRecord: any) => {
 			dataByDay[hoursRecord.date] = {
 				date: hoursRecord.date,
 				scheduled_hours: hoursRecord.hours
