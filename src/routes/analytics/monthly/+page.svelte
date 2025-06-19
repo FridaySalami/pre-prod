@@ -63,6 +63,10 @@
 	let dailyData: DailyData[] = $state(data.dailyData || []);
 	let error = $state(data.error);
 
+	// Sorting state
+	let sortColumn: keyof DailyData | null = $state(null);
+	let sortDirection: 'asc' | 'desc' = $state('asc');
+
 	// ===========================================
 	// Lifecycle & Initialization
 	// ===========================================
@@ -204,6 +208,50 @@
 			weekday: 'short',
 			day: '2-digit',
 			month: 'short'
+		});
+	}
+
+	/**
+	 * Sort daily data by the specified column
+	 */
+	function sortDailyData(column: keyof DailyData) {
+		if (sortColumn === column) {
+			// Toggle direction if same column
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			// Set new column and default to ascending
+			sortColumn = column;
+			sortDirection = 'asc';
+		}
+
+		// Sort the data
+		dailyData = [...dailyData].sort((a, b) => {
+			let aValue = a[column];
+			let bValue = b[column];
+
+			// Handle date sorting specially
+			if (column === 'date') {
+				aValue = new Date(aValue as string).getTime();
+				bValue = new Date(bValue as string).getTime();
+			}
+
+			// Convert to numbers for numeric columns
+			if (typeof aValue === 'string' && column !== 'date') {
+				aValue = parseFloat(aValue as string) || 0;
+			}
+			if (typeof bValue === 'string' && column !== 'date') {
+				bValue = parseFloat(bValue as string) || 0;
+			}
+
+			// Ensure we're comparing numbers
+			const numA = Number(aValue) || 0;
+			const numB = Number(bValue) || 0;
+
+			if (sortDirection === 'asc') {
+				return numA - numB;
+			} else {
+				return numB - numA;
+			}
 		});
 	}
 
@@ -590,13 +638,167 @@
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead>Date</TableHead>
-								<TableHead>Total Sales</TableHead>
-								<TableHead>Amazon Sales</TableHead>
-								<TableHead>eBay Sales</TableHead>
-								<TableHead>Shopify Sales</TableHead>
-								<TableHead>Total Orders</TableHead>
-								<TableHead>Labor Efficiency</TableHead>
+								<TableHead class="p-0">
+									<button 
+										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+										onclick={() => sortDailyData('date')}
+									>
+										Date
+										{#if sortColumn === 'date'}
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 inline-block ml-1"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												{#if sortDirection === 'asc'}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+												{:else}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+												{/if}
+											</svg>
+										{/if}
+									</button>
+								</TableHead>
+								<TableHead class="p-0">
+									<button 
+										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+										onclick={() => sortDailyData('total_sales')}
+									>
+										Total Sales
+										{#if sortColumn === 'total_sales'}
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 inline-block ml-1"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												{#if sortDirection === 'asc'}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+												{:else}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+												{/if}
+											</svg>
+										{/if}
+									</button>
+								</TableHead>
+								<TableHead class="p-0">
+									<button 
+										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+										onclick={() => sortDailyData('amazon_sales')}
+									>
+										Amazon Sales
+										{#if sortColumn === 'amazon_sales'}
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 inline-block ml-1"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												{#if sortDirection === 'asc'}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+												{:else}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+												{/if}
+											</svg>
+										{/if}
+									</button>
+								</TableHead>
+								<TableHead class="p-0">
+									<button 
+										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+										onclick={() => sortDailyData('ebay_sales')}
+									>
+										eBay Sales
+										{#if sortColumn === 'ebay_sales'}
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 inline-block ml-1"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												{#if sortDirection === 'asc'}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+												{:else}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+												{/if}
+											</svg>
+										{/if}
+									</button>
+								</TableHead>
+								<TableHead class="p-0">
+									<button 
+										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+										onclick={() => sortDailyData('shopify_sales')}
+									>
+										Shopify Sales
+										{#if sortColumn === 'shopify_sales'}
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 inline-block ml-1"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												{#if sortDirection === 'asc'}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+												{:else}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+												{/if}
+											</svg>
+										{/if}
+									</button>
+								</TableHead>
+								<TableHead class="p-0">
+									<button 
+										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+										onclick={() => sortDailyData('linnworks_total_orders')}
+									>
+										Total Orders
+										{#if sortColumn === 'linnworks_total_orders'}
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 inline-block ml-1"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												{#if sortDirection === 'asc'}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+												{:else}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+												{/if}
+											</svg>
+										{/if}
+									</button>
+								</TableHead>
+								<TableHead class="p-0">
+									<button 
+										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+										onclick={() => sortDailyData('labor_efficiency')}
+									>
+										Labor Efficiency
+										{#if sortColumn === 'labor_efficiency'}
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 inline-block ml-1"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												{#if sortDirection === 'asc'}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+												{:else}
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+												{/if}
+											</svg>
+										{/if}
+									</button>
+								</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
