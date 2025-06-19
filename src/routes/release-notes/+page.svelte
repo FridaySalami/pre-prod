@@ -5,7 +5,9 @@
 <main class="release-notes">
 	<header class="release-header">
 		<h1>Release Notes</h1>
-		<p class="version-info">Latest Version: 1.2 | Release Date: June 17, 2025</p>
+		<p class="version-info">
+			Latest Version: 1.2 | Release Date: June 17, 2025 | Last Updated: June 19, 2025
+		</p>
 	</header>
 
 	<!-- Accordion container for different versions -->
@@ -327,6 +329,60 @@
 							<li>
 								Optimized font sizes and spacing for mobile readability while maintaining desktop
 								design consistency
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Dashboard Debugging & Performance Enhancement (June 19, 2025)</h3>
+						<ul class="feature-list">
+							<li>
+								Fixed critical employee hours display issue where packing and picking hours were not
+								showing due to incorrect role mapping in ShipmentChart.svelte
+							</li>
+							<li>
+								Corrected role mapping to match database values: "Associate" for packing operations
+								and "Picking" for picking operations
+							</li>
+							<li>
+								Debugged and implemented previous week channel percentage calculations that were
+								previously commented out, ensuring accurate week-over-week comparisons
+							</li>
+							<li>
+								Enhanced labor efficiency calculations with proper field name mapping and role-based
+								logic for accurate productivity metrics
+							</li>
+							<li>
+								Improved session handling and dashboard initialization to work reliably for both
+								browser refresh and sidebar navigation scenarios
+							</li>
+							<li>
+								Added browser environment checks before navigation calls to prevent Server-Side
+								Rendering (SSR) errors during page transitions
+							</li>
+							<li>
+								Implemented emergency fallbacks and timeout mechanisms to prevent dashboard loading
+								from hanging indefinitely
+							</li>
+							<li>
+								Added "Clear Cache & Refresh Data" button to dashboard header for manual data
+								refresh and troubleshooting capabilities
+							</li>
+							<li>
+								Integrated toast notifications and loading states for the refresh functionality to
+								provide clear user feedback
+							</li>
+							<li>
+								Added comprehensive debugging logs throughout the dashboard loading process for
+								improved troubleshooting and monitoring
+							</li>
+							<li>
+								Refactored session and dashboard initialization logic to allow proper
+								re-initialization during navigation without state conflicts
+							</li>
+							<li>
+								Enhanced error handling with detailed context information and user-friendly error
+								messages for better debugging experience
 							</li>
 						</ul>
 					</section>

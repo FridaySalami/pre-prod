@@ -153,17 +153,17 @@
 	async function clearCacheAndRefresh() {
 		console.log('🗑️ Clearing cache and refreshing dashboard data...');
 		showToast('Clearing cache and refreshing data...', 'info');
-		
+
 		try {
 			// Reset all dashboard state
 			resetDashboardState();
-			
+
 			// Mark that we need to re-initialize
 			dashboardInitialized = false;
-			
+
 			// Clear any cached data by forcing a fresh initialization
 			await initializeDashboard();
-			
+
 			showToast('Data refreshed successfully!', 'success');
 		} catch (err) {
 			console.error('❌ Failed to refresh data:', err);
@@ -742,7 +742,7 @@
 		if (!browser) return;
 
 		console.log('🏁 Dashboard page mounted');
-		
+
 		// Reset state for fresh initialization
 		resetDashboardState();
 
@@ -967,7 +967,7 @@
 			<p>Real-time metrics and analytics</p>
 		</div>
 		<div class="action-buttons">
-			<button 
+			<button
 				class="clear-cache-btn"
 				on:click={clearCacheAndRefresh}
 				disabled={loading}
@@ -981,7 +981,7 @@
 			</button>
 		</div>
 	</div>
-	
+
 	<ShipmentChart preloadedData={preloadedChartData} />
 {:else}
 	<!-- When session is null, onMount should have redirected already -->
