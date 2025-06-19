@@ -680,12 +680,12 @@
 	}
 
 	.employee-content {
-		padding: 16px;
+		padding: 20px;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		gap: 12px;
+		gap: 16px;
 		min-height: auto;
 	}
 
