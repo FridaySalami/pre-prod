@@ -347,6 +347,9 @@
 			console.log('🔄 Starting comprehensive dashboard data preload...');
 			console.log('Current week:', mondayStr, 'to', sundayStr);
 			console.log('Previous week:', previousMondayStr, 'to', previousSundayStr);
+			console.log('Previous Monday object:', previousMonday);
+			console.log('Current Monday object:', currentMonday);
+			console.log('Today is:', today.toISOString().split('T')[0]);
 
 			// Start minimum load time enforcement
 			enforceMinimumLoadTime();
@@ -389,6 +392,12 @@
 				previousLinnworksResponse.ok ? previousLinnworksResponse.json() : null,
 				previousFinancialResponse.ok ? previousFinancialResponse.json() : null
 			]);
+
+			console.log('🔍 Dashboard preload results:');
+			console.log('Current week Linnworks:', currentLinnworksData);
+			console.log('Current week Financial:', currentFinancialData);
+			console.log('Previous week Linnworks:', previousLinnworksData);
+			console.log('Previous week Financial:', previousFinancialData);
 
 			// Now fetch employee hours and scheduled hours data
 			console.log('📊 Fetching employee hours and scheduled hours data...');
@@ -477,6 +486,30 @@
 				currentScheduledHours: currentScheduledHours?.length || 0,
 				previousScheduledHours: previousScheduledHours?.length || 0
 			});
+
+			// Debug: Log sample employee hours data
+			if (currentEmployeeHours && currentEmployeeHours.length > 0) {
+				console.log('📋 Sample current employee hours data:', currentEmployeeHours.slice(0, 3));
+				console.log('📋 Current week date range in data:', {
+					firstEntry: currentEmployeeHours[0],
+					lastEntry: currentEmployeeHours[currentEmployeeHours.length - 1]
+				});
+			} else {
+				console.log('⚠️ NO current employee hours data returned from getHoursDateRange!');
+			}
+			if (previousEmployeeHours && previousEmployeeHours.length > 0) {
+				console.log('📋 Sample previous employee hours data:', previousEmployeeHours.slice(0, 3));
+			} else {
+				console.log('⚠️ NO previous employee hours data returned from getHoursDateRange!');
+			}
+
+			// Debug: Log sample employee hours data to check structure
+			if (currentEmployeeHours?.length > 0) {
+				console.log('👥 Sample current employee hours entry:', currentEmployeeHours[0]);
+			}
+			if (previousEmployeeHours?.length > 0) {
+				console.log('👥 Sample previous employee hours entry:', previousEmployeeHours[0]);
+			}
 
 			// Update data quality tracking
 			linnworksDataQuality.totalOrders = totalOrders;
