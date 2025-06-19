@@ -37,7 +37,9 @@ export async function GET({ url }) {
     }
 
     // Get the financial data
-    const dailyFinancialData = await getDailyFinancialData(start, end);
+    const financialResult = await getDailyFinancialData(start, end);
+    const dailyFinancialData = financialResult.data;
+    const isCached = financialResult.isCached;
 
     // Calculate summary information
     const summary = {
@@ -59,7 +61,8 @@ export async function GET({ url }) {
       startDate: start.toISOString(),
       endDate: end.toISOString(),
       dailyData: dailyFinancialData,
-      summary
+      summary,
+      isCached
     });
   } catch (error) {
     console.error('Error fetching financial data:', error);

@@ -119,7 +119,7 @@ async function getDayOrderCount(dayStart: Date, dayEnd: Date): Promise<number> {
 }
 
 // Get all daily order counts for a date range, including channel breakdown
-export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promise<DailyOrderCount[]> {
+export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promise<{ data: DailyOrderCount[], isCached: boolean }> {
   try {
     console.log(`Getting daily order counts from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
@@ -128,7 +128,7 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
     const cachedData = orderCountCache.get(cacheKey);
     if (cachedData) {
       console.log('Using cached weekly order counts data');
-      return cachedData as DailyOrderCount[];
+      return { data: cachedData as DailyOrderCount[], isCached: true };
     }
 
     // Initialize days structure
@@ -235,7 +235,7 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
     orderCountCache.set(cacheKey, days, 3600); // Cache for 1 hour
     console.log(`Cached order counts data for date range ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-    return days;
+    return { data: days, isCached: false };
   } catch (error) {
     console.error('Error getting daily order counts:', error);
     throw error;

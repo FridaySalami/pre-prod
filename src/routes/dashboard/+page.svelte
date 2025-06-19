@@ -197,6 +197,12 @@
 	let linnworksDataQuality = { totalOrders: 0, expectedMinimum: 100 }; // Track data quality - expect at least 100 orders for a complete week
 	let activePollingInterval: NodeJS.Timeout | null = null; // Track active polling for cleanup
 
+	// Track data source status
+	let dataSourceStatus = {
+		linnworks: { isCached: false, isLoaded: false },
+		financial: { isCached: false, isLoaded: false }
+	};
+
 	// Enhanced preload that waits for substantial Linnworks data
 	async function preloadDashboardData() {
 		try {
@@ -231,6 +237,12 @@
 				financialResponse.json()
 			]);
 
+			// Update data source status
+			dataSourceStatus.linnworks.isCached = linnworksData.isCached || false;
+			dataSourceStatus.linnworks.isLoaded = true;
+			dataSourceStatus.financial.isCached = financialData.isCached || false;
+			dataSourceStatus.financial.isLoaded = true;
+
 			// Check the quality of Linnworks data to determine if paginated fetch is complete
 			const totalOrders = linnworksData.summary?.totalOrders || 0;
 			const dailyOrdersCount = linnworksData.dailyOrders?.length || 0;
@@ -238,7 +250,13 @@
 			console.log('📊 Initial Linnworks data received:', {
 				totalOrders,
 				dailyOrdersCount,
-				hasOrderDetails: !!linnworksData.dailyOrders
+				hasOrderDetails: !!linnworksData.dailyOrders,
+				isCached: dataSourceStatus.linnworks.isCached
+			});
+
+			console.log('💰 Financial data received:', {
+				isLoaded: dataSourceStatus.financial.isLoaded,
+				isCached: dataSourceStatus.financial.isCached
 			});
 
 			// Update data quality tracking
@@ -305,13 +323,16 @@
 				const data = await response.json();
 				const totalOrders = data.summary?.totalOrders || 0;
 
+				// Update cache status for subsequent polls
+				dataSourceStatus.linnworks.isCached = data.isCached || false;
+
 				// Check if data has improved significantly
 				const dataImproved = totalOrders > linnworksDataQuality.totalOrders;
 				const hasSubstantialData = totalOrders >= linnworksDataQuality.expectedMinimum;
 
 				if (dataImproved) {
 					console.log(
-						`📈 Linnworks data updated: ${linnworksDataQuality.totalOrders} -> ${totalOrders} orders`
+						`📈 Linnworks data updated: ${linnworksDataQuality.totalOrders} -> ${totalOrders} orders (${dataSourceStatus.linnworks.isCached ? 'Cached' : 'Fresh'})`
 					);
 					linnworksDataQuality.totalOrders = totalOrders;
 				}
@@ -493,6 +514,43 @@
 					<div class="preview-item">
 						<span class="preview-icon">💰</span>
 						<span class="preview-text">Sales metrics ready</span>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Data source status -->
+			{#if dataSourceStatus.linnworks.isLoaded || dataSourceStatus.financial.isLoaded}
+				<div class="data-source-status fade-in">
+					<div class="status-header">
+						<span class="status-title">Data Sources</span>
+					</div>
+					<div class="status-grid">
+						{#if dataSourceStatus.linnworks.isLoaded}
+							<div class="status-item">
+								<span class="status-icon">📦</span>
+								<span class="status-name">Linnworks API</span>
+								<span
+									class="status-badge"
+									class:cached={dataSourceStatus.linnworks.isCached}
+									class:fresh={!dataSourceStatus.linnworks.isCached}
+								>
+									{dataSourceStatus.linnworks.isCached ? 'Cached' : 'Fresh'}
+								</span>
+							</div>
+						{/if}
+						{#if dataSourceStatus.financial.isLoaded}
+							<div class="status-item">
+								<span class="status-icon">💰</span>
+								<span class="status-name">Financial Data</span>
+								<span
+									class="status-badge"
+									class:cached={dataSourceStatus.financial.isCached}
+									class:fresh={!dataSourceStatus.financial.isCached}
+								>
+									{dataSourceStatus.financial.isCached ? 'Cached' : 'Fresh'}
+								</span>
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/if}
@@ -777,6 +835,76 @@
 		font-size: 0.9rem;
 		color: var(--apple-blue);
 		font-weight: 500;
+	}
+
+	/* Data source status styles */
+	.data-source-status {
+		margin-top: 16px;
+		padding: 16px 20px;
+		background: white;
+		border-radius: 12px;
+		border: 1px solid #e5e5e7;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.status-header {
+		margin-bottom: 12px;
+		text-align: center;
+	}
+
+	.status-title {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: #1d1d1f;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.status-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.status-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 8px 0;
+	}
+
+	.status-item .status-icon {
+		font-size: 1rem;
+		margin-right: 8px;
+	}
+
+	.status-name {
+		flex: 1;
+		font-size: 0.85rem;
+		font-weight: 500;
+		color: #424245;
+	}
+
+	.status-badge {
+		padding: 4px 8px;
+		border-radius: 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.3px;
+		border: 1px solid;
+	}
+
+	.status-badge.cached {
+		background: #f0f9ff;
+		color: #0369a1;
+		border-color: #bae6fd;
+	}
+
+	.status-badge.fresh {
+		background: #f0fdf4;
+		color: #166534;
+		border-color: #bbf7d0;
 	}
 
 	/* Skeleton loader styles */

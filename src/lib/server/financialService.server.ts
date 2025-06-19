@@ -76,7 +76,7 @@ async function callApiWithRetry<T>(fn: () => Promise<T>, maxRetries = 3, initial
 }
 
 // Get daily financial data for a date range
-export async function getDailyFinancialData(startDate: Date, endDate: Date): Promise<DailySalesData[]> {
+export async function getDailyFinancialData(startDate: Date, endDate: Date): Promise<{ data: DailySalesData[], isCached: boolean }> {
   try {
     // Validate dates - don't allow future dates
     const now = new Date();
@@ -102,7 +102,8 @@ export async function getDailyFinancialData(startDate: Date, endDate: Date): Pro
     const cacheKey = `financial_${startDate.toISOString()}_${endDate.toISOString()}`;
     const cachedData = financialCache.get(cacheKey);
     if (cachedData) {
-      return cachedData as DailySalesData[];
+      console.log('Using cached financial data');
+      return { data: cachedData as DailySalesData[], isCached: true };
     }
 
     // Using the ProcessedOrders/SearchProcessedOrders endpoint with pagination
@@ -139,7 +140,7 @@ export async function getDailyFinancialData(startDate: Date, endDate: Date): Pro
 
       if (!result?.ProcessedOrders?.Data) {
         console.log('No processed orders returned from API');
-        return [];
+        return { data: [], isCached: false };
       }
 
       // Add this page's orders to our collection
@@ -261,7 +262,7 @@ export async function getDailyFinancialData(startDate: Date, endDate: Date): Pro
     // Cache the results
     financialCache.set(cacheKey, dailyData);
 
-    return dailyData;
+    return { data: dailyData, isCached: false };
   } catch (error) {
     console.error('Error getting financial data:', error);
     throw error;
