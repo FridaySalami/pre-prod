@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { userSession } from '$lib/sessionStore';
 	import { showToast } from '$lib/toastStore';
 	import ShipmentChart from '$lib/ShipmentChart.svelte';
@@ -8,8 +9,42 @@
 
 	// Start with session as undefined (unknown)
 	let session: any = undefined;
+	let dashboardInitialized = false;
+
+	// Reset dashboard state on each page load
+	function resetDashboardState() {
+		dashboardInitialized = false;
+		loading = true;
+		error = null;
+		dashboardReady = false;
+		apiResponsesComplete = false;
+		dataValidationPassed = false;
+		minimumLoadTimeElapsed = false;
+		linnworksApiCompleted = false;
+	}
+
 	const unsubscribe = userSession.subscribe((s) => {
+		// Only run session logic in the browser
+		if (!browser) return;
+
+		console.log(
+			'📱 Dashboard session update:',
+			s ? 'session exists' : s === null ? 'no session' : 'undefined'
+		);
 		session = s;
+
+		// Handle session changes and initialize dashboard
+		if (session !== undefined && !dashboardInitialized) {
+			console.log('✅ Session resolved, proceeding with dashboard');
+			if (session === null) {
+				console.log('❌ No session found, redirecting to login');
+				goto('/login');
+			} else if (session) {
+				console.log('🚀 Valid session found, initializing dashboard');
+				dashboardInitialized = true;
+				initializeDashboard();
+			}
+		}
 	});
 
 	// Loading states for different data sources
@@ -113,6 +148,29 @@
 			}
 		}
 	}
+
+	// Clear cache and refresh dashboard data
+	async function clearCacheAndRefresh() {
+		console.log('🗑️ Clearing cache and refreshing dashboard data...');
+		showToast('Clearing cache and refreshing data...', 'info');
+		
+		try {
+			// Reset all dashboard state
+			resetDashboardState();
+			
+			// Mark that we need to re-initialize
+			dashboardInitialized = false;
+			
+			// Clear any cached data by forcing a fresh initialization
+			await initializeDashboard();
+			
+			showToast('Data refreshed successfully!', 'success');
+		} catch (err) {
+			console.error('❌ Failed to refresh data:', err);
+			handleError(err, 'refresh data');
+		}
+	}
+
 	// Simulate the data loading phases that ShipmentChart goes through
 	async function initializeDashboard() {
 		try {
@@ -264,7 +322,19 @@
 			minimumLoadTimeElapsed = true;
 			console.log('⏱️  Minimum load time elapsed');
 			checkIfReadyToRender();
-		}, 2500); // Minimum 2.5 seconds loading time
+		}, 1500); // Reduced to 1.5 seconds minimum loading time
+
+		// Emergency fallback - force render after maximum wait time
+		setTimeout(() => {
+			if (!dashboardReady) {
+				console.warn('🚨 Emergency fallback: Forcing dashboard render after timeout');
+				loading = false;
+				dashboardReady = true;
+				minimumLoadTimeElapsed = true;
+				apiResponsesComplete = true;
+				dataValidationPassed = true;
+			}
+		}, 8000); // Maximum 8 seconds wait time
 	}
 
 	// Check if all conditions are met to render the dashboard
@@ -324,6 +394,26 @@
 
 	// Enhanced preload that waits for substantial Linnworks data
 	async function preloadDashboardData() {
+		const PRELOAD_TIMEOUT = 10000; // 10 second timeout
+
+		try {
+			// Add timeout wrapper
+			const preloadPromise = performPreload();
+			const timeoutPromise = new Promise((_, reject) => {
+				setTimeout(() => reject(new Error('Preload timeout')), PRELOAD_TIMEOUT);
+			});
+
+			await Promise.race([preloadPromise, timeoutPromise]);
+		} catch (err) {
+			console.error('⚠️ Preload failed, falling back to basic loading:', err);
+			// Set fallback state to allow dashboard to load without preloaded data
+			apiResponsesComplete = true;
+			dataValidationPassed = true;
+			dashboardReady = true;
+		}
+	}
+
+	async function performPreload() {
 		try {
 			// Get the current week's Monday using the same logic as ShipmentChart
 			const today = new Date();
@@ -648,13 +738,34 @@
 	}
 
 	onMount(() => {
-		// Once we know the session, if it's null then redirect
-		if (session === null) {
-			goto('/login');
-		} else if (session) {
-			// Only initialize dashboard if we have a valid session
+		// Only run in browser
+		if (!browser) return;
+
+		console.log('🏁 Dashboard page mounted');
+		
+		// Reset state for fresh initialization
+		resetDashboardState();
+
+		// Set a timeout to prevent hanging if session never resolves
+		const sessionTimeout = setTimeout(() => {
+			if (!dashboardInitialized && session === undefined) {
+				console.warn('🚨 Session timeout - redirecting to login');
+				goto('/login');
+			}
+		}, 5000); // 5 second timeout for session resolution
+
+		// If we already have a session when mounting, initialize immediately
+		if (session && !dashboardInitialized) {
+			console.log('🚀 Session already available on mount, initializing dashboard');
+			dashboardInitialized = true;
 			initializeDashboard();
+			clearTimeout(sessionTimeout);
 		}
+
+		// Cleanup
+		return () => {
+			clearTimeout(sessionTimeout);
+		};
 	});
 
 	onDestroy(() => {
@@ -849,6 +960,28 @@
 		}}
 	/>
 {:else if session}
+	<!-- Dashboard Header -->
+	<div class="dashboard-actions">
+		<div class="dashboard-title">
+			<h1>Operations Dashboard</h1>
+			<p>Real-time metrics and analytics</p>
+		</div>
+		<div class="action-buttons">
+			<button 
+				class="clear-cache-btn"
+				on:click={clearCacheAndRefresh}
+				disabled={loading}
+				title="Clear all cached data and fetch fresh data from APIs"
+			>
+				{#if loading}
+					🔄 Refreshing...
+				{:else}
+					🗑️ Clear Cache & Refresh
+				{/if}
+			</button>
+		</div>
+	</div>
+	
 	<ShipmentChart preloadedData={preloadedChartData} />
 {:else}
 	<!-- When session is null, onMount should have redirected already -->
@@ -866,6 +999,65 @@
 		--apple-success: #39ca74;
 		--apple-warning: #ff9f0a;
 		--apple-error: #ff3b30;
+	}
+
+	.dashboard-actions {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem 2rem;
+		background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+		border-bottom: 1px solid #e2e8f0;
+		margin-bottom: 1rem;
+		border-radius: 8px 8px 0 0;
+	}
+
+	.dashboard-title h1 {
+		margin: 0 0 0.25rem 0;
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--apple-black);
+	}
+
+	.dashboard-title p {
+		margin: 0;
+		font-size: 0.875rem;
+		color: var(--apple-dark-gray);
+	}
+
+	.action-buttons {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.clear-cache-btn {
+		background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+		color: white;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		box-shadow: 0 2px 4px rgba(255, 107, 107, 0.2);
+	}
+
+	.clear-cache-btn:hover:not(:disabled) {
+		background: linear-gradient(135deg, #ee5a24 0%, #c44569 100%);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+	}
+
+	.clear-cache-btn:active:not(:disabled) {
+		transform: translateY(0);
+		box-shadow: 0 2px 4px rgba(255, 107, 107, 0.2);
+	}
+
+	.clear-cache-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
 	}
 
 	.loading {
