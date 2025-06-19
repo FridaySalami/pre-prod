@@ -881,7 +881,7 @@
 			const amazonOrdersIndex = metrics.findIndex((m) => m.name === '2.1.1 Amazon Orders');
 			const ebayOrdersIndex = metrics.findIndex((m) => m.name === '2.1.2 eBay Orders');
 			const shopifyOrdersIndex = metrics.findIndex((m) => m.name === '2.1.3 Shopify Orders');
-			
+
 			const amazonPercentIndex = metrics.findIndex((m) => m.name === '2.2.1 Amazon Orders %');
 			const ebayPercentIndex = metrics.findIndex((m) => m.name === '2.2.2 eBay Orders %');
 			const shopifyPercentIndex = metrics.findIndex((m) => m.name === '2.2.3 Shopify Orders %');
@@ -890,33 +890,39 @@
 				for (let i = 0; i < daysCount; i++) {
 					const totalOrders = previousWeekMetrics[totalOrdersIndex][i] || 0;
 					const amazonOrders = previousWeekMetrics[amazonOrdersIndex][i] || 0;
-					previousWeekMetrics[amazonPercentIndex][i] = totalOrders > 0 
-						? Math.round((amazonOrders / totalOrders) * 10000) / 100 
-						: 0;
+					previousWeekMetrics[amazonPercentIndex][i] =
+						totalOrders > 0 ? Math.round((amazonOrders / totalOrders) * 10000) / 100 : 0;
 				}
-				console.log('📊 Calculated Amazon % for previous week:', previousWeekMetrics[amazonPercentIndex]);
+				console.log(
+					'📊 Calculated Amazon % for previous week:',
+					previousWeekMetrics[amazonPercentIndex]
+				);
 			}
 
 			if (totalOrdersIndex !== -1 && ebayOrdersIndex !== -1 && ebayPercentIndex !== -1) {
 				for (let i = 0; i < daysCount; i++) {
 					const totalOrders = previousWeekMetrics[totalOrdersIndex][i] || 0;
 					const ebayOrders = previousWeekMetrics[ebayOrdersIndex][i] || 0;
-					previousWeekMetrics[ebayPercentIndex][i] = totalOrders > 0 
-						? Math.round((ebayOrders / totalOrders) * 10000) / 100 
-						: 0;
+					previousWeekMetrics[ebayPercentIndex][i] =
+						totalOrders > 0 ? Math.round((ebayOrders / totalOrders) * 10000) / 100 : 0;
 				}
-				console.log('📊 Calculated eBay % for previous week:', previousWeekMetrics[ebayPercentIndex]);
+				console.log(
+					'📊 Calculated eBay % for previous week:',
+					previousWeekMetrics[ebayPercentIndex]
+				);
 			}
 
 			if (totalOrdersIndex !== -1 && shopifyOrdersIndex !== -1 && shopifyPercentIndex !== -1) {
 				for (let i = 0; i < daysCount; i++) {
 					const totalOrders = previousWeekMetrics[totalOrdersIndex][i] || 0;
 					const shopifyOrders = previousWeekMetrics[shopifyOrdersIndex][i] || 0;
-					previousWeekMetrics[shopifyPercentIndex][i] = totalOrders > 0 
-						? Math.round((shopifyOrders / totalOrders) * 10000) / 100 
-						: 0;
+					previousWeekMetrics[shopifyPercentIndex][i] =
+						totalOrders > 0 ? Math.round((shopifyOrders / totalOrders) * 10000) / 100 : 0;
 				}
-				console.log('📊 Calculated Shopify % for previous week:', previousWeekMetrics[shopifyPercentIndex]);
+				console.log(
+					'📊 Calculated Shopify % for previous week:',
+					previousWeekMetrics[shopifyPercentIndex]
+				);
 			}
 
 			previousTotals = totals;
