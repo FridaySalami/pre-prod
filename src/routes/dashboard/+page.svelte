@@ -175,6 +175,11 @@
 
 							// Add an additional 0.5 second delay before loading the page
 							setTimeout(() => {
+								console.log('🎯 Dashboard loading complete - Preloaded data ready:', {
+									hasLinnworksData: !!preloadedChartData.linnworks,
+									hasFinancialData: !!preloadedChartData.financial,
+									usePreloaded: preloadedChartData.usePreloaded
+								});
 								loading = false;
 								showToast('Dashboard loaded successfully', 'success');
 							}, 500);
@@ -201,6 +206,13 @@
 	let dataSourceStatus = {
 		linnworks: { isCached: false, isLoaded: false },
 		financial: { isCached: false, isLoaded: false }
+	};
+	
+	// Store preloaded data for ShipmentChart
+	let preloadedChartData = {
+		linnworks: null,
+		financial: null,
+		usePreloaded: false
 	};
 
 	// Enhanced preload that waits for substantial Linnworks data
@@ -230,13 +242,16 @@
 				console.warn('Some API calls failed during preload, but continuing...');
 				dashboardReady = true;
 				return;
-			}
-
-			const [linnworksData, financialData] = await Promise.all([
+			}			const [linnworksData, financialData] = await Promise.all([
 				linnworksResponse.json(),
 				financialResponse.json()
 			]);
-
+			
+			// Store preloaded data for ShipmentChart
+			preloadedChartData.linnworks = linnworksData;
+			preloadedChartData.financial = financialData;
+			preloadedChartData.usePreloaded = true;
+			
 			// Update data source status
 			dataSourceStatus.linnworks.isCached = linnworksData.isCached || false;
 			dataSourceStatus.linnworks.isLoaded = true;
@@ -318,11 +333,12 @@
 				);
 				if (!response.ok) {
 					throw new Error('API call failed');
-				}
-
-				const data = await response.json();
+				}				const data = await response.json();
 				const totalOrders = data.summary?.totalOrders || 0;
-
+				
+				// Update preloaded data with improved data
+				preloadedChartData.linnworks = data;
+				
 				// Update cache status for subsequent polls
 				dataSourceStatus.linnworks.isCached = data.isCached || false;
 
@@ -590,7 +606,7 @@
 		}}
 	/>
 {:else if session}
-	<ShipmentChart />
+	<ShipmentChart preloadedData={preloadedChartData} />
 {:else}
 	<!-- When session is null, onMount should have redirected already -->
 	<div>Redirecting...</div>
