@@ -6,10 +6,10 @@ export async function GET({ url }) {
     // Get date parameters or use current week as default
     let startDate = url.searchParams.get('startDate');
     let endDate = url.searchParams.get('endDate');
-    
+
     let start: Date;
     let end: Date;
-    
+
     if (!startDate || !endDate) {
       // Use current week if no dates provided
       const weekRange = getCurrentWeekRange();
@@ -19,15 +19,15 @@ export async function GET({ url }) {
       // Parse provided dates
       start = new Date(startDate);
       end = new Date(endDate);
-      
+
       // Validate dates
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        return json({ 
-          error: "Invalid date format. Please use ISO format (YYYY-MM-DD)." 
+        return json({
+          error: "Invalid date format. Please use ISO format (YYYY-MM-DD)."
         }, { status: 400 });
       }
     }
-    
+
     // Log the API call details
     console.log('Making Linnworks API call for date range:', {
       startDate: start.toISOString(),
@@ -35,8 +35,10 @@ export async function GET({ url }) {
     });
 
     // Get the order counts for each day in the range, including channel breakdown
-    const dailyOrders = await getDailyOrderCounts(start, end);
-    
+    const orderCountsResult = await getDailyOrderCounts(start, end);
+    const dailyOrders = orderCountsResult.data;
+    const isCached = orderCountsResult.isCached;
+
     // Add summary information
     const summary = {
       totalOrders: dailyOrders.reduce((sum, day) => sum + day.count, 0),
@@ -47,17 +49,18 @@ export async function GET({ url }) {
         other: dailyOrders.reduce((sum, day) => sum + (day.channels?.other || 0), 0)
       }
     };
-    
+
     return json({
       startDate: start.toISOString(),
       endDate: end.toISOString(),
       dailyOrders,
-      summary
+      summary,
+      isCached
     });
   } catch (error) {
     console.error('Error fetching weekly order counts:', error);
-    return json({ 
-      error: error instanceof Error ? error.message : String(error) 
+    return json({
+      error: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
 }
