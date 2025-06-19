@@ -43,6 +43,13 @@
 		tooltip?: string;
 	}
 
+	// Props for preloaded data
+	export let preloadedData: {
+		linnworks?: any;
+		financial?: any;
+		usePreloaded?: boolean;
+	} = { usePreloaded: false };
+
 	const daysCount = 7;
 
 	/**
@@ -1221,15 +1228,25 @@
 
 		// Get fresh Linnworks and financial data for current week
 		console.log(`🔄 Fetching Linnworks and Financial data for: ${weekRange}`);
-		const [linnworksResponse, financialResponse] = await Promise.all([
-			fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
-			fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
-		]);
+		
+		let linnworksData, financialJson;
+		
+		if (preloadedData.usePreloaded && preloadedData.linnworks && preloadedData.financial) {
+			console.log('📦 Using preloaded data from dashboard');
+			linnworksData = preloadedData.linnworks;
+			financialJson = preloadedData.financial;
+		} else {
+			console.log('🌐 Fetching fresh data from APIs');
+			const [linnworksResponse, financialResponse] = await Promise.all([
+				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
+				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
+			]);
 
-		const [linnworksData, financialJson] = await Promise.all([
-			linnworksResponse.json(),
-			financialResponse.json()
-		]);
+			[linnworksData, financialJson] = await Promise.all([
+				linnworksResponse.json(),
+				financialResponse.json()
+			]);
+		}
 
 		const linnworksOrdersData = linnworksData.dailyOrders || [];
 		const financialData = financialJson.dailyData || [];
