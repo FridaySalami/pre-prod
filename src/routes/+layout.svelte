@@ -272,6 +272,11 @@
 
 <svelte:head>
 	<link href="https://fonts.googleapis.com/css2?family=Material+Icons+Outlined" rel="stylesheet" />
+	<script
+		defer
+		src="https://cloud.umami.is/script.js"
+		data-website-id="22acb77e-4bb1-47a2-8305-7952ac07e62e"
+	></script>
 </svelte:head>
 
 <div class="app-container" class:has-banner={showPasswordBanner}>
