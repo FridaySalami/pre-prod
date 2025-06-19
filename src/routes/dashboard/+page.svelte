@@ -303,8 +303,22 @@
 
 	// Store preloaded data for ShipmentChart
 	let preloadedChartData = {
-		linnworks: null,
-		financial: null,
+		currentWeek: {
+			linnworks: null,
+			financial: null
+		},
+		previousWeek: {
+			linnworks: null,
+			financial: null
+		},
+		employeeHours: {
+			current: null as any,
+			previous: null as any
+		},
+		scheduledHours: {
+			current: null as any,
+			previous: null as any
+		},
 		usePreloaded: false
 	};
 
@@ -323,60 +337,145 @@
 				.toISOString()
 				.split('T')[0];
 
-			console.log('🔄 Starting dashboard data preload for week:', mondayStr, 'to', sundayStr);
+			// Calculate previous week dates
+			const previousMonday = new Date(currentMonday.getTime() - 7 * 24 * 60 * 60 * 1000);
+			const previousMondayStr = previousMonday.toISOString().split('T')[0];
+			const previousSundayStr = new Date(previousMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
+				.toISOString()
+				.split('T')[0];
+
+			console.log('🔄 Starting comprehensive dashboard data preload...');
+			console.log('Current week:', mondayStr, 'to', sundayStr);
+			console.log('Previous week:', previousMondayStr, 'to', previousSundayStr);
 
 			// Start minimum load time enforcement
 			enforceMinimumLoadTime();
 
-			// Make initial API calls
-			const [linnworksResponse, financialResponse] = await Promise.all([
+			// Make ALL API calls in parallel for maximum efficiency
+			const [
+				currentLinnworksResponse,
+				currentFinancialResponse,
+				previousLinnworksResponse,
+				previousFinancialResponse
+			] = await Promise.all([
+				// Current week data
 				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
-				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
+				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`),
+				// Previous week data
+				fetch(
+					`/api/linnworks/weeklyOrderCounts?startDate=${previousMondayStr}&endDate=${previousSundayStr}`
+				),
+				fetch(
+					`/api/linnworks/financialData?startDate=${previousMondayStr}&endDate=${previousSundayStr}`
+				)
 			]);
 
-			if (!linnworksResponse.ok || !financialResponse.ok) {
+			if (!currentLinnworksResponse.ok || !currentFinancialResponse.ok) {
 				console.warn('Some API calls failed during preload, but continuing...');
 				apiResponsesComplete = true;
 				dashboardReady = true;
 				checkIfReadyToRender();
 				return;
 			}
-			const [linnworksData, financialData] = await Promise.all([
-				linnworksResponse.json(),
-				financialResponse.json()
+
+			const [
+				currentLinnworksData,
+				currentFinancialData,
+				previousLinnworksData,
+				previousFinancialData
+			] = await Promise.all([
+				currentLinnworksResponse.json(),
+				currentFinancialResponse.json(),
+				previousLinnworksResponse.ok ? previousLinnworksResponse.json() : null,
+				previousFinancialResponse.ok ? previousFinancialResponse.json() : null
+			]);
+
+			// Now fetch employee hours and scheduled hours data
+			console.log('📊 Fetching employee hours and scheduled hours data...');
+
+			// Import the required services dynamically to avoid bundling issues
+			const { getHoursDateRange } = await import('$lib/dailyHoursService');
+			const { getScheduledHoursForDateRange } = await import('$lib/schedule/hours-service');
+
+			// Fetch employee hours for both weeks
+			const [
+				currentEmployeeHours,
+				previousEmployeeHours,
+				currentScheduledHours,
+				previousScheduledHours
+			] = await Promise.all([
+				getHoursDateRange(mondayStr, sundayStr).catch((err) => {
+					console.warn('Failed to fetch current week employee hours:', err);
+					return [];
+				}),
+				getHoursDateRange(previousMondayStr, previousSundayStr).catch((err) => {
+					console.warn('Failed to fetch previous week employee hours:', err);
+					return [];
+				}),
+				getScheduledHoursForDateRange(currentMonday, new Date(sundayStr)).catch((err) => {
+					console.warn('Failed to fetch current week scheduled hours:', err);
+					return [];
+				}),
+				getScheduledHoursForDateRange(previousMonday, new Date(previousSundayStr)).catch((err) => {
+					console.warn('Failed to fetch previous week scheduled hours:', err);
+					return [];
+				})
 			]);
 
 			// Mark API responses as complete
 			apiResponsesComplete = true;
 
-			// Store preloaded data for ShipmentChart
-			preloadedChartData.linnworks = linnworksData;
-			preloadedChartData.financial = financialData;
-			preloadedChartData.usePreloaded = true;
+			// Store ALL preloaded data for ShipmentChart
+			preloadedChartData = {
+				currentWeek: {
+					linnworks: currentLinnworksData,
+					financial: currentFinancialData
+				},
+				previousWeek: {
+					linnworks: previousLinnworksData,
+					financial: previousFinancialData
+				},
+				employeeHours: {
+					current: currentEmployeeHours,
+					previous: previousEmployeeHours
+				},
+				scheduledHours: {
+					current: currentScheduledHours,
+					previous: previousScheduledHours
+				},
+				usePreloaded: true
+			};
 
 			// Update data source status
-			dataSourceStatus.linnworks.isCached = linnworksData.isCached || false;
+			dataSourceStatus.linnworks.isCached = currentLinnworksData.isCached || false;
 			dataSourceStatus.linnworks.isLoaded = true;
-			dataSourceStatus.financial.isCached = financialData.isCached || false;
+			dataSourceStatus.financial.isCached = currentFinancialData.isCached || false;
 			dataSourceStatus.financial.isLoaded = true;
 
 			// Run comprehensive data validation
-			dataValidationPassed = validateDataCompleteness(linnworksData, financialData);
+			dataValidationPassed = validateDataCompleteness(currentLinnworksData, currentFinancialData);
 
 			// Check the quality of Linnworks data to determine if paginated fetch is complete
-			const totalOrders = linnworksData.summary?.totalOrders || 0;
-			const dailyOrdersCount = linnworksData.dailyOrders?.length || 0;
+			const totalOrders = currentLinnworksData.summary?.totalOrders || 0;
+			const dailyOrdersCount = currentLinnworksData.dailyOrders?.length || 0;
 
 			console.log('📊 Initial Linnworks data received:', {
 				totalOrders,
 				dailyOrdersCount,
-				hasOrderDetails: !!linnworksData.dailyOrders,
+				hasOrderDetails: !!currentLinnworksData.dailyOrders,
 				isCached: dataSourceStatus.linnworks.isCached
 			});
 
 			console.log('💰 Financial data received:', {
 				isLoaded: dataSourceStatus.financial.isLoaded,
 				isCached: dataSourceStatus.financial.isCached
+			});
+
+			console.log('👥 Employee and scheduled hours data received:', {
+				currentEmployeeHours: currentEmployeeHours?.length || 0,
+				previousEmployeeHours: previousEmployeeHours?.length || 0,
+				currentScheduledHours: currentScheduledHours?.length || 0,
+				previousScheduledHours: previousScheduledHours?.length || 0
 			});
 
 			// Update data quality tracking
@@ -439,13 +538,16 @@
 				const totalOrders = data.summary?.totalOrders || 0;
 
 				// Update preloaded data with improved data
-				preloadedChartData.linnworks = data;
+				preloadedChartData.currentWeek.linnworks = data;
 
 				// Update cache status for subsequent polls
 				dataSourceStatus.linnworks.isCached = data.isCached || false;
 
 				// Re-validate data with updated information
-				dataValidationPassed = validateDataCompleteness(data, preloadedChartData.financial);
+				dataValidationPassed = validateDataCompleteness(
+					data,
+					preloadedChartData.currentWeek.financial
+				);
 
 				// Check if data has improved significantly
 				const dataImproved = totalOrders > linnworksDataQuality.totalOrders;
