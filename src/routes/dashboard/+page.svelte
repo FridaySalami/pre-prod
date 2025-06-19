@@ -1,32 +1,726 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { userSession } from '$lib/sessionStore';
-  import ShipmentChart from '$lib/ShipmentChart.svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { userSession } from '$lib/sessionStore';
+	import { showToast } from '$lib/toastStore';
+	import ShipmentChart from '$lib/ShipmentChart.svelte';
+	import ErrorBoundary from '$lib/ErrorBoundary.svelte';
 
-  // Start with session as undefined (unknown)
-  let session: any = undefined;
-  const unsubscribe = userSession.subscribe((s) => {
-    session = s;
-  });
+	// Start with session as undefined (unknown)
+	let session: any = undefined;
+	const unsubscribe = userSession.subscribe((s) => {
+		session = s;
+	});
 
-  onMount(() => {
-    // Once we know the session, if it's null then redirect
-    if (session === null) {
-      goto('/login');
-    }
-  });
+	// Loading states for different data sources
+	let loading = true;
+	let error: string | null = null;
+	let hasGlobalError = false;
+	let retryCount = 0;
+	const MAX_RETRIES = 3;
 
-  onDestroy(() => {
-    unsubscribe();
-  });
+	// Enhanced loading states tracking different API calls
+	let loadingStates = {
+		metrics: true,
+		linnworks: true,
+		financial: true,
+		schedules: true,
+		employees: true
+	};
+
+	let loadingMessage = 'Loading dashboard...';
+
+	// Progress tracking for visual indicators
+	let loadingProgress: Record<string, number> = {
+		metrics: 0,
+		linnworks: 0,
+		financial: 0,
+		schedules: 0,
+		employees: 0
+	};
+
+	// Separate state for the Linnworks status message
+	let showLinnworksStatus = false;
+	// Enhanced loading features
+	let showDataPreview = false;
+	let dashboardReady = false; // New flag to control when dashboard shows
+	let shipmentChartRef: any; // Reference to the ShipmentChart component
+
+	// Animate progress bars smoothly
+	function animateProgress(metric: string, targetValue: number, duration: number = 300) {
+		const startValue = loadingProgress[metric];
+		const increment = (targetValue - startValue) / (duration / 16); // 60fps
+
+		const animate = () => {
+			if (loadingProgress[metric] < targetValue) {
+				loadingProgress[metric] = Math.min(loadingProgress[metric] + increment, targetValue);
+				requestAnimationFrame(animate);
+			}
+		};
+		animate();
+	}
+
+	function updateLoadingMessage() {
+		const loadingItems = Object.entries(loadingStates)
+			.filter(([_, isLoading]) => isLoading)
+			.map(([key, _]) => key);
+
+		if (loadingItems.length === 0) {
+			loadingMessage = 'All systems ready - Loading dashboard...';
+		} else if (loadingItems.length === 1) {
+			const item = loadingItems[0];
+			const contextMessages: Record<string, string> = {
+				metrics: 'Setting up dashboard metrics and calculations',
+				employees: 'Retrieving employee data and schedules',
+				schedules: 'Loading schedule information and availability',
+				linnworks: 'Connecting to Linnworks API for order data',
+				financial: 'Processing financial metrics and sales data'
+			};
+			loadingMessage = contextMessages[item] || `Loading ${item}...`;
+		} else {
+			loadingMessage = `Loading multiple components: ${loadingItems.join(', ')}`;
+		}
+	}
+
+	// Enhanced error handling
+	function handleError(err: unknown, context: string): void {
+		console.error(`Error in ${context}:`, err);
+		const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+		error = `${context}: ${errorMessage}`;
+		showToast(`Failed to ${context.toLowerCase()}: ${errorMessage}`, 'error');
+	}
+
+	function handleGlobalError(event: CustomEvent) {
+		console.error('Global error caught:', event.detail.error);
+		hasGlobalError = true;
+		error = 'A critical error occurred. Please refresh the page.';
+	}
+
+	async function retryOperation(
+		operation: () => Promise<void>,
+		operationName: string
+	): Promise<void> {
+		try {
+			await operation();
+			retryCount = 0; // Reset on success
+		} catch (err) {
+			retryCount++;
+			if (retryCount < MAX_RETRIES) {
+				showToast(`Retrying ${operationName} (${retryCount}/${MAX_RETRIES})...`, 'info');
+				setTimeout(() => retryOperation(operation, operationName), 1000 * retryCount);
+			} else {
+				handleError(err, operationName);
+			}
+		}
+	}
+	// Simulate the data loading phases that ShipmentChart goes through
+	async function initializeDashboard() {
+		try {
+			loading = true;
+			error = null;
+
+			// Reset loading states
+			loadingStates = {
+				metrics: true,
+				linnworks: true,
+				financial: true,
+				schedules: true,
+				employees: true
+			};
+
+			updateLoadingMessage();
+
+			// Start preloading the dashboard data in the background
+			// This creates a hidden ShipmentChart that loads data while we show loading screen
+			preloadDashboardData();
+
+			// We simulate the phases for UX while real data loads in background
+
+			// Phase 1: Basic metrics setup (fast)
+			setTimeout(() => {
+				loadingStates.metrics = false;
+				animateProgress('metrics', 100, 200);
+				updateLoadingMessage();
+			}, 300);
+
+			// Phase 2: Employee data (medium)
+			setTimeout(() => {
+				loadingStates.employees = false;
+				animateProgress('employees', 100, 250);
+				updateLoadingMessage();
+			}, 600);
+
+			// Phase 3: Schedule data (medium)
+			setTimeout(() => {
+				loadingStates.schedules = false;
+				animateProgress('schedules', 100, 300);
+				updateLoadingMessage();
+			}, 900);
+
+			// Phase 4: Linnworks API (slow - this is the main delay)
+			setTimeout(() => {
+				loadingStates.linnworks = false;
+				animateProgress('linnworks', 100, 400);
+				showLinnworksStatus = true; // Show the status message
+				showDataPreview = true; // Show preview data
+				updateLoadingMessage();
+			}, 2200);
+
+			// Phase 5: Financial data (slow)
+			setTimeout(() => {
+				loadingStates.financial = false;
+				animateProgress('financial', 100, 350);
+				updateLoadingMessage();
+
+				// Keep the Linnworks status message visible during final completion
+				// Add the same 1.5 second delay as schedules page to show completion
+				setTimeout(() => {
+					showLinnworksStatus = false; // Hide the status message
+
+					// Add an additional 0.5 second delay before loading the page
+					setTimeout(() => {
+						// Only show dashboard when data is actually ready
+						if (dashboardReady) {
+							loading = false;
+							showToast('Dashboard loaded successfully', 'success');
+						} else {
+							// Wait a bit more for data to be ready
+							const checkReady = setInterval(() => {
+								if (dashboardReady) {
+									clearInterval(checkReady);
+									loading = false;
+									showToast('Dashboard loaded successfully', 'success');
+								}
+							}, 100);
+						}
+					}, 500);
+				}, 1500);
+			}, 2800);
+		} catch (err) {
+			handleError(err, 'initialize dashboard');
+			loading = false;
+		}
+	}
+
+	// Preload dashboard data in background
+	async function preloadDashboardData() {
+		try {
+			// Get the current week's Monday using the same logic as ShipmentChart
+			const today = new Date();
+			const currentMonday = new Date(today);
+			const day = currentMonday.getDay();
+			const diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
+			currentMonday.setDate(diff);
+
+			const mondayStr = currentMonday.toISOString().split('T')[0];
+			const sundayStr = new Date(currentMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
+				.toISOString()
+				.split('T')[0];
+
+			console.log('Preloading dashboard data for week:', mondayStr, 'to', sundayStr);
+
+			// Preload the same data that ShipmentChart would load
+			const [linnworksResponse, financialResponse] = await Promise.all([
+				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
+				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
+			]);
+
+			if (linnworksResponse.ok && financialResponse.ok) {
+				console.log('Dashboard data preloaded successfully');
+				dashboardReady = true;
+			} else {
+				console.warn('Some API calls failed during preload, but continuing...');
+				dashboardReady = true; // Still show dashboard even if some data failed
+			}
+		} catch (err) {
+			console.error('Error preloading dashboard data:', err);
+			dashboardReady = true; // Still show dashboard even if preload failed
+		}
+	}
+
+	onMount(() => {
+		// Once we know the session, if it's null then redirect
+		if (session === null) {
+			goto('/login');
+		} else if (session) {
+			// Only initialize dashboard if we have a valid session
+			initializeDashboard();
+		}
+	});
+
+	onDestroy(() => {
+		unsubscribe();
+	});
 </script>
 
-{#if session === undefined}
-  <div>Loading...</div>
+{#if session === undefined || loading}
+	<div class="loading">
+		<svg class="spinner" viewBox="0 0 50 50">
+			<circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+		</svg>
+		<p class="loading-message">{loadingMessage}</p>
+
+		<!-- Progress indicators for different loading states -->
+		{#if loading}
+			<div class="loading-progress">
+				<div
+					class="progress-item"
+					class:completed={!loadingStates.metrics}
+					class:active={loadingStates.metrics}
+				>
+					<span class="progress-check">
+						{#if !loadingStates.metrics}✓{:else}⟳{/if}
+					</span>
+					<span class="progress-label">Dashboard Metrics</span>
+					<div class="progress-bar">
+						<div class="progress-fill" style="width: {loadingProgress.metrics}%"></div>
+					</div>
+				</div>
+				<div
+					class="progress-item"
+					class:completed={!loadingStates.employees}
+					class:active={loadingStates.employees}
+				>
+					<span class="progress-check">
+						{#if !loadingStates.employees}✓{:else}⟳{/if}
+					</span>
+					<span class="progress-label">Employee Data</span>
+					<div class="progress-bar">
+						<div class="progress-fill" style="width: {loadingProgress.employees}%"></div>
+					</div>
+				</div>
+				<div
+					class="progress-item"
+					class:completed={!loadingStates.schedules}
+					class:active={loadingStates.schedules}
+				>
+					<span class="progress-check">
+						{#if !loadingStates.schedules}✓{:else}⟳{/if}
+					</span>
+					<span class="progress-label">Schedule Data</span>
+					<div class="progress-bar">
+						<div class="progress-fill" style="width: {loadingProgress.schedules}%"></div>
+					</div>
+				</div>
+				<div
+					class="progress-item"
+					class:completed={!loadingStates.linnworks}
+					class:active={loadingStates.linnworks}
+				>
+					<span class="progress-check">
+						{#if !loadingStates.linnworks}✓{:else}⟳{/if}
+					</span>
+					<span class="progress-label">Linnworks API</span>
+					<div class="progress-bar">
+						<div class="progress-fill" style="width: {loadingProgress.linnworks}%"></div>
+					</div>
+				</div>
+				<div
+					class="progress-item"
+					class:completed={!loadingStates.financial}
+					class:active={loadingStates.financial}
+				>
+					<span class="progress-check">
+						{#if !loadingStates.financial}✓{:else}⟳{/if}
+					</span>
+					<span class="progress-label">Financial Data</span>
+					<div class="progress-bar">
+						<div class="progress-fill" style="width: {loadingProgress.financial}%"></div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Skeleton loader for dashboard preview -->
+			<div class="skeleton-dashboard">
+				<div class="skeleton-header">
+					<div class="skeleton-title"></div>
+					<div class="skeleton-nav">
+						<div class="skeleton-button"></div>
+						<div class="skeleton-button"></div>
+					</div>
+				</div>
+				<div class="skeleton-content">
+					<div class="skeleton-chart"></div>
+					<div class="skeleton-metrics">
+						<div class="skeleton-metric"></div>
+						<div class="skeleton-metric"></div>
+						<div class="skeleton-metric"></div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Data preview when Linnworks loads -->
+			{#if showDataPreview}
+				<div class="data-preview fade-in">
+					<div class="preview-item">
+						<span class="preview-icon">📦</span>
+						<span class="preview-text">Orders data synced</span>
+					</div>
+					<div class="preview-item">
+						<span class="preview-icon">💰</span>
+						<span class="preview-text">Sales metrics ready</span>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Percentage increase visual for Linnworks data -->
+			{#if showLinnworksStatus}
+				<div class="api-status fade-in">
+					<div class="status-indicator">
+						<span class="status-icon">📈</span>
+						<span class="status-text">Linnworks data loaded - Processing financial metrics...</span>
+					</div>
+				</div>
+			{/if}
+		{/if}
+	</div>
+{:else if session === null}
+	<!-- When session is null, onMount should have redirected already -->
+	<div>Redirecting to login...</div>
+{:else if hasGlobalError}
+	<ErrorBoundary
+		title="Critical Error"
+		showDetails={true}
+		retryAction={() => {
+			hasGlobalError = false;
+			error = null;
+			retryOperation(initializeDashboard, 'reload dashboard');
+		}}
+		on:error={handleGlobalError}
+	/>
+{:else if error}
+	<ErrorBoundary
+		title="Dashboard Error"
+		showDetails={false}
+		retryAction={() => {
+			error = null;
+			retryOperation(initializeDashboard, 'reload dashboard data');
+		}}
+	/>
 {:else if session}
-  <ShipmentChart />
+	<ShipmentChart />
 {:else}
-  <!-- When session is null, onMount should have redirected already -->
-  <div>Redirecting...</div>
+	<!-- When session is null, onMount should have redirected already -->
+	<div>Redirecting...</div>
 {/if}
+
+<style>
+	:root {
+		--apple-blue: #0071e3;
+		--apple-blue-hover: #0077ed;
+		--apple-gray: #f5f5f7;
+		--apple-dark-gray: #86868b;
+		--apple-light-gray: #d2d2d7;
+		--apple-black: #1d1d1f;
+		--apple-success: #39ca74;
+		--apple-warning: #ff9f0a;
+		--apple-error: #ff3b30;
+	}
+
+	.loading {
+		padding: 3rem;
+		text-align: center;
+		background: #f9fafb;
+		border-radius: 10px;
+		margin: 2rem auto;
+		max-width: 600px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 16px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.loading p {
+		font-size: 1.1rem;
+		color: var(--apple-dark-gray);
+		margin: 0;
+		font-weight: 500;
+	}
+
+	.loading-message {
+		transition: all 0.3s ease;
+		animation: fadeInSlide 0.5s ease;
+	}
+
+	@keyframes fadeInSlide {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.fade-in {
+		animation: fadeIn 0.5s ease;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	.spinner {
+		animation: rotate 2s linear infinite;
+		width: 40px;
+		height: 40px;
+	}
+
+	.path {
+		stroke: var(--apple-blue);
+		stroke-linecap: round;
+		animation: dash 1.5s ease-in-out infinite;
+	}
+
+	@keyframes rotate {
+		100% {
+			transform: rotate(360deg);
+		}
+	}
+
+	@keyframes dash {
+		0% {
+			stroke-dasharray: 1, 150;
+			stroke-dashoffset: 0;
+		}
+		50% {
+			stroke-dasharray: 90, 150;
+			stroke-dashoffset: -35;
+		}
+		100% {
+			stroke-dasharray: 90, 150;
+			stroke-dashoffset: -124;
+		}
+	}
+
+	/* Loading state improvements */
+	.loading-progress {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-top: 20px;
+		width: 100%;
+		max-width: 400px;
+	}
+
+	.progress-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 16px;
+		background: white;
+		border-radius: 12px;
+		transition: all 0.3s ease;
+		border: 1px solid var(--apple-light-gray);
+	}
+
+	.progress-item.completed {
+		background: var(--apple-gray);
+		border-color: var(--apple-success);
+		transform: scale(1.02);
+	}
+
+	.progress-check {
+		min-width: 20px;
+		font-weight: 600;
+		font-size: 0.9rem;
+		color: var(--apple-dark-gray);
+	}
+
+	.progress-item.completed .progress-check {
+		color: var(--apple-success);
+	}
+
+	.progress-label {
+		flex: 1;
+		text-align: left;
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--apple-black);
+	}
+
+	.progress-bar {
+		width: 60px;
+		height: 4px;
+		background: var(--apple-light-gray);
+		border-radius: 2px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, var(--apple-blue), var(--apple-success));
+		border-radius: 2px;
+		transition: width 0.3s ease;
+	}
+	.progress-item.completed .progress-fill {
+		background: var(--apple-success);
+	}
+
+	.progress-item.active {
+		animation: pulse 2s infinite;
+		border-color: var(--apple-blue);
+	}
+
+	@keyframes pulse {
+		0%,
+		100% {
+			transform: scale(1);
+			opacity: 1;
+		}
+		50% {
+			transform: scale(1.02);
+			opacity: 0.9;
+		}
+	}
+
+	.data-preview {
+		margin-top: 16px;
+		display: flex;
+		gap: 12px;
+		justify-content: center;
+	}
+
+	.preview-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		background: white;
+		padding: 8px 12px;
+		border-radius: 20px;
+		border: 1px solid var(--apple-success);
+		animation: slideInUp 0.5s ease;
+	}
+
+	.preview-icon {
+		font-size: 1rem;
+	}
+
+	.preview-text {
+		font-size: 0.8rem;
+		color: var(--apple-success);
+		font-weight: 600;
+	}
+
+	@keyframes slideInUp {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.api-status {
+		margin-top: 16px;
+		padding: 12px 20px;
+		background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+		border-radius: 12px;
+		border: 1px solid var(--apple-blue);
+	}
+
+	.status-indicator {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.status-icon {
+		font-size: 1.2rem;
+	}
+
+	.status-text {
+		font-size: 0.9rem;
+		color: var(--apple-blue);
+		font-weight: 500;
+	}
+
+	/* Skeleton loader styles */
+	.skeleton-dashboard {
+		margin-top: 24px;
+		padding: 20px;
+		background: white;
+		border-radius: 12px;
+		border: 1px solid var(--apple-light-gray);
+		animation: fadeIn 0.5s ease;
+	}
+
+	.skeleton-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 20px;
+	}
+
+	.skeleton-title {
+		width: 200px;
+		height: 24px;
+		background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+		background-size: 200% 100%;
+		animation: shimmer 1.5s infinite;
+		border-radius: 4px;
+	}
+
+	.skeleton-nav {
+		display: flex;
+		gap: 12px;
+	}
+
+	.skeleton-button {
+		width: 80px;
+		height: 32px;
+		background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+		background-size: 200% 100%;
+		animation: shimmer 1.5s infinite;
+		border-radius: 6px;
+	}
+
+	.skeleton-content {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.skeleton-chart {
+		width: 100%;
+		height: 120px;
+		background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+		background-size: 200% 100%;
+		animation: shimmer 1.5s infinite;
+		border-radius: 8px;
+	}
+
+	.skeleton-metrics {
+		display: flex;
+		gap: 12px;
+		justify-content: space-between;
+	}
+
+	.skeleton-metric {
+		flex: 1;
+		height: 60px;
+		background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+		background-size: 200% 100%;
+		animation: shimmer 1.5s infinite;
+		border-radius: 6px;
+	}
+
+	@keyframes shimmer {
+		0% {
+			background-position: -200% 0;
+		}
+		100% {
+			background-position: 200% 0;
+		}
+	}
+</style>
