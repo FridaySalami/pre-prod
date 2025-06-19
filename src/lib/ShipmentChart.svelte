@@ -326,6 +326,10 @@
 	let isLoading = false;
 	let loadError: string | null = null;
 
+	// Previous week totals and metrics
+	let previousTotals: number[] = metrics.map(() => 0);
+	let previousWeekMetrics: number[][] = metrics.map(() => new Array(daysCount).fill(0));
+
 	$: displayedMonday = (() => {
 		const currentMonday = getMonday(new Date());
 		return new Date(currentMonday.getTime() + weekOffset * 7 * msPerDay);
@@ -550,10 +554,13 @@
 			return currentSlice.reduce((acc, v) => acc + v, 0);
 		}
 	});
-	// Previous week totals.
-	let previousTotals: number[] = metrics.map(() => 0);
-	let previousWeekMetrics: number[][] = metrics.map(() => new Array(daysCount).fill(0));
+
 	async function loadPreviousWeekTotals() {
+		console.log('🔄 Starting loadPreviousWeekTotals with preloaded data check...');
+		console.log('preloadedData.usePreloaded:', preloadedData.usePreloaded);
+		console.log('Has previous week linnworks:', !!preloadedData.previousWeek?.linnworks);
+		console.log('Has previous week financial:', !!preloadedData.previousWeek?.financial);
+
 		try {
 			let totals = metrics.map(() => 0);
 			previousWeekMetrics = metrics.map(() => new Array(daysCount).fill(0));
@@ -578,12 +585,16 @@
 				preloadedData.employeeHours?.previous
 			) {
 				console.log('📦 Using preloaded previous week scheduled hours and employee data');
+				console.log(
+					'📦 Preloaded previous employee hours sample:',
+					preloadedData.employeeHours.previous[0]
+				);
 				scheduledHoursData = preloadedData.scheduledHours.previous;
 				employeeHoursData = preloadedData.employeeHours.previous;
 				// Calculate role breakdowns from preloaded employee hours
 				employeeRoleBreakdowns = {};
 				employeeHoursData.forEach((entry: any) => {
-					const date = entry.date;
+					const date = entry.work_date || entry.date; // Handle both field names
 					if (!employeeRoleBreakdowns[date]) {
 						employeeRoleBreakdowns[date] = {
 							management: 0,
@@ -591,15 +602,12 @@
 							picking: 0
 						};
 					}
-					if (
-						entry.role === 'Supervisor' ||
-						entry.role === 'Manager' ||
-						entry.role === 'B2C Accounts Manager'
-					) {
+					const role = entry.employee_role || entry.role;
+					if (role === 'Supervisor' || role === 'Manager' || role === 'B2C Accounts Manager') {
 						employeeRoleBreakdowns[date].management += entry.hours_worked || 0;
-					} else if (entry.role === 'Packer') {
+					} else if (role === 'Associate') {
 						employeeRoleBreakdowns[date].packing += entry.hours_worked || 0;
-					} else if (entry.role === 'Picker') {
+					} else if (role === 'Picking') {
 						employeeRoleBreakdowns[date].picking += entry.hours_worked || 0;
 					}
 				});
@@ -624,7 +632,7 @@
 				// Calculate role breakdowns
 				employeeRoleBreakdowns = {};
 				employeeHoursData.forEach((entry: any) => {
-					const date = entry.date;
+					const date = entry.work_date || entry.date; // Handle both field names
 					if (!employeeRoleBreakdowns[date]) {
 						employeeRoleBreakdowns[date] = {
 							management: 0,
@@ -632,15 +640,12 @@
 							picking: 0
 						};
 					}
-					if (
-						entry.role === 'Supervisor' ||
-						entry.role === 'Manager' ||
-						entry.role === 'B2C Accounts Manager'
-					) {
+					const role = entry.employee_role || entry.role;
+					if (role === 'Supervisor' || role === 'Manager' || role === 'B2C Accounts Manager') {
 						employeeRoleBreakdowns[date].management += entry.hours_worked || 0;
-					} else if (entry.role === 'Packer') {
+					} else if (role === 'Associate') {
 						employeeRoleBreakdowns[date].packing += entry.hours_worked || 0;
-					} else if (entry.role === 'Picker') {
+					} else if (role === 'Picking') {
 						employeeRoleBreakdowns[date].picking += entry.hours_worked || 0;
 					}
 				});
@@ -656,6 +661,8 @@
 				preloadedData.previousWeek?.financial
 			) {
 				console.log('📦 Using preloaded previous week Linnworks and financial data');
+				console.log('Previous week Linnworks data:', preloadedData.previousWeek.linnworks);
+				console.log('Previous week Financial data:', preloadedData.previousWeek.financial);
 				linnworksOrdersData = preloadedData.previousWeek.linnworks.dailyOrders || [];
 				prevWeekFinancialData = preloadedData.previousWeek.financial.dailyData || [];
 			} else {
@@ -720,10 +727,13 @@
 
 				// Add channel-specific metrics if available
 				if (dayData.channels) {
+					console.log('📊 Previous week channel data for', date, ':', dayData.channels);
 					dataByDay[date].linnworks_amazon_orders = dayData.channels.amazon;
 					dataByDay[date].linnworks_ebay_orders = dayData.channels.ebay;
 					dataByDay[date].linnworks_shopify_orders = dayData.channels.shopify;
 					dataByDay[date].linnworks_other_orders = dayData.channels.other;
+				} else {
+					console.log('⚠️ No channel data for previous week date:', date, dayData);
 				}
 			});
 
@@ -795,18 +805,26 @@
 					// Channel-specific orders
 					const amazonOrdersIndex = metrics.findIndex((m) => m.name === '2.1.1 Amazon Orders');
 					if (amazonOrdersIndex !== -1 && data.linnworks_amazon_orders !== undefined) {
+						console.log('📊 Setting Amazon orders for', dateStr, ':', data.linnworks_amazon_orders);
 						previousWeekMetrics[amazonOrdersIndex][i] = data.linnworks_amazon_orders || 0;
 						totals[amazonOrdersIndex] += data.linnworks_amazon_orders || 0;
 					}
 
 					const ebayOrdersIndex = metrics.findIndex((m) => m.name === '2.1.2 eBay Orders');
 					if (ebayOrdersIndex !== -1 && data.linnworks_ebay_orders !== undefined) {
+						console.log('📊 Setting eBay orders for', dateStr, ':', data.linnworks_ebay_orders);
 						previousWeekMetrics[ebayOrdersIndex][i] = data.linnworks_ebay_orders || 0;
 						totals[ebayOrdersIndex] += data.linnworks_ebay_orders || 0;
 					}
 
 					const shopifyOrdersIndex = metrics.findIndex((m) => m.name === '2.1.3 Shopify Orders');
 					if (shopifyOrdersIndex !== -1 && data.linnworks_shopify_orders !== undefined) {
+						console.log(
+							'📊 Setting Shopify orders for',
+							dateStr,
+							':',
+							data.linnworks_shopify_orders
+						);
 						previousWeekMetrics[shopifyOrdersIndex][i] = data.linnworks_shopify_orders || 0;
 						totals[shopifyOrdersIndex] += data.linnworks_shopify_orders || 0;
 					}
@@ -816,7 +834,7 @@
 				const totalHoursMetricIndex = metrics.findIndex((m) => m.name === '1.3 Total Hours Used');
 				if (totalHoursMetricIndex !== -1) {
 					const totalHours = employeeHoursData
-						.filter((entry: any) => entry.date === dateStr)
+						.filter((entry: any) => (entry.work_date || entry.date) === dateStr)
 						.reduce((sum: number, entry: any) => sum + (entry.hours_worked || 0), 0);
 					previousWeekMetrics[totalHoursMetricIndex][i] = totalHours;
 					totals[totalHoursMetricIndex] += totalHours;
@@ -856,6 +874,49 @@
 					previousWeekMetrics[shipmentsPackedIndex][i] = ordersValue;
 					totals[shipmentsPackedIndex] += ordersValue;
 				}
+			}
+
+			// Calculate channel percentages for previous week
+			const totalOrdersIndex = metrics.findIndex((m) => m.name === '2.1 Linnworks Total Orders');
+			const amazonOrdersIndex = metrics.findIndex((m) => m.name === '2.1.1 Amazon Orders');
+			const ebayOrdersIndex = metrics.findIndex((m) => m.name === '2.1.2 eBay Orders');
+			const shopifyOrdersIndex = metrics.findIndex((m) => m.name === '2.1.3 Shopify Orders');
+			
+			const amazonPercentIndex = metrics.findIndex((m) => m.name === '2.2.1 Amazon Orders %');
+			const ebayPercentIndex = metrics.findIndex((m) => m.name === '2.2.2 eBay Orders %');
+			const shopifyPercentIndex = metrics.findIndex((m) => m.name === '2.2.3 Shopify Orders %');
+
+			if (totalOrdersIndex !== -1 && amazonOrdersIndex !== -1 && amazonPercentIndex !== -1) {
+				for (let i = 0; i < daysCount; i++) {
+					const totalOrders = previousWeekMetrics[totalOrdersIndex][i] || 0;
+					const amazonOrders = previousWeekMetrics[amazonOrdersIndex][i] || 0;
+					previousWeekMetrics[amazonPercentIndex][i] = totalOrders > 0 
+						? Math.round((amazonOrders / totalOrders) * 10000) / 100 
+						: 0;
+				}
+				console.log('📊 Calculated Amazon % for previous week:', previousWeekMetrics[amazonPercentIndex]);
+			}
+
+			if (totalOrdersIndex !== -1 && ebayOrdersIndex !== -1 && ebayPercentIndex !== -1) {
+				for (let i = 0; i < daysCount; i++) {
+					const totalOrders = previousWeekMetrics[totalOrdersIndex][i] || 0;
+					const ebayOrders = previousWeekMetrics[ebayOrdersIndex][i] || 0;
+					previousWeekMetrics[ebayPercentIndex][i] = totalOrders > 0 
+						? Math.round((ebayOrders / totalOrders) * 10000) / 100 
+						: 0;
+				}
+				console.log('📊 Calculated eBay % for previous week:', previousWeekMetrics[ebayPercentIndex]);
+			}
+
+			if (totalOrdersIndex !== -1 && shopifyOrdersIndex !== -1 && shopifyPercentIndex !== -1) {
+				for (let i = 0; i < daysCount; i++) {
+					const totalOrders = previousWeekMetrics[totalOrdersIndex][i] || 0;
+					const shopifyOrders = previousWeekMetrics[shopifyOrdersIndex][i] || 0;
+					previousWeekMetrics[shopifyPercentIndex][i] = totalOrders > 0 
+						? Math.round((shopifyOrders / totalOrders) * 10000) / 100 
+						: 0;
+				}
+				console.log('📊 Calculated Shopify % for previous week:', previousWeekMetrics[shopifyPercentIndex]);
 			}
 
 			previousTotals = totals;
@@ -1013,6 +1074,18 @@
 				preloadedData.employeeHours?.current
 			) {
 				console.log('📦 Using preloaded current week scheduled hours and employee data');
+				if (preloadedData.employeeHours.current && preloadedData.employeeHours.current.length > 0) {
+					console.log(
+						'📦 Preloaded employee hours sample:',
+						preloadedData.employeeHours.current.slice(0, 3)
+					);
+					console.log(
+						'📦 Total preloaded employee hours records:',
+						preloadedData.employeeHours.current.length
+					);
+				} else {
+					console.log('⚠️ No preloaded employee hours data found!');
+				}
 				scheduledHoursData = preloadedData.scheduledHours.current;
 				employeeHoursDataRaw = preloadedData.employeeHours.current;
 
@@ -1021,7 +1094,7 @@
 				employeeRoleBreakdowns = {};
 
 				employeeHoursDataRaw.forEach((entry: any) => {
-					const date = entry.date;
+					const date = entry.work_date || entry.date; // Handle both field names
 
 					// Calculate total hours by date
 					if (!employeeHoursData[date]) {
@@ -1037,18 +1110,18 @@
 							picking: 0
 						};
 					}
-					if (
-						entry.role === 'Supervisor' ||
-						entry.role === 'Manager' ||
-						entry.role === 'B2C Accounts Manager'
-					) {
+					const role = entry.employee_role || entry.role;
+					if (role === 'Supervisor' || role === 'Manager' || role === 'B2C Accounts Manager') {
 						employeeRoleBreakdowns[date].management += entry.hours_worked || 0;
-					} else if (entry.role === 'Packer') {
+					} else if (role === 'Associate') {
 						employeeRoleBreakdowns[date].packing += entry.hours_worked || 0;
-					} else if (entry.role === 'Picker') {
+					} else if (role === 'Picking') {
 						employeeRoleBreakdowns[date].picking += entry.hours_worked || 0;
 					}
 				});
+
+				console.log('📊 Calculated employee hours by date:', employeeHoursData);
+				console.log('📊 Calculated role breakdowns:', employeeRoleBreakdowns);
 			} else {
 				console.log('🌐 Fetching current week scheduled hours and employee data from services');
 				// Get scheduled hours from hours service
@@ -1060,9 +1133,42 @@
 				// Fetch employee hours data
 				try {
 					const sundayDate = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000);
-					const hoursResult = await loadEmployeeHoursForDateRange(displayedMonday, sundayDate);
-					employeeHoursData = hoursResult.totalHours;
-					employeeRoleBreakdowns = hoursResult.roleBreakdowns;
+					const employeeHoursDataRaw = await getHoursDateRange(
+						displayedMonday.toISOString().split('T')[0],
+						sundayDate.toISOString().split('T')[0]
+					);
+
+					// Calculate totals and role breakdowns
+					employeeHoursData = {};
+					employeeRoleBreakdowns = {};
+
+					employeeHoursDataRaw.forEach((entry: any) => {
+						const date = entry.work_date || entry.date; // Handle both field names
+
+						// Calculate total hours by date
+						if (!employeeHoursData[date]) {
+							employeeHoursData[date] = 0;
+						}
+						employeeHoursData[date] += entry.hours_worked || 0;
+
+						// Calculate role breakdowns
+						if (!employeeRoleBreakdowns[date]) {
+							employeeRoleBreakdowns[date] = {
+								management: 0,
+								packing: 0,
+								picking: 0
+							};
+						}
+						const role = entry.employee_role || entry.role;
+						if (role === 'Supervisor' || role === 'Manager' || role === 'B2C Accounts Manager') {
+							employeeRoleBreakdowns[date].management += entry.hours_worked || 0;
+						} else if (role === 'Associate') {
+							employeeRoleBreakdowns[date].packing += entry.hours_worked || 0;
+						} else if (role === 'Picking') {
+							employeeRoleBreakdowns[date].picking += entry.hours_worked || 0;
+						}
+					});
+
 					console.log('Fetched employee hours data:', employeeHoursData);
 					console.log('Fetched role breakdowns:', employeeRoleBreakdowns);
 				} catch (err) {
@@ -1154,11 +1260,6 @@
 				} else {
 					console.log('Missing data for date:', date, 'in dataByDay');
 				}
-			});
-
-			console.log('Financial data mapping:', {
-				financialData,
-				dataByDay
 			});
 
 			// Reset metrics to default values (initialize with zeros)
@@ -1646,7 +1747,7 @@
 	): number[][] {
 		console.log('Computing current week metrics from fresh data...');
 
-		return freshMetrics.map((metric: ExtendedMetric, idx): number[] => {
+		return freshMetrics.map((metric: ExtendedMetric): number[] => {
 			if (!metric.values) return [];
 
 			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
@@ -1728,8 +1829,51 @@
 					totalOrders[i] > 0 ? Math.round((shopifyOrders[i] / totalOrders[i]) * 10000) / 100 : 0
 				);
 			}
+
 			return metric.values;
 		});
+	}
+
+	// Add missing loadEmployeeHoursForDateRange function
+	async function loadEmployeeHoursForDateRange(
+		startDate: Date,
+		endDate: Date
+	): Promise<{
+		totalHours: Record<string, number>;
+		roleBreakdowns: Record<string, { management: number; packing: number; picking: number }>;
+	}> {
+		const employeeHoursDataRaw = await getHoursDateRange(
+			startDate.toISOString().split('T')[0],
+			endDate.toISOString().split('T')[0]
+		);
+
+		const totalHours: Record<string, number> = {};
+		const roleBreakdowns: Record<string, { management: number; packing: number; picking: number }> =
+			{};
+
+		employeeHoursDataRaw.forEach((entry: any) => {
+			const date = entry.work_date || entry.date; // Handle both field names
+
+			if (!totalHours[date]) {
+				totalHours[date] = 0;
+			}
+			totalHours[date] += entry.hours_worked || 0;
+
+			if (!roleBreakdowns[date]) {
+				roleBreakdowns[date] = { management: 0, packing: 0, picking: 0 };
+			}
+
+			const role = entry.employee_role || entry.role;
+			if (role === 'Supervisor' || role === 'Manager' || role === 'B2C Accounts Manager') {
+				roleBreakdowns[date].management += entry.hours_worked || 0;
+			} else if (role === 'Associate') {
+				roleBreakdowns[date].packing += entry.hours_worked || 0;
+			} else if (role === 'Picking') {
+				roleBreakdowns[date].picking += entry.hours_worked || 0;
+			}
+		});
+
+		return { totalHours, roleBreakdowns };
 	}
 
 	// Function to upload current week's data to daily_metric_review table
@@ -1901,13 +2045,16 @@
 		console.log(`🔢 Data Count:`, Array.isArray(data) ? data.length : 'Single object');
 	}
 
+	// Mount handler
 	onMount(() => {
 		loadMetrics();
 		loadPreviousWeekTotals();
 	});
 
-	$: previousWeekMetrics = metrics.map((metric: ExtendedMetric, idx): number[] => {
-		if (metric.metricField === null) {
+	// Computed reactive statements for previous week metrics and totals
+	// Note: previousWeekMetrics is populated by loadPreviousWeekTotals() function
+	// This reactive statement is commented out to avoid circular dependencies
+	/* $: previousWeekMetrics = metrics.map((metric: ExtendedMetric, idx: number): number[] => {
 			// For Labor Efficiency, we need to keep track of both shipments and hours for accurate averaging
 			if (metric.name === '1.4 Labor Efficiency (shipments/hour)') {
 				const shipments =
@@ -1938,6 +2085,7 @@
 				const amazonOrders =
 					previousWeekMetrics[metrics.findIndex((m) => m.name === '2.1.1 Amazon Orders')] ??
 					new Array(daysCount).fill(0);
+				console.log('📊 Amazon % calculation - Total orders:', totalOrders, 'Amazon orders:', amazonOrders);
 				return previousWeekDates.map((_, i) =>
 					totalOrders[i] > 0 ? Math.round((amazonOrders[i] / totalOrders[i]) * 10000) / 100 : 0
 				);
@@ -1960,89 +2108,9 @@
 					new Array(daysCount).fill(0);
 				return previousWeekDates.map((_, i) =>
 					totalOrders[i] > 0 ? Math.round((shopifyOrders[i] / totalOrders[i]) * 10000) / 100 : 0
-				);
-			}
-			return metric.values;
-		}
+				);		}
 		return metric.values;
-	});
-
-	/**
-	 * Get total hours worked for each day in a date range from employee hours table
-	 * Returns both total hours and role-based breakdowns
-	 */
-	async function loadEmployeeHoursForDateRange(
-		startDate: Date,
-		endDate: Date
-	): Promise<{
-		totalHours: Record<string, number>;
-		roleBreakdowns: Record<
-			string,
-			{
-				management: number;
-				packing: number;
-				picking: number;
-			}
-		>;
-	}> {
-		try {
-			const startDateStr = startDate.toISOString().split('T')[0];
-			const endDateStr = endDate.toISOString().split('T')[0];
-
-			const { data, error } = await supabase
-				.from('daily_employee_hours')
-				.select('work_date, hours_worked, employee_role')
-				.gte('work_date', startDateStr)
-				.lte('work_date', endDateStr);
-
-			if (error) {
-				console.error('Error fetching employee hours:', error);
-				return { totalHours: {}, roleBreakdowns: {} };
-			}
-
-			// Group by date and sum hours
-			const totalHours: Record<string, number> = {};
-			const roleBreakdowns: Record<
-				string,
-				{
-					management: number;
-					packing: number;
-					picking: number;
-				}
-			> = {};
-
-			data?.forEach((record) => {
-				const date = record.work_date;
-				const hours = record.hours_worked || 0;
-				const role = record.employee_role?.toLowerCase() || '';
-
-				// Initialize if needed
-				if (!totalHours[date]) {
-					totalHours[date] = 0;
-				}
-				if (!roleBreakdowns[date]) {
-					roleBreakdowns[date] = { management: 0, packing: 0, picking: 0 };
-				}
-
-				// Add to total
-				totalHours[date] += hours;
-
-				// Categorize by role
-				if (role.includes('supervisor') || role.includes('manager')) {
-					roleBreakdowns[date].management += hours;
-				} else if (role.includes('associate')) {
-					roleBreakdowns[date].packing += hours;
-				} else if (role.includes('picking')) {
-					roleBreakdowns[date].picking += hours;
-				}
-			});
-
-			return { totalHours, roleBreakdowns };
-		} catch (err) {
-			console.error('Error loading employee hours:', err);
-			return { totalHours: {}, roleBreakdowns: {} };
-		}
-	}
+	}); */
 
 	// ...existing code...
 </script>
