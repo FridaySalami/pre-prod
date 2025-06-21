@@ -17,7 +17,7 @@ function getMonday(date: Date = new Date()): Date {
   return new Date(d.setDate(diff));
 }
 
-// Working version of the upload API with simplified logic
+// Working version of the upload API with simplified logic and timeout protection
 export const POST: RequestHandler = async ({ request }) => {
   const totalStartTime = Date.now();
   let linnworksTime = 0;
@@ -26,7 +26,15 @@ export const POST: RequestHandler = async ({ request }) => {
   let employeeTime = 0;
 
   try {
-    console.log('🚀 API: Starting streamlined daily metric review upload...');
+    console.log('🚀 API: Starting streamlined daily metric review upload with timeout protection...');
+
+    // Check if we're approaching timeout
+    const checkTimeout = (stepName: string) => {
+      const elapsed = Date.now() - totalStartTime;
+      if (elapsed > 150000) { // 2.5 minutes
+        throw new Error(`Timeout approaching in ${stepName} - elapsed: ${elapsed}ms`);
+      }
+    };
 
     // Get current week dates
     const displayedMonday = getMonday(new Date());
@@ -43,82 +51,103 @@ export const POST: RequestHandler = async ({ request }) => {
 
     console.log(`📅 Target week: ${mondayStr} to ${sundayStr}`);
 
-    // Step 1: Get Linnworks data
+    // Initialize data variables
+    let linnworksData: any = null;
+    let financialData: any = null;
+    let scheduledHoursData: any[] = [];
+    let employeeHoursData: Record<string, number> = {};
+    let employeeRoleBreakdowns: Record<string, { management: number; packing: number; picking: number; }> = {};
+
+    // Step 1: Get Linnworks data with timeout
     console.log('📊 Step 1: Fetching Linnworks data...');
+    checkTimeout('Linnworks API');
     const linnworksStartTime = Date.now();
 
-    const linnworksResponse = await fetch(`https://jackweston.netlify.app/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
-    if (!linnworksResponse.ok) {
-      throw new Error(`Linnworks API failed: ${linnworksResponse.status}`);
-    }
-
-    const linnworksData = await linnworksResponse.json();
-    linnworksTime = Date.now() - linnworksStartTime;
-
-    console.log(`✅ Linnworks data fetched in ${linnworksTime}ms`);
-    console.log('📋 Linnworks Response Structure:');
-    console.log('   - Start Date:', linnworksData.startDate);
-    console.log('   - End Date:', linnworksData.endDate);
-    console.log('   - Daily Orders Count:', linnworksData.dailyOrders?.length || 0);
-    console.log('   - Total Orders (summary):', linnworksData.summary?.totalOrders || 0);
-
-    // Show full Linnworks response for debugging
-    console.log('🔍 Full Linnworks Response Data:');
-    console.log(JSON.stringify(linnworksData, null, 2));
-
-    if (linnworksData.dailyOrders && linnworksData.dailyOrders.length > 0) {
-      console.log('📊 Daily Orders Breakdown:');
-      linnworksData.dailyOrders.forEach((day: any, index: number) => {
-        console.log(`   Day ${index + 1} (${day.date}): ${day.count} orders`);
-        if (day.channels) {
-          console.log(`     - Amazon: ${day.channels.amazon}, eBay: ${day.channels.ebay}, Shopify: ${day.channels.shopify}`);
-        }
+      const linnworksResponse = await fetch(`https://jackweston.netlify.app/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`, {
+        signal: controller.signal
       });
-    } else {
-      console.log('⚠️ No daily orders data received from Linnworks API');
+      clearTimeout(timeoutId);
+
+      if (!linnworksResponse.ok) {
+        throw new Error(`Linnworks API failed: HTTP ${linnworksResponse.status} - ${linnworksResponse.statusText}`);
+      }
+
+      const linnworksData = await linnworksResponse.json();
+      linnworksTime = Date.now() - linnworksStartTime;
+
+      console.log(`✅ Linnworks data fetched in ${linnworksTime}ms`);
+      console.log('📋 Linnworks Response Structure:');
+      console.log('   - Start Date:', linnworksData.startDate);
+      console.log('   - End Date:', linnworksData.endDate);
+      console.log('   - Daily Orders Count:', linnworksData.dailyOrders?.length || 0);
+      console.log('   - Total Orders (summary):', linnworksData.summary?.totalOrders || 0);
+
+      // Reduced logging to prevent memory issues
+      if (linnworksData.dailyOrders && linnworksData.dailyOrders.length > 0) {
+        console.log('📊 Daily Orders Summary:');
+        const totalOrders = linnworksData.summary?.totalOrders || 0;
+        console.log(`   - Total orders this week: ${totalOrders}`);
+        console.log(`   - First day: ${linnworksData.dailyOrders[0].date} (${linnworksData.dailyOrders[0].count} orders)`);
+        console.log(`   - Last day: ${linnworksData.dailyOrders[linnworksData.dailyOrders.length - 1].date} (${linnworksData.dailyOrders[linnworksData.dailyOrders.length - 1].count} orders)`);
+      } else {
+        console.log('⚠️ No daily orders data received from Linnworks API');
+      }
+    } catch (error) {
+      console.error(`❌ Linnworks API failed after ${Date.now() - linnworksStartTime}ms:`, error);
+      throw new Error(`Linnworks API error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    // Step 2: Get financial data
+    // Step 2: Get financial data with timeout
     console.log('📊 Step 2: Fetching financial data...');
+    checkTimeout('Financial API');
     const financialStartTime = Date.now();
 
-    const financialResponse = await fetch(`https://jackweston.netlify.app/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
-    if (!financialResponse.ok) {
-      throw new Error(`Financial API failed: ${financialResponse.status}`);
-    }
-
-    const financialData = await financialResponse.json();
-    financialTime = Date.now() - financialStartTime;
-
-    console.log(`✅ Financial data fetched in ${financialTime}ms`);
-    console.log('💰 Financial Response Structure:');
-    console.log('   - Start Date:', financialData.startDate);
-    console.log('   - End Date:', financialData.endDate);
-    console.log('   - Daily Data Count:', financialData.dailyData?.length || 0);
-    console.log('   - Total Sales (summary):', financialData.summary?.totalSales || 0);
-
-    // Show full Financial response for debugging
-    console.log('🔍 Full Financial Response Data:');
-    console.log(JSON.stringify(financialData, null, 2));
-
-    if (financialData.dailyData && financialData.dailyData.length > 0) {
-      console.log('💸 Daily Financial Breakdown:');
-      financialData.dailyData.forEach((day: any, index: number) => {
-        console.log(`   Day ${index + 1} (${day.date}): £${day.salesData?.totalSales || 0}`);
-        if (day.salesData) {
-          console.log(`     - Amazon: £${day.salesData.amazonSales || 0}, eBay: £${day.salesData.ebaySales || 0}, Shopify: £${day.salesData.shopifySales || 0}`);
-        }
+      const financialResponse = await fetch(`https://jackweston.netlify.app/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`, {
+        signal: controller.signal
       });
-    } else {
-      console.log('⚠️ No financial data received from Financial API');
+      clearTimeout(timeoutId);
+
+      if (!financialResponse.ok) {
+        throw new Error(`Financial API failed: HTTP ${financialResponse.status} - ${financialResponse.statusText}`);
+      }
+
+      financialData = await financialResponse.json();
+      financialTime = Date.now() - financialStartTime;
+
+      console.log(`✅ Financial data fetched in ${financialTime}ms`);
+      console.log('💰 Financial Response Structure:');
+      console.log('   - Start Date:', financialData.startDate);
+      console.log('   - End Date:', financialData.endDate);
+      console.log('   - Daily Data Count:', financialData.dailyData?.length || 0);
+      console.log('   - Total Sales (summary):', financialData.summary?.totalSales || 0);
+
+      // Reduced logging to prevent memory issues
+      if (financialData.dailyData && financialData.dailyData.length > 0) {
+        console.log('💸 Daily Financial Summary:');
+        const totalSales = financialData.summary?.totalSales || 0;
+        console.log(`   - Total sales this week: £${totalSales}`);
+        console.log(`   - First day: ${financialData.dailyData[0].date} (£${financialData.dailyData[0].salesData?.totalSales || 0})`);
+        console.log(`   - Last day: ${financialData.dailyData[financialData.dailyData.length - 1].date} (£${financialData.dailyData[financialData.dailyData.length - 1].salesData?.totalSales || 0})`);
+      } else {
+        console.log('⚠️ No financial data received from Financial API');
+      }
+    } catch (error) {
+      console.error(`❌ Financial API failed after ${Date.now() - financialStartTime}ms:`, error);
+      throw new Error(`Financial API error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
     // Step 3: Get scheduled hours (simplified)
     console.log('📊 Step 3: Fetching scheduled hours...');
+    checkTimeout('Scheduled Hours');
     const scheduledStartTime = Date.now();
-    let scheduledHoursData = [];
 
     try {
       const { getScheduledHoursForDateRange } = await import('$lib/schedule/hours-service');
@@ -131,13 +160,11 @@ export const POST: RequestHandler = async ({ request }) => {
       console.log('⏰ Scheduled Hours Data:');
       console.log('   - Records count:', scheduledHoursData.length);
 
-      // Show full scheduled hours data
-      console.log('🔍 Full Scheduled Hours Data:');
-      console.log(JSON.stringify(scheduledHoursData, null, 2));
-
-      scheduledHoursData.forEach((record: any, index: number) => {
-        console.log(`   Day ${index + 1} (${record.date}): ${record.hours} hours scheduled`);
-      });
+      // Reduced logging
+      if (scheduledHoursData.length > 0) {
+        console.log(`   - First day: ${scheduledHoursData[0]?.date} (${scheduledHoursData[0]?.hours} hours)`);
+        console.log(`   - Total records: ${scheduledHoursData.length}`);
+      }
 
     } catch (err) {
       scheduledTime = Date.now() - scheduledStartTime;
@@ -152,9 +179,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Step 4: Get employee hours with role breakdown
     console.log('📊 Step 4: Fetching employee hours with role breakdown...');
+    checkTimeout('Employee Hours');
     const employeeStartTime = Date.now();
-    let employeeHoursData: Record<string, number> = {};
-    let employeeRoleBreakdowns: Record<string, { management: number; packing: number; picking: number; }> = {};
 
     try {
       const startDateStr = mondayStr;
@@ -175,9 +201,11 @@ export const POST: RequestHandler = async ({ request }) => {
         console.log('👥 Employee Hours Raw Data:');
         console.log('   - Records from Supabase:', data?.length || 0);
 
-        // Show full employee hours data
-        console.log('🔍 Full Employee Hours Data from Supabase:');
-        console.log(JSON.stringify(data, null, 2));
+        // Reduced logging - no full JSON dump
+        if (data && data.length > 0) {
+          console.log(`   - Date range: ${data[0]?.work_date} to ${data[data.length - 1]?.work_date}`);
+          console.log(`   - Total records: ${data.length}`);
+        }
 
         // Group by date and sum hours, calculate role breakdowns
         data?.forEach((record) => {
@@ -206,14 +234,11 @@ export const POST: RequestHandler = async ({ request }) => {
           }
         });
 
-        console.log('👥 Employee Hours Summary (by date):');
-        Object.keys(employeeHoursData).forEach(date => {
-          const breakdown = employeeRoleBreakdowns[date] || { management: 0, packing: 0, picking: 0 };
-          console.log(`   ${date}: ${employeeHoursData[date]} total hours`);
-          console.log(`     - Management: ${breakdown.management} hours`);
-          console.log(`     - Packing/Associate: ${breakdown.packing} hours`);
-          console.log(`     - Picking: ${breakdown.picking} hours`);
-        });
+        console.log('👥 Employee Hours Summary:');
+        const totalDays = Object.keys(employeeHoursData).length;
+        const totalHours = Object.values(employeeHoursData).reduce((sum, hours) => sum + hours, 0);
+        console.log(`   - Days with data: ${totalDays}/7`);
+        console.log(`   - Total hours: ${totalHours}`);
 
         if (Object.keys(employeeHoursData).length === 0) {
           console.log('⚠️ No employee hours data found for this date range');
@@ -274,30 +299,26 @@ export const POST: RequestHandler = async ({ request }) => {
 
     console.log('📊 Upload data prepared:', uploadData.length, 'records');
 
-    // Debug: Show complete upload data
-    console.log('🔍 Complete Upload Data (All Records):');
-    console.log(JSON.stringify(uploadData, null, 2));
-
-    // Debug: Show sample upload record
+    // Reduced logging - show summary instead of full data
     if (uploadData.length > 0) {
-      console.log('📋 Sample Upload Record (Day 1):');
+      console.log('📋 Upload Data Summary:');
       const sample = uploadData[0];
-      console.log(`   Date: ${sample.date}`);
-      console.log(`   Shipments: ${sample.shipments_packed}`);
-      console.log(`   Scheduled Hours: ${sample.scheduled_hours}`);
-      console.log(`   Actual Hours: ${sample.actual_hours_worked}`);
-      console.log(`   Management Hours: ${sample.management_hours_used}`);
-      console.log(`   Packing Hours: ${sample.packing_hours_used}`);
-      console.log(`   Picking Hours: ${sample.picking_hours_used}`);
-      console.log(`   Labor Efficiency: ${sample.labor_efficiency}`);
-      console.log(`   Labor Utilization: ${sample.labor_utilization_percent}%`);
-      console.log(`   Total Sales: £${sample.total_sales}`);
-      console.log(`   Linnworks Orders: ${sample.linnworks_total_orders}`);
-      console.log(`   Amazon %: ${sample.amazon_orders_percent}%`);
+      console.log(`   - Date range: ${uploadData[0].date} to ${uploadData[uploadData.length - 1].date}`);
+      console.log(`   - Sample (${sample.date}):`);
+      console.log(`     - Shipments: ${sample.shipments_packed}`);
+      console.log(`     - Actual Hours: ${sample.actual_hours_worked}`);
+      console.log(`     - Total Sales: £${sample.total_sales}`);
+      
+      // Show totals
+      const totalOrders = uploadData.reduce((sum, day) => sum + day.shipments_packed, 0);
+      const totalSales = uploadData.reduce((sum, day) => sum + day.total_sales, 0);
+      const totalHours = uploadData.reduce((sum, day) => sum + day.actual_hours_worked, 0);
+      console.log(`   - Week totals: ${totalOrders} orders, £${totalSales} sales, ${totalHours} hours`);
     }
 
     // Step 6: Upload to Supabase
     console.log('☁️ Step 6: Uploading to Supabase...');
+    checkTimeout('Supabase Upload');
     const uploadStartTime = Date.now();
 
     const { data: insertData, error: insertError } = await supabaseAdmin
