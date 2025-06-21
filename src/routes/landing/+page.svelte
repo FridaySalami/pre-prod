@@ -1599,9 +1599,6 @@
 								{format(addDays(today, -1), 'do MMM')}
 							</Badge>
 						</CardTitle>
-						<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mt-2">
-							Fulfillment Operations
-						</div>
 					</CardHeader>
 					<CardContent>
 						{#if isLoading.metrics}
