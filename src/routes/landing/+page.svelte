@@ -4,6 +4,7 @@
 	import { userSession } from '$lib/sessionStore';
 	import { format, addDays, isWeekend } from 'date-fns';
 	import { supabase } from '$lib/supabaseClient';
+	import { getHoursByRoleForDate } from '$lib/employeeHoursService';
 	import {
 		Card,
 		CardHeader,
@@ -195,6 +196,13 @@
 		staff: Employee[];
 	}> = [];
 
+	// Add next week's staffing
+	let nextWeekStaff: Array<{
+		date: Date;
+		dayOfWeek: string;
+		staff: Employee[];
+	}> = [];
+
 	// Add these to your script section
 	let hasError = false;
 	let errorMessage = '';
@@ -257,6 +265,7 @@
 
 			// First request critical data in sequence to ensure dependencies are met
 			await fetchWeeklyStaff();
+			await fetchNextWeekStaff();
 
 			// Then load other data in parallel
 			await Promise.all([fetchUpcomingLeave(), fetchWeather(), fetchYesterdayMetrics()]);
@@ -614,6 +623,218 @@
 
 		return days;
 	}
+
+	// Helper function to get days of next week (Mon-Sat)
+	function getNextWeekDays(): Date[] {
+		const today = new Date();
+		const days = [];
+
+		// Reset time to midnight to avoid any time-related issues
+		today.setHours(0, 0, 0, 0);
+
+		// Get current day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+		const currentDayOfWeek = today.getDay();
+
+		// Calculate days to go back to reach Monday
+		const daysToMonday = currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1;
+
+		// Create Monday date of current week
+		const monday = new Date(today);
+		monday.setDate(today.getDate() - daysToMonday);
+
+		// Add 7 days to get next Monday
+		const nextMonday = new Date(monday);
+		nextMonday.setDate(monday.getDate() + 7);
+
+		// Create array of dates from next Monday to next Saturday (6 days)
+		for (let i = 0; i < 6; i++) {
+			const date = new Date(nextMonday);
+			date.setDate(nextMonday.getDate() + i);
+			days.push(date);
+		}
+
+		return days;
+	}
+
+	// Fetch next week's staff schedule
+	async function fetchNextWeekStaff(): Promise<void> {
+		try {
+			// Get next week dates
+			const nextWeekDates = getNextWeekDays();
+
+			// Add timeouts to Supabase calls to prevent hanging
+			const fetchTimeout = new Promise<{ data: null; error: Error }>((resolve) =>
+				setTimeout(
+					() =>
+						resolve({
+							data: null,
+							error: new Error('Request timed out after 10s')
+						}),
+					10000
+				)
+			);
+
+			// Query for specific date assignments with timeout
+			const formattedDates = nextWeekDates.map((date) => format(date, 'yyyy-MM-dd'));
+			const schedulesPromise = supabase.from('schedules').select('*').in('date', formattedDates);
+
+			// Use Promise.race to implement timeout
+			const { data: schedulesData, error: schedulesError } = await Promise.race([
+				schedulesPromise,
+				fetchTimeout
+			]);
+
+			if (schedulesError) {
+				console.error('Error fetching next week specific schedules:', schedulesError);
+				throw schedulesError;
+			}
+
+			// Query for recurring patterns
+			const { data: patternsData, error: patternsError } = await supabase
+				.from('employee_schedules')
+				.select('*');
+
+			if (patternsError) {
+				console.error('Error fetching next week schedule patterns:', patternsError);
+				throw patternsError;
+			}
+
+			// Fetch employee details
+			const employeeIds = new Set<string>();
+
+			// Add IDs from specific schedules
+			if (schedulesData) {
+				schedulesData.forEach((item) => {
+					if (item.employee_id) employeeIds.add(item.employee_id);
+				});
+			}
+
+			// Add IDs from pattern schedules
+			if (patternsData) {
+				patternsData.forEach((item) => {
+					if (item.employee_id) employeeIds.add(item.employee_id);
+				});
+			}
+
+			// Only proceed if we have employee IDs
+			if (employeeIds.size === 0) {
+				nextWeekStaff = nextWeekDates.map((date) => ({
+					date,
+					dayOfWeek: format(date, 'EEEE'),
+					staff: []
+				}));
+				return;
+			}
+
+			const { data: employeeData, error: employeeError } = await supabase
+				.from('employees')
+				.select('*')
+				.in('id', Array.from(employeeIds));
+
+			if (employeeError) {
+				console.error('Error fetching employees for next week:', employeeError);
+				throw employeeError;
+			}
+
+			// Get leave data for next week
+			const { data: leaveData, error: leaveError } = await supabase
+				.from('leave_requests')
+				.select('*')
+				.lte('start_date', format(nextWeekDates[5], 'yyyy-MM-dd'))
+				.gte('end_date', format(nextWeekDates[0], 'yyyy-MM-dd'))
+				.eq('status', 'approved');
+
+			if (leaveError) {
+				console.error('Error fetching next week leave data:', leaveError);
+				throw leaveError;
+			}
+
+			// Convert JavaScript day to database day format
+			function convertJsDayToDbDay(jsDay: number): number {
+				return jsDay === 0 ? 6 : jsDay - 1;
+			}
+
+			// Process each day of next week
+			nextWeekStaff = nextWeekDates.map((date) => {
+				const formattedDate = format(date, 'yyyy-MM-dd');
+				const jsDay = date.getDay();
+				const dbDayOfWeek = convertJsDayToDbDay(jsDay);
+				const dayName = format(date, 'EEEE');
+
+				const specificSchedules =
+					schedulesData?.filter((item) => item.date === formattedDate) || [];
+
+				const dayPatterns =
+					patternsData?.filter((pattern) => {
+						const patternDay = Number(pattern.day_of_week);
+						return patternDay === dbDayOfWeek && pattern.is_working === true;
+					}) || [];
+
+				// Combine schedules (specific overrides pattern)
+				const scheduledEmployees = new Map();
+
+				// Add pattern-based staff first
+				dayPatterns.forEach((pattern) => {
+					scheduledEmployees.set(pattern.employee_id, {
+						employee_id: pattern.employee_id,
+						shift: pattern.shift || 'morning'
+					});
+				});
+
+				// Override with specific assignments
+				specificSchedules.forEach((schedule) => {
+					scheduledEmployees.set(schedule.employee_id, {
+						employee_id: schedule.employee_id,
+						shift: schedule.shift
+					});
+				});
+
+				// Check for leave
+				const isOnLeave = (employeeId: string, currentDate: Date) => {
+					const formattedCurrentDate = format(currentDate, 'yyyy-MM-dd');
+					return (
+						leaveData?.some((leave) => {
+							const leaveStartFormatted = format(new Date(leave.start_date), 'yyyy-MM-dd');
+							const leaveEndFormatted = format(new Date(leave.end_date), 'yyyy-MM-dd');
+							return (
+								leave.employee_id === employeeId &&
+								leaveStartFormatted <= formattedCurrentDate &&
+								leaveEndFormatted >= formattedCurrentDate
+							);
+						}) || false
+					);
+				};
+
+				// Build staff list with leave status
+				let staffWithLeaveStatus: Employee[] = [];
+				Array.from(scheduledEmployees.entries()).forEach(([employeeId, schedule]) => {
+					const onLeave = isOnLeave(employeeId, date);
+					const employee = employeeData?.find((emp) => emp.id === employeeId);
+					staffWithLeaveStatus.push({
+						id: employeeId,
+						name: employee?.name || 'Unknown',
+						shift: schedule.shift,
+						role: employee?.role || undefined,
+						onLeave: onLeave
+					});
+				});
+
+				return {
+					date,
+					dayOfWeek: dayName,
+					staff: staffWithLeaveStatus
+				};
+			});
+
+			// Sort by date and remove Sunday if it exists
+			nextWeekStaff = nextWeekStaff
+				.sort((a, b) => a.date.getTime() - b.date.getTime())
+				.filter((day) => format(day.date, 'EEEE') !== 'Sunday');
+		} catch (error) {
+			console.error('Error fetching next week staff schedule:', error);
+			throw error;
+		}
+	}
 	// Enhanced fetchUpcomingLeave function that properly preserves date ranges
 	async function fetchUpcomingLeave(): Promise<void> {
 		try {
@@ -751,6 +972,11 @@
 				// Labor metrics (1.x series)
 				actual_hours_worked: number;
 				labor_efficiency: number;
+
+				// Role-specific hours
+				management_hours_used: number;
+				packing_hours_used: number;
+				picking_hours_used: number;
 			}
 
 			// Query the daily_metric_review table for comprehensive metrics
@@ -769,11 +995,19 @@
 			if (data) {
 				const typedData = data as MetricReviewData;
 
-				// Calculate shipments packed from labor efficiency and hours worked
-				const shipmentsPacked =
-					typedData.labor_efficiency && typedData.actual_hours_worked
-						? Math.round(typedData.labor_efficiency * typedData.actual_hours_worked)
+				// Use the role-specific hours directly from the daily_metric_review table
+				const packingHoursValue = Number(typedData.packing_hours_used || 0);
+				const pickingHoursValue = Number(typedData.picking_hours_used || 0);
+				const associateHours = packingHoursValue + pickingHoursValue;
+
+				// Calculate labor efficiency using only Packing + Picking hours
+				const laborEfficiency =
+					associateHours > 0
+						? Math.round((typedData.linnworks_total_orders / associateHours) * 100) / 100
 						: 0;
+
+				// For display purposes, use the actual orders as shipments packed
+				const shipmentsPacked = typedData.linnworks_total_orders || 0;
 
 				// Calculate labor utilization (this would need to be added to upload if needed)
 				const laborUtilization = 0; // Not available in review table yet
@@ -781,8 +1015,8 @@
 				metrics = {
 					// B2C Amazon Fulfillment (1.x series)
 					shipmentsPacked,
-					actualHoursWorked: typedData.actual_hours_worked || 0,
-					laborEfficiency: typedData.labor_efficiency || 0,
+					actualHoursWorked: associateHours, // Use filtered hours instead of total hours
+					laborEfficiency,
 					laborUtilization,
 
 					// B2C Amazon Financials (2.0 series)
@@ -803,11 +1037,9 @@
 					shopifyOrdersPercent: typedData.shopify_orders_percent || 0,
 
 					// Legacy fields for backward compatibility
-					shipmentsPerHour: typedData.labor_efficiency || 0,
+					shipmentsPerHour: laborEfficiency,
 					labourUtilisation: laborUtilization
 				};
-
-				console.log('Successfully loaded comprehensive metrics from daily_metric_review:', metrics);
 			}
 		} catch (error) {
 			console.error('Error fetching metrics:', error);
@@ -1182,255 +1414,14 @@
 			<div class="date-display">Today is {format(today, 'EEEE, do MMMM yyyy')}</div>
 		</div>
 
-		<!-- Yesterday's Performance - Full width metrics card at top -->
-		<Card class="metrics-header-card mb-4">
-			<CardHeader class="pb-2">
-				<CardTitle class="text-base font-medium text-slate-800 flex items-center gap-2">
-					Yesterday's Performance
-					<Badge variant="secondary" class="text-xs">
-						{format(addDays(today, -1), 'do MMM')}
-					</Badge>
-				</CardTitle>
-			</CardHeader>
-			<CardContent class="pt-0 pb-2">
-				{#if isLoading.metrics}
-					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-						{#each Array(6) as _}
-							<div class="space-y-1">
-								<Skeleton class="h-3 w-24" />
-								<Skeleton class="h-5 w-16" />
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<!-- Comprehensive metrics from daily_metric_review table -->
-					<div class="space-y-3">
-						<!-- B2C Amazon Fulfillment Section -->
-						<div class="space-y-2">
-							<h3
-								class="text-xs font-medium text-slate-600 uppercase tracking-wide border-b border-slate-200 pb-1"
-							>
-								Fulfillment Operations
-							</h3>
-							<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-								<Card class="border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100">
-									<CardContent class="pt-2 pb-2">
-										<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
-											Shipments Packed
-										</div>
-										<div class="text-lg font-bold text-slate-900">{metrics.shipmentsPacked}</div>
-									</CardContent>
-								</Card>
-
-								<Card>
-									<CardContent class="pt-2 pb-2">
-										<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
-											Hours Worked
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.actualHoursWorked.toFixed(1)}h
-										</div>
-									</CardContent>
-								</Card>
-
-								<Card>
-									<CardContent class="pt-2 pb-2">
-										<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
-											Labor Efficiency
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.laborEfficiency.toFixed(1)}/hr
-										</div>
-									</CardContent>
-								</Card>
-
-								{#if metrics.laborUtilization > 0}
-									<Card>
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">
-												Labor Utilization
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.laborUtilization.toFixed(1)}%
-											</div>
-										</CardContent>
-									</Card>
-								{/if}
-							</div>
-						</div>
-
-						<!-- Sales Section -->
-						{#if metrics.totalSales > 0}
-							<div class="space-y-2">
-								<h3
-									class="text-xs font-medium text-slate-600 uppercase tracking-wide border-b border-slate-200 pb-1"
-								>
-									Sales Performance
-								</h3>
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
-									<Card class="border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 border-2">
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												Total Sales
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												£{metrics.totalSales.toLocaleString('en-GB', {
-													minimumFractionDigits: 2,
-													maximumFractionDigits: 2
-												})}
-											</div>
-										</CardContent>
-									</Card>
-
-									<Card
-										class="border-yellow-200 bg-gradient-to-br from-yellow-50 to-yellow-100 border-2"
-									>
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												Amazon Sales
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												£{metrics.amazonSales.toLocaleString('en-GB', {
-													minimumFractionDigits: 2,
-													maximumFractionDigits: 2
-												})}
-											</div>
-										</CardContent>
-									</Card>
-
-									<Card class="border-red-200 bg-gradient-to-br from-red-50 to-red-100 border-2">
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												eBay Sales
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												£{metrics.ebaySales.toLocaleString('en-GB', {
-													minimumFractionDigits: 2,
-													maximumFractionDigits: 2
-												})}
-											</div>
-										</CardContent>
-									</Card>
-
-									<Card
-										class="border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 border-2"
-									>
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												Shopify Sales
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												£{metrics.shopifySales.toLocaleString('en-GB', {
-													minimumFractionDigits: 2,
-													maximumFractionDigits: 2
-												})}
-											</div>
-										</CardContent>
-									</Card>
-								</div>
-							</div>
-						{/if}
-
-						<!-- Orders Section -->
-						{#if metrics.linnworksTotalOrders > 0}
-							<div class="space-y-2">
-								<h3
-									class="text-xs font-medium text-slate-600 uppercase tracking-wide border-b border-slate-200 pb-1"
-								>
-									Order Volume
-								</h3>
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
-									<Card
-										class="border-green-200 bg-gradient-to-br from-green-50 to-green-100 border-2"
-									>
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												Total Orders
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksTotalOrders}
-											</div>
-										</CardContent>
-									</Card>
-
-									<Card
-										class="border-yellow-200 bg-gradient-to-br from-yellow-50 to-yellow-100 border-2"
-									>
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												Amazon Orders
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksAmazonOrders}
-												{#if metrics.amazonOrdersPercent > 0}
-													<span class="text-sm font-medium text-slate-600 ml-2">
-														({metrics.amazonOrdersPercent.toFixed(1)}%)
-													</span>
-												{/if}
-											</div>
-										</CardContent>
-									</Card>
-
-									<Card class="border-red-200 bg-gradient-to-br from-red-50 to-red-100 border-2">
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												eBay Orders
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksEbayOrders}
-												{#if metrics.ebayOrdersPercent > 0}
-													<span class="text-sm font-medium text-slate-600 ml-2">
-														({metrics.ebayOrdersPercent.toFixed(1)}%)
-													</span>
-												{/if}
-											</div>
-										</CardContent>
-									</Card>
-
-									<Card
-										class="border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 border-2"
-									>
-										<CardContent class="pt-2 pb-2">
-											<div class="text-xs font-medium text-slate-800 uppercase tracking-wide mb-1">
-												Shopify Orders
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksShopifyOrders}
-												{#if metrics.shopifyOrdersPercent > 0}
-													<span class="text-sm font-medium text-slate-600 ml-2">
-														({metrics.shopifyOrdersPercent.toFixed(1)}%)
-													</span>
-												{/if}
-											</div>
-										</CardContent>
-									</Card>
-								</div>
-							</div>
-						{/if}
-
-						<!-- Fallback message if no comprehensive data -->
-						{#if metrics.totalSales === 0 && metrics.linnworksTotalOrders === 0}
-							<Alert variant="warning">
-								<AlertTitle>Note</AlertTitle>
-								<AlertDescription>
-									Comprehensive metrics not available for yesterday. Showing basic fulfillment data.
-									Upload current week's metrics from the dashboard to see complete performance data.
-								</AlertDescription>
-							</Alert>
-						{/if}
-					</div>
-				{/if}
-			</CardContent>
-		</Card>
-
 		<!-- Main dashboard grid layout -->
 		<div class="dashboard-grid">
 			<!-- Left Column - Main column now contains only weekly staff & upcoming leave -->
 			<div class="main-column">
-				<!-- Weekly Staff View - stays at the top of left column -->
+				<!-- Combined Weekly Staff View -->
 				<Card class="weekly-staff-card mb-6">
 					<CardHeader>
-						<CardTitle>This Week's Staffing</CardTitle>
+						<CardTitle>Weekly Staffing</CardTitle>
 					</CardHeader>
 					<CardContent>
 						{#if isLoading.staff}
@@ -1439,55 +1430,110 @@
 								<Skeleton class="h-4 w-3/4" />
 								<Skeleton class="h-4 w-1/2" />
 							</div>
-						{:else if weeklyStaff.length === 0}
-							<p class="text-muted-foreground text-center py-8">No staff scheduled this week</p>
 						{:else}
-							<div class="weekly-staff-grid">
-								{#each weeklyStaff as dayData, index}
-									<div
-										class="day-column"
-										class:today={format(dayData.date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')}
-									>
-										<div class="day-header">
-											<div class="day-name">{dayData.dayOfWeek}</div>
-											<div class="day-date">{format(dayData.date, 'do MMM')}</div>
-											<!-- Add this debug info temporarily -->
-											<div class="day-debug" style="font-size: 0.7rem; color: #999;">
-												{format(dayData.date, 'yyyy-MM-dd')}
+							<!-- This Week's Staffing Section -->
+							<div class="mb-8">
+								<h3 class="text-lg font-medium mb-4">This Week's Staffing</h3>
+								{#if weeklyStaff.length === 0}
+									<p class="text-muted-foreground text-center py-8">No staff scheduled this week</p>
+								{:else}
+									<div class="weekly-staff-grid">
+										{#each weeklyStaff as dayData, index}
+											<div
+												class="day-column"
+												class:today={format(dayData.date, 'yyyy-MM-dd') ===
+													format(today, 'yyyy-MM-dd')}
+											>
+												<div class="day-header">
+													<div class="day-name">{dayData.dayOfWeek}</div>
+													<div class="day-date">{format(dayData.date, 'do MMM')}</div>
+													<div class="day-iso-date" style="font-size: 0.7rem; color: #999;">
+														{format(dayData.date, 'yyyy-MM-dd')}
+													</div>
+												</div>
+
+												{#if dayData.staff.length === 0}
+													<div class="day-empty">No staff</div>
+												{:else}
+													<!-- Calculate active staff count (excluding those on leave) -->
+													{@const activeStaffCount = dayData.staff.filter(
+														(person) => !person.onLeave
+													).length}
+
+													<!-- Show active count with "staff" label -->
+													<div class="staff-count">{activeStaffCount} staff</div>
+
+													<ul class="staff-list compact">
+														{#each groupStaffByRole(dayData.staff) as { role, staff }, i}
+															{#if i > 0}
+																<li class="role-separator"></li>
+															{/if}
+															{#each staff as person}
+																<li class="staff-item compact" class:on-leave={person.onLeave}>
+																	<span class="staff-name">
+																		{#if person.onLeave}
+																			<span class="leave-icon" aria-label="On leave">🌴</span>
+																		{/if}
+																		{person.name}
+																	</span>
+																</li>
+															{/each}
+														{/each}
+													</ul>
+												{/if}
 											</div>
-										</div>
-
-										{#if dayData.staff.length === 0}
-											<div class="day-empty">No staff</div>
-										{:else}
-											<!-- Calculate active staff count (excluding those on leave) -->
-											{@const activeStaffCount = dayData.staff.filter(
-												(person) => !person.onLeave
-											).length}
-
-											<!-- Show active count, not total count -->
-											<div class="staff-count">{activeStaffCount}</div>
-
-											<ul class="staff-list compact">
-												{#each groupStaffByRole(dayData.staff) as { role, staff }, i}
-													{#if i > 0}
-														<li class="role-separator"></li>
-													{/if}
-													{#each staff as person}
-														<li class="staff-item compact" class:on-leave={person.onLeave}>
-															<span class="staff-name">
-																{#if person.onLeave}
-																	<span class="leave-icon" aria-label="On leave">🌴</span>
-																{/if}
-																{person.name}
-															</span>
-														</li>
-													{/each}
-												{/each}
-											</ul>
-										{/if}
+										{/each}
 									</div>
-								{/each}
+								{/if}
+							</div>
+
+							<!-- Next Week's Staffing Section -->
+							<div>
+								<h3 class="text-lg font-medium mb-4">Next Week's Staffing</h3>
+								{#if nextWeekStaff.length === 0}
+									<p class="text-muted-foreground text-center py-8">No staff scheduled next week</p>
+								{:else}
+									<div class="weekly-staff-grid">
+										{#each nextWeekStaff as dayData, index}
+											<div class="day-column">
+												<div class="day-header">
+													<div class="day-name">{dayData.dayOfWeek}</div>
+													<div class="day-date">{format(dayData.date, 'do MMM')}</div>
+													<div class="day-iso-date" style="font-size: 0.7rem; color: #999;">
+														{format(dayData.date, 'yyyy-MM-dd')}
+													</div>
+												</div>
+
+												{#if dayData.staff.length === 0}
+													<div class="day-empty">No staff</div>
+												{:else}
+													<!-- Calculate active staff count (excluding those on leave) -->
+													{@const activeStaffCount = dayData.staff.filter(
+														(person) => !person.onLeave
+													).length}
+
+													<!-- Show active count with "staff" label -->
+													{#if activeStaffCount > 0}
+														<div class="staff-count">{activeStaffCount} staff</div>
+													{/if}
+
+													<ul class="staff-list compact">
+														{#each sortStaffByRank(dayData.staff) as person}
+															<li class="staff-item compact" class:on-leave={person.onLeave}>
+																<span class="staff-name">
+																	{#if person.onLeave}
+																		<span class="leave-icon">🏖️</span>
+																	{/if}
+																	{person.name}
+																</span>
+															</li>
+														{/each}
+													</ul>
+												{/if}
+											</div>
+										{/each}
+									</div>
+								{/if}
 							</div>
 						{/if}
 					</CardContent>
@@ -1542,10 +1588,143 @@
 				</Card>
 			</div>
 
-			<!-- Right Column - Now contains weather at top & performance metrics below -->
+			<!-- Right Column - Now contains performance metrics on top & weather below -->
 			<div class="sidebar-column">
-				<!-- Weather Widget - moved to top of right column -->
+				<!-- Performance Metrics - moved to top of right column -->
 				<Card class="mb-6">
+					<CardHeader>
+						<CardTitle class="text-base font-medium text-slate-800 flex items-center gap-2">
+							Performance Metrics
+							<Badge variant="secondary" class="text-xs">
+								{format(addDays(today, -1), 'do MMM')}
+							</Badge>
+						</CardTitle>
+						<div class="text-xs font-medium text-slate-600 uppercase tracking-wide mt-2">
+							Fulfillment Operations
+						</div>
+					</CardHeader>
+					<CardContent>
+						{#if isLoading.metrics}
+							<div class="space-y-4">
+								<Skeleton class="h-4 w-full" />
+								<Skeleton class="h-4 w-3/4" />
+								<Skeleton class="h-4 w-1/2" />
+							</div>
+						{:else}
+							<div class="grid grid-cols-1 gap-4">
+								<!-- B2C Amazon Fulfillment (1.x series) -->
+								<div class="bg-blue-50 p-4 rounded-lg shadow-sm">
+									<h3 class="text-sm font-medium text-blue-800 mb-2">Fulfillment Operations</h3>
+									<div class="grid grid-cols-2 gap-2">
+										<div class="text-xs text-blue-600">Shipments Packed</div>
+										<div class="text-right font-medium text-blue-900">
+											{metrics.shipmentsPacked}
+										</div>
+
+										<div class="text-xs text-blue-600">Hours Worked</div>
+										<div class="text-right font-medium text-blue-900">
+											{metrics.actualHoursWorked.toFixed(1)}h
+										</div>
+
+										<div class="text-xs text-blue-600">Labor Efficiency</div>
+										<div class="text-right font-medium text-blue-900">
+											{metrics.laborEfficiency.toFixed(1)}/hr
+										</div>
+
+										{#if metrics.laborUtilization > 0}
+											<div class="text-xs text-blue-600">Labor Utilization</div>
+											<div class="text-right font-medium text-blue-900">
+												{metrics.laborUtilization.toFixed(1)}%
+											</div>
+										{/if}
+									</div>
+								</div>
+
+								<!-- B2C Amazon Financials (2.0 series) -->
+								<div class="bg-green-50 p-4 rounded-lg shadow-sm">
+									<h3 class="text-sm font-medium text-green-800 mb-2">Financial Performance</h3>
+									<div class="grid grid-cols-2 gap-2">
+										<div class="text-xs text-green-600">Total Sales</div>
+										<div class="text-right font-medium text-green-900">
+											£{metrics.totalSales.toLocaleString('en-GB', {
+												minimumFractionDigits: 2,
+												maximumFractionDigits: 2
+											})}
+										</div>
+
+										<div class="text-xs text-green-600">Amazon Sales</div>
+										<div class="text-right font-medium text-green-900">
+											£{metrics.amazonSales.toLocaleString('en-GB', {
+												minimumFractionDigits: 2,
+												maximumFractionDigits: 2
+											})}
+										</div>
+
+										<div class="text-xs text-green-600">eBay Sales</div>
+										<div class="text-right font-medium text-green-900">
+											£{metrics.ebaySales.toLocaleString('en-GB', {
+												minimumFractionDigits: 2,
+												maximumFractionDigits: 2
+											})}
+										</div>
+
+										<div class="text-xs text-green-600">Shopify Sales</div>
+										<div class="text-right font-medium text-green-900">
+											£{metrics.shopifySales.toLocaleString('en-GB', {
+												minimumFractionDigits: 2,
+												maximumFractionDigits: 2
+											})}
+										</div>
+									</div>
+								</div>
+
+								<!-- Orders (2.1 series) -->
+								<div class="bg-red-50 p-4 rounded-lg shadow-sm">
+									<h3 class="text-sm font-medium text-red-800 mb-2">Order Volume</h3>
+									<div class="grid grid-cols-2 gap-2">
+										<div class="text-xs text-red-600">Total Orders</div>
+										<div class="text-right font-medium text-red-900">
+											{metrics.linnworksTotalOrders}
+										</div>
+
+										<div class="text-xs text-red-600">Amazon Orders</div>
+										<div class="text-right font-medium text-red-900">
+											{metrics.linnworksAmazonOrders}
+											{#if metrics.amazonOrdersPercent > 0}
+												<span class="text-sm font-medium text-slate-600 ml-2">
+													({metrics.amazonOrdersPercent.toFixed(1)}%)
+												</span>
+											{/if}
+										</div>
+
+										<div class="text-xs text-red-600">eBay Orders</div>
+										<div class="text-right font-medium text-red-900">
+											{metrics.linnworksEbayOrders}
+											{#if metrics.ebayOrdersPercent > 0}
+												<span class="text-sm font-medium text-slate-600 ml-2">
+													({metrics.ebayOrdersPercent.toFixed(1)}%)
+												</span>
+											{/if}
+										</div>
+
+										<div class="text-xs text-red-600">Shopify Orders</div>
+										<div class="text-right font-medium text-red-900">
+											{metrics.linnworksShopifyOrders}
+											{#if metrics.shopifyOrdersPercent > 0}
+												<span class="text-sm font-medium text-slate-600 ml-2">
+													({metrics.shopifyOrdersPercent.toFixed(1)}%)
+												</span>
+											{/if}
+										</div>
+									</div>
+								</div>
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- Weather Widget - moved below performance metrics -->
+				<Card>
 					<CardHeader class="pb-3">
 						<div class="flex items-center justify-between">
 							<CardTitle>Weather</CardTitle>
