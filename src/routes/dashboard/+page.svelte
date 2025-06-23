@@ -11,16 +11,15 @@
 	let session: any = undefined;
 	let dashboardInitialized = false;
 
+	// Simplified loading state enum
+	type LoadingState = 'INITIALIZING' | 'LOADING_DATA' | 'VALIDATING' | 'READY' | 'ERROR';
+	let loadingState: LoadingState = 'INITIALIZING';
+
 	// Reset dashboard state on each page load
 	function resetDashboardState() {
 		dashboardInitialized = false;
-		loading = true;
+		loadingState = 'INITIALIZING';
 		error = null;
-		dashboardReady = false;
-		apiResponsesComplete = false;
-		dataValidationPassed = false;
-		minimumLoadTimeElapsed = false;
-		linnworksApiCompleted = false;
 	}
 
 	const unsubscribe = userSession.subscribe((s) => {
@@ -58,7 +57,6 @@
 	});
 
 	// Loading states for different data sources
-	let loading = true;
 	let error: string | null = null;
 	let hasGlobalError = false;
 	let retryCount = 0;
@@ -84,12 +82,41 @@
 		employees: 0
 	};
 
+	// Event-driven data loading
+	let dataLoadPromise: Promise<any> | null = null;
+
 	// Separate state for the Linnworks status message
 	let showLinnworksStatus = false;
 	// Enhanced loading features
 	let showDataPreview = false;
-	let dashboardReady = false; // New flag to control when dashboard shows
 	let shipmentChartRef: any; // Reference to the ShipmentChart component
+
+	// Track data source status
+	let dataSourceStatus = {
+		linnworks: { isCached: false, isLoaded: false },
+		financial: { isCached: false, isLoaded: false }
+	};
+
+	// Store preloaded data for ShipmentChart
+	let preloadedChartData = {
+		currentWeek: {
+			linnworks: null,
+			financial: null
+		},
+		previousWeek: {
+			linnworks: null,
+			financial: null
+		},
+		employeeHours: {
+			current: null as any,
+			previous: null as any
+		},
+		scheduledHours: {
+			current: null as any,
+			previous: null as any
+		},
+		usePreloaded: false
+	};
 
 	// Animate progress bars smoothly
 	function animateProgress(metric: string, targetValue: number, duration: number = 300) {
@@ -173,8 +200,6 @@
 
 			// Clear any cached data by forcing a fresh initialization
 			await initializeDashboard();
-
-			showToast('Data refreshed successfully!', 'success');
 		} catch (err) {
 			console.error('❌ Failed to refresh data:', err);
 			handleError(err, 'refresh data');
@@ -184,12 +209,7 @@
 	// Debug function to force loading completion
 	function forceLoadingComplete() {
 		console.log('🔧 Force completing loading state...');
-		loading = false;
-		dashboardReady = true;
-		minimumLoadTimeElapsed = true;
-		apiResponsesComplete = true;
-		dataValidationPassed = true;
-		linnworksApiCompleted = true;
+		loadingState = 'READY';
 		showToast('Loading forcefully completed', 'info');
 	}
 
@@ -246,7 +266,7 @@
 	async function initializeDashboard() {
 		console.log('🚀 initializeDashboard() called');
 		try {
-			loading = true;
+			loadingState = 'LOADING_DATA';
 			error = null;
 
 			// Reset loading states
@@ -261,247 +281,124 @@
 			console.log('📊 Loading states reset:', loadingStates);
 			updateLoadingMessage();
 
-			// Start preloading the dashboard data in the background
-			// This creates a hidden ShipmentChart that loads data while we show loading screen
-			console.log('🔄 Calling preloadDashboardData...');
-			preloadDashboardData();
+			// Start the data loading process - this is now event-driven
+			dataLoadPromise = loadDashboardData();
 
-			// We simulate the phases for UX while real data loads in background
+			// Start the UI loading simulation for better UX
+			simulateLoadingPhases();
 
-			// Phase 1: Basic metrics setup (fast)
-			setTimeout(() => {
+			// Wait for actual data loading to complete
+			await dataLoadPromise;
+		} catch (err) {
+			console.error('❌ Dashboard initialization failed:', err);
+			loadingState = 'ERROR';
+			handleError(err, 'initialize dashboard');
+		}
+	}
+
+	// Separate function to load actual data
+	async function loadDashboardData(): Promise<void> {
+		console.log('🔄 Starting actual data loading...');
+
+		try {
+			// Start preloading the dashboard data
+			await preloadDashboardData();
+
+			// Validate the loaded data
+			loadingState = 'VALIDATING';
+			await validateLoadedData();
+
+			// Mark as ready
+			loadingState = 'READY';
+			console.log('✅ Data loading completed successfully');
+		} catch (err) {
+			console.error('❌ Data loading failed:', err);
+			loadingState = 'ERROR';
+			throw err;
+		}
+	}
+
+	// Simulate loading phases for better UX while real data loads
+	function simulateLoadingPhases() {
+		// Phase 1: Basic metrics setup (fast)
+		setTimeout(() => {
+			if (loadingState === 'LOADING_DATA') {
 				console.log('✅ Phase 1: Metrics complete');
 				loadingStates.metrics = false;
 				animateProgress('metrics', 100, 200);
 				updateLoadingMessage();
-			}, 300);
+			}
+		}, 300);
 
-			// Phase 2: Employee data (medium)
-			setTimeout(() => {
+		// Phase 2: Employee data (medium)
+		setTimeout(() => {
+			if (loadingState === 'LOADING_DATA') {
 				console.log('✅ Phase 2: Employees complete');
 				loadingStates.employees = false;
 				animateProgress('employees', 100, 250);
 				updateLoadingMessage();
-			}, 600);
+			}
+		}, 600);
 
-			// Phase 3: Schedule data (medium)
-			setTimeout(() => {
+		// Phase 3: Schedule data (medium)
+		setTimeout(() => {
+			if (loadingState === 'LOADING_DATA') {
 				console.log('✅ Phase 3: Schedules complete');
 				loadingStates.schedules = false;
 				animateProgress('schedules', 100, 300);
 				updateLoadingMessage();
-			}, 900);
-
-			// Phase 4: Linnworks API - will be completed when API actually finishes
-			// (handled by the comprehensive validation system)
-
-			// Phase 5: Financial data (slow) - wait a bit longer since Linnworks timing is variable
-			setTimeout(() => {
-				loadingStates.financial = false;
-				animateProgress('financial', 100, 350);
-				updateLoadingMessage();
-
-				// Financial loading is complete, check if ready to render
-				checkIfReadyToRender();
-			}, 3000); // Increased timeout to give more time for Linnworks
-
-			// Add fallback timeout - force completion if taking too long
-			setTimeout(() => {
-				if (loading) {
-					console.warn('⚠️  Loading timeout reached, forcing completion...');
-					// Force all conditions to be met
-					dataValidationPassed = true;
-					minimumLoadTimeElapsed = true;
-					apiResponsesComplete = true;
-					linnworksApiCompleted = true;
-					dashboardReady = true;
-
-					// Mark all loading states as complete
-					Object.keys(loadingStates).forEach((key) => {
-						loadingStates[key as keyof typeof loadingStates] = false;
-						animateProgress(key, 100, 100);
-					});
-
-					checkIfReadyToRender();
-				}
-			}, 10000); // 10 second absolute maximum
-		} catch (err) {
-			handleError(err, 'initialize dashboard');
-			// Ensure we don't get stuck in loading state
-			apiResponsesComplete = true;
-			dataValidationPassed = true;
-			dashboardReady = true;
-			loading = false;
-		}
-	}
-
-	// Track if Linnworks API has completed its paginated fetch
-	let linnworksApiCompleted = false;
-	let linnworksDataQuality = { totalOrders: 0, expectedMinimum: 10 }; // Reduced from 100 to 10 to prevent hanging
-	let activePollingInterval: NodeJS.Timeout | null = null; // Track active polling for cleanup
-
-	// Enhanced validation flags
-	let dataValidationPassed = false;
-	let minimumLoadTimeElapsed = false;
-	let apiResponsesComplete = false;
-
-	// Comprehensive data validation
-	function validateDataCompleteness(linnworksData: any, financialData: any): boolean {
-		console.log('🔍 Running comprehensive data validation...');
-
-		// Check 1: Basic structure validation
-		if (
-			!linnworksData ||
-			!linnworksData.dailyOrders ||
-			!financialData ||
-			!financialData.dailyData
-		) {
-			console.log('❌ Validation failed: Missing basic data structure');
-			return false;
-		}
-
-		// Check 2: Order count validation (relaxed threshold)
-		const totalOrders = linnworksData.summary?.totalOrders || 0;
-		if (totalOrders < linnworksDataQuality.expectedMinimum) {
-			console.log('⚠️  Warning: Low order count, but proceeding', {
-				totalOrders,
-				expected: linnworksDataQuality.expectedMinimum
-			});
-			// Don't fail validation for low order count - could be a slow period
-		}
-
-		// Check 3: Daily data completeness (should have 7 days)
-		const dailyOrdersCount = linnworksData.dailyOrders?.length || 0;
-		if (dailyOrdersCount < 7) {
-			console.log('❌ Validation failed: Incomplete daily data', { days: dailyOrdersCount });
-			return false;
-		}
-
-		// Check 4: Financial data validation
-		const financialDaysCount = financialData.dailyData?.length || 0;
-		if (financialDaysCount < 7) {
-			console.log('❌ Validation failed: Incomplete financial data', {
-				financialDays: financialDaysCount
-			});
-			return false;
-		}
-
-		console.log('✅ Data validation passed:', {
-			totalOrders,
-			dailyOrdersCount,
-			financialDaysCount
-		});
-
-		return true;
-	}
-
-	// Ensure minimum loading time for better UX
-	function enforceMinimumLoadTime() {
-		setTimeout(() => {
-			minimumLoadTimeElapsed = true;
-			console.log('⏱️  Minimum load time elapsed');
-			checkIfReadyToRender();
-		}, 1500); // Reduced to 1.5 seconds minimum loading time
-
-		// Emergency fallback - force render after maximum wait time
-		setTimeout(() => {
-			if (!dashboardReady) {
-				console.warn('🚨 Emergency fallback: Forcing dashboard render after timeout');
-				loading = false;
-				dashboardReady = true;
-				minimumLoadTimeElapsed = true;
-				apiResponsesComplete = true;
-				dataValidationPassed = true;
-				linnworksApiCompleted = true;
 			}
-		}, 6000); // Reduced to 6 seconds maximum wait time
+		}, 900);
 	}
 
-	// Check if all conditions are met to render the dashboard
-	function checkIfReadyToRender() {
-		const allConditionsMet =
-			dataValidationPassed &&
-			minimumLoadTimeElapsed &&
-			apiResponsesComplete &&
-			linnworksApiCompleted &&
-			dashboardReady;
+	// Validate loaded data and transition to ready state
+	async function validateLoadedData(): Promise<void> {
+		console.log('🔍 Validating loaded data...');
 
-		console.log('🎯 Checking render readiness:', {
-			dataValidationPassed,
-			minimumLoadTimeElapsed,
-			apiResponsesComplete,
-			linnworksApiCompleted,
-			dashboardReady,
-			allConditionsMet
-		});
+		// Check if we have minimal viable data
+		const hasMinimalData =
+			preloadedChartData.usePreloaded &&
+			(preloadedChartData.currentWeek.linnworks || preloadedChartData.currentWeek.financial);
 
-		if (allConditionsMet) {
-			console.log('🚀 All conditions met - Ready to render dashboard');
-			// Final delay before showing dashboard
+		if (!hasMinimalData) {
+			throw new Error('Insufficient data loaded for dashboard');
+		}
+
+		// Mark remaining loading states as complete
+		loadingStates.linnworks = false;
+		loadingStates.financial = false;
+		animateProgress('linnworks', 100, 400);
+		animateProgress('financial', 100, 350);
+		updateLoadingMessage();
+
+		// Small delay for better UX
+		await new Promise((resolve) => setTimeout(resolve, 500));
+	}
+
+	// Watch for loading state changes and update UI accordingly
+	$: {
+		if (loadingState === 'READY') {
+			// Brief delay for smooth transition
 			setTimeout(() => {
-				loading = false;
 				showToast('Dashboard loaded successfully', 'success');
-			}, 500);
-		} else {
-			console.log('⏳ Not ready yet, missing conditions:', {
-				needsDataValidation: !dataValidationPassed,
-				needsMinimumTime: !minimumLoadTimeElapsed,
-				needsApiResponse: !apiResponsesComplete,
-				needsLinnworks: !linnworksApiCompleted,
-				needsDashboardReady: !dashboardReady
-			});
+			}, 300);
+		} else if (loadingState === 'ERROR') {
+			// Error state is handled by the template
+			console.log('❌ Dashboard loading failed');
 		}
 	}
-
-	// Track data source status
-	let dataSourceStatus = {
-		linnworks: { isCached: false, isLoaded: false },
-		financial: { isCached: false, isLoaded: false }
-	};
-
-	// Store preloaded data for ShipmentChart
-	let preloadedChartData = {
-		currentWeek: {
-			linnworks: null,
-			financial: null
-		},
-		previousWeek: {
-			linnworks: null,
-			financial: null
-		},
-		employeeHours: {
-			current: null as any,
-			previous: null as any
-		},
-		scheduledHours: {
-			current: null as any,
-			previous: null as any
-		},
-		usePreloaded: false
-	};
 
 	// Enhanced preload that waits for substantial Linnworks data
 	async function preloadDashboardData() {
 		console.log('🚀 preloadDashboardData() called');
-		const PRELOAD_TIMEOUT = 10000; // 10 second timeout
 
 		try {
-			// Add timeout wrapper
-			const preloadPromise = performPreload();
-			const timeoutPromise = new Promise((_, reject) => {
-				setTimeout(() => reject(new Error('Preload timeout')), PRELOAD_TIMEOUT);
-			});
-
-			console.log('⏳ Starting Promise.race between preload and timeout...');
-			await Promise.race([preloadPromise, timeoutPromise]);
+			await performPreload();
 			console.log('✅ preloadDashboardData completed successfully');
 		} catch (err) {
-			console.error('⚠️ Preload failed, falling back to basic loading:', err);
-			// Set fallback state to allow dashboard to load without preloaded data
-			apiResponsesComplete = true;
-			dataValidationPassed = true;
-			dashboardReady = true;
-			checkIfReadyToRender();
+			console.error('⚠️ Preload failed:', err);
+			// Don't set fallback flags here - let the error bubble up
+			throw err;
 		}
 	}
 
@@ -530,12 +427,6 @@
 			console.log('🔄 Starting comprehensive dashboard data preload...');
 			console.log('Current week:', mondayStr, 'to', sundayStr);
 			console.log('Previous week:', previousMondayStr, 'to', previousSundayStr);
-			console.log('Previous Monday object:', previousMonday);
-			console.log('Current Monday object:', currentMonday);
-			console.log('Today is:', today.toISOString().split('T')[0]);
-
-			// Start minimum load time enforcement
-			enforceMinimumLoadTime();
 
 			console.log('📡 Making API calls...');
 
@@ -565,38 +456,24 @@
 				previousFinancial: previousFinancialResponse.status
 			});
 
-			if (!currentLinnworksResponse.ok || !currentFinancialResponse.ok) {
-				console.warn('❌ Some API calls failed during preload:', {
-					currentLinnworksOk: currentLinnworksResponse.ok,
-					currentFinancialOk: currentFinancialResponse.ok,
-					currentLinnworksStatus: currentLinnworksResponse.status,
-					currentFinancialStatus: currentFinancialResponse.status
-				});
-				apiResponsesComplete = true;
-				dashboardReady = true;
-				checkIfReadyToRender();
-				return;
-			}
-
-			console.log('📊 Parsing JSON responses...');
-
+			// Parse successful responses
 			const [
 				currentLinnworksData,
 				currentFinancialData,
 				previousLinnworksData,
 				previousFinancialData
 			] = await Promise.all([
-				currentLinnworksResponse.json(),
-				currentFinancialResponse.json(),
+				currentLinnworksResponse.ok ? currentLinnworksResponse.json() : null,
+				currentFinancialResponse.ok ? currentFinancialResponse.json() : null,
 				previousLinnworksResponse.ok ? previousLinnworksResponse.json() : null,
 				previousFinancialResponse.ok ? previousFinancialResponse.json() : null
 			]);
 
 			console.log('🔍 Dashboard preload results:');
-			console.log('Current week Linnworks:', currentLinnworksData);
-			console.log('Current week Financial:', currentFinancialData);
-			console.log('Previous week Linnworks:', previousLinnworksData);
-			console.log('Previous week Financial:', previousFinancialData);
+			console.log('Current week Linnworks:', currentLinnworksData ? 'Success' : 'Failed');
+			console.log('Current week Financial:', currentFinancialData ? 'Success' : 'Failed');
+			console.log('Previous week Linnworks:', previousLinnworksData ? 'Success' : 'Failed');
+			console.log('Previous week Financial:', previousFinancialData ? 'Success' : 'Failed');
 
 			// Now fetch employee hours and scheduled hours data
 			console.log('📊 Fetching employee hours and scheduled hours data...');
@@ -630,9 +507,6 @@
 				})
 			]);
 
-			// Mark API responses as complete
-			apiResponsesComplete = true;
-
 			// Store ALL preloaded data for ShipmentChart
 			preloadedChartData = {
 				currentWeek: {
@@ -655,195 +529,16 @@
 			};
 
 			// Update data source status
-			dataSourceStatus.linnworks.isCached = currentLinnworksData.isCached || false;
-			dataSourceStatus.linnworks.isLoaded = true;
-			dataSourceStatus.financial.isCached = currentFinancialData.isCached || false;
-			dataSourceStatus.financial.isLoaded = true;
+			dataSourceStatus.linnworks.isCached = currentLinnworksData?.isCached || false;
+			dataSourceStatus.linnworks.isLoaded = !!currentLinnworksData;
+			dataSourceStatus.financial.isCached = currentFinancialData?.isCached || false;
+			dataSourceStatus.financial.isLoaded = !!currentFinancialData;
 
-			// Run comprehensive data validation
-			dataValidationPassed = validateDataCompleteness(currentLinnworksData, currentFinancialData);
-
-			// Check the quality of Linnworks data to determine if paginated fetch is complete
-			const totalOrders = currentLinnworksData.summary?.totalOrders || 0;
-			const dailyOrdersCount = currentLinnworksData.dailyOrders?.length || 0;
-
-			console.log('📊 Initial Linnworks data received:', {
-				totalOrders,
-				dailyOrdersCount,
-				hasOrderDetails: !!currentLinnworksData.dailyOrders,
-				isCached: dataSourceStatus.linnworks.isCached
-			});
-
-			console.log('💰 Financial data received:', {
-				isLoaded: dataSourceStatus.financial.isLoaded,
-				isCached: dataSourceStatus.financial.isCached
-			});
-
-			console.log('👥 Employee and scheduled hours data received:', {
-				currentEmployeeHours: currentEmployeeHours?.length || 0,
-				previousEmployeeHours: previousEmployeeHours?.length || 0,
-				currentScheduledHours: currentScheduledHours?.length || 0,
-				previousScheduledHours: previousScheduledHours?.length || 0
-			});
-
-			// Debug: Log sample employee hours data
-			if (currentEmployeeHours && currentEmployeeHours.length > 0) {
-				console.log('📋 Sample current employee hours data:', currentEmployeeHours.slice(0, 3));
-				console.log('📋 Current week date range in data:', {
-					firstEntry: currentEmployeeHours[0],
-					lastEntry: currentEmployeeHours[currentEmployeeHours.length - 1]
-				});
-			} else {
-				console.log('⚠️ NO current employee hours data returned from getHoursDateRange!');
-			}
-			if (previousEmployeeHours && previousEmployeeHours.length > 0) {
-				console.log('📋 Sample previous employee hours data:', previousEmployeeHours.slice(0, 3));
-			} else {
-				console.log('⚠️ NO previous employee hours data returned from getHoursDateRange!');
-			}
-
-			// Debug: Log sample employee hours data to check structure
-			if (currentEmployeeHours?.length > 0) {
-				console.log('👥 Sample current employee hours entry:', currentEmployeeHours[0]);
-			}
-			if (previousEmployeeHours?.length > 0) {
-				console.log('👥 Sample previous employee hours entry:', previousEmployeeHours[0]);
-			}
-
-			// Update data quality tracking
-			linnworksDataQuality.totalOrders = totalOrders;
-
-			// If data validation passed and we have substantial data, mark as complete
-			if (dataValidationPassed && totalOrders >= linnworksDataQuality.expectedMinimum) {
-				console.log('✅ Linnworks data validation passed on first fetch');
-				linnworksApiCompleted = true;
-
-				// Mark the Linnworks loading phase as complete
-				if (loadingStates.linnworks) {
-					loadingStates.linnworks = false;
-					animateProgress('linnworks', 100, 400);
-					showLinnworksStatus = true;
-					showDataPreview = true;
-					updateLoadingMessage();
-				}
-
-				dashboardReady = true;
-				checkIfReadyToRender();
-			} else {
-				console.log('⏳ Data validation failed or insufficient data, will poll for updates...');
-				// Start polling for better data
-				pollForCompleteData(mondayStr, sundayStr);
-			}
+			console.log('✅ Preload completed successfully');
 		} catch (err) {
 			console.error('Error preloading dashboard data:', err);
-			// Set flags to allow rendering even if preload failed
-			apiResponsesComplete = true;
-			dataValidationPassed = true;
-			dashboardReady = true;
-			checkIfReadyToRender();
+			throw err;
 		}
-	}
-
-	// Poll for complete Linnworks data
-	async function pollForCompleteData(mondayStr: string, sundayStr: string) {
-		// Clear any existing polling interval
-		if (activePollingInterval) {
-			clearInterval(activePollingInterval);
-		}
-
-		const maxPolls = 20; // Poll for up to 20 attempts (about 10 seconds)
-		let pollCount = 0;
-
-		activePollingInterval = setInterval(async () => {
-			pollCount++;
-
-			try {
-				console.log(`🔄 Polling attempt ${pollCount}/${maxPolls} for complete Linnworks data...`);
-
-				const response = await fetch(
-					`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`
-				);
-				if (!response.ok) {
-					throw new Error('API call failed');
-				}
-				const data = await response.json();
-				const totalOrders = data.summary?.totalOrders || 0;
-
-				// Update preloaded data with improved data
-				preloadedChartData.currentWeek.linnworks = data;
-
-				// Update cache status for subsequent polls
-				dataSourceStatus.linnworks.isCached = data.isCached || false;
-
-				// Re-validate data with updated information
-				dataValidationPassed = validateDataCompleteness(
-					data,
-					preloadedChartData.currentWeek.financial
-				);
-
-				// Check if data has improved significantly
-				const dataImproved = totalOrders > linnworksDataQuality.totalOrders;
-				const hasSubstantialData = totalOrders >= linnworksDataQuality.expectedMinimum;
-
-				if (dataImproved) {
-					console.log(
-						`📈 Linnworks data updated: ${linnworksDataQuality.totalOrders} -> ${totalOrders} orders (${dataSourceStatus.linnworks.isCached ? 'Cached' : 'Fresh'})`
-					);
-					linnworksDataQuality.totalOrders = totalOrders;
-				}
-
-				// Complete if validation passes and we have substantial data, or reached max polls
-				if ((dataValidationPassed && hasSubstantialData) || pollCount >= maxPolls) {
-					if (activePollingInterval) {
-						clearInterval(activePollingInterval);
-						activePollingInterval = null;
-					}
-
-					if (dataValidationPassed && hasSubstantialData) {
-						console.log('✅ Linnworks data validation passed during polling');
-					} else {
-						console.log('⏰ Timeout reached, proceeding with available data');
-						// Force validation to pass if we timeout to prevent infinite loading
-						dataValidationPassed = true;
-					}
-
-					linnworksApiCompleted = true;
-
-					// Mark the Linnworks loading phase as complete
-					if (loadingStates.linnworks) {
-						loadingStates.linnworks = false;
-						animateProgress('linnworks', 100, 400);
-						showLinnworksStatus = true;
-						showDataPreview = true;
-						updateLoadingMessage();
-					}
-
-					dashboardReady = true;
-					checkIfReadyToRender();
-				}
-			} catch (err) {
-				console.error('Error during Linnworks polling:', err);
-				// Continue polling unless we've reached max attempts
-				if (pollCount >= maxPolls) {
-					if (activePollingInterval) {
-						clearInterval(activePollingInterval);
-						activePollingInterval = null;
-					}
-					console.log('⏰ Max polling attempts reached, proceeding with available data');
-					linnworksApiCompleted = true;
-					dashboardReady = true;
-
-					// Mark the Linnworks loading phase as complete
-					if (loadingStates.linnworks) {
-						loadingStates.linnworks = false;
-						animateProgress('linnworks', 100, 400);
-						showLinnworksStatus = true;
-						showDataPreview = true;
-						updateLoadingMessage();
-					}
-				}
-			}
-		}, 500); // Poll every 500ms
 	}
 
 	onMount(() => {
@@ -857,7 +552,7 @@
 		console.log('🔍 Initial state:', {
 			session,
 			dashboardInitialized,
-			loading
+			loadingState
 		});
 
 		// Reset state for fresh initialization
@@ -892,15 +587,10 @@
 
 	onDestroy(() => {
 		unsubscribe();
-		// Cleanup any active polling interval
-		if (activePollingInterval) {
-			clearInterval(activePollingInterval);
-			activePollingInterval = null;
-		}
 	});
 </script>
 
-{#if session === undefined || loading}
+{#if session === undefined || loadingState !== 'READY'}
 	<div class="loading-container">
 		<div class="loading-content">
 			<!-- Main Content Grid -->
@@ -965,7 +655,7 @@
 
 				<!-- Right Column: Progress Cards -->
 				<div class="loading-right-panel">
-					{#if loading}
+					{#if loadingState !== 'READY'}
 						<div class="progress-grid">
 							<div
 								class="progress-card"
@@ -1359,8 +1049,8 @@
 				</div>
 			{/if}
 
-			<!-- Debug Tools (only show after some time) -->
-			{#if loading}
+			<!-- Debug Tools (only show during loading) -->
+			{#if loadingState !== 'READY'}
 				<div class="debug-section fade-in" style="margin-top: 2rem;">
 					<button
 						class="debug-btn"
@@ -1416,10 +1106,10 @@
 			<button
 				class="clear-cache-btn"
 				on:click={clearCacheAndRefresh}
-				disabled={loading}
+				disabled={loadingState !== 'READY'}
 				title="Clear all cached data and fetch fresh data from APIs"
 			>
-				{#if loading}
+				{#if loadingState !== 'READY'}
 					🔄 Refreshing...
 				{:else}
 					🗑️ Clear Cache & Refresh
