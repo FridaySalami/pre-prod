@@ -15,11 +15,58 @@
 	type LoadingState = 'INITIALIZING' | 'LOADING_DATA' | 'VALIDATING' | 'READY' | 'ERROR';
 	let loadingState: LoadingState = 'INITIALIZING';
 
+	// Data source status for partial success handling
+	type DataSourceStatus = 'pending' | 'success' | 'failed' | 'cached';
+	interface DataSourceState {
+		status: DataSourceStatus;
+		data: any;
+		error?: string;
+		lastUpdated?: Date;
+	}
+
+	let dataSourceStates = {
+		currentWeek: {
+			linnworks: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
+			financial: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+		},
+		previousWeek: {
+			linnworks: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
+			financial: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+		},
+		employeeHours: {
+			current: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
+			previous: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+		},
+		scheduledHours: {
+			current: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
+			previous: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+		}
+	};
+
 	// Reset dashboard state on each page load
 	function resetDashboardState() {
 		dashboardInitialized = false;
 		loadingState = 'INITIALIZING';
 		error = null;
+		// Reset data source states
+		dataSourceStates = {
+			currentWeek: {
+				linnworks: { status: 'pending', data: null },
+				financial: { status: 'pending', data: null }
+			},
+			previousWeek: {
+				linnworks: { status: 'pending', data: null },
+				financial: { status: 'pending', data: null }
+			},
+			employeeHours: {
+				current: { status: 'pending', data: null },
+				previous: { status: 'pending', data: null }
+			},
+			scheduledHours: {
+				current: { status: 'pending', data: null },
+				previous: { status: 'pending', data: null }
+			}
+		};
 	}
 
 	const unsubscribe = userSession.subscribe((s) => {
@@ -90,12 +137,6 @@
 	// Enhanced loading features
 	let showDataPreview = false;
 	let shipmentChartRef: any; // Reference to the ShipmentChart component
-
-	// Track data source status
-	let dataSourceStatus = {
-		linnworks: { isCached: false, isLoaded: false },
-		financial: { isCached: false, isLoaded: false }
-	};
 
 	// Store preloaded data for ShipmentChart
 	let preloadedChartData = {
@@ -427,87 +468,135 @@
 			console.log('🔄 Starting comprehensive dashboard data preload...');
 			console.log('Current week:', mondayStr, 'to', sundayStr);
 			console.log('Previous week:', previousMondayStr, 'to', previousSundayStr);
+			
+			loadingState = 'LOADING_DATA';
 
-			console.log('📡 Making API calls...');
+			console.log('📡 Making API calls with partial success handling...');
 
-			// Make ALL API calls in parallel for maximum efficiency
-			const [
-				currentLinnworksResponse,
-				currentFinancialResponse,
-				previousLinnworksResponse,
-				previousFinancialResponse
-			] = await Promise.all([
+			// Fetch data with individual error handling for partial success
+			const dataFetches = [
 				// Current week data
-				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`),
-				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`),
+				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`)
+					.then(async (response) => {
+						if (response.ok) {
+							const data = await response.json();
+							updateDataSourceState('currentWeek', 'linnworks', data.isCached ? 'cached' : 'success', data);
+							return data;
+						} else {
+							updateDataSourceState('currentWeek', 'linnworks', 'failed', null, `HTTP ${response.status}`);
+							return null;
+						}
+					})
+					.catch((err) => {
+						updateDataSourceState('currentWeek', 'linnworks', 'failed', null, err.message);
+						return null;
+					}),
+
+				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
+					.then(async (response) => {
+						if (response.ok) {
+							const data = await response.json();
+							updateDataSourceState('currentWeek', 'financial', data.isCached ? 'cached' : 'success', data);
+							return data;
+						} else {
+							updateDataSourceState('currentWeek', 'financial', 'failed', null, `HTTP ${response.status}`);
+							return null;
+						}
+					})
+					.catch((err) => {
+						updateDataSourceState('currentWeek', 'financial', 'failed', null, err.message);
+						return null;
+					}),
+
 				// Previous week data
-				fetch(
-					`/api/linnworks/weeklyOrderCounts?startDate=${previousMondayStr}&endDate=${previousSundayStr}`
-				),
-				fetch(
-					`/api/linnworks/financialData?startDate=${previousMondayStr}&endDate=${previousSundayStr}`
-				)
-			]);
+				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${previousMondayStr}&endDate=${previousSundayStr}`)
+					.then(async (response) => {
+						if (response.ok) {
+							const data = await response.json();
+							updateDataSourceState('previousWeek', 'linnworks', data.isCached ? 'cached' : 'success', data);
+							return data;
+						} else {
+							updateDataSourceState('previousWeek', 'linnworks', 'failed', null, `HTTP ${response.status}`);
+							return null;
+						}
+					})
+					.catch((err) => {
+						updateDataSourceState('previousWeek', 'linnworks', 'failed', null, err.message);
+						return null;
+					}),
 
-			console.log('📡 API responses received:', {
-				currentLinnworks: currentLinnworksResponse.status,
-				currentFinancial: currentFinancialResponse.status,
-				previousLinnworks: previousLinnworksResponse.status,
-				previousFinancial: previousFinancialResponse.status
-			});
+				fetch(`/api/linnworks/financialData?startDate=${previousMondayStr}&endDate=${previousSundayStr}`)
+					.then(async (response) => {
+						if (response.ok) {
+							const data = await response.json();
+							updateDataSourceState('previousWeek', 'financial', data.isCached ? 'cached' : 'success', data);
+							return data;
+						} else {
+							updateDataSourceState('previousWeek', 'financial', 'failed', null, `HTTP ${response.status}`);
+							return null;
+						}
+					})
+					.catch((err) => {
+						updateDataSourceState('previousWeek', 'financial', 'failed', null, err.message);
+						return null;
+					})
+			];
 
-			// Parse successful responses
-			const [
-				currentLinnworksData,
-				currentFinancialData,
-				previousLinnworksData,
-				previousFinancialData
-			] = await Promise.all([
-				currentLinnworksResponse.ok ? currentLinnworksResponse.json() : null,
-				currentFinancialResponse.ok ? currentFinancialResponse.json() : null,
-				previousLinnworksResponse.ok ? previousLinnworksResponse.json() : null,
-				previousFinancialResponse.ok ? previousFinancialResponse.json() : null
-			]);
+			// Wait for all API calls to complete (success or failure)
+			const [currentLinnworksData, currentFinancialData, previousLinnworksData, previousFinancialData] = await Promise.all(dataFetches);
 
-			console.log('🔍 Dashboard preload results:');
-			console.log('Current week Linnworks:', currentLinnworksData ? 'Success' : 'Failed');
-			console.log('Current week Financial:', currentFinancialData ? 'Success' : 'Failed');
-			console.log('Previous week Linnworks:', previousLinnworksData ? 'Success' : 'Failed');
-			console.log('Previous week Financial:', previousFinancialData ? 'Success' : 'Failed');
-
-			// Now fetch employee hours and scheduled hours data
 			console.log('📊 Fetching employee hours and scheduled hours data...');
 
-			// Import the required services dynamically to avoid bundling issues
+			// Import the required services dynamically
 			const { getHoursDateRange } = await import('$lib/dailyHoursService');
 			const { getScheduledHoursForDateRange } = await import('$lib/schedule/hours-service');
 
-			// Fetch employee hours for both weeks
-			const [
-				currentEmployeeHours,
-				previousEmployeeHours,
-				currentScheduledHours,
-				previousScheduledHours
-			] = await Promise.all([
-				getHoursDateRange(mondayStr, sundayStr).catch((err) => {
-					console.warn('Failed to fetch current week employee hours:', err);
-					return [];
-				}),
-				getHoursDateRange(previousMondayStr, previousSundayStr).catch((err) => {
-					console.warn('Failed to fetch previous week employee hours:', err);
-					return [];
-				}),
-				getScheduledHoursForDateRange(currentMonday, new Date(sundayStr)).catch((err) => {
-					console.warn('Failed to fetch current week scheduled hours:', err);
-					return [];
-				}),
-				getScheduledHoursForDateRange(previousMonday, new Date(previousSundayStr)).catch((err) => {
-					console.warn('Failed to fetch previous week scheduled hours:', err);
-					return [];
-				})
-			]);
+			// Fetch employee and scheduled hours with individual error handling
+			const hoursFetches = [
+				getHoursDateRange(mondayStr, sundayStr)
+					.then((data) => {
+						updateDataSourceState('employeeHours', 'current', 'success', data);
+						return data;
+					})
+					.catch((err) => {
+						updateDataSourceState('employeeHours', 'current', 'failed', null, err.message);
+						return [];
+					}),
 
-			// Store ALL preloaded data for ShipmentChart
+				getHoursDateRange(previousMondayStr, previousSundayStr)
+					.then((data) => {
+						updateDataSourceState('employeeHours', 'previous', 'success', data);
+						return data;
+					})
+					.catch((err) => {
+						updateDataSourceState('employeeHours', 'previous', 'failed', null, err.message);
+						return [];
+					}),
+
+				getScheduledHoursForDateRange(currentMonday, new Date(sundayStr))
+					.then((data) => {
+						updateDataSourceState('scheduledHours', 'current', 'success', data);
+						return data;
+					})
+					.catch((err) => {
+						updateDataSourceState('scheduledHours', 'current', 'failed', null, err.message);
+						return [];
+					}),
+
+				getScheduledHoursForDateRange(previousMonday, new Date(previousSundayStr))
+					.then((data) => {
+						updateDataSourceState('scheduledHours', 'previous', 'success', data);
+						return data;
+					})
+					.catch((err) => {
+						updateDataSourceState('scheduledHours', 'previous', 'failed', null, err.message);
+						return [];
+					})
+			];
+
+			const [currentEmployeeHours, previousEmployeeHours, currentScheduledHours, previousScheduledHours] = await Promise.all(hoursFetches);
+
+			// Build preloaded data structure from successful fetches
 			preloadedChartData = {
 				currentWeek: {
 					linnworks: currentLinnworksData,
@@ -528,16 +617,37 @@
 				usePreloaded: true
 			};
 
-			// Update data source status
-			dataSourceStatus.linnworks.isCached = currentLinnworksData?.isCached || false;
-			dataSourceStatus.linnworks.isLoaded = !!currentLinnworksData;
-			dataSourceStatus.financial.isCached = currentFinancialData?.isCached || false;
-			dataSourceStatus.financial.isLoaded = !!currentFinancialData;
+			// Log partial success results
+			const successful = getSuccessfulDataSources();
+			const failed = getFailedDataSources();
+			
+			console.log('✅ Data loading completed with partial success:');
+			console.log(`📊 Successful sources (${successful.length}):`, successful);
+			if (failed.length > 0) {
+				console.log(`❌ Failed sources (${failed.length}):`, failed);
+			}
 
-			console.log('✅ Preload completed successfully');
+			// Move to validation phase
+			loadingState = 'VALIDATING';
+			
+			// Check if we can show the dashboard
+			if (canShowDashboard()) {
+				console.log('🎯 Sufficient data available for dashboard display');
+				loadingState = 'READY';
+				
+				if (failed.length > 0) {
+					showToast(`Dashboard loaded with ${failed.length} data source(s) unavailable`, 'warning');
+				}
+			} else {
+				console.log('❌ Insufficient data for dashboard display');
+				loadingState = 'ERROR';
+				error = 'Unable to load sufficient data for dashboard';
+			}
+
 		} catch (err) {
-			console.error('Error preloading dashboard data:', err);
-			throw err;
+			console.error('Error during preload:', err);
+			loadingState = 'ERROR';
+			error = err instanceof Error ? err.message : 'Unknown error during data loading';
 		}
 	}
 
@@ -588,6 +698,111 @@
 	onDestroy(() => {
 		unsubscribe();
 	});
+
+	// Helper functions for partial success handling
+	function updateDataSourceState(category: keyof typeof dataSourceStates, source: string, status: DataSourceStatus, data: any = null, error?: string) {
+		if (category === 'currentWeek' || category === 'previousWeek') {
+			if (source === 'linnworks' || source === 'financial') {
+				dataSourceStates[category][source] = {
+					status,
+					data,
+					error,
+					lastUpdated: new Date()
+				};
+			}
+		} else if (category === 'employeeHours' || category === 'scheduledHours') {
+			if (source === 'current' || source === 'previous') {
+				dataSourceStates[category][source] = {
+					status,
+					data,
+					error,
+					lastUpdated: new Date()
+				};
+			}
+		}
+		console.log(`📊 Data source updated: ${category}.${source} -> ${status}`, { data: !!data, error });
+	}
+
+	function getSuccessfulDataSources(): string[] {
+		const successful: string[] = [];
+		Object.entries(dataSourceStates).forEach(([category, sources]) => {
+			Object.entries(sources).forEach(([source, state]) => {
+				if (state.status === 'success' || state.status === 'cached') {
+					successful.push(`${category}.${source}`);
+				}
+			});
+		});
+		return successful;
+	}
+
+	function getFailedDataSources(): string[] {
+		const failed: string[] = [];
+		Object.entries(dataSourceStates).forEach(([category, sources]) => {
+			Object.entries(sources).forEach(([source, state]) => {
+				if (state.status === 'failed') {
+					failed.push(`${category}.${source}`);
+				}
+			});
+		});
+		return failed;
+	}
+
+	function hasMinimalDataForDashboard(): boolean {
+		// Dashboard can function with just current week data
+		const currentLinnworksOk = dataSourceStates.currentWeek.linnworks.status === 'success' || 
+									dataSourceStates.currentWeek.linnworks.status === 'cached';
+		const currentFinancialOk = dataSourceStates.currentWeek.financial.status === 'success' || 
+								   dataSourceStates.currentWeek.financial.status === 'cached';
+		
+		return currentLinnworksOk || currentFinancialOk; // Need at least one current week data source
+	}
+
+	function canShowDashboard(): boolean {
+		const successful = getSuccessfulDataSources();
+		const failed = getFailedDataSources();
+		const totalSources = 8; // Total number of data sources
+		
+		// Can show dashboard if we have minimal data OR if we've tried loading everything
+		return hasMinimalDataForDashboard() || (successful.length + failed.length >= totalSources);
+	}
+
+	// Helper functions for template access to data source states
+	function isDataSourceLoaded(category: keyof typeof dataSourceStates, source: string): boolean {
+		if (category === 'currentWeek' || category === 'previousWeek') {
+			if (source === 'linnworks' || source === 'financial') {
+				const state = dataSourceStates[category][source];
+				return state?.status === 'success' || state?.status === 'cached';
+			}
+		} else if (category === 'employeeHours' || category === 'scheduledHours') {
+			if (source === 'current' || source === 'previous') {
+				const state = dataSourceStates[category][source];
+				return state?.status === 'success' || state?.status === 'cached';
+			}
+		}
+		return false;
+	}
+
+	function isDataSourceCached(category: keyof typeof dataSourceStates, source: string): boolean {
+		if (category === 'currentWeek' || category === 'previousWeek') {
+			if (source === 'linnworks' || source === 'financial') {
+				const state = dataSourceStates[category][source];
+				return state?.status === 'cached';
+			}
+		} else if (category === 'employeeHours' || category === 'scheduledHours') {
+			if (source === 'current' || source === 'previous') {
+				const state = dataSourceStates[category][source];
+				return state?.status === 'cached';
+			}
+		}
+		return false;
+	}
+
+	function hasAnyDataLoaded(): boolean {
+		return isDataSourceLoaded('currentWeek', 'linnworks') || 
+			   isDataSourceLoaded('currentWeek', 'financial') ||
+			   isDataSourceLoaded('previousWeek', 'linnworks') ||
+			   isDataSourceLoaded('previousWeek', 'financial');
+	}
 </script>
 
 {#if session === undefined || loadingState !== 'READY'}
@@ -961,7 +1176,7 @@
 			{/if}
 
 			<!-- Data Source Status Panel -->
-			{#if dataSourceStatus.linnworks.isLoaded || dataSourceStatus.financial.isLoaded}
+			{#if hasAnyDataLoaded()}
 				<div class="data-sources-panel fade-in">
 					<div class="panel-header">
 						<h3>Data Sources</h3>
@@ -971,7 +1186,7 @@
 						</div>
 					</div>
 					<div class="sources-grid">
-						{#if dataSourceStatus.linnworks.isLoaded}
+						{#if isDataSourceLoaded('currentWeek', 'linnworks')}
 							<div class="source-item">
 								<div class="source-icon linnworks">
 									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -992,13 +1207,13 @@
 									<p>Order management system</p>
 								</div>
 								<div
-									class="source-status {dataSourceStatus.linnworks.isCached ? 'cached' : 'fresh'}"
+									class="source-status {isDataSourceCached('currentWeek', 'linnworks') ? 'cached' : 'fresh'}"
 								>
-									{dataSourceStatus.linnworks.isCached ? 'Cached' : 'Fresh'}
+									{isDataSourceCached('currentWeek', 'linnworks') ? 'Cached' : 'Fresh'}
 								</div>
 							</div>
 						{/if}
-						{#if dataSourceStatus.financial.isLoaded}
+						{#if isDataSourceLoaded('currentWeek', 'financial')}
 							<div class="source-item">
 								<div class="source-icon financial">
 									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -1014,9 +1229,9 @@
 									<p>Sales and revenue metrics</p>
 								</div>
 								<div
-									class="source-status {dataSourceStatus.financial.isCached ? 'cached' : 'fresh'}"
+									class="source-status {isDataSourceCached('currentWeek', 'financial') ? 'cached' : 'fresh'}"
 								>
-									{dataSourceStatus.financial.isCached ? 'Cached' : 'Fresh'}
+									{isDataSourceCached('currentWeek', 'financial') ? 'Cached' : 'Fresh'}
 								</div>
 							</div>
 						{/if}
