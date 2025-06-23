@@ -11,9 +11,32 @@
 	let session: any = undefined;
 	let dashboardInitialized = false;
 
-	// Simplified loading state enum
-	type LoadingState = 'INITIALIZING' | 'LOADING_DATA' | 'VALIDATING' | 'READY' | 'ERROR';
+	// Simplified loading state enum - enhanced for progressive loading
+	type LoadingState =
+		| 'INITIALIZING'
+		| 'LOADING_CRITICAL'
+		| 'SHOWING_PARTIAL'
+		| 'LOADING_BACKGROUND'
+		| 'READY'
+		| 'ERROR';
 	let loadingState: LoadingState = 'INITIALIZING';
+
+	// Progressive enhancement flags
+	let criticalDataLoaded = false;
+	let backgroundDataLoaded = false;
+	let showingSkeleton = false;
+
+	// Data priority tiers for progressive loading
+	const DATA_PRIORITIES = {
+		CRITICAL: ['currentWeek.linnworks', 'currentWeek.financial'], // Must have at least one
+		IMPORTANT: ['employeeHours.current', 'scheduledHours.current'], // Nice to have for current operations
+		BACKGROUND: [
+			'previousWeek.linnworks',
+			'previousWeek.financial',
+			'employeeHours.previous',
+			'scheduledHours.previous'
+		] // For comparisons
+	};
 
 	// Data source status for partial success handling
 	type DataSourceStatus = 'pending' | 'success' | 'failed' | 'cached';
@@ -26,20 +49,60 @@
 
 	let dataSourceStates = {
 		currentWeek: {
-			linnworks: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
-			financial: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+			linnworks: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState,
+			financial: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState
 		},
 		previousWeek: {
-			linnworks: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
-			financial: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+			linnworks: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState,
+			financial: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState
 		},
 		employeeHours: {
-			current: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
-			previous: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+			current: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState,
+			previous: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState
 		},
 		scheduledHours: {
-			current: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState,
-			previous: { status: 'pending' as DataSourceStatus, data: null, error: undefined, lastUpdated: undefined } as DataSourceState
+			current: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState,
+			previous: {
+				status: 'pending' as DataSourceStatus,
+				data: null,
+				error: undefined,
+				lastUpdated: undefined
+			} as DataSourceState
 		}
 	};
 
@@ -307,7 +370,7 @@
 	async function initializeDashboard() {
 		console.log('🚀 initializeDashboard() called');
 		try {
-			loadingState = 'LOADING_DATA';
+			loadingState = 'LOADING_CRITICAL';
 			error = null;
 
 			// Reset loading states
@@ -345,12 +408,13 @@
 			// Start preloading the dashboard data
 			await preloadDashboardData();
 
-			// Validate the loaded data
-			loadingState = 'VALIDATING';
-			await validateLoadedData();
+			// Data validation is now handled progressively
+			// loadingState transitions are managed by evaluateProgressiveState()
 
-			// Mark as ready
-			loadingState = 'READY';
+			// Final state transition (if not already READY from progressive loading)
+			if (loadingState === 'LOADING_BACKGROUND') {
+				loadingState = 'READY';
+			}
 			console.log('✅ Data loading completed successfully');
 		} catch (err) {
 			console.error('❌ Data loading failed:', err);
@@ -363,7 +427,7 @@
 	function simulateLoadingPhases() {
 		// Phase 1: Basic metrics setup (fast)
 		setTimeout(() => {
-			if (loadingState === 'LOADING_DATA') {
+			if (loadingState === 'LOADING_CRITICAL') {
 				console.log('✅ Phase 1: Metrics complete');
 				loadingStates.metrics = false;
 				animateProgress('metrics', 100, 200);
@@ -373,7 +437,7 @@
 
 		// Phase 2: Employee data (medium)
 		setTimeout(() => {
-			if (loadingState === 'LOADING_DATA') {
+			if (loadingState === 'LOADING_CRITICAL') {
 				console.log('✅ Phase 2: Employees complete');
 				loadingStates.employees = false;
 				animateProgress('employees', 100, 250);
@@ -383,7 +447,7 @@
 
 		// Phase 3: Schedule data (medium)
 		setTimeout(() => {
-			if (loadingState === 'LOADING_DATA') {
+			if (loadingState === 'LOADING_CRITICAL') {
 				console.log('✅ Phase 3: Schedules complete');
 				loadingStates.schedules = false;
 				animateProgress('schedules', 100, 300);
@@ -419,10 +483,8 @@
 	// Watch for loading state changes and update UI accordingly
 	$: {
 		if (loadingState === 'READY') {
-			// Brief delay for smooth transition
-			setTimeout(() => {
-				showToast('Dashboard loaded successfully', 'success');
-			}, 300);
+			// No toast needed - banner shows the status
+			console.log('✅ Dashboard loading completed');
 		} else if (loadingState === 'ERROR') {
 			// Error state is handled by the template
 			console.log('❌ Dashboard loading failed');
@@ -468,8 +530,8 @@
 			console.log('🔄 Starting comprehensive dashboard data preload...');
 			console.log('Current week:', mondayStr, 'to', sundayStr);
 			console.log('Previous week:', previousMondayStr, 'to', previousSundayStr);
-			
-			loadingState = 'LOADING_DATA';
+
+			loadingState = 'LOADING_CRITICAL';
 
 			console.log('📡 Making API calls with partial success handling...');
 
@@ -480,10 +542,21 @@
 					.then(async (response) => {
 						if (response.ok) {
 							const data = await response.json();
-							updateDataSourceState('currentWeek', 'linnworks', data.isCached ? 'cached' : 'success', data);
+							updateDataSourceState(
+								'currentWeek',
+								'linnworks',
+								data.isCached ? 'cached' : 'success',
+								data
+							);
 							return data;
 						} else {
-							updateDataSourceState('currentWeek', 'linnworks', 'failed', null, `HTTP ${response.status}`);
+							updateDataSourceState(
+								'currentWeek',
+								'linnworks',
+								'failed',
+								null,
+								`HTTP ${response.status}`
+							);
 							return null;
 						}
 					})
@@ -496,10 +569,21 @@
 					.then(async (response) => {
 						if (response.ok) {
 							const data = await response.json();
-							updateDataSourceState('currentWeek', 'financial', data.isCached ? 'cached' : 'success', data);
+							updateDataSourceState(
+								'currentWeek',
+								'financial',
+								data.isCached ? 'cached' : 'success',
+								data
+							);
 							return data;
 						} else {
-							updateDataSourceState('currentWeek', 'financial', 'failed', null, `HTTP ${response.status}`);
+							updateDataSourceState(
+								'currentWeek',
+								'financial',
+								'failed',
+								null,
+								`HTTP ${response.status}`
+							);
 							return null;
 						}
 					})
@@ -509,14 +593,27 @@
 					}),
 
 				// Previous week data
-				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${previousMondayStr}&endDate=${previousSundayStr}`)
+				fetch(
+					`/api/linnworks/weeklyOrderCounts?startDate=${previousMondayStr}&endDate=${previousSundayStr}`
+				)
 					.then(async (response) => {
 						if (response.ok) {
 							const data = await response.json();
-							updateDataSourceState('previousWeek', 'linnworks', data.isCached ? 'cached' : 'success', data);
+							updateDataSourceState(
+								'previousWeek',
+								'linnworks',
+								data.isCached ? 'cached' : 'success',
+								data
+							);
 							return data;
 						} else {
-							updateDataSourceState('previousWeek', 'linnworks', 'failed', null, `HTTP ${response.status}`);
+							updateDataSourceState(
+								'previousWeek',
+								'linnworks',
+								'failed',
+								null,
+								`HTTP ${response.status}`
+							);
 							return null;
 						}
 					})
@@ -525,14 +622,27 @@
 						return null;
 					}),
 
-				fetch(`/api/linnworks/financialData?startDate=${previousMondayStr}&endDate=${previousSundayStr}`)
+				fetch(
+					`/api/linnworks/financialData?startDate=${previousMondayStr}&endDate=${previousSundayStr}`
+				)
 					.then(async (response) => {
 						if (response.ok) {
 							const data = await response.json();
-							updateDataSourceState('previousWeek', 'financial', data.isCached ? 'cached' : 'success', data);
+							updateDataSourceState(
+								'previousWeek',
+								'financial',
+								data.isCached ? 'cached' : 'success',
+								data
+							);
 							return data;
 						} else {
-							updateDataSourceState('previousWeek', 'financial', 'failed', null, `HTTP ${response.status}`);
+							updateDataSourceState(
+								'previousWeek',
+								'financial',
+								'failed',
+								null,
+								`HTTP ${response.status}`
+							);
 							return null;
 						}
 					})
@@ -543,7 +653,12 @@
 			];
 
 			// Wait for all API calls to complete (success or failure)
-			const [currentLinnworksData, currentFinancialData, previousLinnworksData, previousFinancialData] = await Promise.all(dataFetches);
+			const [
+				currentLinnworksData,
+				currentFinancialData,
+				previousLinnworksData,
+				previousFinancialData
+			] = await Promise.all(dataFetches);
 
 			console.log('📊 Fetching employee hours and scheduled hours data...');
 
@@ -594,7 +709,12 @@
 					})
 			];
 
-			const [currentEmployeeHours, previousEmployeeHours, currentScheduledHours, previousScheduledHours] = await Promise.all(hoursFetches);
+			const [
+				currentEmployeeHours,
+				previousEmployeeHours,
+				currentScheduledHours,
+				previousScheduledHours
+			] = await Promise.all(hoursFetches);
 
 			// Build preloaded data structure from successful fetches
 			preloadedChartData = {
@@ -620,7 +740,7 @@
 			// Log partial success results
 			const successful = getSuccessfulDataSources();
 			const failed = getFailedDataSources();
-			
+
 			console.log('✅ Data loading completed with partial success:');
 			console.log(`📊 Successful sources (${successful.length}):`, successful);
 			if (failed.length > 0) {
@@ -628,22 +748,22 @@
 			}
 
 			// Move to validation phase
-			loadingState = 'VALIDATING';
-			
+			loadingState = 'LOADING_BACKGROUND';
+
 			// Check if we can show the dashboard
 			if (canShowDashboard()) {
 				console.log('🎯 Sufficient data available for dashboard display');
 				loadingState = 'READY';
-				
+
+				// Banner shows the status, no need for toast
 				if (failed.length > 0) {
-					showToast(`Dashboard loaded with ${failed.length} data source(s) unavailable`, 'warning');
+					console.log(`⚠️ Dashboard loaded with ${failed.length} data source(s) unavailable`);
 				}
 			} else {
 				console.log('❌ Insufficient data for dashboard display');
 				loadingState = 'ERROR';
 				error = 'Unable to load sufficient data for dashboard';
 			}
-
 		} catch (err) {
 			console.error('Error during preload:', err);
 			loadingState = 'ERROR';
@@ -699,8 +819,42 @@
 		unsubscribe();
 	});
 
+	// Timeout to ensure we eventually show completion status
+	let loadingTimeout: NodeJS.Timeout | null = null;
+
+	// Start timeout when we begin loading background data
+	function startLoadingTimeout() {
+		if (loadingTimeout) {
+			clearTimeout(loadingTimeout);
+		}
+
+		// After 10 seconds, show ready state regardless of background data status
+		loadingTimeout = setTimeout(() => {
+			if (loadingState === 'LOADING_BACKGROUND') {
+				console.log('⏰ Loading timeout reached - showing ready state');
+				loadingState = 'READY';
+				backgroundDataLoaded = true;
+				// Banner shows the status, no need for toast
+				console.log('✅ Dashboard loaded with available data');
+			}
+		}, 10000);
+	}
+
+	// Clear timeout when component is destroyed
+	onDestroy(() => {
+		if (loadingTimeout) {
+			clearTimeout(loadingTimeout);
+		}
+	});
+
 	// Helper functions for partial success handling
-	function updateDataSourceState(category: keyof typeof dataSourceStates, source: string, status: DataSourceStatus, data: any = null, error?: string) {
+	function updateDataSourceState(
+		category: keyof typeof dataSourceStates,
+		source: string,
+		status: DataSourceStatus,
+		data: any = null,
+		error?: string
+	) {
 		if (category === 'currentWeek' || category === 'previousWeek') {
 			if (source === 'linnworks' || source === 'financial') {
 				dataSourceStates[category][source] = {
@@ -720,7 +874,10 @@
 				};
 			}
 		}
-		console.log(`📊 Data source updated: ${category}.${source} -> ${status}`, { data: !!data, error });
+		console.log(`📊 Data source updated: ${category}.${source} -> ${status}`, {
+			data: !!data,
+			error
+		});
 	}
 
 	function getSuccessfulDataSources(): string[] {
@@ -749,11 +906,13 @@
 
 	function hasMinimalDataForDashboard(): boolean {
 		// Dashboard can function with just current week data
-		const currentLinnworksOk = dataSourceStates.currentWeek.linnworks.status === 'success' || 
-									dataSourceStates.currentWeek.linnworks.status === 'cached';
-		const currentFinancialOk = dataSourceStates.currentWeek.financial.status === 'success' || 
-								   dataSourceStates.currentWeek.financial.status === 'cached';
-		
+		const currentLinnworksOk =
+			dataSourceStates.currentWeek.linnworks.status === 'success' ||
+			dataSourceStates.currentWeek.linnworks.status === 'cached';
+		const currentFinancialOk =
+			dataSourceStates.currentWeek.financial.status === 'success' ||
+			dataSourceStates.currentWeek.financial.status === 'cached';
+
 		return currentLinnworksOk || currentFinancialOk; // Need at least one current week data source
 	}
 
@@ -761,9 +920,9 @@
 		const successful = getSuccessfulDataSources();
 		const failed = getFailedDataSources();
 		const totalSources = 8; // Total number of data sources
-		
+
 		// Can show dashboard if we have minimal data OR if we've tried loading everything
-		return hasMinimalDataForDashboard() || (successful.length + failed.length >= totalSources);
+		return hasMinimalDataForDashboard() || successful.length + failed.length >= totalSources;
 	}
 
 	// Helper functions for template access to data source states
@@ -798,14 +957,114 @@
 	}
 
 	function hasAnyDataLoaded(): boolean {
-		return isDataSourceLoaded('currentWeek', 'linnworks') || 
-			   isDataSourceLoaded('currentWeek', 'financial') ||
-			   isDataSourceLoaded('previousWeek', 'linnworks') ||
-			   isDataSourceLoaded('previousWeek', 'financial');
+		return (
+			isDataSourceLoaded('currentWeek', 'linnworks') ||
+			isDataSourceLoaded('currentWeek', 'financial') ||
+			isDataSourceLoaded('previousWeek', 'linnworks') ||
+			isDataSourceLoaded('previousWeek', 'financial')
+		);
+	}
+
+	// Progressive enhancement helper functions
+	function checkCriticalDataLoaded(): boolean {
+		return DATA_PRIORITIES.CRITICAL.some((dataPath) => {
+			const [category, source] = dataPath.split('.') as [keyof typeof dataSourceStates, string];
+			return isDataSourceLoaded(category, source);
+		});
+	}
+
+	function checkImportantDataLoaded(): boolean {
+		return DATA_PRIORITIES.IMPORTANT.some((dataPath) => {
+			const [category, source] = dataPath.split('.') as [keyof typeof dataSourceStates, string];
+			return isDataSourceLoaded(category, source);
+		});
+	}
+
+	function checkBackgroundDataLoaded(): boolean {
+		return DATA_PRIORITIES.BACKGROUND.every((dataPath) => {
+			const [category, source] = dataPath.split('.') as [keyof typeof dataSourceStates, string];
+			const state = getDataSourceState(category, source);
+			return state.status === 'success' || state.status === 'cached' || state.status === 'failed';
+		});
+	}
+
+	function getDataSourceState(
+		category: keyof typeof dataSourceStates,
+		source: string
+	): DataSourceState {
+		if (category === 'currentWeek' || category === 'previousWeek') {
+			if (source === 'linnworks' || source === 'financial') {
+				return dataSourceStates[category][source];
+			}
+		} else if (category === 'employeeHours' || category === 'scheduledHours') {
+			if (source === 'current' || source === 'previous') {
+				return dataSourceStates[category][source];
+			}
+		}
+		return { status: 'failed', data: null };
+	}
+
+	function getLoadingProgress(): { loaded: number; total: number; percentage: number } {
+		const allDataSources = [
+			...DATA_PRIORITIES.CRITICAL,
+			...DATA_PRIORITIES.IMPORTANT,
+			...DATA_PRIORITIES.BACKGROUND
+		];
+
+		const loaded = allDataSources.filter((dataPath) => {
+			const [category, source] = dataPath.split('.') as [keyof typeof dataSourceStates, string];
+			return isDataSourceLoaded(category, source);
+		}).length;
+
+		return {
+			loaded,
+			total: allDataSources.length,
+			percentage: Math.round((loaded / allDataSources.length) * 100)
+		};
+	}
+
+	// Progressive state transitions
+	function evaluateProgressiveState() {
+		const critical = checkCriticalDataLoaded();
+		const important = checkImportantDataLoaded();
+		const background = checkBackgroundDataLoaded();
+
+		console.log('🎯 Progressive state evaluation:', { critical, important, background });
+
+		if (!critical) {
+			if (loadingState === 'LOADING_CRITICAL') {
+				// Still waiting for critical data
+				return;
+			}
+		} else if (critical && loadingState === 'LOADING_CRITICAL') {
+			// Critical data loaded - show partial dashboard
+			console.log('🚀 Critical data loaded - showing partial dashboard');
+			loadingState = 'SHOWING_PARTIAL';
+			criticalDataLoaded = true;
+			// Banner shows the status, no need for toast
+			console.log('✅ Dashboard ready with essential data');
+
+			// Continue loading background data
+			loadingState = 'LOADING_BACKGROUND';
+		} else if (background && loadingState === 'LOADING_BACKGROUND') {
+			// All background data loaded - dashboard fully ready
+			console.log('✅ All data loaded - dashboard fully enhanced');
+			loadingState = 'READY';
+			backgroundDataLoaded = true;
+			// Banner shows the status, no need for toast
+			console.log('✅ Dashboard fully loaded with all comparisons');
+		}
+	}
+
+	// Watch for data source changes and trigger progressive updates
+	$: {
+		if (dataSourceStates) {
+			evaluateProgressiveState();
+		}
 	}
 </script>
 
-{#if session === undefined || loadingState !== 'READY'}
+{#if session === undefined || loadingState === 'INITIALIZING' || loadingState === 'LOADING_CRITICAL' || loadingState === 'ERROR'}
 	<div class="loading-container">
 		<div class="loading-content">
 			<!-- Main Content Grid -->
@@ -870,7 +1129,7 @@
 
 				<!-- Right Column: Progress Cards -->
 				<div class="loading-right-panel">
-					{#if loadingState !== 'READY'}
+					{#if loadingState === 'LOADING_CRITICAL'}
 						<div class="progress-grid">
 							<div
 								class="progress-card"
@@ -1207,7 +1466,9 @@
 									<p>Order management system</p>
 								</div>
 								<div
-									class="source-status {isDataSourceCached('currentWeek', 'linnworks') ? 'cached' : 'fresh'}"
+									class="source-status {isDataSourceCached('currentWeek', 'linnworks')
+										? 'cached'
+										: 'fresh'}"
 								>
 									{isDataSourceCached('currentWeek', 'linnworks') ? 'Cached' : 'Fresh'}
 								</div>
@@ -1229,7 +1490,9 @@
 									<p>Sales and revenue metrics</p>
 								</div>
 								<div
-									class="source-status {isDataSourceCached('currentWeek', 'financial') ? 'cached' : 'fresh'}"
+									class="source-status {isDataSourceCached('currentWeek', 'financial')
+										? 'cached'
+										: 'fresh'}"
 								>
 									{isDataSourceCached('currentWeek', 'financial') ? 'Cached' : 'Fresh'}
 								</div>
@@ -1265,7 +1528,7 @@
 			{/if}
 
 			<!-- Debug Tools (only show during loading) -->
-			{#if loadingState !== 'READY'}
+			{#if loadingState === 'LOADING_CRITICAL' || loadingState === 'LOADING_BACKGROUND'}
 				<div class="debug-section fade-in" style="margin-top: 2rem;">
 					<button
 						class="debug-btn"
@@ -1321,10 +1584,10 @@
 			<button
 				class="clear-cache-btn"
 				on:click={clearCacheAndRefresh}
-				disabled={loadingState !== 'READY'}
+				disabled={loadingState === 'LOADING_BACKGROUND'}
 				title="Clear all cached data and fetch fresh data from APIs"
 			>
-				{#if loadingState !== 'READY'}
+				{#if loadingState === 'LOADING_BACKGROUND'}
 					🔄 Refreshing...
 				{:else}
 					🗑️ Clear Cache & Refresh
@@ -1333,7 +1596,147 @@
 		</div>
 	</div>
 
-	<ShipmentChart preloadedData={preloadedChartData} />
+	<!-- Progressive Dashboard Display -->
+	<div class="dashboard-container">
+		<!-- Persistent Status Container - Always visible to prevent layout shifts -->
+		<div class="status-container">
+			{#if loadingState === 'SHOWING_PARTIAL'}
+				<div class="status-banner partial-loaded">
+					<div class="status-content">
+						<div class="status-icon">⚡</div>
+						<div class="status-text">
+							<h4>Dashboard Ready</h4>
+							<p>Essential data loaded • Background data loading...</p>
+						</div>
+						<div class="status-progress">
+							<div class="progress-meter">
+								<div class="progress-fill" style="width: {getLoadingProgress().percentage}%"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+			{:else if loadingState === 'LOADING_BACKGROUND'}
+				<div class="status-banner loading">
+					<div class="status-content">
+						<div class="status-icon">🔄</div>
+						<div class="status-text">
+							<h4>Enhancing Dashboard</h4>
+							<p>Loading historical comparisons and additional metrics...</p>
+						</div>
+						<div class="status-progress">
+							<div class="progress-meter">
+								<div class="progress-fill" style="width: {getLoadingProgress().percentage}%"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+			{:else if loadingState === 'READY'}
+				<div class="status-banner ready">
+					<div class="status-content">
+						<div class="status-icon">✅</div>
+						<div class="status-text">
+							<h4>Dashboard Fully Loaded</h4>
+							<p>
+								All data loaded successfully • {getSuccessfulDataSources().length} of {getSuccessfulDataSources()
+									.length + getFailedDataSources().length} sources available
+							</p>
+						</div>
+						{#if getFailedDataSources().length > 0}
+							<div class="status-warning">
+								<span class="warning-icon">⚠️</span>
+								<span class="warning-text"
+									>{getFailedDataSources().length} data source(s) unavailable</span
+								>
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Main Dashboard Content -->
+		<div
+			class="dashboard-content"
+			class:partial-loaded={loadingState === 'SHOWING_PARTIAL' ||
+				loadingState === 'LOADING_BACKGROUND'}
+		>
+			{#if criticalDataLoaded || loadingState === 'SHOWING_PARTIAL' || loadingState === 'LOADING_BACKGROUND' || loadingState === 'READY'}
+				<!-- Data Status Summary -->
+				{#if loadingState !== 'READY'}
+					<div class="data-status-bar">
+						<div class="status-items">
+							<div
+								class="status-item"
+								class:loaded={isDataSourceLoaded('currentWeek', 'linnworks')}
+							>
+								<div class="status-dot"></div>
+								<span>Orders Data</span>
+							</div>
+							<div
+								class="status-item"
+								class:loaded={isDataSourceLoaded('currentWeek', 'financial')}
+							>
+								<div class="status-dot"></div>
+								<span>Financial Data</span>
+							</div>
+							<div
+								class="status-item"
+								class:loaded={isDataSourceLoaded('employeeHours', 'current')}
+							>
+								<div class="status-dot"></div>
+								<span>Employee Hours</span>
+							</div>
+							<div class="status-item" class:loaded={backgroundDataLoaded}>
+								<div class="status-dot"></div>
+								<span>Historical Comparisons</span>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				<!-- ShipmentChart with Progressive Data -->
+				<ShipmentChart preloadedData={preloadedChartData} />
+
+				<!-- Skeleton/Loading States for Missing Data -->
+				{#if !backgroundDataLoaded}
+					<div class="missing-data-notice">
+						<div class="notice-content">
+							<div class="notice-icon">⏳</div>
+							<div class="notice-text">
+								<h4>Loading Comparisons</h4>
+								<p>Historical data is being loaded to show week-over-week trends</p>
+							</div>
+						</div>
+					</div>
+				{:else}
+					<!-- Debug: Force complete loading state -->
+					<div class="debug-complete">
+						<button on:click={forceLoadingComplete}>Force Complete Loading</button>
+					</div>
+				{/if}
+			{:else}
+				<!-- Skeleton Loader for Critical Data -->
+				<div class="dashboard-skeleton">
+					<div class="skeleton-header">
+						<div class="skeleton-title"></div>
+						<div class="skeleton-subtitle"></div>
+					</div>
+					<div class="skeleton-chart">
+						<div class="skeleton-bars">
+							{#each Array(7) as _, i}
+								<div class="skeleton-bar" style="height: {30 + Math.random() * 60}%"></div>
+							{/each}
+						</div>
+					</div>
+					<div class="skeleton-metrics">
+						{#each Array(6) as _, i}
+							<div class="skeleton-metric"></div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</div>
+	</div>
 {:else}
 	<!-- When session is null, onMount should have redirected already -->
 	<div>Redirecting...</div>
@@ -2461,88 +2864,340 @@
 		transform: none;
 	}
 
-	/* Responsive Design */
+	/* Progressive Enhancement Styles */
+	.dashboard-container {
+		position: relative;
+		min-height: 100vh;
+	}
+
+	/* Persistent Status Container - Always visible to prevent layout shifts */
+	.status-container {
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.status-banner {
+		background: var(--surface-elevated);
+		border: 1px solid var(--border-light);
+		border-radius: var(--radius-md);
+		padding: var(--spacing-md);
+		box-shadow: var(--shadow-sm);
+		transition: all 0.3s ease;
+		min-height: 60px;
+		display: flex;
+		align-items: center;
+	}
+
+	.status-banner.loading {
+		background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+		border-color: rgba(102, 126, 234, 0.3);
+	}
+
+	.status-banner.partial-loaded {
+		background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%);
+		border-color: rgba(255, 193, 7, 0.3);
+	}
+
+	.status-banner.ready {
+		background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(56, 178, 172, 0.1) 100%);
+		border-color: rgba(72, 187, 120, 0.3);
+	}
+
+	.status-content {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		width: 100%;
+	}
+
+	.status-icon {
+		font-size: 1.25rem;
+		flex-shrink: 0;
+	}
+
+	.status-banner.loading .status-icon {
+		animation: spin 2s linear infinite;
+	}
+
+	.status-banner.partial-loaded .status-icon {
+		animation: pulse 2s infinite;
+	}
+
+	.status-text {
+		flex: 1;
+	}
+
+	.status-text h4 {
+		margin: 0 0 0.125rem 0;
+		color: var(--text-primary);
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+
+	.status-text p {
+		margin: 0;
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+	}
+
+	.status-progress {
+		flex-shrink: 0;
+		width: 120px;
+	}
+
+	.status-warning {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		margin-left: auto;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		background: rgba(255, 193, 7, 0.1);
+		border: 1px solid rgba(255, 193, 7, 0.3);
+		border-radius: var(--radius-sm);
+	}
+
+	.warning-icon {
+		font-size: 0.875rem;
+	}
+
+	.warning-text {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+	}
+
+	.progress-meter {
+		flex: 1;
+		height: 6px;
+		background: rgba(255, 255, 255, 0.2);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 1) 100%);
+		border-radius: 3px;
+		transition: width 0.3s ease;
+	}
+
+	.dashboard-content {
+		transition: all 0.3s ease;
+		margin-top: var(--spacing-md);
+	}
+
+	.dashboard-content.partial-loaded {
+		opacity: 0.95;
+	}
+
+	.data-status-bar {
+		background: var(--surface-elevated);
+		border: 1px solid var(--border-light);
+		border-radius: var(--radius-md);
+		padding: var(--spacing-sm) var(--spacing-md);
+		margin-bottom: var(--spacing-md);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.status-items {
+		display: flex;
+		gap: var(--spacing-lg);
+		align-items: center;
+	}
+
+	.status-item {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		font-size: 0.875rem;
+		color: var(--text-secondary);
+		transition: all 0.3s ease;
+	}
+
+	.status-item.loaded {
+		color: var(--text-primary);
+	}
+
+	.status-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #e2e8f0;
+		transition: all 0.3s ease;
+	}
+
+	.status-item.loaded .status-dot {
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+		box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+	}
+
+	.missing-data-notice {
+		margin-top: var(--spacing-lg);
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%);
+		border: 1px solid rgba(245, 158, 11, 0.2);
+		border-radius: var(--radius-md);
+		padding: var(--spacing-md);
+	}
+
+	.notice-content {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+	}
+
+	.notice-icon {
+		font-size: 1.5rem;
+		opacity: 0.8;
+	}
+
+	.notice-text h4 {
+		margin: 0 0 var(--spacing-xs) 0;
+		color: var(--text-primary);
+		font-size: 1rem;
+		font-weight: 600;
+	}
+
+	.notice-text p {
+		margin: 0;
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+	}
+
+	/* Skeleton Loading Styles */
+	.dashboard-skeleton {
+		padding: var(--spacing-lg);
+		animation: fadeIn 0.5s ease-out;
+	}
+
+	.skeleton-header {
+		margin-bottom: var(--spacing-xl);
+	}
+
+	.skeleton-title {
+		height: 2rem;
+		background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+		background-size: 200% 100%;
+		border-radius: var(--radius-md);
+		margin-bottom: var(--spacing-sm);
+		animation: shimmer 1.5s infinite;
+		width: 300px;
+	}
+
+	.skeleton-subtitle {
+		height: 1rem;
+		background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+		background-size: 200% 100%;
+		border-radius: var(--radius-md);
+		animation: shimmer 1.5s infinite;
+		width: 200px;
+	}
+
+	.skeleton-chart {
+		height: 300px;
+		background: var(--surface-secondary);
+		border-radius: var(--radius-lg);
+		padding: var(--spacing-lg);
+		margin-bottom: var(--spacing-xl);
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-around;
+	}
+
+	.skeleton-bars {
+		display: flex;
+		align-items: flex-end;
+		gap: var(--spacing-sm);
+		width: 100%;
+		height: 100%;
+	}
+
+	.skeleton-bar {
+		flex: 1;
+		background: linear-gradient(90deg, #e2e8f0 0%, #cbd5e1 50%, #e2e8f0 100%);
+		background-size: 200% 100%;
+		border-radius: var(--radius-sm);
+		animation: shimmer 1.5s infinite;
+		min-height: 20px;
+	}
+
+	.skeleton-metrics {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: var(--spacing-md);
+	}
+
+	.skeleton-metric {
+		height: 80px;
+		background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+		background-size: 200% 100%;
+		border-radius: var(--radius-md);
+		animation: shimmer 1.5s infinite;
+	}
+
+	@keyframes slideInFromRight {
+		from {
+			transform: translateX(100%);
+			opacity: 0;
+		}
+		to {
+			transform: translateX(0);
+			opacity: 1;
+		}
+	}
+
+	@keyframes shimmer {
+		0% {
+			background-position: -200% 0;
+		}
+		100% {
+			background-position: 200% 0;
+		}
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.7;
+		}
+	}
+
+	/* Responsive Design for Progressive Features */
 	@media (max-width: 768px) {
-		.loading-main-grid {
-			grid-template-columns: 1fr;
-			gap: var(--spacing-lg);
-		}
-
-		.loading-container {
-			margin: var(--spacing-sm);
-			padding: var(--spacing-md);
-			min-height: 50vh;
-		}
-
-		.loading-content {
-			padding: var(--spacing-md);
-		}
-
-		.logo-section {
-			flex-direction: column;
-			gap: var(--spacing-sm);
-		}
-
-		.logo-text h1 {
-			font-size: 1.5rem;
-		}
-
-		.progress-grid {
-			grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-			gap: var(--spacing-sm);
-		}
-
-		.preview-metrics {
-			grid-template-columns: 1fr;
-		}
-
-		.chart-body {
-			height: 100px;
-		}
-
-		.panel-header {
+		.status-content {
 			flex-direction: column;
 			align-items: flex-start;
 			gap: var(--spacing-sm);
 		}
-	}
 
-	@media (max-width: 480px) {
-		.loading-container {
-			margin: var(--spacing-xs);
-			padding: var(--spacing-sm);
-			min-height: 45vh;
+		.status-text h4 {
+			font-size: 0.875rem;
 		}
 
-		.loading-content {
-			padding: var(--spacing-sm);
+		.status-text p {
+			font-size: 0.75rem;
 		}
 
-		.progress-grid {
+		.status-progress {
+			width: 100%;
+		}
+
+		.status-items {
+			flex-wrap: wrap;
+			gap: var(--spacing-md);
+		}
+
+		.skeleton-metrics {
 			grid-template-columns: 1fr;
-		}
-
-		.spinner-container {
-			width: 60px;
-			height: 60px;
-		}
-
-		.logo-text h1 {
-			font-size: 1.25rem;
-		}
-
-		.notification {
-			flex-direction: column;
-			text-align: center;
-		}
-
-		.debug-section {
-			flex-direction: column;
-			gap: var(--spacing-sm);
-		}
-
-		.debug-btn {
-			margin-left: 0 !important;
 		}
 	}
 </style>
