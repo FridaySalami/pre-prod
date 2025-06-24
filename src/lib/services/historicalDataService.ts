@@ -116,7 +116,7 @@ export class HistoricalDataService {
     request: WeeklyDataRequest
   ): Promise<WeeklyDataResponse | null> {
     try {
-      const { metric, count = 8, endDate } = request;
+      const { metric, count = 13, endDate } = request; // Default to 13 weeks to get 12 complete weeks after excluding current
 
       const referenceDate = endDate ? new Date(endDate) : new Date();
 
@@ -149,7 +149,7 @@ export class HistoricalDataService {
       }
 
       // Group data by week (Monday to Sunday)
-      const weeklyData = this.groupDataByWeek(data, metric, count);
+      const weeklyData = this.groupDataByWeek(data, metric, count + 1); // Fetch one extra week to account for current week filtering
 
       // Calculate statistics and trend
       const values = weeklyData.map(w => w.value);
@@ -218,9 +218,8 @@ export class HistoricalDataService {
     });
 
     // Convert to WeeklyMetricPoint and sort by date (newest first)
-    const weeklyPoints: WeeklyMetricPoint[] = Array.from(weeks.values())
+    const allWeeklyPoints: WeeklyMetricPoint[] = Array.from(weeks.values())
       .sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
-      .slice(0, maxWeeks) // Take only the requested number of weeks
       .map(week => {
         const weekData = week.data;
         const totalValue = weekData.reduce((sum, record) => sum + ((record as any)[metric] || 0), 0);
@@ -243,11 +242,15 @@ export class HistoricalDataService {
           dailyAverage,
           workingDays: Math.max(weekData.length, workingDays)
         };
-      })
+      });
+
+    // Filter out current incomplete week and take the requested number of complete weeks
+    const completeWeeks = allWeeklyPoints
       .filter(week => !week.isCurrentWeek) // Exclude current incomplete week
+      .slice(0, maxWeeks - 1) // Take the actual requested number (maxWeeks was incremented by 1 in the caller)
       .reverse(); // Show chronologically (oldest to newest)
 
-    return weeklyPoints;
+    return completeWeeks;
   }
 
   /**
@@ -390,6 +393,8 @@ export class HistoricalDataService {
 
   /**
    * Calculate trend information using linear regression and enhanced significance analysis
+   * Note: The values array should have already excluded any incomplete current period
+   * to ensure accurate trend and significance analysis
    */
   private static calculateTrend(values: number[], metric?: string) {
     if (values.length < 2) {
@@ -397,7 +402,7 @@ export class HistoricalDataService {
         direction: 'stable' as const,
         percentage: 0,
         isSignificant: false,
-        significanceDetails: null,
+        significanceDetails: undefined,
         trendStrength: 0,
         r2: 0
       };
@@ -478,7 +483,14 @@ export class HistoricalDataService {
       metric,
       weekday,
       data: [],
-      trend: { direction: 'stable', percentage: 0, isSignificant: false },
+      trend: {
+        direction: 'stable',
+        percentage: 0,
+        isSignificant: false,
+        significanceDetails: undefined,
+        trendStrength: 0,
+        r2: 0
+      },
       statistics: {
         average: 0,
         min: 0,
@@ -500,7 +512,14 @@ export class HistoricalDataService {
     return {
       metric,
       data: [],
-      trend: { direction: 'stable', percentage: 0, isSignificant: false },
+      trend: {
+        direction: 'stable',
+        percentage: 0,
+        isSignificant: false,
+        significanceDetails: undefined,
+        trendStrength: 0,
+        r2: 0
+      },
       statistics: {
         average: 0,
         min: 0,

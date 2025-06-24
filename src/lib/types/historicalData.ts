@@ -1,4 +1,6 @@
 // Historical data types for enhanced analytics
+import type { SignificanceResult } from '../services/significanceAnalyzer';
+
 export interface HistoricalMetricPoint {
   date: string;
   value: number;
@@ -29,7 +31,7 @@ export interface HistoricalDataRequest {
 export interface WeeklyDataRequest {
   metric: 'total_sales' | 'amazon_sales' | 'ebay_sales' | 'shopify_sales' |
   'linnworks_total_orders' | 'labor_efficiency';
-  count: number; // Number of weeks (default 8, max 12)
+  count: number; // Number of weeks (default 12, minimum 12 for statistical analysis)
   endDate?: string; // Optional end date, defaults to current date
 }
 
@@ -41,7 +43,7 @@ export interface HistoricalDataResponse {
     direction: 'up' | 'down' | 'stable';
     percentage: number;
     isSignificant: boolean;
-    significanceDetails?: any; // Will be typed properly once SignificanceResult is imported
+    significanceDetails?: SignificanceResult; // Now properly typed
     trendStrength?: number;    // How strong the trend is (0-1)
     r2?: number;              // R-squared value for trend line fit (0-1)
   };
@@ -65,7 +67,7 @@ export interface WeeklyDataResponse {
     direction: 'up' | 'down' | 'stable';
     percentage: number;
     isSignificant: boolean;
-    significanceDetails?: any; // Will be typed properly once SignificanceResult is imported
+    significanceDetails?: SignificanceResult; // Now properly typed
     trendStrength?: number;    // How strong the trend is (0-1)
     r2?: number;              // R-squared value for trend line fit (0-1)
   };

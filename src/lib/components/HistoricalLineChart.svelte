@@ -1,9 +1,14 @@
 <script lang="ts">
 	import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from '$lib/shadcn/components';
 	import { cn } from '$lib/shadcn/utils/index.js';
+	import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '$lib/shadcn/ui/tooltip';
 	import SignificanceDisplay from './SignificanceDisplay.svelte';
+	import EnhancedSignificanceDisplay from './EnhancedSignificanceDisplay.svelte';
 	import { SeasonalTrendService } from '$lib/services/seasonalTrendService';
+	import { PdfExportService } from '$lib/services/pdfExportService';
 	import type { HistoricalDataResponse } from '$lib/types/historicalData';
+	import type { SignificanceResult } from '$lib/services/significanceAnalyzer';
+	import type { EnhancedSignificanceResult } from '$lib/services/enhancedSignificanceAnalyzer';
 
 	interface Props {
 		historicalData: HistoricalDataResponse | null;
@@ -31,6 +36,140 @@
 	// Seasonal trend analysis state
 	let showSeasonalAnalysis = $state(false); // Default to hidden for weekday data
 
+	// Check if we have sufficient data for significance analysis
+	const hasSufficientDataForSignificance = $derived(() => {
+		return chartData().length >= 12;
+	});
+
+	// Convert basic SignificanceResult to EnhancedSignificanceResult for better UX
+	function convertToEnhancedResult(
+		basicResult: SignificanceResult | undefined,
+		percentage: number | undefined,
+		direction: string | undefined,
+		metricName: string
+	): EnhancedSignificanceResult | null {
+		if (!basicResult || !percentage || !direction) return null;
+
+		// Determine significance level based on percentage change
+		let significance: 'none' | 'minimal' | 'moderate' | 'substantial' = 'none';
+		let urgency: 'low' | 'medium' | 'high' = 'low';
+		let impactLevel: 'low' | 'medium' | 'high' = 'low';
+
+		const absPercentage = Math.abs(percentage);
+		if (absPercentage >= 15) {
+			significance = 'substantial';
+			urgency = 'high';
+			impactLevel = 'high';
+		} else if (absPercentage >= 5) {
+			significance = 'moderate';
+			urgency = 'medium';
+			impactLevel = 'medium';
+		} else if (absPercentage >= 2) {
+			significance = 'minimal';
+			urgency = 'low';
+			impactLevel = 'low';
+		}
+
+		// Generate business-friendly messages
+		const directionText =
+			direction === 'up' ? 'increased' : direction === 'down' ? 'decreased' : 'changed';
+		const primaryMessage = `${metricName} has ${directionText} by ${Math.abs(percentage).toFixed(1)}%.`;
+
+		let businessMeaning = '';
+		if (significance === 'substantial') {
+			businessMeaning = `This represents a ${direction === 'up' ? 'significant improvement' : 'concerning decline'}.`;
+		} else if (significance === 'moderate') {
+			businessMeaning = `This change is ${direction === 'up' ? 'positive' : 'negative'} and warrants monitoring and potential intervention.`;
+		} else {
+			businessMeaning =
+				'This represents normal business variation that should be monitored as part of regular operations.';
+		}
+
+		// Generate recommendations
+		const recommendations = [];
+		if (significance === 'substantial') {
+			if (direction === 'down') {
+				recommendations.push({
+					action: 'Investigate root causes and implement corrective measures',
+					priority: 'high' as const,
+					timeframe: 'immediate' as const
+				});
+			} else {
+				recommendations.push({
+					action: 'Analyze success factors and scale successful strategies',
+					priority: 'medium' as const,
+					timeframe: 'short-term' as const
+				});
+			}
+		} else if (significance === 'moderate') {
+			recommendations.push({
+				action: 'Monitor trend closely and prepare contingency plans',
+				priority: 'medium' as const,
+				timeframe: 'short-term' as const
+			});
+		}
+
+		return {
+			significance,
+			confidence: basicResult.confidence,
+			actionRequired: significance === 'substantial',
+			statistical: {
+				isSignificant: basicResult.isSignificant,
+				method: 'welch-t', // Default method since we don't have it in basic result
+				pValue: basicResult.metrics.pValue || 0.05,
+				effectSize: Math.abs(percentage) / 100, // Convert percentage to effect size
+				powerAnalysis: 0.8 // Default assumption
+			},
+			business: {
+				impactLevel,
+				businessMeaning,
+				urgency,
+				contextualFactors: []
+			},
+			insights: {
+				primaryMessage,
+				keyFindings: [
+					`Analysis confidence: ${(basicResult.confidence * 100).toFixed(1)}%`,
+					`Significance type: ${getExpandedSignificanceType(basicResult.significanceType)}`,
+					...(basicResult.reasons || [])
+				],
+				recommendations
+			},
+			timeSeries: {
+				trendSignificance: basicResult.isSignificant,
+				autocorrelationDetected: false,
+				seasonallyAdjusted: basicResult.metrics.seasonalityAdjusted || false,
+				changePoints: []
+			},
+			technical: {
+				rawMetrics: {
+					pValue: basicResult.metrics.pValue || 0.05,
+					confidence: basicResult.confidence,
+					zScore: basicResult.metrics.zScore || 0,
+					percentageChange: basicResult.metrics.percentageChange,
+					volatilityScore: basicResult.metrics.volatilityScore || 0
+				},
+				assumptionChecks: {
+					normalityTest: true, // Default assumption
+					homoscedasticity: true,
+					independence: true
+				},
+				diagnostics: basicResult.recommendations || []
+			}
+		};
+	}
+
+	// Enhanced significance results for better UX
+	const enhancedTrendResult = $derived(() => {
+		if (!historicalData?.trend) return null;
+		return convertToEnhancedResult(
+			historicalData.trend.significanceDetails,
+			historicalData.trend.percentage,
+			historicalData.trend.direction,
+			getMetricDisplayName(historicalData.metric)
+		);
+	});
+
 	// Computed values for chart rendering
 	const chartData = $derived(() => {
 		if (!historicalData?.data || historicalData.data.length === 0) return [];
@@ -47,6 +186,52 @@
 		const cyclePeriod = Math.min(7, Math.floor(values.length / 2));
 		return SeasonalTrendService.analyzeSeasonalTrend(values, cyclePeriod);
 	});
+
+	// Peak and valley detection for color coding
+	const peaksAndValleys = $derived(() => {
+		const data = chartData();
+		if (data.length < 3) return data.map(() => ({ type: 'normal' }));
+
+		const points = data.map((d, index) => {
+			if (index === 0 || index === data.length - 1) {
+				// First and last points are neither peaks nor valleys
+				return { type: 'normal' };
+			}
+
+			const prevValue = data[index - 1].value;
+			const currentValue = d.value;
+			const nextValue = data[index + 1].value;
+
+			// Check if it's a peak (higher than both neighbors)
+			if (currentValue > prevValue && currentValue > nextValue) {
+				return { type: 'peak' };
+			}
+			// Check if it's a valley (lower than both neighbors)
+			else if (currentValue < prevValue && currentValue < nextValue) {
+				return { type: 'valley' };
+			}
+			// Normal point
+			else {
+				return { type: 'normal' };
+			}
+		});
+
+		return points;
+	});
+
+	// Function to get point color based on peak/valley status
+	function getPointColor(index: number): { fill: string; stroke: string } {
+		const pointType = peaksAndValleys()[index]?.type || 'normal';
+
+		switch (pointType) {
+			case 'peak':
+				return { fill: '#ef4444', stroke: '#dc2626' }; // Red for peaks
+			case 'valley':
+				return { fill: '#3b82f6', stroke: '#2563eb' }; // Blue for valleys
+			default:
+				return { fill: '#ffffff', stroke: '#3b82f6' }; // Default blue (matching HistoricalLineChart theme)
+		}
+	}
 
 	const yDomain = $derived(() => {
 		if (chartData().length === 0) return [0, 100];
@@ -177,9 +362,28 @@
 		}
 	}
 
+	// Expand significance type with detailed explanation
+	function getExpandedSignificanceType(type: string): string {
+		switch (type) {
+			case 'statistical':
+				return 'Statistical evidence - Change detected through rigorous statistical testing';
+			case 'trend':
+				return 'Trend pattern - Consistent directional change detected over multiple periods';
+			case 'practical':
+				return 'Practical threshold - Change exceeds business-defined significance levels';
+			case 'volatility':
+				return 'Volatility anomaly - Change is unusually large compared to historical variation';
+			case 'combined':
+				return 'Multiple indicators - Change confirmed by both statistical tests and trend analysis';
+			default:
+				return type;
+		}
+	}
+
 	// Interactive state
 	let hoveredPoint: { index: number; data: any } | null = $state(null);
 	let mousePosition = $state({ x: 0, y: 0 });
+	let isExportingPdf = $state(false);
 
 	function handlePointHover(event: PointerEvent, index: number, data: any) {
 		const svg = (event.currentTarget as Element).closest('svg');
@@ -195,6 +399,87 @@
 
 	function handleMouseLeave() {
 		hoveredPoint = null;
+	}
+
+	// PDF Export functionality
+	async function exportToPdf() {
+		if (!historicalData) return;
+
+		isExportingPdf = true;
+		try {
+			// Find the chart container element
+			const chartContainer = document.querySelector('.historical-chart-container') as HTMLElement;
+			if (!chartContainer) {
+				throw new Error('Chart container not found');
+			}
+
+			// Prepare data for export
+			const data = chartData();
+			const enhanced = enhancedTrendResult();
+
+			// Get the time range text
+			const timeRange = `${data.length} ${historicalData.weekday}s`;
+
+			// Prepare statistical analysis
+			const statisticalAnalysis = enhanced
+				? {
+						primaryMessage: enhanced.insights.primaryMessage,
+						keyFindings: enhanced.insights.keyFindings,
+						bestWeek: bestAndWorstWeeks()
+							? {
+									week: bestAndWorstWeeks()!.best.week,
+									value: bestAndWorstWeeks()!.best.value
+								}
+							: undefined,
+						worstWeek: bestAndWorstWeeks()
+							? {
+									week: bestAndWorstWeeks()!.worst.week,
+									value: bestAndWorstWeeks()!.worst.value
+								}
+							: undefined
+					}
+				: undefined;
+
+			await PdfExportService.exportToPdf({
+				title: `${historicalData.weekday} ${getMetricDisplayName(historicalData.metric)} Analysis`,
+				subtitle: `Historical ${historicalData.weekday} performance analysis`,
+				timeRange: timeRange,
+				metricName: getMetricDisplayName(historicalData.metric),
+				chartElement: chartContainer,
+				data: data.map((point) => ({
+					week: `Week ${point.weekNumber}`,
+					value: point.value,
+					weekStartDate: point.date
+				})),
+				statisticalAnalysis
+			});
+		} catch (error) {
+			console.error('PDF export failed:', error);
+			// You could add a toast notification here
+		} finally {
+			isExportingPdf = false;
+		}
+	}
+
+	// Helper function to get best and worst weeks
+	function bestAndWorstWeeks() {
+		const data = chartData();
+		if (data.length === 0) return null;
+
+		const sortedData = [...data].sort((a, b) => b.value - a.value);
+		const best = sortedData[0];
+		const worst = sortedData[sortedData.length - 1];
+
+		return {
+			best: {
+				week: `Week ${best.weekNumber}, ${new Date(best.date).getFullYear()}`,
+				value: formatValue(best.value, historicalData?.metric || '')
+			},
+			worst: {
+				week: `Week ${worst.weekNumber}, ${new Date(worst.date).getFullYear()}`,
+				value: formatValue(worst.value, historicalData?.metric || '')
+			}
+		};
 	}
 </script>
 
@@ -219,9 +504,49 @@
 					</p>
 				{/if}
 			</div>
-			{#if onClose}
-				<Button variant="outline" size="sm" onclick={onClose}>Close</Button>
-			{/if}
+			<div class="flex items-center gap-2">
+				{#if historicalData && !loading}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={exportToPdf}
+						disabled={isExportingPdf}
+						class="flex items-center gap-2"
+					>
+						{#if isExportingPdf}
+							<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
+							</svg>
+							Exporting...
+						{:else}
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+								></path>
+							</svg>
+							Export PDF
+						{/if}
+					</Button>
+				{/if}
+				{#if onClose}
+					<Button variant="outline" size="sm" onclick={onClose}>Close</Button>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Statistics Cards -->
@@ -241,16 +566,39 @@
 				</div>
 				<div class="bg-muted/50 rounded-lg p-3">
 					<div class="text-xs text-muted-foreground">Overall Trend</div>
-					<SignificanceDisplay
-						significanceDetails={historicalData.trend.significanceDetails}
-						isSignificant={historicalData.trend.isSignificant}
-						percentage={historicalData.trend.percentage}
-						direction={historicalData.trend.direction}
-						compact={true}
-					/>
-					{#if historicalData.trend.r2}
+					{#if hasSufficientDataForSignificance()}
+						<!-- Use Enhanced Display if we have enhanced result, otherwise fallback -->
+						{#if enhancedTrendResult()}
+							<EnhancedSignificanceDisplay
+								result={enhancedTrendResult()}
+								metricName={getMetricDisplayName(historicalData.metric)}
+								compact={true}
+								rawData={chartData().map((point) => ({
+									week: `Week ${point.weekNumber}, ${new Date(point.date).getFullYear()}`,
+									value: point.value
+								}))}
+								timeRange={`${chartData().length} ${historicalData.weekday}s`}
+							/>
+						{:else}
+							<SignificanceDisplay
+								significanceDetails={historicalData.trend.significanceDetails}
+								isSignificant={historicalData.trend.isSignificant}
+								percentage={historicalData.trend.percentage}
+								direction={historicalData.trend.direction}
+								compact={true}
+							/>
+						{/if}
+						{#if historicalData.trend.r2}
+							<div class="text-xs text-muted-foreground mt-1">
+								R² {(historicalData.trend.r2 * 100).toFixed(0)}%
+							</div>
+						{/if}
+					{:else}
+						<div class="text-sm text-muted-foreground">
+							<Badge variant="outline" class="text-xs">Insufficient data</Badge>
+						</div>
 						<div class="text-xs text-muted-foreground mt-1">
-							R² {(historicalData.trend.r2 * 100).toFixed(0)}%
+							{12 - chartData().length} more data points needed for trend analysis
 						</div>
 					{/if}
 				</div>
@@ -287,17 +635,55 @@
 				</div>
 			</div>
 
-			<!-- Detailed Significance Analysis (if significant) -->
-			{#if historicalData.trend.isSignificant && historicalData.trend.significanceDetails}
+			<!-- Detailed Significance Analysis (if significant and sufficient data) -->
+			{#if hasSufficientDataForSignificance() && historicalData.trend.isSignificant && (historicalData.trend.significanceDetails || enhancedTrendResult())}
 				<div class="mt-4">
-					<SignificanceDisplay
-						significanceDetails={historicalData.trend.significanceDetails}
-						isSignificant={historicalData.trend.isSignificant}
-						percentage={historicalData.trend.percentage}
-						direction={historicalData.trend.direction}
-						metricName={getMetricDisplayName(historicalData.metric)}
-						compact={false}
-					/>
+					{#if enhancedTrendResult()}
+						<EnhancedSignificanceDisplay
+							result={enhancedTrendResult()}
+							metricName={getMetricDisplayName(historicalData.metric)}
+							metricValue={historicalData.statistics.latest}
+							compact={false}
+							showTechnicalDetails={true}
+							rawData={chartData().map((point) => ({
+								week: `Week ${point.weekNumber}, ${new Date(point.date).getFullYear()}`,
+								value: point.value
+							}))}
+							timeRange={`${chartData().length} ${historicalData.weekday}s`}
+						/>
+					{:else if historicalData.trend.significanceDetails}
+						<SignificanceDisplay
+							significanceDetails={historicalData.trend.significanceDetails}
+							isSignificant={historicalData.trend.isSignificant}
+							percentage={historicalData.trend.percentage}
+							direction={historicalData.trend.direction}
+							metricName={getMetricDisplayName(historicalData.metric)}
+							compact={false}
+						/>
+					{/if}
+				</div>
+			{:else if !hasSufficientDataForSignificance()}
+				<div class="mt-4 p-4 bg-muted/30 rounded-lg border border-dashed">
+					<div class="flex items-center gap-2 text-sm text-muted-foreground">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+							/>
+						</svg>
+						<span class="font-medium">Statistical Analysis Pending</span>
+					</div>
+					<p class="text-xs text-muted-foreground mt-2">
+						Reliable trend analysis requires at least 12 data points. Currently showing {chartData()
+							.length}
+						{historicalData.weekday}s.
+						{#if chartData().length > 0}
+							Add {12 - chartData().length} more {historicalData.weekday}s to enable significance
+							testing.
+						{/if}
+					</p>
 				</div>
 			{/if}
 		{/if}
@@ -334,7 +720,7 @@
 			</div>
 		{:else}
 			<!-- Line Chart -->
-			<div class="relative">
+			<div class="relative historical-chart-container">
 				<svg
 					width={chartWidth}
 					height={chartHeight}
@@ -419,12 +805,13 @@
 					{#each chartData() as point, index}
 						{@const x = padding.left + xScale()(index)}
 						{@const y = padding.top + yScale()(point.value)}
+						{@const colors = getPointColor(index)}
 						<circle
 							cx={x}
 							cy={y}
 							r="4"
-							fill={point.isCurrentWeek ? '#3b82f6' : '#ffffff'}
-							stroke="#3b82f6"
+							fill={point.isCurrentWeek ? '#3b82f6' : colors.fill}
+							stroke={point.isCurrentWeek ? '#3b82f6' : colors.stroke}
 							stroke-width="2"
 							class="cursor-pointer hover:r-6 transition-all"
 							onpointerenter={(e) => handlePointHover(e, index, point)}
@@ -441,6 +828,37 @@
 								opacity="0.5"
 							/>
 						{/if}
+					{/each}
+
+					<!-- Always visible point value tooltips -->
+					{#each chartData() as point, index}
+						{@const x = padding.left + xScale()(index)}
+						{@const y = padding.top + yScale()(point.value)}
+						<g transform="translate({x}, {y - 25})">
+							<!-- Tooltip background -->
+							<rect
+								x="-30"
+								y="-14"
+								width="60"
+								height="24"
+								rx="12"
+								fill="rgba(255, 255, 255, 0.95)"
+								stroke="rgba(59, 130, 246, 0.3)"
+								stroke-width="1"
+								filter="drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))"
+							/>
+							<!-- Tooltip text -->
+							<text
+								x="0"
+								y="0"
+								text-anchor="middle"
+								dominant-baseline="middle"
+								class="text-xs fill-gray-700 font-medium"
+								style="font-size: 11px;"
+							>
+								{formatValue(point.value, historicalData.metric)}
+							</text>
+						</g>
 					{/each}
 
 					<!-- X-axis labels -->
