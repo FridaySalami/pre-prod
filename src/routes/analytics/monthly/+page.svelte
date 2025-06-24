@@ -19,6 +19,16 @@
 	} from '$lib/shadcn/components';
 	import MonthlyChart from '$lib/shadcn/components/ui/MonthlyChart.svelte';
 	import MetricsDashboardChart from '$lib/MetricsDashboardChart.svelte';
+	import HistoricalLineChart from '$lib/components/HistoricalLineChart.svelte';
+	import WeeklyLineChart from '$lib/components/WeeklyLineChart.svelte';
+	import { HistoricalDataService } from '$lib/services/historicalDataService';
+	import type {
+		HistoricalDataResponse,
+		WeeklyDataResponse,
+		MetricDisplayMode,
+		WeekdayHistoricalConfig,
+		WeeklyHistoricalConfig
+	} from '$lib/types/historicalData';
 
 	// ===========================================
 	// Type Definitions
@@ -66,6 +76,28 @@
 	// Sorting state
 	let sortColumn: keyof DailyData | null = $state(null);
 	let sortDirection: 'asc' | 'desc' = $state('asc');
+
+	// Historical lens feature state
+	let displayMode: MetricDisplayMode = $state('current-month');
+	let historicalConfig: WeekdayHistoricalConfig = $state({
+		selectedMetric: 'total_sales',
+		selectedWeekday: 'monday',
+		historicalCount: 7,
+		showTrend: true,
+		showAverage: true
+	});
+	let weeklyConfig: WeeklyHistoricalConfig = $state({
+		selectedMetric: 'total_sales',
+		weeksCount: 8,
+		showTrend: true,
+		showWorkingDaysOnly: false
+	});
+	let historicalData: HistoricalDataResponse | null = $state(null);
+	let weeklyData: WeeklyDataResponse | null = $state(null);
+	let loadingHistorical = $state(false);
+	let loadingWeekly = $state(false);
+	let historicalError: string | null = $state(null);
+	let weeklyError: string | null = $state(null);
 
 	// ===========================================
 	// Lifecycle & Initialization
@@ -176,6 +208,99 @@
 			showToast('Failed to refresh data', 'error');
 		}
 		// Note: isLoading will be set to false in the $effect when new data arrives
+	}
+
+	/**
+	 * Toggle between different display modes
+	 */
+	function toggleDisplayMode(newMode: MetricDisplayMode) {
+		if (displayMode === newMode) return;
+
+		displayMode = newMode;
+
+		// Reset data when switching modes
+		historicalData = null;
+		weeklyData = null;
+
+		// Load appropriate data for the new mode
+		if (newMode === 'historical-weekday') {
+			loadHistoricalData();
+		} else if (newMode === 'historical-weekly') {
+			loadWeeklyData();
+		}
+	}
+
+	/**
+	 * Load historical data for the selected metric and weekday
+	 */
+	async function loadHistoricalData() {
+		loadingHistorical = true;
+		historicalError = null;
+
+		try {
+			const request = {
+				metric: historicalConfig.selectedMetric as any,
+				weekday: historicalConfig.selectedWeekday as any,
+				count: historicalConfig.historicalCount
+			};
+
+			historicalData = await HistoricalDataService.fetchHistoricalWeekdayData(request);
+
+			if (!historicalData) {
+				historicalError = 'Failed to load historical data';
+			}
+		} catch (err) {
+			console.error('Error loading historical data:', err);
+			historicalError = 'Error loading historical data';
+		} finally {
+			loadingHistorical = false;
+		}
+	}
+
+	/**
+	 * Load weekly data for the selected metric
+	 */
+	async function loadWeeklyData() {
+		loadingWeekly = true;
+		weeklyError = null;
+
+		try {
+			const request = {
+				metric: weeklyConfig.selectedMetric as any,
+				count: weeklyConfig.weeksCount
+			};
+
+			weeklyData = await HistoricalDataService.fetchWeeklyData(request);
+
+			if (!weeklyData) {
+				weeklyError = 'Failed to load weekly data';
+			}
+		} catch (err) {
+			console.error('Error loading weekly data:', err);
+			weeklyError = 'Error loading weekly data';
+		} finally {
+			loadingWeekly = false;
+		}
+	}
+
+	/**
+	 * Update historical configuration and reload data
+	 */
+	async function updateHistoricalConfig(newConfig: Partial<WeekdayHistoricalConfig>) {
+		historicalConfig = { ...historicalConfig, ...newConfig };
+		if (displayMode === 'historical-weekday') {
+			await loadHistoricalData();
+		}
+	}
+
+	/**
+	 * Update weekly configuration and reload data
+	 */
+	async function updateWeeklyConfig(newConfig: Partial<WeeklyHistoricalConfig>) {
+		weeklyConfig = { ...weeklyConfig, ...newConfig };
+		if (displayMode === 'historical-weekly') {
+			await loadWeeklyData();
+		}
 	}
 
 	// ===========================================
@@ -626,7 +751,196 @@
 
 			<!-- Daily Sales Chart -->
 			{#if dailyData.length > 0}
-				<MetricsDashboardChart data={dailyData} title="Daily Sales Visualization" class="w-full" />
+				<div class="space-y-4">
+					<!-- Chart Header with Mode Toggle -->
+					<Card>
+						<CardHeader>
+							<div class="flex items-center justify-between">
+								<div>
+									<CardTitle class="text-xl font-semibold">
+										{displayMode === 'current-month'
+											? 'Daily Sales Visualization'
+											: displayMode === 'historical-weekday'
+												? 'Historical Weekday Analysis'
+												: 'Weekly Trends Analysis'}
+									</CardTitle>
+									<p class="text-sm text-muted-foreground mt-1">
+										{displayMode === 'current-month'
+											? `${getMonthName(selectedMonth, selectedYear)} breakdown by channel`
+											: displayMode === 'historical-weekday'
+												? 'Compare specific weekdays across multiple weeks (excludes today for accurate comparisons)'
+												: 'Weekly aggregated performance over time (excludes current incomplete week)'}
+									</p>
+								</div>
+								<div class="flex gap-2">
+									<Button
+										variant={displayMode === 'current-month' ? 'default' : 'outline'}
+										size="sm"
+										onclick={() => toggleDisplayMode('current-month')}
+									>
+										Current Month
+									</Button>
+									<Button
+										variant={displayMode === 'historical-weekday' ? 'default' : 'outline'}
+										size="sm"
+										onclick={() => toggleDisplayMode('historical-weekday')}
+									>
+										Weekday Lens
+									</Button>
+									<Button
+										variant={displayMode === 'historical-weekly' ? 'default' : 'outline'}
+										size="sm"
+										onclick={() => toggleDisplayMode('historical-weekly')}
+									>
+										Weekly Trends
+									</Button>
+								</div>
+							</div>
+
+							<!-- Historical Configuration Panel -->
+							{#if displayMode === 'historical-weekday'}
+								<div class="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
+									<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+										<!-- Metric Selection -->
+										<div class="space-y-2">
+											<label for="historical-metric" class="text-sm font-medium">Metric</label>
+											<select
+												id="historical-metric"
+												bind:value={historicalConfig.selectedMetric}
+												onchange={() =>
+													updateHistoricalConfig({
+														selectedMetric: historicalConfig.selectedMetric
+													})}
+												class="w-full px-3 py-2 border border-input rounded-md bg-background"
+											>
+												<option value="total_sales">Total Sales</option>
+												<option value="amazon_sales">Amazon Sales</option>
+												<option value="ebay_sales">eBay Sales</option>
+												<option value="shopify_sales">Shopify Sales</option>
+												<option value="linnworks_total_orders">Total Orders</option>
+												<option value="labor_efficiency">Labor Efficiency</option>
+											</select>
+										</div>
+
+										<!-- Weekday Selection -->
+										<div class="space-y-2">
+											<label for="historical-weekday" class="text-sm font-medium">Weekday</label>
+											<select
+												id="historical-weekday"
+												bind:value={historicalConfig.selectedWeekday}
+												onchange={() =>
+													updateHistoricalConfig({
+														selectedWeekday: historicalConfig.selectedWeekday
+													})}
+												class="w-full px-3 py-2 border border-input rounded-md bg-background"
+											>
+												<option value="monday">Monday</option>
+												<option value="tuesday">Tuesday</option>
+												<option value="wednesday">Wednesday</option>
+												<option value="thursday">Thursday</option>
+												<option value="friday">Friday</option>
+												<option value="saturday">Saturday</option>
+												<option value="sunday">Sunday</option>
+											</select>
+										</div>
+
+										<!-- Historical Count -->
+										<div class="space-y-2">
+											<label for="historical-count" class="text-sm font-medium"
+												>Number of Weeks</label
+											>
+											<select
+												id="historical-count"
+												bind:value={historicalConfig.historicalCount}
+												onchange={() =>
+													updateHistoricalConfig({
+														historicalCount: historicalConfig.historicalCount
+													})}
+												class="w-full px-3 py-2 border border-input rounded-md bg-background"
+											>
+												<option value={4}>Last 4 weeks</option>
+												<option value={6}>Last 6 weeks</option>
+												<option value={7}>Last 7 weeks</option>
+												<option value={8}>Last 8 weeks</option>
+												<option value={12}>Last 12 weeks</option>
+											</select>
+										</div>
+									</div>
+								</div>
+							{:else if displayMode === 'historical-weekly'}
+								<div class="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
+									<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+										<!-- Metric Selection -->
+										<div class="space-y-2">
+											<label for="weekly-metric" class="text-sm font-medium">Metric</label>
+											<select
+												id="weekly-metric"
+												bind:value={weeklyConfig.selectedMetric}
+												onchange={() =>
+													updateWeeklyConfig({
+														selectedMetric: weeklyConfig.selectedMetric
+													})}
+												class="w-full px-3 py-2 border border-input rounded-md bg-background"
+											>
+												<option value="total_sales">Total Sales</option>
+												<option value="amazon_sales">Amazon Sales</option>
+												<option value="ebay_sales">eBay Sales</option>
+												<option value="shopify_sales">Shopify Sales</option>
+												<option value="linnworks_total_orders">Total Orders</option>
+												<option value="labor_efficiency">Labor Efficiency</option>
+											</select>
+										</div>
+
+										<!-- Weeks Count -->
+										<div class="space-y-2">
+											<label for="weekly-count" class="text-sm font-medium">Time Range</label>
+											<select
+												id="weekly-count"
+												bind:value={weeklyConfig.weeksCount}
+												onchange={() =>
+													updateWeeklyConfig({
+														weeksCount: weeklyConfig.weeksCount
+													})}
+												class="w-full px-3 py-2 border border-input rounded-md bg-background"
+											>
+												<option value={4}>Last 4 weeks</option>
+												<option value={6}>Last 6 weeks</option>
+												<option value={8}>Last 8 weeks</option>
+												<option value={10}>Last 10 weeks</option>
+												<option value={12}>Last 12 weeks</option>
+											</select>
+										</div>
+									</div>
+								</div>
+							{/if}
+						</CardHeader>
+					</Card>
+
+					<!-- Chart Display -->
+					{#if displayMode === 'current-month'}
+						<MetricsDashboardChart
+							data={dailyData}
+							title="Daily Sales Visualization"
+							class="w-full"
+						/>
+					{:else if displayMode === 'historical-weekday'}
+						<HistoricalLineChart
+							{historicalData}
+							loading={loadingHistorical}
+							error={historicalError}
+							onClose={() => toggleDisplayMode('current-month')}
+							class="w-full"
+						/>
+					{:else if displayMode === 'historical-weekly'}
+						<WeeklyLineChart
+							{weeklyData}
+							loading={loadingWeekly}
+							error={weeklyError}
+							onClose={() => toggleDisplayMode('current-month')}
+							class="w-full"
+						/>
+					{/if}
+				</div>
 			{/if}
 
 			<!-- Daily Breakdown Table -->
@@ -639,7 +953,7 @@
 						<TableHeader>
 							<TableRow>
 								<TableHead class="p-0">
-									<button 
+									<button
 										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
 										onclick={() => sortDailyData('date')}
 									>
@@ -653,16 +967,26 @@
 												stroke="currentColor"
 											>
 												{#if sortDirection === 'asc'}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M7 11l5-5m0 0l5 5m-5-5v12"
+													/>
 												{:else}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M17 13l-5 5m0 0l-5-5m5 5V6"
+													/>
 												{/if}
 											</svg>
 										{/if}
 									</button>
 								</TableHead>
 								<TableHead class="p-0">
-									<button 
+									<button
 										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
 										onclick={() => sortDailyData('total_sales')}
 									>
@@ -676,16 +1000,26 @@
 												stroke="currentColor"
 											>
 												{#if sortDirection === 'asc'}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M7 11l5-5m0 0l5 5m-5-5v12"
+													/>
 												{:else}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M17 13l-5 5m0 0l-5-5m5 5V6"
+													/>
 												{/if}
 											</svg>
 										{/if}
 									</button>
 								</TableHead>
 								<TableHead class="p-0">
-									<button 
+									<button
 										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
 										onclick={() => sortDailyData('amazon_sales')}
 									>
@@ -699,16 +1033,26 @@
 												stroke="currentColor"
 											>
 												{#if sortDirection === 'asc'}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M7 11l5-5m0 0l5 5m-5-5v12"
+													/>
 												{:else}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M17 13l-5 5m0 0l-5-5m5 5V6"
+													/>
 												{/if}
 											</svg>
 										{/if}
 									</button>
 								</TableHead>
 								<TableHead class="p-0">
-									<button 
+									<button
 										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
 										onclick={() => sortDailyData('ebay_sales')}
 									>
@@ -722,16 +1066,26 @@
 												stroke="currentColor"
 											>
 												{#if sortDirection === 'asc'}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M7 11l5-5m0 0l5 5m-5-5v12"
+													/>
 												{:else}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M17 13l-5 5m0 0l-5-5m5 5V6"
+													/>
 												{/if}
 											</svg>
 										{/if}
 									</button>
 								</TableHead>
 								<TableHead class="p-0">
-									<button 
+									<button
 										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
 										onclick={() => sortDailyData('shopify_sales')}
 									>
@@ -745,16 +1099,26 @@
 												stroke="currentColor"
 											>
 												{#if sortDirection === 'asc'}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M7 11l5-5m0 0l5 5m-5-5v12"
+													/>
 												{:else}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M17 13l-5 5m0 0l-5-5m5 5V6"
+													/>
 												{/if}
 											</svg>
 										{/if}
 									</button>
 								</TableHead>
 								<TableHead class="p-0">
-									<button 
+									<button
 										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
 										onclick={() => sortDailyData('linnworks_total_orders')}
 									>
@@ -768,16 +1132,26 @@
 												stroke="currentColor"
 											>
 												{#if sortDirection === 'asc'}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M7 11l5-5m0 0l5 5m-5-5v12"
+													/>
 												{:else}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M17 13l-5 5m0 0l-5-5m5 5V6"
+													/>
 												{/if}
 											</svg>
 										{/if}
 									</button>
 								</TableHead>
 								<TableHead class="p-0">
-									<button 
+									<button
 										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
 										onclick={() => sortDailyData('labor_efficiency')}
 									>
@@ -791,9 +1165,19 @@
 												stroke="currentColor"
 											>
 												{#if sortDirection === 'asc'}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M7 11l5-5m0 0l5 5m-5-5v12"
+													/>
 												{:else}
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M17 13l-5 5m0 0l-5-5m5 5V6"
+													/>
 												{/if}
 											</svg>
 										{/if}
