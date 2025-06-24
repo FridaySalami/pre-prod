@@ -111,6 +111,12 @@
 		dashboardInitialized = false;
 		loadingState = 'INITIALIZING';
 		error = null;
+
+		// Reset previous week preloading state
+		previousWeekPreloaded = false;
+		previousWeekPreloading = false;
+		previousWeekPreloadPromise = null;
+
 		// Reset data source states
 		dataSourceStates = {
 			currentWeek: {
@@ -195,13 +201,18 @@
 	// Event-driven data loading
 	let dataLoadPromise: Promise<any> | null = null;
 
+	// Previous week preloading state
+	let previousWeekPreloaded = false;
+	let previousWeekPreloading = false;
+	let previousWeekPreloadPromise: Promise<any> | null = null;
+
 	// Separate state for the Linnworks status message
 	let showLinnworksStatus = false;
 	// Enhanced loading features
 	let showDataPreview = false;
 	let shipmentChartRef: any; // Reference to the ShipmentChart component
 
-	// Store preloaded data for ShipmentChart
+	// Store preloaded data for ShipmentChart with extended week support
 	let preloadedChartData = {
 		currentWeek: {
 			linnworks: null,
@@ -211,13 +222,20 @@
 			linnworks: null,
 			financial: null
 		},
+		// Additional week for navigation support (2 weeks ago)
+		twoWeeksAgo: {
+			linnworks: null,
+			financial: null
+		},
 		employeeHours: {
 			current: null as any,
-			previous: null as any
+			previous: null as any,
+			twoWeeksAgo: null as any
 		},
 		scheduledHours: {
 			current: null as any,
-			previous: null as any
+			previous: null as any,
+			twoWeeksAgo: null as any
 		},
 		usePreloaded: false
 	};
@@ -485,6 +503,13 @@
 		if (loadingState === 'READY') {
 			// No toast needed - banner shows the status
 			console.log('✅ Dashboard loading completed');
+
+			// Start preloading previous week data in the background
+			if (!previousWeekPreloaded && !previousWeekPreloading) {
+				console.log('🚀 Starting previous week data preloading...');
+				previousWeekPreloading = true;
+				previousWeekPreloadPromise = preloadPreviousWeekData();
+			}
 		} else if (loadingState === 'ERROR') {
 			// Error state is handled by the template
 			console.log('❌ Dashboard loading failed');
@@ -726,13 +751,19 @@
 					linnworks: previousLinnworksData,
 					financial: previousFinancialData
 				},
+				twoWeeksAgo: {
+					linnworks: null,
+					financial: null
+				},
 				employeeHours: {
 					current: currentEmployeeHours,
-					previous: previousEmployeeHours
+					previous: previousEmployeeHours,
+					twoWeeksAgo: null // Will be populated by background preload
 				},
 				scheduledHours: {
 					current: currentScheduledHours,
-					previous: previousScheduledHours
+					previous: previousScheduledHours,
+					twoWeeksAgo: null // Will be populated by background preload
 				},
 				usePreloaded: true
 			};
@@ -768,6 +799,129 @@
 			console.error('Error during preload:', err);
 			loadingState = 'ERROR';
 			error = err instanceof Error ? err.message : 'Unknown error during data loading';
+		}
+	}
+
+	// Previous week data preloading for enhanced user experience
+	async function preloadPreviousWeekData(): Promise<void> {
+		try {
+			console.log('🔄 Starting previous week navigation data preloading...');
+
+			// Calculate dates for two weeks ago (needed when user navigates to "Previous Week")
+			// When showing "Previous Week" view, this becomes the comparison data
+			const today = new Date();
+			const currentMonday = new Date(today);
+			const day = currentMonday.getDay();
+			const diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
+			currentMonday.setDate(diff);
+
+			// Go back 2 weeks (this will be "previous week" when viewing last week)
+			const twoWeeksAgoMonday = new Date(currentMonday.getTime() - 14 * 24 * 60 * 60 * 1000);
+			const twoWeeksAgoMondayStr = twoWeeksAgoMonday.toISOString().split('T')[0];
+			const twoWeeksAgoSundayStr = new Date(twoWeeksAgoMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
+				.toISOString()
+				.split('T')[0];
+
+			console.log(
+				'📅 Preloading comparison data for previous week navigation:',
+				twoWeeksAgoMondayStr,
+				'to',
+				twoWeeksAgoSundayStr
+			);
+
+			// Preload Linnworks and financial data for two weeks ago
+			// This will be used as "previous week" when user navigates to "Previous Week" view
+			const preloadFetches = [
+				fetch(
+					`/api/linnworks/weeklyOrderCounts?startDate=${twoWeeksAgoMondayStr}&endDate=${twoWeeksAgoSundayStr}`
+				)
+					.then(async (response) => {
+						if (response.ok) {
+							const data = await response.json();
+							console.log('✅ Previous week Linnworks data preloaded');
+							return data;
+						}
+						return null;
+					})
+					.catch((err) => {
+						console.log('⚠️ Previous week Linnworks preload failed:', err.message);
+						return null;
+					}),
+
+				fetch(
+					`/api/linnworks/financialData?startDate=${twoWeeksAgoMondayStr}&endDate=${twoWeeksAgoSundayStr}`
+				)
+					.then(async (response) => {
+						if (response.ok) {
+							const data = await response.json();
+							console.log('✅ Previous week financial data preloaded');
+							return data;
+						}
+						return null;
+					})
+					.catch((err) => {
+						console.log('⚠️ Previous week financial preload failed:', err.message);
+						return null;
+					})
+			];
+
+			// Also preload employee hours for that week
+			try {
+				const { getHoursDateRange } = await import('$lib/dailyHoursService');
+				const employeeHoursPromise = getHoursDateRange(twoWeeksAgoMondayStr, twoWeeksAgoSundayStr)
+					.then((data) => {
+						console.log('✅ Previous week employee hours preloaded');
+						return data;
+					})
+					.catch((err) => {
+						console.log('⚠️ Previous week employee hours preload failed:', err.message);
+						return [];
+					});
+
+				preloadFetches.push(employeeHoursPromise);
+			} catch (err) {
+				console.log('⚠️ Could not import employee hours service for preload');
+			}
+
+			// Wait for all preload requests to complete (success or failure)
+			const [twoWeeksAgoLinnworks, twoWeeksAgoFinancial, twoWeeksAgoEmployeeHours] =
+				await Promise.all(preloadFetches);
+
+			// Store the preloaded data in the extended structure
+			preloadedChartData.twoWeeksAgo.linnworks = twoWeeksAgoLinnworks;
+			preloadedChartData.twoWeeksAgo.financial = twoWeeksAgoFinancial;
+			preloadedChartData.employeeHours.twoWeeksAgo = twoWeeksAgoEmployeeHours || [];
+
+			// Also preload scheduled hours for 2 weeks ago
+			try {
+				const { getScheduledHoursForDateRange } = await import('$lib/schedule/hours-service');
+				const twoWeeksAgoScheduledHours = await getScheduledHoursForDateRange(
+					twoWeeksAgoMonday,
+					new Date(twoWeeksAgoSundayStr)
+				);
+				preloadedChartData.scheduledHours.twoWeeksAgo = twoWeeksAgoScheduledHours;
+				console.log('✅ Previous week scheduled hours preloaded');
+			} catch (err) {
+				const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+				console.log('⚠️ Previous week scheduled hours preload failed:', errorMessage);
+				preloadedChartData.scheduledHours.twoWeeksAgo = [];
+			}
+
+			previousWeekPreloaded = true;
+			previousWeekPreloading = false;
+
+			console.log('✅ Previous week data preloading completed');
+			console.log('📊 Preloaded data structure:', {
+				twoWeeksAgo: {
+					linnworks: !!preloadedChartData.twoWeeksAgo.linnworks,
+					financial: !!preloadedChartData.twoWeeksAgo.financial,
+					employeeHours: preloadedChartData.employeeHours.twoWeeksAgo?.length || 0,
+					scheduledHours: preloadedChartData.scheduledHours.twoWeeksAgo?.length || 0
+				}
+			});
+		} catch (err) {
+			console.error('❌ Previous week preload failed:', err);
+			previousWeekPreloading = false;
 		}
 	}
 
@@ -1391,163 +1545,163 @@
 							</div>
 						</div>
 					</div>
+
+					<!-- Status Notifications -->
+					{#if showDataPreview}
+						<div class="status-notifications fade-in">
+							<div class="notification success">
+								<div class="notification-icon">
+									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+										<path
+											d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+											fill="currentColor"
+										/>
+									</svg>
+								</div>
+								<div class="notification-content">
+									<h4>Orders Data Synced</h4>
+									<p>Successfully connected to order management system</p>
+								</div>
+							</div>
+							<div class="notification success">
+								<div class="notification-icon">
+									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+										<path
+											d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"
+											fill="currentColor"
+										/>
+										<path
+											fill-rule="evenodd"
+											d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
+											clip-rule="evenodd"
+											fill="currentColor"
+										/>
+									</svg>
+								</div>
+								<div class="notification-content">
+									<h4>Sales Metrics Ready</h4>
+									<p>Financial data processing completed</p>
+								</div>
+							</div>
+						</div>
+					{/if}
+
+					<!-- Data Source Status Panel -->
+					{#if hasAnyDataLoaded()}
+						<div class="data-sources-panel fade-in">
+							<div class="panel-header">
+								<h3>Data Sources</h3>
+								<div class="panel-indicator">
+									<div class="indicator-dot active"></div>
+									<span>Live</span>
+								</div>
+							</div>
+							<div class="sources-grid">
+								{#if isDataSourceLoaded('currentWeek', 'linnworks')}
+									<div class="source-item">
+										<div class="source-icon linnworks">
+											<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+												<path
+													d="M17.5 13.333V6.667a1.667 1.667 0 00-.833-1.442l-5.834-3.334a1.667 1.667 0 00-1.666 0L3.333 5.225A1.667 1.667 0 002.5 6.667v6.666a1.667 1.667 0 00.833 1.442l5.834 3.334a1.667 1.667 0 001.666 0l5.834-3.334a1.667 1.667 0 00.833-1.442z"
+													stroke="currentColor"
+													stroke-width="1.5"
+												/>
+												<path
+													d="M2.725 5.8L10 10.008l7.275-4.208M10 18.4V10"
+													stroke="currentColor"
+													stroke-width="1.5"
+												/>
+											</svg>
+										</div>
+										<div class="source-details">
+											<h4>Linnworks API</h4>
+											<p>Order management system</p>
+										</div>
+										<div
+											class="source-status {isDataSourceCached('currentWeek', 'linnworks')
+												? 'cached'
+												: 'fresh'}"
+										>
+											{isDataSourceCached('currentWeek', 'linnworks') ? 'Cached' : 'Fresh'}
+										</div>
+									</div>
+								{/if}
+								{#if isDataSourceLoaded('currentWeek', 'financial')}
+									<div class="source-item">
+										<div class="source-icon financial">
+											<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+												<path
+													d="M10 .833L10 19.167M14.167 4.167H7.917a2.917 2.917 0 000 5.833h4.166a2.917 2.917 0 010 5.833H5"
+													stroke="currentColor"
+													stroke-width="1.5"
+												/>
+											</svg>
+										</div>
+										<div class="source-details">
+											<h4>Financial Data</h4>
+											<p>Sales and revenue metrics</p>
+										</div>
+										<div
+											class="source-status {isDataSourceCached('currentWeek', 'financial')
+												? 'cached'
+												: 'fresh'}"
+										>
+											{isDataSourceCached('currentWeek', 'financial') ? 'Cached' : 'Fresh'}
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Processing Status -->
+					{#if showLinnworksStatus}
+						<div class="processing-status fade-in">
+							<div class="status-content">
+								<div class="status-icon-animated">
+									<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+										<path
+											d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</div>
+								<div class="status-text">
+									<h4>Processing Complete</h4>
+									<p>Linnworks data loaded - Finalizing financial metrics</p>
+								</div>
+							</div>
+							<div class="processing-bar">
+								<div class="processing-fill"></div>
+							</div>
+						</div>
+					{/if}
+
+					<!-- Debug Tools (only show during loading) -->
+					{#if loadingState === 'LOADING_CRITICAL' || loadingState === 'LOADING_BACKGROUND'}
+						<div class="debug-section fade-in" style="margin-top: 2rem;">
+							<button
+								class="debug-btn"
+								on:click={forceLoadingComplete}
+								title="Force complete loading if stuck (development tool)"
+							>
+								🔧 Force Complete Loading
+							</button>
+							<button
+								class="debug-btn"
+								on:click={testApiEndpoints}
+								title="Test API endpoints manually (development tool)"
+								style="margin-left: 1rem;"
+							>
+								🧪 Test APIs
+							</button>
+							<p class="debug-text">Debug tools: Force completion or test API endpoints manually</p>
+						</div>
+					{/if}
 				</div>
 			</div>
-
-			<!-- Status Notifications -->
-			{#if showDataPreview}
-				<div class="status-notifications fade-in">
-					<div class="notification success">
-						<div class="notification-icon">
-							<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-								<path
-									d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-									fill="currentColor"
-								/>
-							</svg>
-						</div>
-						<div class="notification-content">
-							<h4>Orders Data Synced</h4>
-							<p>Successfully connected to order management system</p>
-						</div>
-					</div>
-					<div class="notification success">
-						<div class="notification-icon">
-							<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-								<path
-									d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"
-									fill="currentColor"
-								/>
-								<path
-									fill-rule="evenodd"
-									d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
-									clip-rule="evenodd"
-									fill="currentColor"
-								/>
-							</svg>
-						</div>
-						<div class="notification-content">
-							<h4>Sales Metrics Ready</h4>
-							<p>Financial data processing completed</p>
-						</div>
-					</div>
-				</div>
-			{/if}
-
-			<!-- Data Source Status Panel -->
-			{#if hasAnyDataLoaded()}
-				<div class="data-sources-panel fade-in">
-					<div class="panel-header">
-						<h3>Data Sources</h3>
-						<div class="panel-indicator">
-							<div class="indicator-dot active"></div>
-							<span>Live</span>
-						</div>
-					</div>
-					<div class="sources-grid">
-						{#if isDataSourceLoaded('currentWeek', 'linnworks')}
-							<div class="source-item">
-								<div class="source-icon linnworks">
-									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-										<path
-											d="M17.5 13.333V6.667a1.667 1.667 0 00-.833-1.442l-5.834-3.334a1.667 1.667 0 00-1.666 0L3.333 5.225A1.667 1.667 0 002.5 6.667v6.666a1.667 1.667 0 00.833 1.442l5.834 3.334a1.667 1.667 0 001.666 0l5.834-3.334a1.667 1.667 0 00.833-1.442z"
-											stroke="currentColor"
-											stroke-width="1.5"
-										/>
-										<path
-											d="M2.725 5.8L10 10.008l7.275-4.208M10 18.4V10"
-											stroke="currentColor"
-											stroke-width="1.5"
-										/>
-									</svg>
-								</div>
-								<div class="source-details">
-									<h4>Linnworks API</h4>
-									<p>Order management system</p>
-								</div>
-								<div
-									class="source-status {isDataSourceCached('currentWeek', 'linnworks')
-										? 'cached'
-										: 'fresh'}"
-								>
-									{isDataSourceCached('currentWeek', 'linnworks') ? 'Cached' : 'Fresh'}
-								</div>
-							</div>
-						{/if}
-						{#if isDataSourceLoaded('currentWeek', 'financial')}
-							<div class="source-item">
-								<div class="source-icon financial">
-									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-										<path
-											d="M10 .833L10 19.167M14.167 4.167H7.917a2.917 2.917 0 000 5.833h4.166a2.917 2.917 0 010 5.833H5"
-											stroke="currentColor"
-											stroke-width="1.5"
-										/>
-									</svg>
-								</div>
-								<div class="source-details">
-									<h4>Financial Data</h4>
-									<p>Sales and revenue metrics</p>
-								</div>
-								<div
-									class="source-status {isDataSourceCached('currentWeek', 'financial')
-										? 'cached'
-										: 'fresh'}"
-								>
-									{isDataSourceCached('currentWeek', 'financial') ? 'Cached' : 'Fresh'}
-								</div>
-							</div>
-						{/if}
-					</div>
-				</div>
-			{/if}
-
-			<!-- Processing Status -->
-			{#if showLinnworksStatus}
-				<div class="processing-status fade-in">
-					<div class="status-content">
-						<div class="status-icon-animated">
-							<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-								<path
-									d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						</div>
-						<div class="status-text">
-							<h4>Processing Complete</h4>
-							<p>Linnworks data loaded - Finalizing financial metrics</p>
-						</div>
-					</div>
-					<div class="processing-bar">
-						<div class="processing-fill"></div>
-					</div>
-				</div>
-			{/if}
-
-			<!-- Debug Tools (only show during loading) -->
-			{#if loadingState === 'LOADING_CRITICAL' || loadingState === 'LOADING_BACKGROUND'}
-				<div class="debug-section fade-in" style="margin-top: 2rem;">
-					<button
-						class="debug-btn"
-						on:click={forceLoadingComplete}
-						title="Force complete loading if stuck (development tool)"
-					>
-						🔧 Force Complete Loading
-					</button>
-					<button
-						class="debug-btn"
-						on:click={testApiEndpoints}
-						title="Test API endpoints manually (development tool)"
-						style="margin-left: 1rem;"
-					>
-						🧪 Test APIs
-					</button>
-					<p class="debug-text">Debug tools: Force completion or test API endpoints manually</p>
-				</div>
-			{/if}
 		</div>
 	</div>
 {:else if session === null}
@@ -1630,27 +1784,6 @@
 						</div>
 					</div>
 				</div>
-			{:else if loadingState === 'READY'}
-				<div class="status-banner ready">
-					<div class="status-content">
-						<div class="status-icon">✅</div>
-						<div class="status-text">
-							<h4>Dashboard Fully Loaded</h4>
-							<p>
-								All data loaded successfully • {getSuccessfulDataSources().length} of {getSuccessfulDataSources()
-									.length + getFailedDataSources().length} sources available
-							</p>
-						</div>
-						{#if getFailedDataSources().length > 0}
-							<div class="status-warning">
-								<span class="warning-icon">⚠️</span>
-								<span class="warning-text"
-									>{getFailedDataSources().length} data source(s) unavailable</span
-								>
-							</div>
-						{/if}
-					</div>
-				</div>
 			{/if}
 		</div>
 
@@ -1660,40 +1793,148 @@
 			class:partial-loaded={loadingState === 'SHOWING_PARTIAL' ||
 				loadingState === 'LOADING_BACKGROUND'}
 		>
-			{#if criticalDataLoaded || loadingState === 'SHOWING_PARTIAL' || loadingState === 'LOADING_BACKGROUND' || loadingState === 'READY'}
-				<!-- Data Status Summary -->
-				{#if loadingState !== 'READY'}
-					<div class="data-status-bar">
-						<div class="status-items">
-							<div
-								class="status-item"
-								class:loaded={isDataSourceLoaded('currentWeek', 'linnworks')}
-							>
-								<div class="status-dot"></div>
-								<span>Orders Data</span>
+			<!-- Persistent Data Status Bar (similar to employee hours design) -->
+			<div class="persistent-status-bar">
+				{#if loadingState === 'READY'}
+					<div class="status-content success">
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+							<polyline points="22,4 12,14.01 9,11.01" />
+						</svg>
+						<span>All dashboard data loaded successfully</span>
+						{#if previousWeekPreloading}
+							<div class="preload-indicator">
+								<div class="mini-spinner"></div>
+								<span class="preload-text">Loading previous week comparisons...</span>
 							</div>
-							<div
-								class="status-item"
-								class:loaded={isDataSourceLoaded('currentWeek', 'financial')}
-							>
-								<div class="status-dot"></div>
-								<span>Financial Data</span>
-							</div>
-							<div
-								class="status-item"
-								class:loaded={isDataSourceLoaded('employeeHours', 'current')}
-							>
-								<div class="status-dot"></div>
-								<span>Employee Hours</span>
-							</div>
-							<div class="status-item" class:loaded={backgroundDataLoaded}>
-								<div class="status-dot"></div>
-								<span>Historical Comparisons</span>
-							</div>
+						{/if}
+						<div class="status-details">
+							<span class="detail-item">
+								<span class="detail-label">Current Week:</span>
+								<span
+									class="detail-status"
+									class:success={isDataSourceLoaded('currentWeek', 'linnworks')}
+								>
+									{isDataSourceLoaded('currentWeek', 'linnworks') ? '✓' : '✗'} Orders
+								</span>
+								<span
+									class="detail-status"
+									class:success={isDataSourceLoaded('currentWeek', 'financial')}
+								>
+									{isDataSourceLoaded('currentWeek', 'financial') ? '✓' : '✗'} Financial
+								</span>
+							</span>
+							<span class="detail-item">
+								<span class="detail-label">Previous Week:</span>
+								<span
+									class="detail-status"
+									class:success={isDataSourceLoaded('previousWeek', 'linnworks')}
+									class:loading={previousWeekPreloading}
+								>
+									{#if previousWeekPreloading}
+										⏳ Loading comparisons
+									{:else if isDataSourceLoaded('previousWeek', 'linnworks')}
+										✓ Comparisons
+									{:else}
+										✗ Comparisons
+									{/if}
+								</span>
+							</span>
+							<span class="detail-item">
+								<span class="detail-label">Employee Data:</span>
+								<span
+									class="detail-status"
+									class:success={isDataSourceLoaded('employeeHours', 'current')}
+								>
+									{isDataSourceLoaded('employeeHours', 'current') ? '✓' : '✗'} Hours
+								</span>
+							</span>
+						</div>
+					</div>
+				{:else if loadingState === 'LOADING_BACKGROUND'}
+					<div class="status-content info">
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<circle cx="12" cy="12" r="10" />
+							<path d="M12,16 L12,12" />
+							<path d="M12,8 L12.01,8" />
+						</svg>
+						<span>Dashboard loaded with partial data - loading historical comparisons</span>
+						<div class="status-details">
+							<span class="detail-item">
+								<span class="detail-label">Current Week:</span>
+								<span
+									class="detail-status"
+									class:success={isDataSourceLoaded('currentWeek', 'linnworks')}
+								>
+									{isDataSourceLoaded('currentWeek', 'linnworks') ? '✓' : '⏳'} Orders
+								</span>
+								<span
+									class="detail-status"
+									class:success={isDataSourceLoaded('currentWeek', 'financial')}
+								>
+									{isDataSourceLoaded('currentWeek', 'financial') ? '✓' : '⏳'} Financial
+								</span>
+							</span>
+							<span class="detail-item">
+								<span class="detail-label">Previous Week:</span>
+								<span class="detail-status loading">⏳ Loading comparisons</span>
+							</span>
+						</div>
+					</div>
+				{:else if (loadingState as LoadingState) === 'ERROR'}
+					<div class="status-content error">
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<circle cx="12" cy="12" r="10" />
+							<line x1="15" y1="9" x2="9" y2="15" />
+							<line x1="9" y1="9" x2="15" y2="15" />
+						</svg>
+						<span>Failed to load dashboard data</span>
+						<div class="status-details">
+							<span class="detail-item">
+								<button class="retry-button" on:click={clearCacheAndRefresh}>Retry Loading</button>
+							</span>
+						</div>
+					</div>
+				{:else}
+					<div class="status-content loading">
+						<div class="loading-spinner"></div>
+						<span>Loading dashboard data...</span>
+						<div class="status-details">
+							<span class="detail-item">
+								<span class="detail-label">Progress:</span>
+								<span class="detail-status loading">
+									{(loadingState as LoadingState) === 'LOADING_CRITICAL'
+										? 'Loading critical data'
+										: 'Initializing'}
+								</span>
+							</span>
 						</div>
 					</div>
 				{/if}
+			</div>
 
+			{#if criticalDataLoaded || loadingState === 'SHOWING_PARTIAL' || loadingState === 'LOADING_BACKGROUND' || loadingState === 'READY'}
 				<!-- ShipmentChart with Progressive Data -->
 				<ShipmentChart preloadedData={preloadedChartData} />
 
@@ -2864,299 +3105,123 @@
 		transform: none;
 	}
 
-	/* Progressive Enhancement Styles */
-	.dashboard-container {
-		position: relative;
-		min-height: 100vh;
-	}
-
-	/* Persistent Status Container - Always visible to prevent layout shifts */
-	.status-container {
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.status-banner {
-		background: var(--surface-elevated);
-		border: 1px solid var(--border-light);
-		border-radius: var(--radius-md);
-		padding: var(--spacing-md);
-		box-shadow: var(--shadow-sm);
-		transition: all 0.3s ease;
+	/* Persistent Status Bar (similar to employee hours design) */
+	.persistent-status-bar {
+		margin-bottom: 16px;
 		min-height: 60px;
 		display: flex;
 		align-items: center;
-	}
-
-	.status-banner.loading {
-		background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-		border-color: rgba(102, 126, 234, 0.3);
-	}
-
-	.status-banner.partial-loaded {
-		background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%);
-		border-color: rgba(255, 193, 7, 0.3);
-	}
-
-	.status-banner.ready {
-		background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(56, 178, 172, 0.1) 100%);
-		border-color: rgba(72, 187, 120, 0.3);
+		border-radius: 8px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		transition: all 0.3s ease;
 	}
 
 	.status-content {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		width: 100%;
-	}
-
-	.status-icon {
-		font-size: 1.25rem;
-		flex-shrink: 0;
-	}
-
-	.status-banner.loading .status-icon {
-		animation: spin 2s linear infinite;
-	}
-
-	.status-banner.partial-loaded .status-icon {
-		animation: pulse 2s infinite;
-	}
-
-	.status-text {
-		flex: 1;
-	}
-
-	.status-text h4 {
-		margin: 0 0 0.125rem 0;
-		color: var(--text-primary);
+		padding: 12px 16px;
 		font-size: 0.875rem;
-		font-weight: 600;
-	}
-
-	.status-text p {
-		margin: 0;
-		color: var(--text-secondary);
-		font-size: 0.75rem;
-	}
-
-	.status-progress {
-		flex-shrink: 0;
-		width: 120px;
-	}
-
-	.status-warning {
+		font-weight: 500;
 		display: flex;
 		align-items: center;
-		gap: var(--spacing-xs);
+		gap: 8px;
+		width: 100%;
+		border-radius: 8px;
+		transition: all 0.3s ease;
+		position: relative;
+	}
+
+	.status-content.success {
+		background: #f0f9ff;
+		border: 1px solid #0ea5e9;
+		color: #0c4a6e;
+	}
+
+	.status-content.info {
+		background: #fefce8;
+		border: 1px solid #facc15;
+		color: #a16207;
+	}
+
+	.status-content.error {
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		color: #b91c1c;
+	}
+
+	.status-content.loading {
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
+		color: #6b7280;
+	}
+
+	.status-details {
 		margin-left: auto;
-		padding: var(--spacing-xs) var(--spacing-sm);
-		background: rgba(255, 193, 7, 0.1);
-		border: 1px solid rgba(255, 193, 7, 0.3);
-		border-radius: var(--radius-sm);
-	}
-
-	.warning-icon {
-		font-size: 0.875rem;
-	}
-
-	.warning-text {
+		display: flex;
+		align-items: center;
+		gap: 16px;
 		font-size: 0.75rem;
-		color: var(--text-secondary);
 	}
 
-	.progress-meter {
-		flex: 1;
-		height: 6px;
-		background: rgba(255, 255, 255, 0.2);
-		border-radius: 3px;
-		overflow: hidden;
-	}
-
-	.progress-fill {
-		height: 100%;
-		background: linear-gradient(90deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 1) 100%);
-		border-radius: 3px;
-		transition: width 0.3s ease;
-	}
-
-	.dashboard-content {
-		transition: all 0.3s ease;
-		margin-top: var(--spacing-md);
-	}
-
-	.dashboard-content.partial-loaded {
-		opacity: 0.95;
-	}
-
-	.data-status-bar {
-		background: var(--surface-elevated);
-		border: 1px solid var(--border-light);
-		border-radius: var(--radius-md);
-		padding: var(--spacing-sm) var(--spacing-md);
-		margin-bottom: var(--spacing-md);
-		box-shadow: var(--shadow-sm);
-	}
-
-	.status-items {
-		display: flex;
-		gap: var(--spacing-lg);
-		align-items: center;
-	}
-
-	.status-item {
+	.detail-item {
 		display: flex;
 		align-items: center;
-		gap: var(--spacing-xs);
-		font-size: 0.875rem;
-		color: var(--text-secondary);
-		transition: all 0.3s ease;
+		gap: 6px;
 	}
 
-	.status-item.loaded {
-		color: var(--text-primary);
-	}
-
-	.status-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: #e2e8f0;
-		transition: all 0.3s ease;
-	}
-
-	.status-item.loaded .status-dot {
-		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-		box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-	}
-
-	.missing-data-notice {
-		margin-top: var(--spacing-lg);
-		background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%);
-		border: 1px solid rgba(245, 158, 11, 0.2);
-		border-radius: var(--radius-md);
-		padding: var(--spacing-md);
-	}
-
-	.notice-content {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
-	}
-
-	.notice-icon {
-		font-size: 1.5rem;
-		opacity: 0.8;
-	}
-
-	.notice-text h4 {
-		margin: 0 0 var(--spacing-xs) 0;
-		color: var(--text-primary);
-		font-size: 1rem;
+	.detail-label {
 		font-weight: 600;
+		color: #6b7280;
 	}
 
-	.notice-text p {
-		margin: 0;
-		color: var(--text-secondary);
-		font-size: 0.875rem;
+	.detail-status {
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		background: #f3f4f6;
+		color: #6b7280;
 	}
 
-	/* Skeleton Loading Styles */
-	.dashboard-skeleton {
-		padding: var(--spacing-lg);
-		animation: fadeIn 0.5s ease-out;
+	.detail-status.success {
+		background: #dcfce7;
+		color: #166534;
 	}
 
-	.skeleton-header {
-		margin-bottom: var(--spacing-xl);
+	.detail-status.loading {
+		background: #fef3c7;
+		color: #92400e;
+		animation: pulse 1.5s ease-in-out infinite;
 	}
 
-	.skeleton-title {
-		height: 2rem;
-		background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
-		background-size: 200% 100%;
-		border-radius: var(--radius-md);
-		margin-bottom: var(--spacing-sm);
-		animation: shimmer 1.5s infinite;
-		width: 300px;
+	.retry-button {
+		background: #ef4444;
+		color: white;
+		border: none;
+		padding: 4px 8px;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
 	}
 
-	.skeleton-subtitle {
-		height: 1rem;
-		background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
-		background-size: 200% 100%;
-		border-radius: var(--radius-md);
-		animation: shimmer 1.5s infinite;
-		width: 200px;
+	.retry-button:hover {
+		background: #dc2626;
 	}
 
-	.skeleton-chart {
-		height: 300px;
-		background: var(--surface-secondary);
-		border-radius: var(--radius-lg);
-		padding: var(--spacing-lg);
-		margin-bottom: var(--spacing-xl);
-		display: flex;
-		align-items: flex-end;
-		justify-content: space-around;
-	}
-
-	.skeleton-bars {
-		display: flex;
-		align-items: flex-end;
-		gap: var(--spacing-sm);
-		width: 100%;
-		height: 100%;
-	}
-
-	.skeleton-bar {
-		flex: 1;
-		background: linear-gradient(90deg, #e2e8f0 0%, #cbd5e1 50%, #e2e8f0 100%);
-		background-size: 200% 100%;
-		border-radius: var(--radius-sm);
-		animation: shimmer 1.5s infinite;
-		min-height: 20px;
-	}
-
-	.skeleton-metrics {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: var(--spacing-md);
-	}
-
-	.skeleton-metric {
-		height: 80px;
-		background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
-		background-size: 200% 100%;
-		border-radius: var(--radius-md);
-		animation: shimmer 1.5s infinite;
-	}
-
-	@keyframes slideInFromRight {
-		from {
-			transform: translateX(100%);
-			opacity: 0;
-		}
-		to {
-			transform: translateX(0);
-			opacity: 1;
-		}
-	}
-
-	@keyframes shimmer {
-		0% {
-			background-position: -200% 0;
-		}
-		100% {
-			background-position: 200% 0;
-		}
+	.loading-spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid #e5e7eb;
+		border-top: 2px solid #3b82f6;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
 	}
 
 	@keyframes spin {
-		from {
+		0% {
 			transform: rotate(0deg);
 		}
-		to {
+		100% {
 			transform: rotate(360deg);
 		}
 	}
@@ -3167,37 +3232,7 @@
 			opacity: 1;
 		}
 		50% {
-			opacity: 0.7;
-		}
-	}
-
-	/* Responsive Design for Progressive Features */
-	@media (max-width: 768px) {
-		.status-content {
-			flex-direction: column;
-			align-items: flex-start;
-			gap: var(--spacing-sm);
-		}
-
-		.status-text h4 {
-			font-size: 0.875rem;
-		}
-
-		.status-text p {
-			font-size: 0.75rem;
-		}
-
-		.status-progress {
-			width: 100%;
-		}
-
-		.status-items {
-			flex-wrap: wrap;
-			gap: var(--spacing-md);
-		}
-
-		.skeleton-metrics {
-			grid-template-columns: 1fr;
+			opacity: 0.5;
 		}
 	}
 </style>
