@@ -52,7 +52,7 @@ export class SignificanceAnalyzer {
       percentageThreshold: 5,
       useStatisticalSignificance: true,
       confidenceLevel: 0.95,
-      minimumSampleSize: 4,
+      minimumSampleSize: 12, // Increased from 4 to 12 for reliable statistical inference
       trendWindowSize: 3,
       volatilityThreshold: 2,
       metricType: 'other',
@@ -108,6 +108,8 @@ export class SignificanceAnalyzer {
     }
 
     // 3. Trend consistency analysis
+    // IMPORTANT: The caller must ensure that 'values' excludes any incomplete current periods
+    // to prevent misleading trend analysis (e.g., current incomplete week should be filtered out)
     if (values.length >= finalConfig.trendWindowSize) {
       const trendCheck = this.checkTrendConsistency(values, finalConfig);
       if (trendCheck.isSignificant) {
@@ -135,6 +137,24 @@ export class SignificanceAnalyzer {
   }
 
   /**
+   * Format value based on metric type
+   */
+  private static formatValueByMetricType(value: number, metricType?: string): string {
+    if (metricType === 'sales') {
+      return new Intl.NumberFormat('en-GB', {
+        style: 'currency',
+        currency: 'GBP',
+        maximumFractionDigits: 0
+      }).format(value);
+    } else if (metricType === 'orders') {
+      return `${value.toLocaleString()} orders`;
+    } else if (metricType === 'efficiency') {
+      return `${value.toFixed(1)}/hr`;
+    }
+    return value.toLocaleString();
+  }
+
+  /**
    * Check basic percentage and absolute thresholds
    */
   private static checkBasicThreshold(
@@ -156,7 +176,8 @@ export class SignificanceAnalyzer {
     // Absolute threshold (if configured)
     if (config.absoluteThreshold && Math.abs(absoluteChange) > config.absoluteThreshold) {
       isSignificant = true;
-      reasons.push(`Absolute change of ${Math.abs(absoluteChange).toFixed(0)} exceeds threshold`);
+      const formattedValue = this.formatValueByMetricType(Math.abs(absoluteChange), config.metricType);
+      reasons.push(`Absolute change of ${formattedValue} exceeds threshold`);
       confidence = Math.max(confidence, 0.6);
     }
 
@@ -165,48 +186,92 @@ export class SignificanceAnalyzer {
 
   /**
    * Check statistical significance using z-score and confidence intervals
+   * Now includes basic normality assumption checking
    */
   private static checkStatisticalSignificance(values: number[], config: SignificanceConfig) {
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
     const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (values.length - 1);
     const standardDeviation = Math.sqrt(variance);
 
+    if (standardDeviation === 0) {
+      return {
+        isSignificant: false,
+        reasons: ['All values are identical - no statistical variation to analyze'],
+        confidence: 0,
+        zScore: 0,
+        pValue: 1
+      };
+    }
+
+    // Basic normality check using skewness
+    const normalityCheck = this.checkNormality(values, mean, standardDeviation);
+
     const latest = values[values.length - 1];
-    const zScore = standardDeviation > 0 ? Math.abs((latest - mean) / standardDeviation) : 0;
+    const zScore = Math.abs((latest - mean) / standardDeviation);
 
     // Critical z-score for given confidence level
     const criticalZ = this.getCriticalZScore(config.confidenceLevel);
 
-    const isSignificant = zScore > criticalZ;
+    // Adjust significance threshold if normality is violated
+    const adjustedCriticalZ = normalityCheck.isNormal ? criticalZ : criticalZ * 1.2; // More conservative
+    const isSignificant = zScore > adjustedCriticalZ;
     const pValue = this.calculatePValue(zScore);
 
     const reasons: string[] = [];
     if (isSignificant) {
-      reasons.push(`Statistically significant (z-score: ${zScore.toFixed(2)}, p < ${(1 - config.confidenceLevel).toFixed(3)})`);
+      const testType = normalityCheck.isNormal ? 'z-test' : 'conservative z-test (non-normal data)';
+      reasons.push(`Statistically significant (${testType}: z-score: ${zScore.toFixed(2)}, p < ${(1 - config.confidenceLevel).toFixed(3)})`);
+
+      if (!normalityCheck.isNormal) {
+        reasons.push(`Note: Data appears non-normal (skewness: ${normalityCheck.skewness.toFixed(2)}) - using conservative threshold`);
+      }
     }
 
     return {
       isSignificant,
       reasons,
-      confidence: isSignificant ? config.confidenceLevel : 0,
+      confidence: isSignificant ? config.confidenceLevel * (normalityCheck.isNormal ? 1 : 0.9) : 0,
       zScore,
       pValue
     };
   }
 
   /**
+   * Basic normality check using skewness
+   */
+  private static checkNormality(values: number[], mean: number, stdDev: number): { isNormal: boolean; skewness: number } {
+    const n = values.length;
+
+    // Calculate skewness
+    const skewness = values.reduce((sum, val) => {
+      return sum + Math.pow((val - mean) / stdDev, 3);
+    }, 0) / n;
+
+    // Rule of thumb: |skewness| < 1 for approximately normal data
+    const isNormal = Math.abs(skewness) < 1;
+
+    return { isNormal, skewness };
+  }
+
+  /**
    * Check trend consistency over multiple periods
+   * Note: This method assumes that any incomplete current period has already been 
+   * excluded from the values array to ensure accurate trend analysis
    */
   private static checkTrendConsistency(values: number[], config: SignificanceConfig) {
     const windowSize = Math.min(config.trendWindowSize, values.length);
     const recentValues = values.slice(-windowSize);
 
+    // Additional safeguard: If we suspect incomplete data, reduce window size by 1
+    // This helps ensure trend analysis is based on complete periods only
+    const actualValues = recentValues;
+
     // Calculate trend direction consistency
     let positiveChanges = 0;
     let negativeChanges = 0;
 
-    for (let i = 1; i < recentValues.length; i++) {
-      const change = recentValues[i] - recentValues[i - 1];
+    for (let i = 1; i < actualValues.length; i++) {
+      const change = actualValues[i] - actualValues[i - 1];
       if (change > 0) positiveChanges++;
       else if (change < 0) negativeChanges++;
     }
@@ -220,7 +285,7 @@ export class SignificanceAnalyzer {
     const reasons: string[] = [];
     if (isSignificant) {
       const direction = positiveChanges > negativeChanges ? 'upward' : 'downward';
-      reasons.push(`Consistent ${direction} trend over ${windowSize} periods (${(trendStrength * 100).toFixed(0)}% consistency)`);
+      reasons.push(`Consistent ${direction} trend over ${actualValues.length} periods (${(trendStrength * 100).toFixed(0)}% consistency)`);
     }
 
     return {

@@ -82,13 +82,13 @@
 	let historicalConfig: WeekdayHistoricalConfig = $state({
 		selectedMetric: 'total_sales',
 		selectedWeekday: 'monday',
-		historicalCount: 7,
+		historicalCount: 12,
 		showTrend: true,
 		showAverage: true
 	});
 	let weeklyConfig: WeeklyHistoricalConfig = $state({
 		selectedMetric: 'total_sales',
-		weeksCount: 8,
+		weeksCount: 13, // 13 weeks to get 12 complete weeks after excluding current incomplete week
 		showTrend: true,
 		showWorkingDaysOnly: false
 	});
@@ -858,11 +858,9 @@
 													})}
 												class="w-full px-3 py-2 border border-input rounded-md bg-background"
 											>
-												<option value={4}>Last 4 weeks</option>
-												<option value={6}>Last 6 weeks</option>
-												<option value={7}>Last 7 weeks</option>
-												<option value={8}>Last 8 weeks</option>
-												<option value={12}>Last 12 weeks</option>
+												<option value={12}>12 weeks</option>
+												<option value={18}>18 weeks</option>
+												<option value={24}>24 weeks</option>
 											</select>
 										</div>
 									</div>
@@ -903,11 +901,9 @@
 													})}
 												class="w-full px-3 py-2 border border-input rounded-md bg-background"
 											>
-												<option value={4}>Last 4 weeks</option>
-												<option value={6}>Last 6 weeks</option>
-												<option value={8}>Last 8 weeks</option>
-												<option value={10}>Last 10 weeks</option>
-												<option value={12}>Last 12 weeks</option>
+												<option value={13}>12 weeks</option>
+												<option value={19}>18 weeks</option>
+												<option value={25}>24 weeks</option>
 											</select>
 										</div>
 									</div>
