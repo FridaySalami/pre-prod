@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { userSession } from '$lib/sessionStore';
+	import type { Session } from '@supabase/supabase-js';
 	import { getEmployees, type Employee } from '$lib/employeeHoursService';
 	import {
 		saveDailyHours,
@@ -7,6 +10,50 @@
 		checkHoursExist,
 		type DailyEmployeeHour
 	} from '$lib/dailyHoursService';
+
+	// Authentication check
+	let session = $state<Session | null | undefined>(undefined);
+	const unsubscribe = userSession.subscribe((s) => {
+		session = s;
+	});
+
+	onDestroy(() => {
+		unsubscribe();
+	});
+
+	onMount(async () => {
+		// Wait for session to be determined
+		const sessionTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+
+		let currentSession;
+		try {
+			const unsubscribePromise = new Promise<any>((resolve) => {
+				const unsub = userSession.subscribe((s) => {
+					if (s !== undefined) {
+						currentSession = s;
+						resolve(s);
+						unsub();
+					}
+				});
+			});
+
+			await Promise.race([unsubscribePromise, sessionTimeout]);
+
+			if (currentSession === null) {
+				console.log('No session found, redirecting to login');
+				goto('/login');
+				return;
+			}
+
+			if (currentSession) {
+				await loadEmployees();
+				await loadExistingHours();
+			}
+		} catch (error) {
+			console.error('Error during initialization:', error);
+			goto('/login');
+		}
+	});
 
 	// Reactive state
 	let employees: Employee[] = $state([]);
@@ -77,11 +124,6 @@
 			const lastSavedHours = savedHours[emp.id] || 0;
 			return currentHours !== lastSavedHours;
 		});
-	});
-
-	onMount(async () => {
-		await loadEmployees();
-		await loadExistingHours();
 	});
 
 	async function loadEmployees() {
@@ -206,22 +248,134 @@
 	}
 </script>
 
-<div class="container">
-	<!-- Compact Header -->
-	<div class="header">
-		<h1>Employee Hours</h1>
-		<div class="date-picker">
-			<input
-				id="date-input"
-				type="date"
-				bind:value={selectedDate}
-				onchange={onDateChange}
-				class="date-input"
-			/>
-			<button class="save-button" onclick={saveHours} disabled={saving}>
-				{#if saving}
+<svelte:head>
+	<title>Employee Hours | Parker's Foodservice</title>
+</svelte:head>
+
+<!-- Authentication check wrapper -->
+{#if session === undefined}
+	<div class="loading-container">
+		<div class="loading-spinner"></div>
+		<p>Loading...</p>
+	</div>
+{:else if session}
+	<div class="container">
+		<!-- Compact Header -->
+		<div class="header">
+			<h1>Employee Hours</h1>
+			<div class="date-picker">
+				<input
+					id="date-input"
+					type="date"
+					bind:value={selectedDate}
+					onchange={onDateChange}
+					class="date-input"
+				/>
+				<button class="save-button" onclick={saveHours} disabled={saving}>
+					{#if saving}
+						<svg
+							class="animate-spin"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path
+								d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.49-8.49l2.83-2.83"
+							/>
+						</svg>
+						Saving...
+					{:else}
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+							<polyline points="17,21 17,13 7,13 7,21" />
+							<polyline points="7,3 7,8 15,8" />
+						</svg>
+						{hasExistingData ? 'Update Hours' : 'Save Hours'}
+					{/if}
+				</button>
+				<button class="reset-button" onclick={resetAllHours}>
 					<svg
-						class="animate-spin"
+						xmlns="http://www.w3.org/2000/svg"
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<polyline points="1 4 1 10 7 10"></polyline>
+						<polyline points="23 20 23 14 17 14"></polyline>
+						<path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+					</svg>
+					Reset All
+				</button>
+			</div>
+		</div>
+
+		<!-- Persistent status bar to prevent layout jumping -->
+		<div class="status-bar">
+			{#if saveStatus === 'success'}
+				<div class="status-content success">
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+						<polyline points="22,4 12,14.01 9,11.01" />
+					</svg>
+					Hours saved successfully for {formatDate(selectedDate)}
+				</div>
+			{:else if hasExistingData && hasUnsavedChanges}
+				<div class="status-content info">
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<circle cx="12" cy="12" r="10" />
+						<path d="M12,16 L12,12" />
+						<path d="M12,8 L12.01,8" />
+					</svg>
+					Existing data found for {formatDate(selectedDate)} - Click "Update Hours" to save changes
+				</div>
+			{:else if error}
+				<div class="status-content error">
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<circle cx="12" cy="12" r="10" />
+						<line x1="15" y1="9" x2="9" y2="15" />
+						<line x1="9" y1="9" x2="15" y2="15" />
+					</svg>
+					{error}
+				</div>
+			{:else}
+				<div class="status-content neutral">
+					<svg
 						width="16"
 						height="16"
 						viewBox="0 0 24 24"
@@ -233,219 +387,149 @@
 							d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.49-8.49l2.83-2.83"
 						/>
 					</svg>
-					Saving...
-				{:else}
-					<svg
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-						<polyline points="17,21 17,13 7,13 7,21" />
-						<polyline points="7,3 7,8 15,8" />
-					</svg>
-					{hasExistingData ? 'Update Hours' : 'Save Hours'}
-				{/if}
-			</button>
-			<button class="reset-button" onclick={resetAllHours}>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="16"
-					height="16"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<polyline points="1 4 1 10 7 10"></polyline>
-					<polyline points="23 20 23 14 17 14"></polyline>
-					<path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
-				</svg>
-				Reset All
-			</button>
+					Ready to enter hours for {formatDate(selectedDate)}
+				</div>
+			{/if}
 		</div>
-	</div>
 
-	<!-- Persistent status bar to prevent layout jumping -->
-	<div class="status-bar">
-		{#if saveStatus === 'success'}
-			<div class="status-content success">
-				<svg
-					width="16"
-					height="16"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-					<polyline points="22,4 12,14.01 9,11.01" />
-				</svg>
-				Hours saved successfully for {formatDate(selectedDate)}
-			</div>
-		{:else if hasExistingData && hasUnsavedChanges}
-			<div class="status-content info">
-				<svg
-					width="16"
-					height="16"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<circle cx="12" cy="12" r="10" />
-					<path d="M12,16 L12,12" />
-					<path d="M12,8 L12.01,8" />
-				</svg>
-				Existing data found for {formatDate(selectedDate)} - Click "Update Hours" to save changes
-			</div>
-		{:else if error}
-			<div class="status-content error">
-				<svg
-					width="16"
-					height="16"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<circle cx="12" cy="12" r="10" />
-					<line x1="15" y1="9" x2="9" y2="15" />
-					<line x1="9" y1="9" x2="15" y2="15" />
-				</svg>
-				{error}
+		{#if loading}
+			<div class="loading">
+				<div class="spinner"></div>
+				<p>Loading...</p>
 			</div>
 		{:else}
-			<div class="status-content neutral">
-				<svg
-					width="16"
-					height="16"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<path
-						d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.49-8.49l2.83-2.83"
-					/>
-				</svg>
-				Ready to enter hours for {formatDate(selectedDate)}
+			<!-- Main Content Area -->
+			<div class="main-content">
+				<!-- Employee Input Section (Left Half) -->
+				<div class="employee-input-section">
+					<h2>Enter Hours</h2>
+					<div class="employee-grid">
+						{#each employeesWithHours() as employee, index}
+							{#if index === 0 || (employeesWithHours()[index - 1].role !== employee.role && (employee.role === 'Associate' || employee.role === 'Picking'))}
+								<div class="role-separator">
+									{#if employee.role === 'Associate'}
+										<span>Associates</span>
+									{:else if employee.role === 'Picking'}
+										<span>Picking Team</span>
+									{/if}
+								</div>
+							{/if}
+							<div class="employee-card {employee.hours > 0 ? 'has-hours' : ''}">
+								<div class="employee-content">
+									<div class="employee-info">
+										<div class="employee-name">{employee.name}</div>
+										<div
+											class="role-badge role-{employee.role?.toLowerCase().replace(' ', '-') ||
+												'unknown'}"
+										>
+											{employee.role || 'Unknown'}
+										</div>
+									</div>
+									<div class="input-container">
+										<input
+											type="number"
+											min="0"
+											max="24"
+											step="0.5"
+											value={employee.hours}
+											oninput={(e) => {
+												const target = e.target as HTMLInputElement;
+												const hours = parseFloat(target.value) || 0;
+												updateEmployeeHours(employee.id, hours);
+											}}
+											onfocus={(e) => {
+												const target = e.target as HTMLInputElement;
+												// Use setTimeout to ensure selection happens after focus completes
+												setTimeout(() => {
+													target.select();
+												}, 0);
+											}}
+											onclick={(e) => {
+												const target = e.target as HTMLInputElement;
+												target.select();
+											}}
+											class="hours-input"
+											placeholder="0"
+										/>
+									</div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Role Breakdown (Right Half) -->
+				<div class="breakdown-section">
+					<h2>Hours by Role</h2>
+					<div class="role-list">
+						{#each Object.entries(roleBreakdown()) as [role, data]}
+							<div class="role-item">
+								<div class="role-info">
+									<span class="role-name">{role}</span>
+									<span class="employee-count"
+										>{data.employees} employee{data.employees !== 1 ? 's' : ''}</span
+									>
+								</div>
+								<div class="role-hours">
+									<span class="hours-value">{data.totalHours.toFixed(1)}</span>
+									<span class="hours-unit">hrs</span>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			</div>
+
+			<!-- Bottom Stats Bar -->
+			<div class="bottom-stats">
+				<div class="stat-item">
+					<span class="stat-value">{employees.length}</span>
+					<span class="stat-label">Total Employees</span>
+				</div>
+				<div class="stat-item">
+					<span class="stat-value">{employeesWithHours().filter((e) => e.hours > 0).length}</span>
+					<span class="stat-label">Working Today</span>
+				</div>
+				<div class="stat-item highlight">
+					<span class="stat-value">{grandTotal().toFixed(1)}</span>
+					<span class="stat-label">Total Hours</span>
+				</div>
 			</div>
 		{/if}
 	</div>
-
-	{#if loading}
-		<div class="loading">
-			<div class="spinner"></div>
-			<p>Loading...</p>
-		</div>
-	{:else}
-		<!-- Main Content Area -->
-		<div class="main-content">
-			<!-- Employee Input Section (Left Half) -->
-			<div class="employee-input-section">
-				<h2>Enter Hours</h2>
-				<div class="employee-grid">
-					{#each employeesWithHours() as employee, index}
-						{#if index === 0 || (employeesWithHours()[index - 1].role !== employee.role && (employee.role === 'Associate' || employee.role === 'Picking'))}
-							<div class="role-separator">
-								{#if employee.role === 'Associate'}
-									<span>Associates</span>
-								{:else if employee.role === 'Picking'}
-									<span>Picking Team</span>
-								{/if}
-							</div>
-						{/if}
-						<div class="employee-card {employee.hours > 0 ? 'has-hours' : ''}">
-							<div class="employee-content">
-								<div class="employee-info">
-									<div class="employee-name">{employee.name}</div>
-									<div
-										class="role-badge role-{employee.role?.toLowerCase().replace(' ', '-') ||
-											'unknown'}"
-									>
-										{employee.role || 'Unknown'}
-									</div>
-								</div>
-								<div class="input-container">
-									<input
-										type="number"
-										min="0"
-										max="24"
-										step="0.5"
-										value={employee.hours}
-										oninput={(e) => {
-											const target = e.target as HTMLInputElement;
-											const hours = parseFloat(target.value) || 0;
-											updateEmployeeHours(employee.id, hours);
-										}}
-										onfocus={(e) => {
-											const target = e.target as HTMLInputElement;
-											// Use setTimeout to ensure selection happens after focus completes
-											setTimeout(() => {
-												target.select();
-											}, 0);
-										}}
-										onclick={(e) => {
-											const target = e.target as HTMLInputElement;
-											target.select();
-										}}
-										class="hours-input"
-										placeholder="0"
-									/>
-								</div>
-							</div>
-						</div>
-					{/each}
-				</div>
-			</div>
-
-			<!-- Role Breakdown (Right Half) -->
-			<div class="breakdown-section">
-				<h2>Hours by Role</h2>
-				<div class="role-list">
-					{#each Object.entries(roleBreakdown()) as [role, data]}
-						<div class="role-item">
-							<div class="role-info">
-								<span class="role-name">{role}</span>
-								<span class="employee-count"
-									>{data.employees} employee{data.employees !== 1 ? 's' : ''}</span
-								>
-							</div>
-							<div class="role-hours">
-								<span class="hours-value">{data.totalHours.toFixed(1)}</span>
-								<span class="hours-unit">hrs</span>
-							</div>
-						</div>
-					{/each}
-				</div>
-			</div>
-		</div>
-
-		<!-- Bottom Stats Bar -->
-		<div class="bottom-stats">
-			<div class="stat-item">
-				<span class="stat-value">{employees.length}</span>
-				<span class="stat-label">Total Employees</span>
-			</div>
-			<div class="stat-item">
-				<span class="stat-value">{employeesWithHours().filter((e) => e.hours > 0).length}</span>
-				<span class="stat-label">Working Today</span>
-			</div>
-			<div class="stat-item highlight">
-				<span class="stat-value">{grandTotal().toFixed(1)}</span>
-				<span class="stat-label">Total Hours</span>
-			</div>
-		</div>
-	{/if}
-</div>
+{:else}
+	<!-- When session is null, onMount should have redirected already -->
+	<div class="loading-container">
+		<p>Redirecting to login...</p>
+	</div>
+{/if}
 
 <style>
+	.loading-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 100vh;
+		color: #1d1d1f;
+	}
+
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid rgba(0, 122, 255, 0.1);
+		border-radius: 50%;
+		border-top-color: #007aff;
+		animation: spin 1s ease-in-out infinite;
+		margin-bottom: 16px;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
 	.container {
 		max-width: 1400px;
 		margin: 0 auto;

@@ -2,6 +2,8 @@
 	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { userSession } from '$lib/sessionStore';
+	import { supabase } from '$lib/supabaseClient';
 
 	let currentPath = $state('');
 	let isMobile = $state(false);
@@ -148,9 +150,37 @@
 	];
 
 	async function handleLogout() {
-		// Import the logout functionality from the layout
-		const event = new MouseEvent('click');
-		window.dispatchEvent(new CustomEvent('app-logout', { detail: event }));
+		console.log('🔴 AppSidebar handleLogout called');
+
+		// Try direct logout first
+		try {
+			// Clear session immediately
+			userSession.set(null);
+			console.log('🔴 Session cleared in AppSidebar');
+
+			// Clear localStorage
+			if (typeof localStorage !== 'undefined') {
+				Object.keys(localStorage).forEach((key) => {
+					if (key.includes('supabase') || key.includes('sb-')) {
+						console.log(`🔴 Removing localStorage item: ${key}`);
+						localStorage.removeItem(key);
+					}
+				});
+			}
+
+			// Sign out from Supabase
+			console.log('🔴 Calling Supabase signOut');
+			await supabase.auth.signOut();
+
+			// Navigate immediately
+			console.log('🔴 Navigating to login');
+			window.location.href = '/login';
+		} catch (error) {
+			console.error('🔴 Error in direct logout:', error);
+			// Fallback to event-based logout
+			const event = new MouseEvent('click');
+			window.dispatchEvent(new CustomEvent('app-logout', { detail: event }));
+		}
 
 		// Close sidebar on mobile after logout
 		if (isMobile && typeof document !== 'undefined') {

@@ -1,7 +1,19 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { userSession } from '$lib/sessionStore';
 	import OrdersList from '$lib/OrdersList.svelte';
 	import DuplicatedDailyProducts from '$lib/DuplicatedDailyProducts.svelte';
+
+	// Authentication check
+	let session: any = undefined;
+	const unsubscribe = userSession.subscribe((s) => {
+		session = s;
+	});
+
+	onDestroy(() => {
+		unsubscribe();
+	});
 
 	interface ProcessedOrder {
 		nOrderId: number;
@@ -57,10 +69,40 @@
 		}
 	}
 
-	// Fetch initial data
-	onMount(() => {
-		if (selectedTab === 'daily') {
-			fetchDailyOrders(startDate, endDate);
+	// Authentication and data loading
+	onMount(async () => {
+		// Wait for session to be determined
+		const sessionTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+
+		let currentSession;
+		try {
+			const unsubscribePromise = new Promise<any>((resolve) => {
+				const unsub = userSession.subscribe((s) => {
+					if (s !== undefined) {
+						currentSession = s;
+						resolve(s);
+						unsub();
+					}
+				});
+			});
+
+			await Promise.race([unsubscribePromise, sessionTimeout]);
+
+			if (currentSession === null) {
+				console.log('No session found, redirecting to login');
+				goto('/login');
+				return;
+			}
+
+			if (currentSession) {
+				// Fetch initial data
+				if (selectedTab === 'daily') {
+					fetchDailyOrders(startDate, endDate);
+				}
+			}
+		} catch (error) {
+			console.error('Error during initialization:', error);
+			goto('/login');
 		}
 	});
 
@@ -82,106 +124,150 @@
 	}
 </script>
 
-<div class="analytics-container">
-	<div class="page-header">
-		<h2>Analytics</h2>
-		<p class="subtitle">Performance metrics and business insights</p>
-	</div>
+<svelte:head>
+	<title>Analytics | Parker's Foodservice</title>
+</svelte:head>
 
-	<div class="analytics-content">
-		<div class="tabs">
-			<button
-				class="tab-button"
-				class:active={selectedTab === 'daily'}
-				on:click={() => (selectedTab = 'daily')}
-			>
-				Daily Products
-			</button>
-			<button
-				class="tab-button"
-				class:active={selectedTab === 'monthly'}
-				on:click={() => (window.location.href = '/analytics/monthly')}
-			>
-				Monthly Dashboard
-			</button>
-			<button
-				class="tab-button"
-				class:active={selectedTab === 'overview'}
-				on:click={() => (selectedTab = 'overview')}
-			>
-				Overview
-			</button>
-			<button
-				class="tab-button"
-				class:active={selectedTab === 'duplicatedDaily'}
-				on:click={() => (selectedTab = 'duplicatedDaily')}
-			>
-				Duplicated Daily Products
-			</button>
+<!-- Authentication check wrapper -->
+{#if session === undefined}
+	<div class="loading-container">
+		<div class="loading-spinner"></div>
+		<p>Loading...</p>
+	</div>
+{:else if session}
+	<div class="analytics-container">
+		<div class="page-header">
+			<h2>Analytics</h2>
+			<p class="subtitle">Performance metrics and business insights</p>
 		</div>
 
-		{#if selectedTab === 'daily'}
-			<div class="daily-orders">
-				<div class="controls">
-					<div class="search-row">
-						<div class="date-range">
-							<div class="date-input">
-								<label for="start-date">From:</label>
-								<input
-									id="start-date"
-									type="date"
-									bind:value={startDate}
-									on:change={handleDateChange}
-									max={new Date().toISOString().split('T')[0]}
-								/>
-							</div>
-							<div class="date-input">
-								<label for="end-date">To:</label>
-								<input
-									id="end-date"
-									type="date"
-									bind:value={endDate}
-									min={startDate}
-									on:change={handleDateChange}
-									max={new Date().toISOString().split('T')[0]}
-								/>
-							</div>
-						</div>
-						<form class="search-form" on:submit={handleSearch}>
-							<div class="search-input">
-								<label for="sku-search">Search SKU:</label>
-								<input
-									id="sku-search"
-									type="text"
-									bind:value={searchSku}
-									placeholder="Enter SKU to search..."
-								/>
-							</div>
-							<div class="search-actions">
-								<button type="submit" class="search-button" disabled={!searchSku || isLoading}>
-									{isLoading ? 'Searching...' : 'Search'}
-								</button>
-								{#if searchSku}
-									<button type="button" class="clear-button" on:click={clearSearch}> Clear </button>
-								{/if}
-							</div>
-						</form>
-					</div>
-				</div>
+		<div class="analytics-content">
+			<div class="tabs">
+				<button
+					class="tab-button"
+					class:active={selectedTab === 'daily'}
+					on:click={() => (selectedTab = 'daily')}
+				>
+					Daily Products
+				</button>
+				<button
+					class="tab-button"
+					class:active={selectedTab === 'monthly'}
+					on:click={() => (window.location.href = '/analytics/monthly')}
+				>
+					Monthly Dashboard
+				</button>
+				<button
+					class="tab-button"
+					class:active={selectedTab === 'overview'}
+					on:click={() => (selectedTab = 'overview')}
+				>
+					Overview
+				</button>
+				<button
+					class="tab-button"
+					class:active={selectedTab === 'duplicatedDaily'}
+					on:click={() => (selectedTab = 'duplicatedDaily')}
+				>
+					Duplicated Daily Products
+				</button>
+			</div>
 
-				<OrdersList orders={dailyOrders} loading={isLoading} {error} />
-			</div>
-		{:else if selectedTab === 'duplicatedDaily'}
-			<DuplicatedDailyProducts />
-		{:else}
-			<div class="overview">
-				<p>Analytics overview coming soon...</p>
-			</div>
-		{/if}
+			{#if selectedTab === 'daily'}
+				<div class="daily-orders">
+					<div class="controls">
+						<div class="search-row">
+							<div class="date-range">
+								<div class="date-input">
+									<label for="start-date">From:</label>
+									<input
+										id="start-date"
+										type="date"
+										bind:value={startDate}
+										on:change={handleDateChange}
+										max={new Date().toISOString().split('T')[0]}
+									/>
+								</div>
+								<div class="date-input">
+									<label for="end-date">To:</label>
+									<input
+										id="end-date"
+										type="date"
+										bind:value={endDate}
+										min={startDate}
+										on:change={handleDateChange}
+										max={new Date().toISOString().split('T')[0]}
+									/>
+								</div>
+							</div>
+							<form class="search-form" on:submit={handleSearch}>
+								<div class="search-input">
+									<label for="sku-search">Search SKU:</label>
+									<input
+										id="sku-search"
+										type="text"
+										bind:value={searchSku}
+										placeholder="Enter SKU to search..."
+									/>
+								</div>
+								<div class="search-actions">
+									<button type="submit" class="search-button" disabled={!searchSku || isLoading}>
+										{isLoading ? 'Searching...' : 'Search'}
+									</button>
+									{#if searchSku}
+										<button type="button" class="clear-button" on:click={clearSearch}>
+											Clear
+										</button>
+									{/if}
+								</div>
+							</form>
+						</div>
+					</div>
+
+					<OrdersList orders={dailyOrders} loading={isLoading} {error} />
+				</div>
+			{:else if selectedTab === 'duplicatedDaily'}
+				<DuplicatedDailyProducts />
+			{:else}
+				<div class="overview">
+					<p>Analytics overview coming soon...</p>
+				</div>
+			{/if}
+		</div>
 	</div>
-</div>
+{:else}
+	<!-- When session is null, onMount should have redirected already -->
+	<div class="loading-container">
+		<p>Redirecting to login...</p>
+	</div>
+{/if}
 
 <style>
+	.loading-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 100vh;
+		color: #1d1d1f;
+	}
+
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid rgba(0, 122, 255, 0.1);
+		border-radius: 50%;
+		border-top-color: #007aff;
+		animation: spin 1s ease-in-out infinite;
+		margin-bottom: 16px;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
 	.analytics-container {
 		padding: 24px;
 		max-width: 1400px;

@@ -1,8 +1,10 @@
 <!-- Monthly Dashboard Page -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { userSession } from '$lib/sessionStore';
 	import { page } from '$app/stores';
+	import type { Session } from '@supabase/supabase-js';
 	import {
 		Card,
 		CardHeader,
@@ -29,6 +31,16 @@
 		WeekdayHistoricalConfig,
 		WeeklyHistoricalConfig
 	} from '$lib/types/historicalData';
+
+	// Authentication check
+	let session = $state<Session | null | undefined>(undefined);
+	const unsubscribe = userSession.subscribe((s) => {
+		session = s;
+	});
+
+	onDestroy(() => {
+		unsubscribe();
+	});
 
 	// ===========================================
 	// Type Definitions
@@ -103,11 +115,40 @@
 	// Lifecycle & Initialization
 	// ===========================================
 
-	onMount(() => {
-		// Generate years from 2020 to current year + 1
-		const currentYear = new Date().getFullYear();
-		for (let year = 2020; year <= currentYear + 1; year++) {
-			availableYears.push(year);
+	onMount(async () => {
+		// Wait for session to be determined
+		const sessionTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+
+		let currentSession;
+		try {
+			const unsubscribePromise = new Promise<any>((resolve) => {
+				const unsub = userSession.subscribe((s) => {
+					if (s !== undefined) {
+						currentSession = s;
+						resolve(s);
+						unsub();
+					}
+				});
+			});
+
+			await Promise.race([unsubscribePromise, sessionTimeout]);
+
+			if (currentSession === null) {
+				console.log('No session found, redirecting to login');
+				goto('/login');
+				return;
+			}
+
+			if (currentSession) {
+				// Generate years from 2020 to current year + 1
+				const currentYear = new Date().getFullYear();
+				for (let year = 2020; year <= currentYear + 1; year++) {
+					availableYears.push(year);
+				}
+			}
+		} catch (error) {
+			console.error('Error during initialization:', error);
+			goto('/login');
 		}
 	});
 
@@ -417,123 +458,68 @@
 	</style>
 </svelte:head>
 
-<!-- Wrap the entire component in shadcn-scope to isolate styles -->
-<div class="shadcn-scope">
-	<!-- Progress Bar -->
-	{#if isLoading}
-		<div class="fixed top-0 left-0 right-0 z-50 h-1 bg-gray-200">
+<!-- Authentication check wrapper -->
+{#if session === undefined}
+	<div class="loading-container">
+		<div class="loading-spinner"></div>
+		<p>Loading...</p>
+	</div>
+{:else if session}
+	<!-- Wrap the entire component in shadcn-scope to isolate styles -->
+	<div class="shadcn-scope">
+		<!-- Progress Bar -->
+		{#if isLoading}
+			<div class="fixed top-0 left-0 right-0 z-50 h-1 bg-gray-200">
+				<div
+					class="h-full bg-blue-600 animate-pulse duration-1000"
+					style="animation: loading-bar 2s infinite;"
+				></div>
+			</div>
+		{/if}
+
+		<!-- Global Loading Overlay for improved UX -->
+		{#if isLoading}
 			<div
-				class="h-full bg-blue-600 animate-pulse duration-1000"
-				style="animation: loading-bar 2s infinite;"
-			></div>
-		</div>
-	{/if}
-
-	<!-- Global Loading Overlay for improved UX -->
-	{#if isLoading}
-		<div
-			class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center"
-		>
-			<div class="flex flex-col items-center gap-3 bg-card p-6 rounded-lg shadow-lg border">
-				<svg
-					class="animate-spin h-8 w-8 text-blue-600"
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-				>
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-					></circle>
-					<path
-						class="opacity-75"
-						fill="currentColor"
-						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-					></path>
-				</svg>
-				<div class="text-sm font-medium text-foreground">Loading analytics data...</div>
-				<div class="text-xs text-muted-foreground">Please wait while we fetch your data</div>
-			</div>
-		</div>
-	{/if}
-
-	<div class="container mx-auto p-6 space-y-6">
-		<!-- Header -->
-		<div class="flex justify-between items-center">
-			<div>
-				<h1 class="text-3xl font-bold tracking-tight">Monthly Analytics</h1>
-				<p class="text-muted-foreground">Monthly performance metrics and business insights</p>
-			</div>
-		</div>
-
-		<!-- Month/Year Selector -->
-		<Card>
-			<CardHeader>
-				<CardTitle class="flex items-center gap-2">
-					Select Period
-					{#if isLoading}
-						<svg
-							class="animate-spin h-4 w-4 text-blue-600"
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-						>
-							<circle
-								class="opacity-25"
-								cx="12"
-								cy="12"
-								r="10"
-								stroke="currentColor"
-								stroke-width="4"
-							></circle>
-							<path
-								class="opacity-75"
-								fill="currentColor"
-								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-							></path>
-						</svg>
-						<span class="text-sm font-normal text-blue-600">Loading data...</span>
-					{/if}
-				</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<div class="flex gap-4 items-end">
-					<div class="flex flex-col gap-2">
-						<label for="year-select" class="text-sm font-medium">Year:</label>
-						<select
-							id="year-select"
-							bind:value={selectedYear}
-							onchange={handleMonthChange}
-							disabled={isLoading}
-							class="px-3 py-2 border border-input rounded-md bg-background disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							{#each availableYears as year}
-								<option value={year}>{year}</option>
-							{/each}
-						</select>
-					</div>
-					<div class="flex flex-col gap-2">
-						<label for="month-select" class="text-sm font-medium">Month:</label>
-						<select
-							id="month-select"
-							bind:value={selectedMonth}
-							onchange={handleMonthChange}
-							disabled={isLoading}
-							class="px-3 py-2 border border-input rounded-md bg-background disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							{#each Array(12) as _, i}
-								<option value={i + 1}>
-									{new Date(2024, i, 1).toLocaleString('default', { month: 'long' })}
-								</option>
-							{/each}
-						</select>
-					</div>
-					<Button
-						onclick={handleRefresh}
-						disabled={isLoading}
-						class="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+				class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center"
+			>
+				<div class="flex flex-col items-center gap-3 bg-card p-6 rounded-lg shadow-lg border">
+					<svg
+						class="animate-spin h-8 w-8 text-blue-600"
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
 					>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
+						<path
+							class="opacity-75"
+							fill="currentColor"
+							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+						></path>
+					</svg>
+					<div class="text-sm font-medium text-foreground">Loading analytics data...</div>
+					<div class="text-xs text-muted-foreground">Please wait while we fetch your data</div>
+				</div>
+			</div>
+		{/if}
+
+		<div class="container mx-auto p-6 space-y-6">
+			<!-- Header -->
+			<div class="flex justify-between items-center">
+				<div>
+					<h1 class="text-3xl font-bold tracking-tight">Monthly Analytics</h1>
+					<p class="text-muted-foreground">Monthly performance metrics and business insights</p>
+				</div>
+			</div>
+
+			<!-- Month/Year Selector -->
+			<Card>
+				<CardHeader>
+					<CardTitle class="flex items-center gap-2">
+						Select Period
 						{#if isLoading}
 							<svg
-								class="animate-spin h-4 w-4"
+								class="animate-spin h-4 w-4 text-blue-600"
 								xmlns="http://www.w3.org/2000/svg"
 								fill="none"
 								viewBox="0 0 24 24"
@@ -552,709 +538,810 @@
 									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 								></path>
 							</svg>
-							Loading...
-						{:else}
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-4 w-4"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
+							<span class="text-sm font-normal text-blue-600">Loading data...</span>
+						{/if}
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div class="flex gap-4 items-end">
+						<div class="flex flex-col gap-2">
+							<label for="year-select" class="text-sm font-medium">Year:</label>
+							<select
+								id="year-select"
+								bind:value={selectedYear}
+								onchange={handleMonthChange}
+								disabled={isLoading}
+								class="px-3 py-2 border border-input rounded-md bg-background disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								<path
+								{#each availableYears as year}
+									<option value={year}>{year}</option>
+								{/each}
+							</select>
+						</div>
+						<div class="flex flex-col gap-2">
+							<label for="month-select" class="text-sm font-medium">Month:</label>
+							<select
+								id="month-select"
+								bind:value={selectedMonth}
+								onchange={handleMonthChange}
+								disabled={isLoading}
+								class="px-3 py-2 border border-input rounded-md bg-background disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#each Array(12) as _, i}
+									<option value={i + 1}>
+										{new Date(2024, i, 1).toLocaleString('default', { month: 'long' })}
+									</option>
+								{/each}
+							</select>
+						</div>
+						<Button
+							onclick={handleRefresh}
+							disabled={isLoading}
+							class="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+						>
+							{#if isLoading}
+								<svg
+									class="animate-spin h-4 w-4"
+									xmlns="http://www.w3.org/2000/svg"
+									fill="none"
+									viewBox="0 0 24 24"
+								>
+									<circle
+										class="opacity-25"
+										cx="12"
+										cy="12"
+										r="10"
+										stroke="currentColor"
+										stroke-width="4"
+									></circle>
+									<path
+										class="opacity-75"
+										fill="currentColor"
+										d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+									></path>
+								</svg>
+								Loading...
+							{:else}
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									class="h-4 w-4"
+									fill="none"
+									viewBox="0 0 24 24"
+									stroke="currentColor"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+									/>
+								</svg>
+								Refresh
+							{/if}
+						</Button>
+					</div>
+				</CardContent>
+			</Card>
+
+			{#if error}
+				<Card class="border-destructive">
+					<CardContent class="pt-6">
+						<p class="text-destructive">Error: {error}</p>
+					</CardContent>
+				</Card>
+			{/if}
+
+			{#if isLoading}
+				<!-- Loading Skeletons -->
+				<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+					{#each Array(4) as _}
+						<Card>
+							<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+								<Skeleton class="h-4 w-[100px]" />
+								<Skeleton class="h-4 w-4" />
+							</CardHeader>
+							<CardContent>
+								<Skeleton class="h-8 w-[120px] mb-2" />
+								<Skeleton class="h-3 w-[80px]" />
+							</CardContent>
+						</Card>
+					{/each}
+				</div>
+
+				<div class="grid gap-4 md:grid-cols-2">
+					<Card>
+						<CardHeader>
+							<Skeleton class="h-6 w-[150px]" />
+						</CardHeader>
+						<CardContent>
+							<div class="space-y-4">
+								{#each Array(3) as _}
+									<div class="flex items-center justify-between">
+										<div class="flex items-center space-x-2">
+											<Skeleton class="w-3 h-3 rounded-full" />
+											<Skeleton class="h-4 w-[60px]" />
+										</div>
+										<Skeleton class="h-4 w-[80px]" />
+									</div>
+								{/each}
+							</div>
+						</CardContent>
+					</Card>
+
+					<Card>
+						<CardHeader>
+							<Skeleton class="h-6 w-[180px]" />
+						</CardHeader>
+						<CardContent>
+							<div class="space-y-4">
+								{#each Array(3) as _}
+									<div class="space-y-2">
+										<div class="flex justify-between text-sm">
+											<Skeleton class="h-4 w-[60px]" />
+											<Skeleton class="h-4 w-[40px]" />
+										</div>
+										<Skeleton class="w-full h-2 rounded-full" />
+									</div>
+								{/each}
+							</div>
+						</CardContent>
+					</Card>
+				</div>
+			{:else if monthlyData.length === 0}
+				<Card>
+					<CardContent class="pt-6">
+						<p class="text-muted-foreground text-center py-8">
+							No data available for {new Date(
+								selectedYear,
+								selectedMonth - 1,
+								1
+							).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+						</p>
+					</CardContent>
+				</Card>
+			{:else}
+				<!-- KPI Cards -->
+				<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+					{#each monthlyData as data}
+						<Card>
+							<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+								<CardTitle class="text-sm font-medium">Total Sales</CardTitle>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
 									stroke-linecap="round"
 									stroke-linejoin="round"
 									stroke-width="2"
-									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-								/>
-							</svg>
-							Refresh
-						{/if}
-					</Button>
+									class="h-4 w-4 text-muted-foreground"
+								>
+									<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+								</svg>
+							</CardHeader>
+							<CardContent>
+								<div class="text-2xl font-bold">{formatCurrency(data.totalSales)}</div>
+								<p class="text-xs text-muted-foreground">Monthly revenue</p>
+							</CardContent>
+						</Card>
+
+						<Card>
+							<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+								<CardTitle class="text-sm font-medium">Total Orders</CardTitle>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									class="h-4 w-4 text-muted-foreground"
+								>
+									<rect width="20" height="14" x="2" y="5" rx="2" />
+									<path d="M2 10h20" />
+								</svg>
+							</CardHeader>
+							<CardContent>
+								<div class="text-2xl font-bold">{formatNumber(data.totalOrders)}</div>
+								<p class="text-xs text-muted-foreground">Orders processed</p>
+							</CardContent>
+						</Card>
+
+						<Card>
+							<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+								<CardTitle class="text-sm font-medium">Labor Efficiency</CardTitle>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									class="h-4 w-4 text-muted-foreground"
+								>
+									<path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+								</svg>
+							</CardHeader>
+							<CardContent>
+								<div class="text-2xl font-bold">{data.laborEfficiency.toFixed(2)}</div>
+								<p class="text-xs text-muted-foreground">Avg shipments/hour</p>
+							</CardContent>
+						</Card>
+
+						<Card>
+							<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+								<CardTitle class="text-sm font-medium">Average Order Value</CardTitle>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									class="h-4 w-4 text-muted-foreground"
+								>
+									<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+									<circle cx="9" cy="7" r="4" />
+									<path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+								</svg>
+							</CardHeader>
+							<CardContent>
+								<div class="text-2xl font-bold">
+									{formatCurrency(data.totalOrders > 0 ? data.totalSales / data.totalOrders : 0)}
+								</div>
+								<p class="text-xs text-muted-foreground">Per order</p>
+							</CardContent>
+						</Card>
+					{/each}
 				</div>
-			</CardContent>
-		</Card>
 
-		{#if error}
-			<Card class="border-destructive">
-				<CardContent class="pt-6">
-					<p class="text-destructive">Error: {error}</p>
-				</CardContent>
-			</Card>
-		{/if}
-
-		{#if isLoading}
-			<!-- Loading Skeletons -->
-			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-				{#each Array(4) as _}
-					<Card>
-						<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-							<Skeleton class="h-4 w-[100px]" />
-							<Skeleton class="h-4 w-4" />
-						</CardHeader>
-						<CardContent>
-							<Skeleton class="h-8 w-[120px] mb-2" />
-							<Skeleton class="h-3 w-[80px]" />
-						</CardContent>
-					</Card>
-				{/each}
-			</div>
-
-			<div class="grid gap-4 md:grid-cols-2">
-				<Card>
-					<CardHeader>
-						<Skeleton class="h-6 w-[150px]" />
-					</CardHeader>
-					<CardContent>
-						<div class="space-y-4">
-							{#each Array(3) as _}
+				<!-- Daily Sales Chart -->
+				{#if dailyData.length > 0}
+					<div class="space-y-4">
+						<!-- Chart Header with Mode Toggle -->
+						<Card>
+							<CardHeader>
 								<div class="flex items-center justify-between">
-									<div class="flex items-center space-x-2">
-										<Skeleton class="w-3 h-3 rounded-full" />
-										<Skeleton class="h-4 w-[60px]" />
+									<div>
+										<CardTitle class="text-xl font-semibold">
+											{displayMode === 'current-month'
+												? 'Daily Sales Visualization'
+												: displayMode === 'historical-weekday'
+													? 'Historical Weekday Analysis'
+													: 'Weekly Trends Analysis'}
+										</CardTitle>
+										<p class="text-sm text-muted-foreground mt-1">
+											{displayMode === 'current-month'
+												? `${getMonthName(selectedMonth, selectedYear)} breakdown by channel`
+												: displayMode === 'historical-weekday'
+													? 'Compare specific weekdays across multiple weeks (excludes today for accurate comparisons)'
+													: 'Weekly aggregated performance over time (excludes current incomplete week)'}
+										</p>
 									</div>
-									<Skeleton class="h-4 w-[80px]" />
+									<div class="flex gap-2">
+										<Button
+											variant={displayMode === 'current-month' ? 'default' : 'outline'}
+											size="sm"
+											onclick={() => toggleDisplayMode('current-month')}
+										>
+											Current Month
+										</Button>
+										<Button
+											variant={displayMode === 'historical-weekday' ? 'default' : 'outline'}
+											size="sm"
+											onclick={() => toggleDisplayMode('historical-weekday')}
+										>
+											Weekday Lens
+										</Button>
+										<Button
+											variant={displayMode === 'historical-weekly' ? 'default' : 'outline'}
+											size="sm"
+											onclick={() => toggleDisplayMode('historical-weekly')}
+										>
+											Weekly Trends
+										</Button>
+									</div>
 								</div>
-							{/each}
-						</div>
-					</CardContent>
-				</Card>
 
+								<!-- Historical Configuration Panel -->
+								{#if displayMode === 'historical-weekday'}
+									<div class="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
+										<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+											<!-- Metric Selection -->
+											<div class="space-y-2">
+												<label for="historical-metric" class="text-sm font-medium">Metric</label>
+												<select
+													id="historical-metric"
+													bind:value={historicalConfig.selectedMetric}
+													onchange={() =>
+														updateHistoricalConfig({
+															selectedMetric: historicalConfig.selectedMetric
+														})}
+													class="w-full px-3 py-2 border border-input rounded-md bg-background"
+												>
+													<option value="total_sales">Total Sales</option>
+													<option value="amazon_sales">Amazon Sales</option>
+													<option value="ebay_sales">eBay Sales</option>
+													<option value="shopify_sales">Shopify Sales</option>
+													<option value="linnworks_total_orders">Total Orders</option>
+													<option value="labor_efficiency">Labor Efficiency</option>
+												</select>
+											</div>
+
+											<!-- Weekday Selection -->
+											<div class="space-y-2">
+												<label for="historical-weekday" class="text-sm font-medium">Weekday</label>
+												<select
+													id="historical-weekday"
+													bind:value={historicalConfig.selectedWeekday}
+													onchange={() =>
+														updateHistoricalConfig({
+															selectedWeekday: historicalConfig.selectedWeekday
+														})}
+													class="w-full px-3 py-2 border border-input rounded-md bg-background"
+												>
+													<option value="monday">Monday</option>
+													<option value="tuesday">Tuesday</option>
+													<option value="wednesday">Wednesday</option>
+													<option value="thursday">Thursday</option>
+													<option value="friday">Friday</option>
+													<option value="saturday">Saturday</option>
+													<option value="sunday">Sunday</option>
+												</select>
+											</div>
+
+											<!-- Historical Count -->
+											<div class="space-y-2">
+												<label for="historical-count" class="text-sm font-medium"
+													>Number of Weeks</label
+												>
+												<select
+													id="historical-count"
+													bind:value={historicalConfig.historicalCount}
+													onchange={() =>
+														updateHistoricalConfig({
+															historicalCount: historicalConfig.historicalCount
+														})}
+													class="w-full px-3 py-2 border border-input rounded-md bg-background"
+												>
+													<option value={12}>12 weeks</option>
+													<option value={18}>18 weeks</option>
+													<option value={24}>24 weeks</option>
+												</select>
+											</div>
+										</div>
+									</div>
+								{:else if displayMode === 'historical-weekly'}
+									<div class="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
+										<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+											<!-- Metric Selection -->
+											<div class="space-y-2">
+												<label for="weekly-metric" class="text-sm font-medium">Metric</label>
+												<select
+													id="weekly-metric"
+													bind:value={weeklyConfig.selectedMetric}
+													onchange={() =>
+														updateWeeklyConfig({
+															selectedMetric: weeklyConfig.selectedMetric
+														})}
+													class="w-full px-3 py-2 border border-input rounded-md bg-background"
+												>
+													<option value="total_sales">Total Sales</option>
+													<option value="amazon_sales">Amazon Sales</option>
+													<option value="ebay_sales">eBay Sales</option>
+													<option value="shopify_sales">Shopify Sales</option>
+													<option value="linnworks_total_orders">Total Orders</option>
+													<option value="labor_efficiency">Labor Efficiency</option>
+												</select>
+											</div>
+
+											<!-- Weeks Count -->
+											<div class="space-y-2">
+												<label for="weekly-count" class="text-sm font-medium">Time Range</label>
+												<select
+													id="weekly-count"
+													bind:value={weeklyConfig.weeksCount}
+													onchange={() =>
+														updateWeeklyConfig({
+															weeksCount: weeklyConfig.weeksCount
+														})}
+													class="w-full px-3 py-2 border border-input rounded-md bg-background"
+												>
+													<option value={13}>12 weeks</option>
+													<option value={19}>18 weeks</option>
+													<option value={25}>24 weeks</option>
+												</select>
+											</div>
+										</div>
+									</div>
+								{/if}
+							</CardHeader>
+						</Card>
+
+						<!-- Chart Display -->
+						{#if displayMode === 'current-month'}
+							<MetricsDashboardChart
+								data={dailyData}
+								title="Daily Sales Visualization"
+								class="w-full"
+							/>
+						{:else if displayMode === 'historical-weekday'}
+							<HistoricalLineChart
+								{historicalData}
+								loading={loadingHistorical}
+								error={historicalError}
+								onClose={() => toggleDisplayMode('current-month')}
+								class="w-full"
+							/>
+						{:else if displayMode === 'historical-weekly'}
+							<WeeklyLineChart
+								{weeklyData}
+								loading={loadingWeekly}
+								error={weeklyError}
+								onClose={() => toggleDisplayMode('current-month')}
+								class="w-full"
+							/>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Daily Breakdown Table -->
 				<Card>
 					<CardHeader>
-						<Skeleton class="h-6 w-[180px]" />
+						<CardTitle>Daily Breakdown</CardTitle>
 					</CardHeader>
 					<CardContent>
-						<div class="space-y-4">
-							{#each Array(3) as _}
-								<div class="space-y-2">
-									<div class="flex justify-between text-sm">
-										<Skeleton class="h-4 w-[60px]" />
-										<Skeleton class="h-4 w-[40px]" />
-									</div>
-									<Skeleton class="w-full h-2 rounded-full" />
-								</div>
-							{/each}
-						</div>
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead class="p-0">
+										<button
+											class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+											onclick={() => sortDailyData('date')}
+										>
+											Date
+											{#if sortColumn === 'date'}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-4 w-4 inline-block ml-1"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													{#if sortDirection === 'asc'}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M7 11l5-5m0 0l5 5m-5-5v12"
+														/>
+													{:else}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M17 13l-5 5m0 0l-5-5m5 5V6"
+														/>
+													{/if}
+												</svg>
+											{/if}
+										</button>
+									</TableHead>
+									<TableHead class="p-0">
+										<button
+											class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+											onclick={() => sortDailyData('total_sales')}
+										>
+											Total Sales
+											{#if sortColumn === 'total_sales'}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-4 w-4 inline-block ml-1"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													{#if sortDirection === 'asc'}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M7 11l5-5m0 0l5 5m-5-5v12"
+														/>
+													{:else}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M17 13l-5 5m0 0l-5-5m5 5V6"
+														/>
+													{/if}
+												</svg>
+											{/if}
+										</button>
+									</TableHead>
+									<TableHead class="p-0">
+										<button
+											class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+											onclick={() => sortDailyData('amazon_sales')}
+										>
+											Amazon Sales
+											{#if sortColumn === 'amazon_sales'}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-4 w-4 inline-block ml-1"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													{#if sortDirection === 'asc'}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M7 11l5-5m0 0l5 5m-5-5v12"
+														/>
+													{:else}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M17 13l-5 5m0 0l-5-5m5 5V6"
+														/>
+													{/if}
+												</svg>
+											{/if}
+										</button>
+									</TableHead>
+									<TableHead class="p-0">
+										<button
+											class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+											onclick={() => sortDailyData('ebay_sales')}
+										>
+											eBay Sales
+											{#if sortColumn === 'ebay_sales'}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-4 w-4 inline-block ml-1"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													{#if sortDirection === 'asc'}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M7 11l5-5m0 0l5 5m-5-5v12"
+														/>
+													{:else}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M17 13l-5 5m0 0l-5-5m5 5V6"
+														/>
+													{/if}
+												</svg>
+											{/if}
+										</button>
+									</TableHead>
+									<TableHead class="p-0">
+										<button
+											class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+											onclick={() => sortDailyData('shopify_sales')}
+										>
+											Shopify Sales
+											{#if sortColumn === 'shopify_sales'}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-4 w-4 inline-block ml-1"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													{#if sortDirection === 'asc'}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M7 11l5-5m0 0l5 5m-5-5v12"
+														/>
+													{:else}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M17 13l-5 5m0 0l-5-5m5 5V6"
+														/>
+													{/if}
+												</svg>
+											{/if}
+										</button>
+									</TableHead>
+									<TableHead class="p-0">
+										<button
+											class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+											onclick={() => sortDailyData('linnworks_total_orders')}
+										>
+											Total Orders
+											{#if sortColumn === 'linnworks_total_orders'}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-4 w-4 inline-block ml-1"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													{#if sortDirection === 'asc'}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M7 11l5-5m0 0l5 5m-5-5v12"
+														/>
+													{:else}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M17 13l-5 5m0 0l-5-5m5 5V6"
+														/>
+													{/if}
+												</svg>
+											{/if}
+										</button>
+									</TableHead>
+									<TableHead class="p-0">
+										<button
+											class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
+											onclick={() => sortDailyData('labor_efficiency')}
+										>
+											Labor Efficiency
+											{#if sortColumn === 'labor_efficiency'}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													class="h-4 w-4 inline-block ml-1"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													{#if sortDirection === 'asc'}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M7 11l5-5m0 0l5 5m-5-5v12"
+														/>
+													{:else}
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M17 13l-5 5m0 0l-5-5m5 5V6"
+														/>
+													{/if}
+												</svg>
+											{/if}
+										</button>
+									</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{#if dailyData.length > 0}
+									{#each dailyData as day}
+										<TableRow>
+											<TableCell>{formatDate(day.date)}</TableCell>
+											<TableCell>{formatCurrency(day.total_sales || 0)}</TableCell>
+											<TableCell>{formatCurrency(day.amazon_sales || 0)}</TableCell>
+											<TableCell>{formatCurrency(day.ebay_sales || 0)}</TableCell>
+											<TableCell>{formatCurrency(day.shopify_sales || 0)}</TableCell>
+											<TableCell>{formatNumber(day.linnworks_total_orders || 0)}</TableCell>
+											<TableCell>{(day.labor_efficiency || 0).toFixed(1)}</TableCell>
+										</TableRow>
+									{/each}
+								{:else}
+									<TableRow>
+										<TableCell colspan="7" class="text-center text-muted-foreground py-8">
+											No daily data available for this month
+										</TableCell>
+									</TableRow>
+								{/if}
+							</TableBody>
+						</Table>
 					</CardContent>
 				</Card>
-			</div>
-		{:else if monthlyData.length === 0}
-			<Card>
-				<CardContent class="pt-6">
-					<p class="text-muted-foreground text-center py-8">
-						No data available for {new Date(selectedYear, selectedMonth - 1, 1).toLocaleDateString(
-							'en-GB',
-							{ month: 'long', year: 'numeric' }
-						)}
-					</p>
-				</CardContent>
-			</Card>
-		{:else}
-			<!-- KPI Cards -->
-			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-				{#each monthlyData as data}
-					<Card>
-						<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-							<CardTitle class="text-sm font-medium">Total Sales</CardTitle>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								class="h-4 w-4 text-muted-foreground"
-							>
-								<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-							</svg>
-						</CardHeader>
-						<CardContent>
-							<div class="text-2xl font-bold">{formatCurrency(data.totalSales)}</div>
-							<p class="text-xs text-muted-foreground">Monthly revenue</p>
-						</CardContent>
-					</Card>
-
-					<Card>
-						<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-							<CardTitle class="text-sm font-medium">Total Orders</CardTitle>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								class="h-4 w-4 text-muted-foreground"
-							>
-								<rect width="20" height="14" x="2" y="5" rx="2" />
-								<path d="M2 10h20" />
-							</svg>
-						</CardHeader>
-						<CardContent>
-							<div class="text-2xl font-bold">{formatNumber(data.totalOrders)}</div>
-							<p class="text-xs text-muted-foreground">Orders processed</p>
-						</CardContent>
-					</Card>
-
-					<Card>
-						<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-							<CardTitle class="text-sm font-medium">Labor Efficiency</CardTitle>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								class="h-4 w-4 text-muted-foreground"
-							>
-								<path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-							</svg>
-						</CardHeader>
-						<CardContent>
-							<div class="text-2xl font-bold">{data.laborEfficiency.toFixed(2)}</div>
-							<p class="text-xs text-muted-foreground">Avg shipments/hour</p>
-						</CardContent>
-					</Card>
-
-					<Card>
-						<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-							<CardTitle class="text-sm font-medium">Average Order Value</CardTitle>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								class="h-4 w-4 text-muted-foreground"
-							>
-								<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-								<circle cx="9" cy="7" r="4" />
-								<path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-							</svg>
-						</CardHeader>
-						<CardContent>
-							<div class="text-2xl font-bold">
-								{formatCurrency(data.totalOrders > 0 ? data.totalSales / data.totalOrders : 0)}
-							</div>
-							<p class="text-xs text-muted-foreground">Per order</p>
-						</CardContent>
-					</Card>
-				{/each}
-			</div>
-
-			<!-- Daily Sales Chart -->
-			{#if dailyData.length > 0}
-				<div class="space-y-4">
-					<!-- Chart Header with Mode Toggle -->
-					<Card>
-						<CardHeader>
-							<div class="flex items-center justify-between">
-								<div>
-									<CardTitle class="text-xl font-semibold">
-										{displayMode === 'current-month'
-											? 'Daily Sales Visualization'
-											: displayMode === 'historical-weekday'
-												? 'Historical Weekday Analysis'
-												: 'Weekly Trends Analysis'}
-									</CardTitle>
-									<p class="text-sm text-muted-foreground mt-1">
-										{displayMode === 'current-month'
-											? `${getMonthName(selectedMonth, selectedYear)} breakdown by channel`
-											: displayMode === 'historical-weekday'
-												? 'Compare specific weekdays across multiple weeks (excludes today for accurate comparisons)'
-												: 'Weekly aggregated performance over time (excludes current incomplete week)'}
-									</p>
-								</div>
-								<div class="flex gap-2">
-									<Button
-										variant={displayMode === 'current-month' ? 'default' : 'outline'}
-										size="sm"
-										onclick={() => toggleDisplayMode('current-month')}
-									>
-										Current Month
-									</Button>
-									<Button
-										variant={displayMode === 'historical-weekday' ? 'default' : 'outline'}
-										size="sm"
-										onclick={() => toggleDisplayMode('historical-weekday')}
-									>
-										Weekday Lens
-									</Button>
-									<Button
-										variant={displayMode === 'historical-weekly' ? 'default' : 'outline'}
-										size="sm"
-										onclick={() => toggleDisplayMode('historical-weekly')}
-									>
-										Weekly Trends
-									</Button>
-								</div>
-							</div>
-
-							<!-- Historical Configuration Panel -->
-							{#if displayMode === 'historical-weekday'}
-								<div class="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
-									<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-										<!-- Metric Selection -->
-										<div class="space-y-2">
-											<label for="historical-metric" class="text-sm font-medium">Metric</label>
-											<select
-												id="historical-metric"
-												bind:value={historicalConfig.selectedMetric}
-												onchange={() =>
-													updateHistoricalConfig({
-														selectedMetric: historicalConfig.selectedMetric
-													})}
-												class="w-full px-3 py-2 border border-input rounded-md bg-background"
-											>
-												<option value="total_sales">Total Sales</option>
-												<option value="amazon_sales">Amazon Sales</option>
-												<option value="ebay_sales">eBay Sales</option>
-												<option value="shopify_sales">Shopify Sales</option>
-												<option value="linnworks_total_orders">Total Orders</option>
-												<option value="labor_efficiency">Labor Efficiency</option>
-											</select>
-										</div>
-
-										<!-- Weekday Selection -->
-										<div class="space-y-2">
-											<label for="historical-weekday" class="text-sm font-medium">Weekday</label>
-											<select
-												id="historical-weekday"
-												bind:value={historicalConfig.selectedWeekday}
-												onchange={() =>
-													updateHistoricalConfig({
-														selectedWeekday: historicalConfig.selectedWeekday
-													})}
-												class="w-full px-3 py-2 border border-input rounded-md bg-background"
-											>
-												<option value="monday">Monday</option>
-												<option value="tuesday">Tuesday</option>
-												<option value="wednesday">Wednesday</option>
-												<option value="thursday">Thursday</option>
-												<option value="friday">Friday</option>
-												<option value="saturday">Saturday</option>
-												<option value="sunday">Sunday</option>
-											</select>
-										</div>
-
-										<!-- Historical Count -->
-										<div class="space-y-2">
-											<label for="historical-count" class="text-sm font-medium"
-												>Number of Weeks</label
-											>
-											<select
-												id="historical-count"
-												bind:value={historicalConfig.historicalCount}
-												onchange={() =>
-													updateHistoricalConfig({
-														historicalCount: historicalConfig.historicalCount
-													})}
-												class="w-full px-3 py-2 border border-input rounded-md bg-background"
-											>
-												<option value={12}>12 weeks</option>
-												<option value={18}>18 weeks</option>
-												<option value={24}>24 weeks</option>
-											</select>
-										</div>
-									</div>
-								</div>
-							{:else if displayMode === 'historical-weekly'}
-								<div class="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
-									<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-										<!-- Metric Selection -->
-										<div class="space-y-2">
-											<label for="weekly-metric" class="text-sm font-medium">Metric</label>
-											<select
-												id="weekly-metric"
-												bind:value={weeklyConfig.selectedMetric}
-												onchange={() =>
-													updateWeeklyConfig({
-														selectedMetric: weeklyConfig.selectedMetric
-													})}
-												class="w-full px-3 py-2 border border-input rounded-md bg-background"
-											>
-												<option value="total_sales">Total Sales</option>
-												<option value="amazon_sales">Amazon Sales</option>
-												<option value="ebay_sales">eBay Sales</option>
-												<option value="shopify_sales">Shopify Sales</option>
-												<option value="linnworks_total_orders">Total Orders</option>
-												<option value="labor_efficiency">Labor Efficiency</option>
-											</select>
-										</div>
-
-										<!-- Weeks Count -->
-										<div class="space-y-2">
-											<label for="weekly-count" class="text-sm font-medium">Time Range</label>
-											<select
-												id="weekly-count"
-												bind:value={weeklyConfig.weeksCount}
-												onchange={() =>
-													updateWeeklyConfig({
-														weeksCount: weeklyConfig.weeksCount
-													})}
-												class="w-full px-3 py-2 border border-input rounded-md bg-background"
-											>
-												<option value={13}>12 weeks</option>
-												<option value={19}>18 weeks</option>
-												<option value={25}>24 weeks</option>
-											</select>
-										</div>
-									</div>
-								</div>
-							{/if}
-						</CardHeader>
-					</Card>
-
-					<!-- Chart Display -->
-					{#if displayMode === 'current-month'}
-						<MetricsDashboardChart
-							data={dailyData}
-							title="Daily Sales Visualization"
-							class="w-full"
-						/>
-					{:else if displayMode === 'historical-weekday'}
-						<HistoricalLineChart
-							{historicalData}
-							loading={loadingHistorical}
-							error={historicalError}
-							onClose={() => toggleDisplayMode('current-month')}
-							class="w-full"
-						/>
-					{:else if displayMode === 'historical-weekly'}
-						<WeeklyLineChart
-							{weeklyData}
-							loading={loadingWeekly}
-							error={weeklyError}
-							onClose={() => toggleDisplayMode('current-month')}
-							class="w-full"
-						/>
-					{/if}
-				</div>
 			{/if}
+		</div>
 
-			<!-- Daily Breakdown Table -->
-			<Card>
-				<CardHeader>
-					<CardTitle>Daily Breakdown</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead class="p-0">
-									<button
-										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
-										onclick={() => sortDailyData('date')}
-									>
-										Date
-										{#if sortColumn === 'date'}
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="h-4 w-4 inline-block ml-1"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												{#if sortDirection === 'asc'}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M7 11l5-5m0 0l5 5m-5-5v12"
-													/>
-												{:else}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M17 13l-5 5m0 0l-5-5m5 5V6"
-													/>
-												{/if}
-											</svg>
-										{/if}
-									</button>
-								</TableHead>
-								<TableHead class="p-0">
-									<button
-										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
-										onclick={() => sortDailyData('total_sales')}
-									>
-										Total Sales
-										{#if sortColumn === 'total_sales'}
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="h-4 w-4 inline-block ml-1"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												{#if sortDirection === 'asc'}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M7 11l5-5m0 0l5 5m-5-5v12"
-													/>
-												{:else}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M17 13l-5 5m0 0l-5-5m5 5V6"
-													/>
-												{/if}
-											</svg>
-										{/if}
-									</button>
-								</TableHead>
-								<TableHead class="p-0">
-									<button
-										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
-										onclick={() => sortDailyData('amazon_sales')}
-									>
-										Amazon Sales
-										{#if sortColumn === 'amazon_sales'}
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="h-4 w-4 inline-block ml-1"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												{#if sortDirection === 'asc'}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M7 11l5-5m0 0l5 5m-5-5v12"
-													/>
-												{:else}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M17 13l-5 5m0 0l-5-5m5 5V6"
-													/>
-												{/if}
-											</svg>
-										{/if}
-									</button>
-								</TableHead>
-								<TableHead class="p-0">
-									<button
-										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
-										onclick={() => sortDailyData('ebay_sales')}
-									>
-										eBay Sales
-										{#if sortColumn === 'ebay_sales'}
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="h-4 w-4 inline-block ml-1"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												{#if sortDirection === 'asc'}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M7 11l5-5m0 0l5 5m-5-5v12"
-													/>
-												{:else}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M17 13l-5 5m0 0l-5-5m5 5V6"
-													/>
-												{/if}
-											</svg>
-										{/if}
-									</button>
-								</TableHead>
-								<TableHead class="p-0">
-									<button
-										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
-										onclick={() => sortDailyData('shopify_sales')}
-									>
-										Shopify Sales
-										{#if sortColumn === 'shopify_sales'}
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="h-4 w-4 inline-block ml-1"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												{#if sortDirection === 'asc'}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M7 11l5-5m0 0l5 5m-5-5v12"
-													/>
-												{:else}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M17 13l-5 5m0 0l-5-5m5 5V6"
-													/>
-												{/if}
-											</svg>
-										{/if}
-									</button>
-								</TableHead>
-								<TableHead class="p-0">
-									<button
-										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
-										onclick={() => sortDailyData('linnworks_total_orders')}
-									>
-										Total Orders
-										{#if sortColumn === 'linnworks_total_orders'}
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="h-4 w-4 inline-block ml-1"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												{#if sortDirection === 'asc'}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M7 11l5-5m0 0l5 5m-5-5v12"
-													/>
-												{:else}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M17 13l-5 5m0 0l-5-5m5 5V6"
-													/>
-												{/if}
-											</svg>
-										{/if}
-									</button>
-								</TableHead>
-								<TableHead class="p-0">
-									<button
-										class="flex items-center w-full p-3 cursor-pointer hover:bg-muted/50 transition-colors border-none bg-transparent text-left"
-										onclick={() => sortDailyData('labor_efficiency')}
-									>
-										Labor Efficiency
-										{#if sortColumn === 'labor_efficiency'}
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="h-4 w-4 inline-block ml-1"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												{#if sortDirection === 'asc'}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M7 11l5-5m0 0l5 5m-5-5v12"
-													/>
-												{:else}
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M17 13l-5 5m0 0l-5-5m5 5V6"
-													/>
-												{/if}
-											</svg>
-										{/if}
-									</button>
-								</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{#if dailyData.length > 0}
-								{#each dailyData as day}
-									<TableRow>
-										<TableCell>{formatDate(day.date)}</TableCell>
-										<TableCell>{formatCurrency(day.total_sales || 0)}</TableCell>
-										<TableCell>{formatCurrency(day.amazon_sales || 0)}</TableCell>
-										<TableCell>{formatCurrency(day.ebay_sales || 0)}</TableCell>
-										<TableCell>{formatCurrency(day.shopify_sales || 0)}</TableCell>
-										<TableCell>{formatNumber(day.linnworks_total_orders || 0)}</TableCell>
-										<TableCell>{(day.labor_efficiency || 0).toFixed(1)}</TableCell>
-									</TableRow>
-								{/each}
-							{:else}
-								<TableRow>
-									<TableCell colspan="7" class="text-center text-muted-foreground py-8">
-										No daily data available for this month
-									</TableCell>
-								</TableRow>
-							{/if}
-						</TableBody>
-					</Table>
-				</CardContent>
-			</Card>
+		<!-- Toast Notification -->
+		{#if toastVisible}
+			<div
+				class="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-2 duration-300"
+				class:bg-green-50={toastType === 'success'}
+				class:border-green-200={toastType === 'success'}
+				class:text-green-800={toastType === 'success'}
+				class:bg-red-50={toastType === 'error'}
+				class:border-red-200={toastType === 'error'}
+				class:text-red-800={toastType === 'error'}
+			>
+				<div class="flex items-center gap-3 p-4 border rounded-lg shadow-lg bg-card">
+					{#if toastType === 'success'}
+						<svg
+							class="h-5 w-5 text-green-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M5 13l4 4L19 7"
+							/>
+						</svg>
+					{:else}
+						<svg class="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
+						</svg>
+					{/if}
+					<span class="text-sm font-medium">{toastMessage}</span>
+					<button
+						onclick={() => (toastVisible = false)}
+						class="ml-2 text-gray-400 hover:text-gray-600"
+						aria-label="Close notification"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
+						</svg>
+					</button>
+				</div>
+			</div>
 		{/if}
 	</div>
+{:else}
+	<!-- When session is null, onMount should have redirected already -->
+	<div class="loading-container">
+		<p>Redirecting to login...</p>
+	</div>
+{/if}
 
-	<!-- Toast Notification -->
-	{#if toastVisible}
-		<div
-			class="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-2 duration-300"
-			class:bg-green-50={toastType === 'success'}
-			class:border-green-200={toastType === 'success'}
-			class:text-green-800={toastType === 'success'}
-			class:bg-red-50={toastType === 'error'}
-			class:border-red-200={toastType === 'error'}
-			class:text-red-800={toastType === 'error'}
-		>
-			<div class="flex items-center gap-3 p-4 border rounded-lg shadow-lg bg-card">
-				{#if toastType === 'success'}
-					<svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M5 13l4 4L19 7"
-						/>
-					</svg>
-				{:else}
-					<svg class="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M6 18L18 6M6 6l12 12"
-						/>
-					</svg>
-				{/if}
-				<span class="text-sm font-medium">{toastMessage}</span>
-				<button
-					onclick={() => (toastVisible = false)}
-					class="ml-2 text-gray-400 hover:text-gray-600"
-					aria-label="Close notification"
-				>
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M6 18L18 6M6 6l12 12"
-						/>
-					</svg>
-				</button>
-			</div>
-		</div>
-	{/if}
-</div>
+<style>
+	.loading-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 100vh;
+		color: #1d1d1f;
+	}
+
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid rgba(0, 122, 255, 0.1);
+		border-radius: 50%;
+		border-top-color: #007aff;
+		animation: spin 1s ease-in-out infinite;
+		margin-bottom: 16px;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+</style>

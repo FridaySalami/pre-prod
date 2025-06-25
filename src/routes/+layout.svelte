@@ -54,29 +54,25 @@
 	});
 
 	const unsubscribe = userSession.subscribe((s) => {
-		console.log('Session subscription triggered with:', s);
+		console.log('🟢 Layout session subscription triggered with:', s);
 
-		// If we're in the process of logging out, always treat the session as null
-		if (loggingOut) {
-			session = null;
-			console.log('In logout process, treating session as null');
-		} else {
-			session = s;
-			console.log(
-				'Layout session updated:',
-				session ? 'session exists' : 'no session or undefined'
-			);
-		}
+		// Update the session state
+		session = s;
+		console.log(
+			'🟢 Layout session updated:',
+			session ? 'session exists' : session === null ? 'no session' : 'undefined'
+		);
 
-		// Redirect to login if session is null and we're not already logging out
+		// Only redirect to login if we have a definitive null session (logged out)
+		// and we're not in the process of logging out and not already on login page
 		if (
 			browser &&
 			session === null &&
 			!loggingOut &&
 			!window.location.pathname.includes('/login')
 		) {
-			console.log('Session is null, redirecting to login page');
-			window.location.replace('/login'); // Use replace to prevent history issues
+			console.log('🟢 Session is null, redirecting to login page');
+			window.location.href = '/login';
 		}
 	});
 
@@ -85,82 +81,39 @@
 	});
 
 	async function handleLogout(event: MouseEvent) {
-		console.log('Logout function triggered');
+		console.log('🟢 Layout logout function triggered');
 		if (event && event.preventDefault) {
 			event.preventDefault();
 		}
 
 		loggingOut = true;
-		console.log('loggingOut state set to true');
+		console.log('🟢 loggingOut state set to true');
 
 		try {
-			// Create a flag to check if any auth operations succeeded
-			let authCleared = false;
-
-			// 1. Try the Supabase signOut method first
-			console.log('Attempting to sign out with Supabase...');
-			try {
-				const { error } = await supabase.auth.signOut({
-					scope: 'global' // This will invalidate all sessions for this user
-				});
-
-				if (!error) {
-					console.log('Successfully signed out from Supabase');
-					authCleared = true;
-				} else {
-					console.log('Error during Supabase signout:', error);
-				}
-			} catch (err) {
-				console.log('Exception during Supabase signout:', err);
-			}
-
-			// 2. Clear all localStorage items related to Supabase
-			console.log('Clearing localStorage items...');
-			for (const key in localStorage) {
-				if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
+			// Clear localStorage items related to Supabase first
+			console.log('🟢 Clearing localStorage items...');
+			if (browser) {
+				Object.keys(localStorage).forEach((key) => {
 					if (key.includes('supabase') || key.includes('sb-')) {
-						console.log(`Removing localStorage item: ${key}`);
+						console.log(`🟢 Removing localStorage item: ${key}`);
 						localStorage.removeItem(key);
-						authCleared = true;
 					}
-				}
+				});
 			}
 
-			// 3. Clear all cookies
-			console.log('Clearing cookies...');
-			document.cookie.split(';').forEach(function (c) {
-				document.cookie = c
-					.replace(/^ +/, '')
-					.replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
-			});
+			// Sign out from Supabase - this should automatically update the session store
+			console.log('🟢 Calling Supabase signOut...');
+			await supabase.auth.signOut();
+			console.log('🟢 Supabase signOut completed');
 
-			// 4. Explicitly set the session store to null
-			userSession.set(null);
-			console.log('userSession store set to null');
-
-			// 5. Try to refresh the Supabase client to clear its internal state
-			try {
-				// @ts-ignore - Using internal API to refresh client state
-				if (supabase.auth.refreshSession) {
-					await supabase.auth.refreshSession();
-					console.log('Refreshed Supabase session');
-				}
-			} catch (err) {
-				console.log('Error refreshing session, continuing:', err);
-			}
-
-			// 6. Force a full page reload with a brief delay to allow for async operations to complete
-			console.log('Setting timeout for reload...');
-			setTimeout(() => {
-				// Use window.location.replace instead of href to prevent caching issues
-				console.log('Performing full page reload...');
-
-				// Force browser to not use cache
-				window.location.replace('/login?t=' + new Date().getTime());
-			}, 1000);
+			// Navigate to login page
+			console.log('🟢 Redirecting to login...');
+			window.location.href = '/login';
 		} catch (err) {
-			console.error('Unexpected error during logout:', err);
+			console.error('🟢 Unexpected error during logout:', err);
+			// Ensure we always redirect even if there's an error
 			loggingOut = false;
+			window.location.href = '/login';
 		}
 	}
 
