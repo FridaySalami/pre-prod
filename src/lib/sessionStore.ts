@@ -18,28 +18,30 @@ export const userSession: Writable<SessionType> = writable(initialValue);
 if (browser) {
   // Set up auth state listener
   supabase.auth.onAuthStateChange((event, session) => {
-    console.log("Auth state changed:", event, session ? "session exists" : "no session");
+    console.log("🟡 Auth state changed:", event, session ? "session exists" : "no session");
+
+    // Always update the session store based on Supabase auth state
     userSession.set(session);
   });
-  
+
   // Initial session fetch
   initializeSession();
 }
 
 async function initializeSession() {
   try {
-    console.log("Initializing session...");
+    console.log("🟡 Initializing session...");
     const { data, error } = await supabase.auth.getSession();
     if (error) {
-      console.error("Error getting session:", error);
+      console.error("🟡 Error getting session:", error);
       userSession.set(null);
       return;
     }
-    
+
+    console.log("🟡 Session initialized:", data.session ? "session exists" : "no session");
     userSession.set(data.session);
-    console.log("Session initialized:", data.session ? "session exists" : "no session");
   } catch (err) {
-    console.error("Error initializing session:", err);
+    console.error("🟡 Error initializing session:", err);
     userSession.set(null);
   }
 }
