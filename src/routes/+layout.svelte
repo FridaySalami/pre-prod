@@ -20,14 +20,14 @@
 	});
 
 	// Initialize session as undefined
-	let session: any = undefined;
-	let loggingOut = false;
-	let commandMenuOpen = false;
+	let session = $state<Session | null | undefined>(undefined);
+	let loggingOut = $state(false);
+	let commandMenuOpen = $state(false);
 
 	// Toast notification system
-	let toastVisible = false;
-	let toastMessage = '';
-	let toastType = 'info'; // Can be: info, success, warning, error
+	let toastVisible = $state(false);
+	let toastMessage = $state('');
+	let toastType = $state('info'); // Can be: info, success, warning, error
 	let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Function to show toast
@@ -142,7 +142,7 @@
 		}
 	}
 
-	let showPasswordBanner: boolean = false;
+	let showPasswordBanner = $state(false);
 
 	// Create a separate async function for checking password status
 	async function checkUserPasswordStatus() {
@@ -214,13 +214,15 @@
 	}
 
 	// Make sure this reactive statement is typed properly
-	$: if (browser) {
-		if (showPasswordBanner === true) {
-			document.body.style.paddingTop = '33px';
-		} else {
-			document.body.style.paddingTop = '0';
+	$effect(() => {
+		if (browser) {
+			if (showPasswordBanner === true) {
+				document.body.style.paddingTop = '33px';
+			} else {
+				document.body.style.paddingTop = '0';
+			}
 		}
-	}
+	});
 </script>
 
 <svelte:head>
