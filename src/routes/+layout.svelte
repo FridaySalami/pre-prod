@@ -12,6 +12,15 @@
 	import CommandMenu from '$lib/CommandMenu.svelte';
 	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
 	import AppSidebar from '$lib/AppSidebar.svelte';
+	import type { Snippet } from 'svelte';
+
+	interface Props {
+		children: Snippet;
+	}
+
+	// Get children prop for Svelte 5 layout
+	let { children }: Props = $props();
+
 	let currentPath = '';
 
 	// Subscribe to the page store to get the current path
@@ -226,7 +235,12 @@
 </script>
 
 <svelte:head>
-	<link href="https://fonts.googleapis.com/css2?family=Material+Icons+Outlined" rel="stylesheet" />
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Material+Icons+Outlined&display=swap"
+		rel="stylesheet"
+	/>
 	<script
 		defer
 		src="https://cloud.umami.is/script.js"
@@ -273,7 +287,7 @@
 						</div>
 					</div>
 				{/if}
-				<slot />
+				{@render children()}
 			</div>
 
 			<footer class="site-footer">
