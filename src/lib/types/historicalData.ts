@@ -1,5 +1,6 @@
 // Historical data types for enhanced analytics
 import type { SignificanceResult } from '../services/significanceAnalyzer';
+import type { SmartPrediction } from '../services/smartPredictionService';
 
 export interface HistoricalMetricPoint {
   date: string;
@@ -64,19 +65,23 @@ export interface WeeklyDataResponse {
   metric: string;
   data: WeeklyMetricPoint[];
   yearOverYearData?: WeeklyMetricPoint[]; // Previous year data for overlay
+  smartPredictions?: SmartPrediction; // AI-generated future predictions
   trend: {
     direction: 'up' | 'down' | 'stable';
     percentage: number;
     isSignificant: boolean;
-    significanceDetails?: SignificanceResult; // Now properly typed
+    significanceDetails?: SignificanceResult;
     trendStrength?: number;    // How strong the trend is (0-1)
     r2?: number;              // R-squared value for trend line fit (0-1)
   };
   statistics: {
     average: number;
+    median: number;
     min: number;
     max: number;
-    latest: number;
+    standardDeviation: number;
+    variance: number;
+    currentWeek: number;
     previousWeek: number;
     weeklyGrowthRate: number;    // Last week vs previous week
     monthlyGrowthRate: number;   // Latest vs 4 weeks ago

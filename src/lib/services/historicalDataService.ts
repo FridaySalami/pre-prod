@@ -8,6 +8,8 @@ import type {
   WeeklyMetricPoint
 } from '../types/historicalData';
 import { SignificanceAnalyzer } from './significanceAnalyzer';
+import { SmartPredictionService } from './smartPredictionService';
+import { SeasonalTrendService } from './seasonalTrendService';
 
 /**
  * Service for fetching historical metric data for specific weekdays
@@ -92,7 +94,7 @@ export class HistoricalDataService {
 
       // Calculate statistics and trend
       const values = historicalPoints.map(p => p.value);
-      const statistics = this.calculateWeeklyStatistics(values);
+      const statistics = this.calculateHistoricalStatistics(values);
       const trend = this.calculateTrend(values, metric);
 
       return {
@@ -184,10 +186,51 @@ export class HistoricalDataService {
       const statistics = this.calculateWeeklyStatistics(values);
       const trend = this.calculateTrend(values, metric);
 
-      const response = {
+      // Generate smart predictions if we have sufficient data
+      let smartPredictions = undefined;
+      if (currentYearWeeks.length >= 8) { // Need minimum 8 weeks for predictions
+        try {
+          // Generate seasonal analysis for predictions
+          const seasonalAnalysis = SeasonalTrendService.analyzeEnhancedSeasonalTrend(
+            values,
+            currentYearWeeks.map(w => ({
+              weekNumber: w.weekNumber,
+              year: w.year,
+              value: w.value
+            }))
+          );
+
+          smartPredictions = SmartPredictionService.generatePredictions(
+            currentYearWeeks,
+            previousYearWeeks.length > 0 ? previousYearWeeks : [],
+            {
+              direction: trend.direction,
+              percentage: trend.percentage,
+              r2: trend.r2 || 0,
+              slope: 0 // Calculate if needed
+            },
+            {
+              seasonalityDetected: seasonalAnalysis?.detectedCycles?.length > 0 || false,
+              seasonalStrength: seasonalAnalysis?.confidence || 0,
+              cyclePeriod: seasonalAnalysis?.primaryCycle?.period,
+              primaryCycle: seasonalAnalysis?.primaryCycle ? {
+                period: seasonalAnalysis.primaryCycle.period,
+                strength: seasonalAnalysis.primaryCycle.strength,
+                confidence: seasonalAnalysis.primaryCycle.confidence
+              } : undefined
+            },
+            4 // Generate 4 weeks of predictions
+          );
+        } catch (error) {
+          console.warn('Failed to generate smart predictions:', error);
+        }
+      }
+
+      const response: WeeklyDataResponse = {
         metric,
         data: currentYearWeeks, // Main chart shows only current year
         yearOverYearData: previousYearWeeks.length > 0 ? previousYearWeeks : undefined, // Overlay data
+        smartPredictions, // Include AI predictions
         trend,
         statistics
       };
@@ -355,9 +398,9 @@ export class HistoricalDataService {
   }
 
   /**
-   * Calculate weekly statistics with more meaningful growth metrics
+   * Calculate historical statistics for weekday data (legacy format)
    */
-  private static calculateWeeklyStatistics(values: number[]) {
+  private static calculateHistoricalStatistics(values: number[]) {
     if (values.length === 0) {
       return {
         average: 0,
@@ -432,6 +475,108 @@ export class HistoricalDataService {
       min,
       max,
       latest,
+      previousWeek,
+      weeklyGrowthRate,
+      monthlyGrowthRate,
+      averageGrowthRate,
+      consistencyScore
+    };
+  }
+
+  /**
+   * Calculate weekly statistics with more meaningful growth metrics
+   */
+  private static calculateWeeklyStatistics(values: number[]) {
+    if (values.length === 0) {
+      return {
+        average: 0,
+        median: 0,
+        min: 0,
+        max: 0,
+        standardDeviation: 0,
+        variance: 0,
+        currentWeek: 0,
+        previousWeek: 0,
+        weeklyGrowthRate: 0,
+        monthlyGrowthRate: 0,
+        averageGrowthRate: 0,
+        consistencyScore: 0
+      };
+    }
+
+    const sum = values.reduce((a, b) => a + b, 0);
+    const average = sum / values.length;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const currentWeek = values[values.length - 1] || 0;
+    const previousWeek = values[values.length - 2] || 0;
+
+    // Calculate median
+    const sortedValues = [...values].sort((a, b) => a - b);
+    const median = sortedValues.length % 2 === 0
+      ? (sortedValues[sortedValues.length / 2 - 1] + sortedValues[sortedValues.length / 2]) / 2
+      : sortedValues[Math.floor(sortedValues.length / 2)];
+
+    // Calculate variance and standard deviation
+    const variance = values.reduce((sum, value) => sum + Math.pow(value - average, 2), 0) / values.length;
+    const standardDeviation = Math.sqrt(variance);
+
+    // 1. Week-over-week growth rate (immediate change)
+    let weeklyGrowthRate = 0;
+    if (values.length >= 2 && previousWeek > 0) {
+      weeklyGrowthRate = ((currentWeek - previousWeek) / previousWeek) * 100;
+    }
+
+    // 2. Monthly growth rate (4 weeks ago vs latest)
+    let monthlyGrowthRate = 0;
+    if (values.length >= 4) {
+      const fourWeeksAgo = values[values.length - 4];
+      if (fourWeeksAgo > 0) {
+        monthlyGrowthRate = ((currentWeek - fourWeeksAgo) / fourWeeksAgo) * 100;
+      }
+    }
+
+    // 3. Average growth rate (trend slope over all periods)
+    let averageGrowthRate = 0;
+    if (values.length >= 3) {
+      const growthRates: number[] = [];
+      for (let i = 1; i < values.length; i++) {
+        if (values[i - 1] > 0) {
+          const rate = ((values[i] - values[i - 1]) / values[i - 1]) * 100;
+          growthRates.push(rate);
+        }
+      }
+      if (growthRates.length > 0) {
+        averageGrowthRate = growthRates.reduce((sum, rate) => sum + rate, 0) / growthRates.length;
+      }
+    }
+
+    // 4. Consistency score (how consistent is the trend direction)
+    let consistencyScore = 0;
+    if (values.length >= 3) {
+      let positiveChanges = 0;
+      let negativeChanges = 0;
+
+      for (let i = 1; i < values.length; i++) {
+        const change = values[i] - values[i - 1];
+        if (change > 0) positiveChanges++;
+        else if (change < 0) negativeChanges++;
+      }
+
+      const totalChanges = positiveChanges + negativeChanges;
+      if (totalChanges > 0) {
+        consistencyScore = Math.max(positiveChanges, negativeChanges) / totalChanges;
+      }
+    }
+
+    return {
+      average,
+      median,
+      min,
+      max,
+      standardDeviation,
+      variance,
+      currentWeek,
       previousWeek,
       weeklyGrowthRate,
       monthlyGrowthRate,
@@ -571,9 +716,12 @@ export class HistoricalDataService {
       },
       statistics: {
         average: 0,
+        median: 0,
         min: 0,
         max: 0,
-        latest: 0,
+        standardDeviation: 0,
+        variance: 0,
+        currentWeek: 0,
         previousWeek: 0,
         weeklyGrowthRate: 0,
         monthlyGrowthRate: 0,

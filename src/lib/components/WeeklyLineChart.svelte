@@ -39,6 +39,7 @@
 
 	// Year-over-year overlay state
 	let showYearOverYearOverlay = $state(false);
+	let showSmartPredictions = $state(false);
 
 	// Check if we have sufficient data for significance analysis (13 weeks to get 12 complete)
 	const hasSufficientDataForSignificance = $derived(() => {
@@ -446,6 +447,36 @@
 		return currentYearData;
 	});
 
+	// Smart prediction data processing
+	const smartPredictionData = $derived(() => {
+		if (!showSmartPredictions || !weeklyData?.smartPredictions?.weeks) return [];
+		return weeklyData.smartPredictions.weeks;
+	});
+
+	// Combined data for rendering when predictions are shown
+	const extendedChartDataWithPredictions = $derived(() => {
+		if (!showSmartPredictions) return chartData();
+
+		const baseData = chartData();
+		const predictions = smartPredictionData();
+
+		// Combine actual data with predictions
+		return [
+			...baseData,
+			...predictions.map((pred) => ({
+				weekStartDate: pred.weekStartDate,
+				weekEndDate: pred.weekEndDate,
+				weekNumber: pred.weekNumber,
+				year: pred.year,
+				value: pred.predictedValue,
+				isCurrentWeek: false,
+				dailyAverage: pred.predictedValue / 7,
+				workingDays: 5,
+				isPrediction: true,
+				confidence: pred.confidence
+			}))
+		];
+	});
 	// Enhanced seasonal trend analysis
 	const enhancedSeasonalAnalysis = $derived(() => {
 		const data = chartData();
@@ -514,13 +545,22 @@
 	}
 
 	const yDomain = $derived(() => {
-		const data = showYearOverYearOverlay ? extendedChartData() : chartData();
+		let data;
+
+		// Determine which data to use based on active overlays
+		if (showSmartPredictions) {
+			data = extendedChartDataWithPredictions();
+		} else if (showYearOverYearOverlay) {
+			data = extendedChartData();
+		} else {
+			data = chartData();
+		}
 
 		if (data.length === 0) return [0, 100];
 
 		const allValues: number[] = [];
 
-		// Add current year values
+		// Add current year values and predictions
 		data.forEach((d) => {
 			// Handle both regular data points and forecast points
 			if ('value' in d && d.value !== null && d.value !== undefined) {
@@ -551,7 +591,17 @@
 	});
 
 	const xScale = $derived(() => {
-		const data = showYearOverYearOverlay ? extendedChartData() : chartData();
+		let data;
+
+		// Use the same data selection logic as yDomain
+		if (showSmartPredictions) {
+			data = extendedChartDataWithPredictions();
+		} else if (showYearOverYearOverlay) {
+			data = extendedChartData();
+		} else {
+			data = chartData();
+		}
+
 		if (data.length === 0) return () => 0;
 		return (index: number) => (index / (data.length - 1)) * plotWidth;
 	});
@@ -570,6 +620,34 @@
 			const x = padding.left + xScale()(index);
 			const y = padding.top + yScale()(point.value);
 			return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+		});
+
+		return pathParts.join(' ');
+	});
+
+	// Generate smart prediction line path
+	const smartPredictionLinePath = $derived(() => {
+		if (!showSmartPredictions || !smartPredictionData() || smartPredictionData().length === 0)
+			return '';
+
+		const actualData = chartData();
+		const predictionData = smartPredictionData();
+
+		const pathParts: string[] = [];
+
+		// Start from the last actual data point
+		if (actualData.length > 0) {
+			const lastActualIndex = actualData.length - 1;
+			const x = padding.left + xScale()(lastActualIndex);
+			const y = padding.top + yScale()(actualData[lastActualIndex].value);
+			pathParts.push(`M ${x} ${y}`);
+		}
+
+		// Draw line through prediction points
+		predictionData.forEach((point, index) => {
+			const x = padding.left + xScale()(actualData.length + index);
+			const y = padding.top + yScale()(point.predictedValue);
+			pathParts.push(`L ${x} ${y}`);
 		});
 
 		return pathParts.join(' ');
@@ -781,6 +859,29 @@
 				value: data.previousYearValue,
 				isReference: true,
 				isYearOverYear: true
+			}
+		};
+	}
+
+	function handlePredictionPointHover(event: PointerEvent, index: number, prediction: any) {
+		const svg = (event.currentTarget as Element).closest('svg');
+		if (svg) {
+			const rect = svg.getBoundingClientRect();
+			mousePosition = {
+				x: event.clientX - rect.left,
+				y: event.clientY - rect.top
+			};
+		}
+		hoveredPoint = {
+			index,
+			data: {
+				...prediction,
+				value: prediction.predictedValue,
+				isPrediction: true,
+				weekStartDate: prediction.weekStartDate,
+				weekEndDate: prediction.weekEndDate,
+				weekNumber: prediction.weekNumber,
+				year: prediction.year
 			}
 		};
 	}
@@ -1049,6 +1150,37 @@
 						</svg>
 						YoY Overlay {hasMultiYearData() ? '✓' : ''}
 					</Button>
+
+					<!-- Smart Predictions Toggle -->
+					<Button
+						variant={showSmartPredictions ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							showSmartPredictions = !showSmartPredictions;
+							console.log('Smart Predictions toggled:', {
+								enabled: !showSmartPredictions,
+								hasSmartPredictions: !!weeklyData?.smartPredictions,
+								hasWeeks: !!weeklyData?.smartPredictions?.weeks,
+								weeksLength: weeklyData?.smartPredictions?.weeks?.length || 0,
+								smartPredictions: weeklyData?.smartPredictions,
+								methodology: weeklyData?.smartPredictions?.methodology,
+								currentDataLength: weeklyData?.data?.length || 0
+							});
+						}}
+						class="flex items-center gap-2"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+							/>
+						</svg>
+						Smart Forecast {weeklyData?.smartPredictions?.weeks?.length
+							? `(${weeklyData.smartPredictions.weeks.length})`
+							: '(No Data)'}
+					</Button>
 				{/if}
 				{#if weeklyData && !loading}
 					<Button
@@ -1101,7 +1233,7 @@
 				<div class="bg-muted/50 rounded-lg p-3">
 					<div class="text-xs text-muted-foreground">Latest Week</div>
 					<div class="text-lg font-semibold">
-						{formatValue(weeklyData.statistics.latest, weeklyData.metric)}
+						{formatValue(weeklyData.statistics.currentWeek, weeklyData.metric)}
 					</div>
 				</div>
 				<div class="bg-muted/50 rounded-lg p-3">
@@ -1265,7 +1397,7 @@
 						<EnhancedSignificanceDisplay
 							result={enhancedTrendResult()}
 							metricName={getMetricDisplayName(weeklyData.metric)}
-							metricValue={weeklyData.statistics.latest}
+							metricValue={weeklyData.statistics.currentWeek}
 							compact={false}
 							showTechnicalDetails={true}
 							rawData={chartData().map((point) => ({
@@ -1530,6 +1662,19 @@
 						stroke-linejoin="round"
 					/>
 
+					<!-- Smart Prediction Line -->
+					{#if showSmartPredictions && smartPredictionLinePath()}
+						<path
+							d={smartPredictionLinePath()}
+							fill="none"
+							stroke="#f59e0b"
+							stroke-width="2.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							opacity="0.8"
+						/>
+					{/if}
+
 					<!-- Year-over-Year Overlay Line -->
 					{#if showYearOverYearOverlay && previousYearLinePath()}
 						<defs>
@@ -1568,6 +1713,36 @@
 							onpointerenter={(e) => handlePointHover(e, index, point)}
 						/>
 					{/each}
+
+					<!-- Smart Prediction Data Points -->
+					{#if showSmartPredictions && smartPredictionData()}
+						{#each smartPredictionData() as prediction, index}
+							{@const x = padding.left + xScale()(chartData().length + index)}
+							{@const y = padding.top + yScale()(prediction.predictedValue)}
+							<circle
+								cx={x}
+								cy={y}
+								r="4"
+								fill="#f59e0b"
+								stroke="#ffffff"
+								stroke-width="2"
+								opacity={prediction.confidence}
+								class="cursor-pointer hover:r-6 transition-all"
+								onpointerenter={(e) => handlePredictionPointHover(e, index, prediction)}
+							/>
+							<!-- Confidence indicator -->
+							<circle
+								cx={x}
+								cy={y}
+								r="8"
+								fill="none"
+								stroke="#f59e0b"
+								stroke-width="1"
+								stroke-dasharray="2,2"
+								opacity={prediction.confidence * 0.5}
+							/>
+						{/each}
+					{/if}
 
 					<!-- Year-over-Year Data Points -->
 					{#if showYearOverYearOverlay && yearOverYearData()}
@@ -1823,22 +1998,40 @@
 				{/if}
 			</div>
 
-			<!-- Year-over-Year Overlay Legend -->
-			{#if showYearOverYearOverlay && yearOverYearData()}
+			<!-- Chart Legend -->
+			{#if showYearOverYearOverlay || showSmartPredictions}
 				<div class="mt-3 flex flex-wrap items-center gap-4 text-sm">
+					<!-- Always show current year -->
 					<div class="flex items-center gap-2">
 						<div class="w-4 h-0.5 bg-green-500"></div>
 						<span class="text-muted-foreground">Current Year ({new Date().getFullYear()})</span>
 					</div>
-					<div class="flex items-center gap-2">
-						<div class="w-4 h-0.5 bg-violet-500 border-dashed border-t-2 border-violet-500"></div>
-						<span class="text-muted-foreground">Previous Year ({new Date().getFullYear() - 1})</span
-						>
-					</div>
-					<div class="flex items-center gap-2">
-						<div class="w-3 h-3 rounded-full bg-violet-400 opacity-70"></div>
-						<span class="text-muted-foreground">Previous Year Reference</span>
-					</div>
+
+					<!-- Year-over-year legend items -->
+					{#if showYearOverYearOverlay && yearOverYearData()}
+						<div class="flex items-center gap-2">
+							<div class="w-4 h-0.5 bg-violet-500 border-dashed border-t-2 border-violet-500"></div>
+							<span class="text-muted-foreground"
+								>Previous Year ({new Date().getFullYear() - 1})</span
+							>
+						</div>
+						<div class="flex items-center gap-2">
+							<div class="w-3 h-3 rounded-full bg-violet-400 opacity-70"></div>
+							<span class="text-muted-foreground">Previous Year Reference</span>
+						</div>
+					{/if}
+
+					<!-- Smart prediction legend items -->
+					{#if showSmartPredictions && smartPredictionData()?.length > 0}
+						<div class="flex items-center gap-2">
+							<div class="w-4 h-0.5 bg-amber-500"></div>
+							<span class="text-muted-foreground">Smart Forecast</span>
+						</div>
+						<div class="flex items-center gap-2">
+							<div class="w-3 h-3 rounded-full bg-amber-500 opacity-75"></div>
+							<span class="text-muted-foreground">Predicted Values</span>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		{/if}
