@@ -63,6 +63,7 @@ export interface HistoricalDataResponse {
 export interface WeeklyDataResponse {
   metric: string;
   data: WeeklyMetricPoint[];
+  yearOverYearData?: WeeklyMetricPoint[]; // Previous year data for overlay
   trend: {
     direction: 'up' | 'down' | 'stable';
     percentage: number;

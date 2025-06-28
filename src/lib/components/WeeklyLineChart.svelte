@@ -5,6 +5,7 @@
 	import SignificanceDisplay from './SignificanceDisplay.svelte';
 	import EnhancedSignificanceDisplay from './EnhancedSignificanceDisplay.svelte';
 	import { SeasonalTrendService } from '$lib/services/seasonalTrendService';
+	import type { EnhancedSeasonalAnalysis } from '$lib/services/seasonalTrendService';
 	import { PdfExportService } from '$lib/services/pdfExportService';
 	import type { WeeklyDataResponse } from '$lib/types/historicalData';
 	import type { SignificanceResult } from '$lib/services/significanceAnalyzer';
@@ -27,14 +28,17 @@
 	}: Props = $props();
 
 	// Chart dimensions and styling
-	const chartWidth = 900;
-	const chartHeight = 400;
-	const padding = { top: 20, right: 80, bottom: 80, left: 80 };
+	const chartWidth = 1400;
+	const chartHeight = 600;
+	const padding = { top: 40, right: 120, bottom: 120, left: 120 };
 	const plotWidth = chartWidth - padding.left - padding.right;
 	const plotHeight = chartHeight - padding.top - padding.bottom;
 
 	// Seasonal trend analysis state
 	let showSeasonalAnalysis = $state(true);
+
+	// Year-over-year overlay state
+	let showYearOverYearOverlay = $state(false);
 
 	// Check if we have sufficient data for significance analysis (13 weeks to get 12 complete)
 	const hasSufficientDataForSignificance = $derived(() => {
@@ -230,6 +234,37 @@
 			businessMeaning = 'This represents normal business variation within expected ranges.';
 		}
 
+		// Add seasonal context to business meaning
+		const seasonalAnalysisData = enhancedSeasonalAnalysis();
+		if (seasonalAnalysisData?.yearOverYear?.hasMultiYearData) {
+			const yoyDirection = seasonalAnalysisData.yearOverYear.yoyDirection;
+			const yoyGrowth = Math.abs(seasonalAnalysisData.yearOverYear.yoyGrowth);
+			if (yoyGrowth > 10) {
+				businessMeaning += ` Year-over-year, this represents a ${yoyDirection === 'up' ? 'strong improvement' : 'significant decline'} compared to the same period last year.`;
+			}
+		}
+
+		if (
+			seasonalAnalysisData?.seasonalContext &&
+			seasonalAnalysisData.seasonalContext !== 'normal'
+		) {
+			switch (seasonalAnalysisData.seasonalContext) {
+				case 'peak':
+					businessMeaning += ' Currently at seasonal peak performance levels.';
+					break;
+				case 'valley':
+					businessMeaning +=
+						' Performance is at seasonal low point, which is typical for this time period.';
+					break;
+				case 'rising':
+					businessMeaning += ' Trending toward seasonal peak period.';
+					break;
+				case 'falling':
+					businessMeaning += ' Declining toward seasonal low period.';
+					break;
+			}
+		}
+
 		// Generate recommendations
 		const recommendations = [];
 		if (significance === 'substantial') {
@@ -289,6 +324,12 @@
 			contextualFactors.push('Conversion Rates', 'Traffic Patterns', 'Fulfillment Capacity');
 		} else if (metricName.toLowerCase().includes('efficiency')) {
 			contextualFactors.push('Process Changes', 'Staff Training', 'System Updates');
+		}
+
+		// Add enhanced seasonal contextual factors
+		const enhancedAnalysis = enhancedSeasonalAnalysis();
+		if (enhancedAnalysis?.contextualFactors) {
+			contextualFactors.push(...enhancedAnalysis.contextualFactors);
 		}
 
 		// Recalculate trend consistency using actual chart data to ensure accuracy
@@ -397,27 +438,33 @@
 	const chartData = $derived(() => {
 		if (!weeklyData?.data || weeklyData.data.length === 0) return [];
 
-		// DEBUG: Log chart data using $state.snapshot to avoid proxy warning
-		console.log('📊 Chart Data Debug:');
-		console.log('- Raw weeklyData.data:', $state.snapshot(weeklyData.data));
-		console.log('- Processed chart data:');
-		$state.snapshot(weeklyData.data).forEach((d, i) => {
-			console.log(
-				`  ${i + 1}. Week ${d.weekNumber}, ${d.year}: ${d.value} (isCurrentWeek: ${d.isCurrentWeek})`
-			);
-		});
-		console.log('---');
+		// IMPORTANT: Only show current year data in main chart
+		// Year-over-year data should come from weeklyData.yearOverYearData for overlay
+		const currentYear = new Date().getFullYear();
+		const currentYearData = weeklyData.data.filter((d) => d.year === currentYear);
 
-		return weeklyData.data;
+		return currentYearData;
 	});
 
-	// Seasonal trend analysis
-	const seasonalAnalysis = $derived(() => {
+	// Enhanced seasonal trend analysis
+	const enhancedSeasonalAnalysis = $derived(() => {
 		const data = chartData();
 		if (data.length === 0) return null;
 
 		const values = data.map((d) => d.value);
-		return SeasonalTrendService.analyzeSeasonalTrend(values, 4); // 4-week cycle
+		const dataPoints = data.map((d) => ({
+			weekNumber: d.weekNumber,
+			year: d.year,
+			value: d.value
+		}));
+
+		return SeasonalTrendService.analyzeEnhancedSeasonalTrend(values, dataPoints);
+	});
+
+	// Keep original for backward compatibility
+	const seasonalAnalysis = $derived(() => {
+		const enhanced = enhancedSeasonalAnalysis();
+		return enhanced || null;
 	});
 
 	// Peak and valley detection for color coding
@@ -467,11 +514,36 @@
 	}
 
 	const yDomain = $derived(() => {
-		const data = chartData();
+		const data = showYearOverYearOverlay ? extendedChartData() : chartData();
 
 		if (data.length === 0) return [0, 100];
 
-		const allValues = data.map((d) => d.value);
+		const allValues: number[] = [];
+
+		// Add current year values
+		data.forEach((d) => {
+			// Handle both regular data points and forecast points
+			if ('value' in d && d.value !== null && d.value !== undefined) {
+				allValues.push(d.value);
+			} else if ('previousYearValue' in d && d.previousYearValue !== null) {
+				allValues.push(d.previousYearValue);
+			}
+		});
+
+		// Add previous year values if overlay is active
+		if (showYearOverYearOverlay && yearOverYearData()) {
+			yearOverYearData()!.overlayData.forEach((d) => {
+				allValues.push(d.previousYearValue);
+			});
+			yearOverYearData()!.upcomingWeeksReference.forEach((d) => {
+				if (d.previousYearValue !== null) {
+					allValues.push(d.previousYearValue);
+				}
+			});
+		}
+
+		if (allValues.length === 0) return [0, 100];
+
 		const min = Math.min(...allValues);
 		const max = Math.max(...allValues);
 		const padding = (max - min) * 0.1;
@@ -479,7 +551,7 @@
 	});
 
 	const xScale = $derived(() => {
-		const data = chartData();
+		const data = showYearOverYearOverlay ? extendedChartData() : chartData();
 		if (data.length === 0) return () => 0;
 		return (index: number) => (index / (data.length - 1)) * plotWidth;
 	});
@@ -498,6 +570,34 @@
 			const x = padding.left + xScale()(index);
 			const y = padding.top + yScale()(point.value);
 			return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+		});
+
+		return pathParts.join(' ');
+	});
+
+	// Generate previous year overlay line path
+	const previousYearLinePath = $derived(() => {
+		if (!showYearOverYearOverlay || !yearOverYearData()) return '';
+
+		const data = chartData();
+		const yoyData = yearOverYearData()!;
+
+		const pathParts: string[] = [];
+		let moveToSet = false;
+
+		// Draw line for overlay data (matching current weeks)
+		yoyData.overlayData.forEach((point, index) => {
+			const x = padding.left + xScale()(index);
+			const y = padding.top + yScale()(point.previousYearValue);
+			pathParts.push(`${!moveToSet ? 'M' : 'L'} ${x} ${y}`);
+			moveToSet = true;
+		});
+
+		// Continue line for upcoming weeks reference
+		yoyData.upcomingWeeksReference.forEach((point, index) => {
+			const x = padding.left + xScale()(data.length + index);
+			const y = padding.top + yScale()(point.previousYearValue);
+			pathParts.push(`L ${x} ${y}`);
 		});
 
 		return pathParts.join(' ');
@@ -645,6 +745,46 @@
 		hoveredPoint = { index, data };
 	}
 
+	function handleYoyPointHover(event: PointerEvent, index: number, data: any) {
+		const svg = (event.currentTarget as Element).closest('svg');
+		if (svg) {
+			const rect = svg.getBoundingClientRect();
+			mousePosition = {
+				x: event.clientX - rect.left,
+				y: event.clientY - rect.top
+			};
+		}
+		hoveredPoint = {
+			index,
+			data: {
+				...data,
+				value: data.previousYearValue,
+				isYearOverYear: true,
+				yearOverYearData: data
+			}
+		};
+	}
+
+	function handleReferencePointHover(event: PointerEvent, index: number, data: any) {
+		const svg = (event.currentTarget as Element).closest('svg');
+		if (svg) {
+			const rect = svg.getBoundingClientRect();
+			mousePosition = {
+				x: event.clientX - rect.left,
+				y: event.clientY - rect.top
+			};
+		}
+		hoveredPoint = {
+			index,
+			data: {
+				...data,
+				value: data.previousYearValue,
+				isReference: true,
+				isYearOverYear: true
+			}
+		};
+	}
+
 	function handleMouseLeave() {
 		hoveredPoint = null;
 	}
@@ -747,6 +887,125 @@
 
 		return ((last4WeeksTotal - previous4WeeksTotal) / previous4WeeksTotal) * 100;
 	});
+
+	// Year-over-year analysis for enhanced statistics
+	const yearOverYearGrowth = $derived(() => {
+		const enhanced = enhancedSeasonalAnalysis();
+		return enhanced?.yearOverYear?.yoyGrowth || null;
+	});
+
+	// Seasonal index for performance context
+	const seasonalIndex = $derived(() => {
+		const enhanced = enhancedSeasonalAnalysis();
+		return enhanced?.seasonalIndex || 1.0;
+	});
+
+	// Check if we have multi-year data
+	const hasMultiYearData = $derived(() => {
+		const enhanced = enhancedSeasonalAnalysis();
+		return enhanced?.yearOverYear?.hasMultiYearData || false;
+	});
+
+	// Primary detected cycle information
+	const primaryCycle = $derived(() => {
+		const enhanced = enhancedSeasonalAnalysis();
+		return enhanced?.primaryCycle || null;
+	});
+
+	// Peak distance information
+	const peakDistance = $derived(() => {
+		const enhanced = enhancedSeasonalAnalysis();
+		return enhanced?.peakDistance || 0;
+	});
+
+	// Year-over-year overlay data
+	const yearOverYearData = $derived(() => {
+		// Use the year-over-year data provided by the service
+		if (!showYearOverYearOverlay || !weeklyData?.yearOverYearData) {
+			return null;
+		}
+
+		const currentData = chartData();
+		const previousYearData = weeklyData.yearOverYearData;
+
+		// Create overlay data by matching week numbers
+		const overlayData = [];
+
+		for (const currentPoint of currentData) {
+			const matchingPreviousPoint = previousYearData.find(
+				(d) => d.weekNumber === currentPoint.weekNumber
+			);
+
+			if (matchingPreviousPoint) {
+				overlayData.push({
+					weekNumber: currentPoint.weekNumber,
+					year: currentPoint.year,
+					currentValue: currentPoint.value,
+					previousYearValue: matchingPreviousPoint.value,
+					weekStartDate: currentPoint.weekStartDate,
+					weekEndDate: currentPoint.weekEndDate,
+					dailyAverage: matchingPreviousPoint.dailyAverage,
+					workingDays: matchingPreviousPoint.workingDays
+				});
+			}
+		}
+
+		// Add actual previous year data for the next 4 weeks as reference
+		const lastCurrentPoint = currentData[currentData.length - 1];
+		const upcomingWeeksReference = [];
+
+		if (lastCurrentPoint) {
+			for (let i = 1; i <= 4; i++) {
+				const futureWeekNumber = lastCurrentPoint.weekNumber + i;
+				const futureYear =
+					futureWeekNumber > 52 ? lastCurrentPoint.year + 1 : lastCurrentPoint.year;
+				const adjustedWeekNumber = futureWeekNumber > 52 ? futureWeekNumber - 52 : futureWeekNumber;
+
+				const previousYearReferencePoint = previousYearData.find(
+					(d) => d.weekNumber === adjustedWeekNumber
+				);
+
+				if (previousYearReferencePoint) {
+					// Create estimated future date for display purposes
+					const lastDate = new Date(lastCurrentPoint.weekStartDate);
+					const futureDate = new Date(lastDate.getTime() + i * 7 * 24 * 60 * 60 * 1000);
+
+					upcomingWeeksReference.push({
+						weekNumber: adjustedWeekNumber,
+						year: futureYear,
+						currentValue: null, // No current data for future weeks
+						previousYearValue: previousYearReferencePoint.value,
+						weekStartDate: futureDate.toISOString().split('T')[0],
+						weekEndDate: new Date(futureDate.getTime() + 6 * 24 * 60 * 60 * 1000)
+							.toISOString()
+							.split('T')[0],
+						dailyAverage: previousYearReferencePoint.dailyAverage,
+						workingDays: previousYearReferencePoint.workingDays,
+						isReference: true // Mark as reference data, not forecast
+					});
+				}
+			}
+		}
+
+		return {
+			overlayData,
+			upcomingWeeksReference
+		};
+	});
+
+	// Extended chart data that includes upcoming weeks reference for layout calculation
+	const extendedChartData = $derived(() => {
+		const current = chartData();
+		const yoyData = yearOverYearData();
+
+		if (!yoyData || !showYearOverYearOverlay) return current;
+
+		// Combine current data with upcoming weeks reference (using previous year values as reference)
+		return [...current, ...yoyData.upcomingWeeksReference];
+	});
+	$effect(() => {});
+
+	// ...existing code...
 </script>
 
 <Card class={cn('w-full', className)}>
@@ -770,6 +1029,27 @@
 				{/if}
 			</div>
 			<div class="flex items-center gap-2">
+				{#if weeklyData && !loading}
+					<!-- Temporarily always show YoY toggle for debugging -->
+					<Button
+						variant={showYearOverYearOverlay ? 'default' : 'outline'}
+						size="sm"
+						onclick={() => {
+							showYearOverYearOverlay = !showYearOverYearOverlay;
+						}}
+						class="flex items-center gap-2"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+							/>
+						</svg>
+						YoY Overlay {hasMultiYearData() ? '✓' : ''}
+					</Button>
+				{/if}
 				{#if weeklyData && !loading}
 					<Button
 						variant="outline"
@@ -801,7 +1081,7 @@
 									stroke-linecap="round"
 									stroke-linejoin="round"
 									stroke-width="2"
-									d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+									d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
 								></path>
 							</svg>
 							Export PDF
@@ -816,7 +1096,8 @@
 
 		<!-- Statistics Cards -->
 		{#if weeklyData && !loading}
-			<div class="grid grid-cols-2 md:grid-cols-6 gap-3 mt-4">
+			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+				<!-- Core Statistics (Always Visible) -->
 				<div class="bg-muted/50 rounded-lg p-3">
 					<div class="text-xs text-muted-foreground">Latest Week</div>
 					<div class="text-lg font-semibold">
@@ -909,6 +1190,74 @@
 				</div>
 			</div>
 
+			<!-- Enhanced Statistics Cards (Conditional) -->
+			{#if hasMultiYearData() || primaryCycle() || seasonalIndex() !== 1.0}
+				<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+					<!-- Year-over-Year Growth -->
+					{#if hasMultiYearData() && yearOverYearGrowth() !== null}
+						<div
+							class="bg-blue-50 dark:bg-blue-950/50 rounded-lg p-3 border border-blue-200 dark:border-blue-800"
+						>
+							<div class="text-xs text-muted-foreground">Same Week Last Year</div>
+							<div class="text-sm font-medium">
+								{yearOverYearGrowth()! > 0 ? '+' : ''}{yearOverYearGrowth()!.toFixed(1)}%
+							</div>
+							<div class="text-xs text-muted-foreground">Year-over-year growth</div>
+						</div>
+					{/if}
+
+					<!-- Seasonal Index -->
+					{#if seasonalIndex() !== 1.0}
+						<div
+							class="bg-green-50 dark:bg-green-950/50 rounded-lg p-3 border border-green-200 dark:border-green-800"
+						>
+							<div class="text-xs text-muted-foreground">Seasonal Index</div>
+							<div class="text-sm font-medium">
+								{seasonalIndex().toFixed(2)}x
+							</div>
+							<div class="text-xs text-muted-foreground">
+								{seasonalIndex() > 1.1
+									? 'Above seasonal avg'
+									: seasonalIndex() < 0.9
+										? 'Below seasonal avg'
+										: 'Near seasonal avg'}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Primary Cycle Information -->
+					{#if primaryCycle()}
+						<div
+							class="bg-purple-50 dark:bg-purple-950/50 rounded-lg p-3 border border-purple-200 dark:border-purple-800"
+						>
+							<div class="text-xs text-muted-foreground">Dominant Pattern</div>
+							<div class="text-sm font-medium">
+								{primaryCycle()!.period}-week cycle
+							</div>
+							<div class="text-xs text-muted-foreground">
+								{primaryCycle()!.type.charAt(0).toUpperCase() + primaryCycle()!.type.slice(1)} pattern
+								({(primaryCycle()!.strength * 100).toFixed(0)}% strength)
+							</div>
+						</div>
+					{/if}
+
+					<!-- Peak Distance -->
+					{#if peakDistance() !== 0}
+						<div
+							class="bg-orange-50 dark:bg-orange-950/50 rounded-lg p-3 border border-orange-200 dark:border-orange-800"
+						>
+							<div class="text-xs text-muted-foreground">Seasonal Position</div>
+							<div class="text-sm font-medium">
+								{Math.abs(peakDistance())} weeks
+							</div>
+							<div class="text-xs text-muted-foreground">
+								{peakDistance() > 0 ? 'to seasonal peak' : 'from seasonal peak'}
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			<!-- Detailed Significance Analysis (if significant and sufficient data) -->
 			{#if hasSufficientDataForSignificance() && weeklyData.trend.isSignificant && (weeklyData.trend.significanceDetails || enhancedTrendResult())}
 				<div class="mt-4">
@@ -957,6 +1306,114 @@
 						{/if}
 					</p>
 				</div>
+			{/if}
+
+			<!-- Enhanced Seasonal Analysis Display -->
+			{#if (enhancedSeasonalAnalysis() && (enhancedSeasonalAnalysis()?.detectedCycles?.length ?? 0) > 0) || enhancedSeasonalAnalysis()?.yearOverYear?.hasMultiYearData}
+				{@const enhanced = enhancedSeasonalAnalysis()}
+				{#if enhanced && 'detectedCycles' in enhanced}
+					<div
+						class="mt-4 p-4 bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/50 dark:to-green-950/50 rounded-lg border"
+					>
+						<div class="flex items-center gap-2 mb-3">
+							<div class="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-green-500"></div>
+							<span class="font-medium text-sm">Enhanced Seasonal Analysis</span>
+							<Badge variant="outline" class="text-xs">
+								{enhanced.confidence > 0.7 ? 'High' : enhanced.confidence > 0.4 ? 'Medium' : 'Low'} Confidence
+							</Badge>
+						</div>
+
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+							<!-- Detected Cycles -->
+							{#if enhanced.detectedCycles && enhanced.detectedCycles.length > 0}
+								<div class="space-y-2">
+									<h4 class="font-medium text-sm">Detected Patterns</h4>
+									<div class="space-y-1">
+										{#each enhanced.detectedCycles.slice(0, 3) as cycle}
+											<div class="flex justify-between items-center">
+												<span class="text-xs text-muted-foreground">
+													{cycle.type.charAt(0).toUpperCase() + cycle.type.slice(1)} ({cycle.period}
+													weeks):
+												</span>
+												<span class="text-xs font-medium">
+													{(cycle.strength * 100).toFixed(0)}% strength
+												</span>
+											</div>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							<!-- Year-over-Year Insights -->
+							{#if enhanced.yearOverYear?.hasMultiYearData}
+								<div class="space-y-2">
+									<h4 class="font-medium text-sm">Year-over-Year Analysis</h4>
+									<div class="space-y-1">
+										<p class="text-xs">
+											<strong>Growth:</strong>
+											<span
+												class={enhanced.yearOverYear.yoyDirection === 'up'
+													? 'text-green-600'
+													: enhanced.yearOverYear.yoyDirection === 'down'
+														? 'text-red-600'
+														: 'text-gray-600'}
+											>
+												{enhanced.yearOverYear.yoyGrowth > 0
+													? '+'
+													: ''}{enhanced.yearOverYear.yoyGrowth.toFixed(1)}%
+											</span>
+										</p>
+										<p class="text-xs">
+											<strong>Previous Year Value:</strong>
+											{formatValue(enhanced.yearOverYear.previousYearValue, weeklyData.metric)}
+										</p>
+									</div>
+								</div>
+							{/if}
+
+							<!-- Seasonal Context -->
+							{#if enhanced.seasonalContext !== 'normal'}
+								<div class="space-y-2">
+									<h4 class="font-medium text-sm">Seasonal Position</h4>
+									<div class="space-y-1">
+										<p class="text-xs">
+											<strong>Context:</strong>
+											{enhanced.seasonalContext}
+										</p>
+										<p class="text-xs">
+											<strong>Seasonal Index:</strong>
+											{enhanced.seasonalIndex.toFixed(2)}x
+											{enhanced.seasonalIndex > 1.1
+												? '(Above average)'
+												: enhanced.seasonalIndex < 0.9
+													? '(Below average)'
+													: '(Near average)'}
+										</p>
+										{#if enhanced.peakDistance !== 0}
+											<p class="text-xs">
+												<strong>Peak Distance:</strong>
+												{Math.abs(enhanced.peakDistance)} weeks
+												{enhanced.peakDistance > 0 ? 'to' : 'from'} seasonal peak
+											</p>
+										{/if}
+									</div>
+								</div>
+							{/if}
+
+							<!-- Enhanced Recommendations -->
+							{#if enhanced.seasonalRecommendations && enhanced.seasonalRecommendations.length > 0}
+								<div class="space-y-2">
+									<h4 class="font-medium text-sm">Seasonal Insights</h4>
+									<div class="space-y-1">
+										{#each enhanced.seasonalRecommendations.slice(0, 2) as recommendation}
+											<p class="text-xs text-muted-foreground">• {recommendation}</p>
+										{/each}
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
 			{/if}
 		{/if}
 	</CardHeader>
@@ -1073,6 +1530,28 @@
 						stroke-linejoin="round"
 					/>
 
+					<!-- Year-over-Year Overlay Line -->
+					{#if showYearOverYearOverlay && previousYearLinePath()}
+						<defs>
+							<linearGradient id="previousYearGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+								<stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:0.9" />
+								<stop offset="70%" style="stop-color:#8b5cf6;stop-opacity:0.9" />
+								<stop offset="70%" style="stop-color:#8b5cf6;stop-opacity:0.5" />
+								<stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:0.5" />
+							</linearGradient>
+						</defs>
+						<path
+							d={previousYearLinePath()}
+							fill="none"
+							stroke="url(#previousYearGradient)"
+							stroke-width="2.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-dasharray="6,4"
+							opacity="0.85"
+						/>
+					{/if}
+
 					<!-- Data points -->
 					{#each chartData() as point, index}
 						{@const x = padding.left + xScale()(index)}
@@ -1089,6 +1568,52 @@
 							onpointerenter={(e) => handlePointHover(e, index, point)}
 						/>
 					{/each}
+
+					<!-- Year-over-Year Data Points -->
+					{#if showYearOverYearOverlay && yearOverYearData()}
+						{@const yoyData = yearOverYearData()}
+						{#if yoyData}
+							{#each yoyData.overlayData as point, index}
+								{@const x = padding.left + xScale()(index)}
+								{@const y = padding.top + yScale()(point.previousYearValue)}
+								<circle
+									cx={x}
+									cy={y}
+									r="4"
+									fill="#8b5cf6"
+									stroke="#7c3aed"
+									stroke-width="2"
+									class="cursor-pointer hover:r-6 transition-all"
+									onpointerenter={(e) => handleYoyPointHover(e, index, point)}
+								/>
+							{/each}
+							{#each yoyData.upcomingWeeksReference as point, index}
+								{@const x = padding.left + xScale()(chartData().length + index)}
+								{@const y = padding.top + yScale()(point.previousYearValue)}
+								<circle
+									cx={x}
+									cy={y}
+									r="3"
+									fill="#8b5cf6"
+									stroke="#7c3aed"
+									stroke-width="1"
+									opacity="0.7"
+									class="cursor-pointer hover:r-5 transition-all"
+									onpointerenter={(e) => handleReferencePointHover(e, index, point)}
+								/>
+								<!-- Add reference label -->
+								<text
+									{x}
+									y={y - 15}
+									text-anchor="middle"
+									class="text-xs fill-violet-600 font-medium"
+									style="font-size: 10px;"
+								>
+									2024
+								</text>
+							{/each}
+						{/if}
+					{/if}
 
 					<!-- Always visible point value tooltips -->
 					{#each chartData() as point, index}
@@ -1122,7 +1647,7 @@
 					{/each}
 
 					<!-- X-axis labels -->
-					{#each chartData() as point, index}
+					{#each showYearOverYearOverlay ? extendedChartData() : chartData() as point, index}
 						{@const x = padding.left + xScale()(index)}
 						<text
 							{x}
@@ -1136,12 +1661,16 @@
 							{x}
 							y={padding.top + plotHeight + 35}
 							text-anchor="middle"
-							class="text-xs fill-muted-foreground opacity-70"
+							class="text-xs fill-muted-foreground {'isReference' in point && point.isReference
+								? 'opacity-50'
+								: 'opacity-70'}"
 						>
-							{new Date(point.weekStartDate).toLocaleDateString('en-GB', {
-								month: 'short',
-								day: 'numeric'
-							})}
+							{'isReference' in point && point.isReference
+								? `Ref ${new Date(point.weekStartDate).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}`
+								: new Date(point.weekStartDate).toLocaleDateString('en-GB', {
+										month: 'short',
+										day: 'numeric'
+									})}
 						</text>
 					{/each}
 				</svg>
@@ -1152,35 +1681,166 @@
 						class="absolute bg-background border border-border rounded-lg shadow-lg p-3 pointer-events-none z-10 min-w-48"
 						style="left: {mousePosition.x + 10}px; top: {mousePosition.y - 10}px;"
 					>
-						<div class="font-medium text-sm">
-							Week {hoveredPoint.data.weekNumber}, {hoveredPoint.data.year}
-						</div>
-						<div class="text-xs text-muted-foreground mb-2">
-							{formatWeekRange(hoveredPoint.data.weekStartDate, hoveredPoint.data.weekEndDate)}
-						</div>
-						<div class="space-y-1">
-							<div class="flex justify-between">
-								<span class="text-xs text-muted-foreground">Total:</span>
-								<span class="text-sm font-semibold">
-									{formatValue(hoveredPoint.data.value, weeklyData.metric)}
-								</span>
+						{#if hoveredPoint.data.isReference}
+							<!-- Reference Point Tooltip -->
+							<div class="font-medium text-sm text-indigo-600">
+								Reference Week {hoveredPoint.data.weekNumber}, {hoveredPoint.data.year}
 							</div>
-							<div class="flex justify-between">
-								<span class="text-xs text-muted-foreground">Daily Avg:</span>
-								<span class="text-xs">
-									{formatValue(hoveredPoint.data.dailyAverage, weeklyData.metric)}
-								</span>
+							<div class="text-xs text-muted-foreground mb-2">Actual 2024 data for same week</div>
+							<div class="space-y-1">
+								<div class="flex justify-between">
+									<span class="text-xs text-muted-foreground">2024 Value:</span>
+									<span class="text-sm font-semibold text-indigo-600">
+										{formatValue(hoveredPoint.data.value, weeklyData.metric)}
+									</span>
+								</div>
+								<div class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+									📊 Historical reference for upcoming weeks
+								</div>
 							</div>
-							<div class="flex justify-between">
-								<span class="text-xs text-muted-foreground">Working Days:</span>
-								<span class="text-xs">
-									{hoveredPoint.data.workingDays}
-								</span>
+						{:else if hoveredPoint.data.isYearOverYear}
+							<!-- Year-over-Year Point Tooltip -->
+							<div class="font-medium text-sm text-indigo-600">
+								Week {hoveredPoint.data.weekNumber}, {hoveredPoint.data.year - 1} (Previous Year)
 							</div>
-						</div>
+							<div class="text-xs text-muted-foreground mb-2">
+								{formatWeekRange(hoveredPoint.data.weekStartDate, hoveredPoint.data.weekEndDate)}
+							</div>
+							<div class="space-y-1">
+								<div class="flex justify-between">
+									<span class="text-xs text-muted-foreground">Previous Year:</span>
+									<span class="text-sm font-semibold text-indigo-600">
+										{formatValue(hoveredPoint.data.value, weeklyData.metric)}
+									</span>
+								</div>
+								{#if hoveredPoint.data.yearOverYearData?.currentValue}
+									<div class="flex justify-between">
+										<span class="text-xs text-muted-foreground">Current Year:</span>
+										<span class="text-sm font-semibold">
+											{formatValue(
+												hoveredPoint.data.yearOverYearData.currentValue,
+												weeklyData.metric
+											)}
+										</span>
+									</div>
+									<div class="flex justify-between border-t pt-1">
+										<span class="text-xs text-muted-foreground">YoY Change:</span>
+										<span
+											class="text-xs font-medium {((hoveredPoint.data.yearOverYearData
+												.currentValue -
+												hoveredPoint.data.value) /
+												hoveredPoint.data.value) *
+												100 >
+											0
+												? 'text-green-600'
+												: 'text-red-600'}"
+										>
+											{((hoveredPoint.data.yearOverYearData.currentValue -
+												hoveredPoint.data.value) /
+												hoveredPoint.data.value) *
+												100 >
+											0
+												? '+'
+												: ''}{(
+												((hoveredPoint.data.yearOverYearData.currentValue -
+													hoveredPoint.data.value) /
+													hoveredPoint.data.value) *
+												100
+											).toFixed(1)}%
+										</span>
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<!-- Regular Point Tooltip -->
+							<div class="font-medium text-sm">
+								Week {hoveredPoint.data.weekNumber}, {hoveredPoint.data.year}
+							</div>
+							<div class="text-xs text-muted-foreground mb-2">
+								{formatWeekRange(hoveredPoint.data.weekStartDate, hoveredPoint.data.weekEndDate)}
+							</div>
+							<div class="space-y-1">
+								<div class="flex justify-between">
+									<span class="text-xs text-muted-foreground">Total:</span>
+									<span class="text-sm font-semibold">
+										{formatValue(hoveredPoint.data.value, weeklyData.metric)}
+									</span>
+								</div>
+								<div class="flex justify-between">
+									<span class="text-xs text-muted-foreground">Daily Avg:</span>
+									<span class="text-xs">
+										{formatValue(hoveredPoint.data.dailyAverage, weeklyData.metric)}
+									</span>
+								</div>
+								<div class="flex justify-between">
+									<span class="text-xs text-muted-foreground">Working Days:</span>
+									<span class="text-xs">
+										{hoveredPoint.data.workingDays}
+									</span>
+								</div>
+								<!-- Enhanced: Show year-over-year comparison if available -->
+								{#if hoveredPoint && hasMultiYearData()}
+									{@const previousYearPoint = chartData().find(
+										(d) =>
+											d.year === (hoveredPoint?.data.year ?? 0) - 1 &&
+											d.weekNumber === (hoveredPoint?.data.weekNumber ?? 0)
+									)}
+									{#if previousYearPoint}
+										<div class="flex justify-between border-t pt-1 mt-1">
+											<span class="text-xs text-muted-foreground">Same week last year:</span>
+											<span class="text-xs">
+												{formatValue(previousYearPoint.value, weeklyData.metric)}
+											</span>
+										</div>
+										<div class="flex justify-between">
+											<span class="text-xs text-muted-foreground">YoY Growth:</span>
+											<span
+												class="text-xs font-medium {((hoveredPoint.data.value -
+													previousYearPoint.value) /
+													previousYearPoint.value) *
+													100 >
+												0
+													? 'text-green-600'
+													: 'text-red-600'}"
+											>
+												{((hoveredPoint.data.value - previousYearPoint.value) /
+													previousYearPoint.value) *
+													100 >
+												0
+													? '+'
+													: ''}{(
+													((hoveredPoint.data.value - previousYearPoint.value) /
+														previousYearPoint.value) *
+													100
+												).toFixed(1)}%
+											</span>
+										</div>
+									{/if}
+								{/if}
+							</div>
+						{/if}
 					</div>
 				{/if}
 			</div>
+
+			<!-- Year-over-Year Overlay Legend -->
+			{#if showYearOverYearOverlay && yearOverYearData()}
+				<div class="mt-3 flex flex-wrap items-center gap-4 text-sm">
+					<div class="flex items-center gap-2">
+						<div class="w-4 h-0.5 bg-green-500"></div>
+						<span class="text-muted-foreground">Current Year ({new Date().getFullYear()})</span>
+					</div>
+					<div class="flex items-center gap-2">
+						<div class="w-4 h-0.5 bg-violet-500 border-dashed border-t-2 border-violet-500"></div>
+						<span class="text-muted-foreground">Previous Year ({new Date().getFullYear() - 1})</span
+						>
+					</div>
+					<div class="flex items-center gap-2">
+						<div class="w-3 h-3 rounded-full bg-violet-400 opacity-70"></div>
+						<span class="text-muted-foreground">Previous Year Reference</span>
+					</div>
+				</div>
+			{/if}
 		{/if}
 
 		<!-- Seasonal Trend Analysis -->

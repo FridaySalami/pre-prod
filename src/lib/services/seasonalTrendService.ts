@@ -12,6 +12,23 @@ export interface SeasonalTrendPoint {
   periodComparison?: number;
 }
 
+export interface DetectedCycle {
+  period: number;
+  strength: number;
+  confidence: number;
+  type: 'monthly' | 'quarterly' | 'bi-annual' | 'annual';
+  correlation: number;
+}
+
+export interface YearOverYearAnalysis {
+  currentValue: number;
+  previousYearValue: number;
+  yoyGrowth: number;
+  yoyDirection: 'up' | 'down' | 'stable';
+  hasMultiYearData: boolean;
+  weeksToSamePeriodLastYear?: number;
+}
+
 export interface SeasonalAnalysis {
   // Trend component
   overallTrend: 'up' | 'down' | 'stable';
@@ -41,7 +58,69 @@ export interface SeasonalAnalysis {
   confidence: number; // 0-1 scale for analysis confidence
 }
 
+export interface EnhancedSeasonalAnalysis extends SeasonalAnalysis {
+  // Multi-period analysis
+  detectedCycles: DetectedCycle[];
+  primaryCycle: DetectedCycle | null;
+
+  // Year-over-year (when available)
+  yearOverYear?: YearOverYearAnalysis;
+
+  // Seasonal context
+  seasonalIndex: number;  // 1.0 = normal, >1.0 = above seasonal average
+  seasonalContext: 'peak' | 'valley' | 'rising' | 'falling' | 'normal';
+  peakDistance: number;   // weeks to/from seasonal peak
+
+  // Enhanced insights
+  contextualFactors: string[];
+  seasonalRecommendations: string[];
+}
+
 export class SeasonalTrendService {
+
+  /**
+   * Enhanced seasonal analysis with multi-period detection and YoY analysis
+   * This is the new main entry point for Phase 1 enhanced analysis
+   */
+  static analyzeEnhancedSeasonalTrend(
+    values: number[],
+    dataPoints: Array<{ weekNumber: number, year: number, value: number }>
+  ): EnhancedSeasonalAnalysis {
+
+    // Get base analysis first
+    const baseAnalysis = this.analyzeSeasonalTrend(values, 4);
+
+    // Multi-period cycle detection
+    const detectedCycles = this.detectMultipleCycles(values);
+    const primaryCycle = detectedCycles.length > 0 ? detectedCycles[0] : null;
+
+    // Year-over-year analysis (if we have multi-year data)
+    const yearOverYear = this.calculateYearOverYear(dataPoints);
+
+    // Seasonal context analysis
+    const seasonalContext = this.calculateSeasonalContext(values, primaryCycle);
+
+    // Enhanced contextual factors and recommendations
+    const contextualFactors = this.generateContextualFactors(dataPoints, primaryCycle, yearOverYear);
+    const seasonalRecommendations = this.generateSeasonalRecommendations(
+      baseAnalysis,
+      primaryCycle,
+      yearOverYear,
+      seasonalContext
+    );
+
+    return {
+      ...baseAnalysis,
+      detectedCycles,
+      primaryCycle,
+      yearOverYear,
+      seasonalIndex: seasonalContext.seasonalIndex,
+      seasonalContext: seasonalContext.context,
+      peakDistance: seasonalContext.peakDistance,
+      contextualFactors,
+      seasonalRecommendations
+    };
+  }
 
   /**
    * Perform seasonal trend decomposition on weekly data
@@ -382,5 +461,303 @@ export class SeasonalTrendService {
       summary: 'Limited data available for comprehensive analysis',
       confidence: 0.2
     };
+  }
+
+  /**
+   * Detect multiple seasonal cycles in the data
+   */
+  private static detectMultipleCycles(values: number[]): DetectedCycle[] {
+    if (values.length < 8) return [];
+
+    const cycles: DetectedCycle[] = [];
+
+    // Test different period lengths
+    const periodsToTest = [
+      { period: 4, type: 'monthly' as const },
+      { period: 13, type: 'quarterly' as const },
+      { period: 26, type: 'bi-annual' as const },
+      { period: 52, type: 'annual' as const }
+    ];
+
+    for (const { period, type } of periodsToTest) {
+      if (values.length < period * 2) continue;
+
+      const correlation = this.calculateAutocorrelation(values, period);
+      const strength = Math.abs(correlation);
+
+      if (strength > 0.2) { // Lower threshold for detection
+        cycles.push({
+          period,
+          strength,
+          confidence: this.calculateCycleConfidence(values.length, period, strength),
+          type,
+          correlation
+        });
+      }
+    }
+
+    // Sort by strength (descending)
+    return cycles.sort((a, b) => b.strength - a.strength);
+  }
+
+  /**
+   * Calculate year-over-year analysis when multi-year data is available
+   */
+  private static calculateYearOverYear(
+    dataPoints: Array<{ weekNumber: number, year: number, value: number }>
+  ): YearOverYearAnalysis | undefined {
+
+    if (dataPoints.length === 0) return undefined;
+
+    // Check if we have data spanning multiple years
+    const years = [...new Set(dataPoints.map(d => d.year))].sort();
+    if (years.length < 2) return undefined;
+
+    const currentPoint = dataPoints[dataPoints.length - 1];
+    const currentYear = currentPoint.year;
+    const currentWeek = currentPoint.weekNumber;
+    const currentValue = currentPoint.value;
+
+    // Find same week in previous year
+    const previousYearPoint = dataPoints.find(
+      d => d.year === currentYear - 1 && d.weekNumber === currentWeek
+    );
+
+    if (!previousYearPoint) {
+      // Try to find closest week in previous year
+      const closestWeek = dataPoints
+        .filter(d => d.year === currentYear - 1)
+        .reduce((closest, point) => {
+          const currentDiff = Math.abs(point.weekNumber - currentWeek);
+          const closestDiff = Math.abs(closest.weekNumber - currentWeek);
+          return currentDiff < closestDiff ? point : closest;
+        }, dataPoints.filter(d => d.year === currentYear - 1)[0]);
+
+      if (!closestWeek) return undefined;
+
+      const yoyGrowth = ((currentValue - closestWeek.value) / closestWeek.value) * 100;
+
+      return {
+        currentValue,
+        previousYearValue: closestWeek.value,
+        yoyGrowth,
+        yoyDirection: Math.abs(yoyGrowth) > 5 ? (yoyGrowth > 0 ? 'up' : 'down') : 'stable',
+        hasMultiYearData: true,
+        weeksToSamePeriodLastYear: Math.abs(closestWeek.weekNumber - currentWeek)
+      };
+    }
+
+    const yoyGrowth = ((currentValue - previousYearPoint.value) / previousYearPoint.value) * 100;
+
+    return {
+      currentValue,
+      previousYearValue: previousYearPoint.value,
+      yoyGrowth,
+      yoyDirection: Math.abs(yoyGrowth) > 5 ? (yoyGrowth > 0 ? 'up' : 'down') : 'stable',
+      hasMultiYearData: true
+    };
+  }
+
+  /**
+   * Calculate seasonal context and positioning
+   */
+  private static calculateSeasonalContext(
+    values: number[],
+    primaryCycle: DetectedCycle | null
+  ): {
+    seasonalIndex: number;
+    context: 'peak' | 'valley' | 'rising' | 'falling' | 'normal';
+    peakDistance: number;
+  } {
+
+    if (!primaryCycle || values.length < primaryCycle.period) {
+      return {
+        seasonalIndex: 1.0,
+        context: 'normal',
+        peakDistance: 0
+      };
+    }
+
+    // Calculate seasonal average for the cycle period
+    const period = primaryCycle.period;
+    const currentValue = values[values.length - 1];
+    const position = (values.length - 1) % period;
+
+    // Get values at same position in cycle
+    const samePositionValues = [];
+    for (let i = position; i < values.length; i += period) {
+      samePositionValues.push(values[i]);
+    }
+
+    const seasonalAverage = samePositionValues.length > 0
+      ? samePositionValues.reduce((sum, val) => sum + val, 0) / samePositionValues.length
+      : currentValue;
+
+    const seasonalIndex = seasonalAverage > 0 ? currentValue / seasonalAverage : 1.0;
+
+    // Determine context by looking at recent trend within cycle
+    const recentValues = values.slice(-Math.min(4, period));
+    const isRising = recentValues.length >= 2 &&
+      recentValues[recentValues.length - 1] > recentValues[0];
+    const isFalling = recentValues.length >= 2 &&
+      recentValues[recentValues.length - 1] < recentValues[0];
+
+    // Find approximate peak/valley distance
+    const cycleValues = values.slice(-period);
+    const maxIndex = cycleValues.indexOf(Math.max(...cycleValues));
+    const minIndex = cycleValues.indexOf(Math.min(...cycleValues));
+    const currentIndex = cycleValues.length - 1;
+
+    const distanceToMax = Math.min(
+      Math.abs(currentIndex - maxIndex),
+      period - Math.abs(currentIndex - maxIndex)
+    );
+    const distanceToMin = Math.min(
+      Math.abs(currentIndex - minIndex),
+      period - Math.abs(currentIndex - minIndex)
+    );
+
+    let context: 'peak' | 'valley' | 'rising' | 'falling' | 'normal';
+    if (distanceToMax <= 1) context = 'peak';
+    else if (distanceToMin <= 1) context = 'valley';
+    else if (isRising) context = 'rising';
+    else if (isFalling) context = 'falling';
+    else context = 'normal';
+
+    return {
+      seasonalIndex,
+      context,
+      peakDistance: distanceToMax < distanceToMin ? -distanceToMax : distanceToMin
+    };
+  }
+
+  /**
+   * Generate contextual factors based on analysis
+   */
+  private static generateContextualFactors(
+    dataPoints: Array<{ weekNumber: number, year: number, value: number }>,
+    primaryCycle: DetectedCycle | null,
+    yearOverYear?: YearOverYearAnalysis
+  ): string[] {
+
+    const factors: string[] = [];
+
+    // Seasonal factors
+    if (primaryCycle) {
+      switch (primaryCycle.type) {
+        case 'annual':
+          factors.push('Annual Seasonality');
+          // Add holiday/seasonal context based on current week
+          const currentWeek = dataPoints[dataPoints.length - 1]?.weekNumber;
+          if (currentWeek >= 47 && currentWeek <= 52) {
+            factors.push('Holiday Shopping Period');
+          } else if (currentWeek >= 6 && currentWeek <= 12) {
+            factors.push('Post-Holiday Period');
+          } else if (currentWeek >= 20 && currentWeek <= 35) {
+            factors.push('Summer Period');
+          }
+          break;
+        case 'quarterly':
+          factors.push('Quarterly Business Cycles');
+          break;
+        case 'monthly':
+          factors.push('Monthly Patterns');
+          break;
+      }
+    }
+
+    // Year-over-year factors
+    if (yearOverYear?.hasMultiYearData) {
+      if (Math.abs(yearOverYear.yoyGrowth) > 10) {
+        factors.push('Significant Year-over-Year Change');
+      }
+      factors.push('Historical Comparison Available');
+    }
+
+    // Data quality factors
+    if (dataPoints.length >= 52) {
+      factors.push('Full Annual Data Available');
+    } else if (dataPoints.length >= 26) {
+      factors.push('Multi-Season Data Available');
+    }
+
+    return factors;
+  }
+
+  /**
+   * Generate seasonal recommendations
+   */
+  private static generateSeasonalRecommendations(
+    baseAnalysis: SeasonalAnalysis,
+    primaryCycle: DetectedCycle | null,
+    yearOverYear?: YearOverYearAnalysis,
+    seasonalContext?: { context: string; seasonalIndex: number; peakDistance: number }
+  ): string[] {
+
+    const recommendations: string[] = [];
+
+    // Seasonal context recommendations
+    if (seasonalContext) {
+      switch (seasonalContext.context) {
+        case 'peak':
+          recommendations.push('Monitor for potential seasonal peak - prepare for possible decline');
+          break;
+        case 'valley':
+          recommendations.push('Currently at seasonal low - expect potential recovery');
+          break;
+        case 'rising':
+          recommendations.push('Trending toward seasonal peak - optimize for increased activity');
+          break;
+        case 'falling':
+          recommendations.push('Declining toward seasonal low - prepare contingency plans');
+          break;
+      }
+
+      if (seasonalContext.seasonalIndex > 1.2) {
+        recommendations.push('Performance significantly above seasonal average');
+      } else if (seasonalContext.seasonalIndex < 0.8) {
+        recommendations.push('Performance below seasonal average - investigate causes');
+      }
+    }
+
+    // Year-over-year recommendations
+    if (yearOverYear?.hasMultiYearData) {
+      if (yearOverYear.yoyDirection === 'up') {
+        recommendations.push('Year-over-year improvement - analyze success factors');
+      } else if (yearOverYear.yoyDirection === 'down') {
+        recommendations.push('Year-over-year decline - review previous year strategies');
+      }
+    }
+
+    // Cycle-based recommendations
+    if (primaryCycle) {
+      if (primaryCycle.type === 'annual' && primaryCycle.strength > 0.5) {
+        recommendations.push('Strong annual pattern detected - use for seasonal planning');
+      }
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * Calculate confidence for a detected cycle
+   */
+  private static calculateCycleConfidence(
+    dataLength: number,
+    period: number,
+    strength: number
+  ): number {
+    let confidence = 0.5;
+
+    // More complete cycles = higher confidence
+    const completeCycles = Math.floor(dataLength / period);
+    if (completeCycles >= 3) confidence += 0.3;
+    else if (completeCycles >= 2) confidence += 0.2;
+    else if (completeCycles >= 1) confidence += 0.1;
+
+    // Stronger correlation = higher confidence
+    confidence += strength * 0.4;
+
+    return Math.min(1, confidence);
   }
 }
