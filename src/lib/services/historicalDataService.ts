@@ -128,40 +128,71 @@ export class HistoricalDataService {
         queryEndDate.setDate(today.getDate() - 1);
       }
 
-      // Get data from enough weeks back to ensure we have complete weeks
+      // SMART APPROACH: Fetch requested weeks + same weeks from previous year
+      // 1. Get the requested number of recent weeks
       const startDate = new Date(queryEndDate);
       startDate.setDate(startDate.getDate() - (count + 2) * 7);
 
-      const { data, error } = await supabase
-        .from('daily_metric_review')
-        .select(`date, ${metric}`)
-        .gte('date', startDate.toISOString().split('T')[0])
-        .lte('date', queryEndDate.toISOString().split('T')[0])
-        .order('date', { ascending: true });
+      // 2. Also get the same time period from previous year for YoY comparison
+      // PLUS additional weeks ahead for reference points
+      const prevYearEndDate = new Date(queryEndDate);
+      prevYearEndDate.setFullYear(prevYearEndDate.getFullYear() - 1);
+      // Add 4 more weeks to get upcoming weeks reference data
+      prevYearEndDate.setDate(prevYearEndDate.getDate() + (4 * 7));
 
-      if (error) {
-        console.error('Error fetching weekly data:', error);
+      const prevYearStartDate = new Date(startDate);
+      prevYearStartDate.setFullYear(prevYearStartDate.getFullYear() - 1);
+
+      // Fetch data for both time periods
+      const [currentYearData, prevYearData] = await Promise.all([
+        supabase
+          .from('daily_metric_review')
+          .select(`date, ${metric}`)
+          .gte('date', startDate.toISOString().split('T')[0])
+          .lte('date', queryEndDate.toISOString().split('T')[0])
+          .order('date', { ascending: true }),
+        supabase
+          .from('daily_metric_review')
+          .select(`date, ${metric}`)
+          .gte('date', prevYearStartDate.toISOString().split('T')[0])
+          .lte('date', prevYearEndDate.toISOString().split('T')[0])
+          .order('date', { ascending: true })
+      ]);
+
+      if (currentYearData.error || prevYearData.error) {
+        console.error('Error fetching weekly data:', currentYearData.error || prevYearData.error);
         return null;
       }
 
-      if (!data || data.length === 0) {
+      // Combine the data for processing
+      const allData = [...(prevYearData.data || []), ...(currentYearData.data || [])];
+
+      if (allData.length === 0) {
         return this.createEmptyWeeklyResponse(metric);
       }
 
-      // Group data by week (Monday to Sunday)
-      const weeklyData = this.groupDataByWeek(data, metric, count + 1); // Fetch one extra week to account for current week filtering
+      // Group data by week (Monday to Sunday) - this will include both current and previous year
+      const allWeeklyData = this.groupDataByWeek(allData, metric, count * 2, true); // Use multi-year mode to get both years
 
-      // Calculate statistics and trend
-      const values = weeklyData.map(w => w.value);
+      // Separate current year and previous year data
+      const currentYear = new Date().getFullYear();
+      const currentYearWeeks = allWeeklyData.filter(w => w.year === currentYear);
+      const previousYearWeeks = allWeeklyData.filter(w => w.year === currentYear - 1);
+
+      // Calculate statistics and trend using only current year data
+      const values = currentYearWeeks.map(w => w.value);
       const statistics = this.calculateWeeklyStatistics(values);
       const trend = this.calculateTrend(values, metric);
 
-      return {
+      const response = {
         metric,
-        data: weeklyData,
+        data: currentYearWeeks, // Main chart shows only current year
+        yearOverYearData: previousYearWeeks.length > 0 ? previousYearWeeks : undefined, // Overlay data
         trend,
         statistics
       };
+
+      return response;
 
     } catch (error) {
       console.error('Error in fetchWeeklyData:', error);
@@ -175,7 +206,8 @@ export class HistoricalDataService {
   private static groupDataByWeek(
     data: any[],
     metric: string,
-    maxWeeks: number
+    maxWeeks: number,
+    includeMultiYear: boolean = false
   ): WeeklyMetricPoint[] {
     const weeks: Map<string, {
       weekStart: Date;
@@ -246,11 +278,28 @@ export class HistoricalDataService {
 
     // Filter out current incomplete week and take the requested number of complete weeks
     const completeWeeks = allWeeklyPoints
-      .filter(week => !week.isCurrentWeek) // Exclude current incomplete week
-      .slice(0, maxWeeks - 1) // Take the actual requested number (maxWeeks was incremented by 1 in the caller)
-      .reverse(); // Show chronologically (oldest to newest)
+      .filter(week => !week.isCurrentWeek); // Exclude current incomplete week
 
-    return completeWeeks;
+    let finalWeeks;
+    if (includeMultiYear) {
+      // For multi-year data, return all available weeks (for year-over-year comparison)
+      finalWeeks = completeWeeks.reverse(); // Show chronologically (oldest to newest)
+      console.log(`🔍 Multi-year mode: returning ${finalWeeks.length} weeks across years:`, [...new Set(finalWeeks.map(w => w.year))]);
+    } else {
+      // For normal mode, return ONLY current year weeks for the main chart
+      // The year-over-year overlay will be handled separately in the component
+      const currentYear = new Date().getFullYear();
+      const currentYearWeeks = completeWeeks
+        .filter(w => w.year === currentYear)
+        .sort((a, b) => new Date(b.weekStartDate).getTime() - new Date(a.weekStartDate).getTime())
+        .slice(0, maxWeeks)
+        .reverse(); // Show chronologically (oldest to newest)
+
+      finalWeeks = currentYearWeeks;
+      console.log(`🔍 Normal mode: returning ${finalWeeks.length} current year (${currentYear}) weeks only`);
+    }
+
+    return finalWeeks;
   }
 
   /**
