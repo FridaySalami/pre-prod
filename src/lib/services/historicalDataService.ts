@@ -132,8 +132,15 @@ export class HistoricalDataService {
 
       // SMART APPROACH: Fetch requested weeks + same weeks from previous year
       // 1. Get the requested number of recent weeks
+      // To ensure consistent weekly aggregation, always start from a Monday
       const startDate = new Date(queryEndDate);
-      startDate.setDate(startDate.getDate() - (count + 2) * 7);
+      startDate.setDate(startDate.getDate() - (count + 4) * 7); // Add extra buffer
+      
+      // Align to the Monday of the start week to ensure consistent weekly grouping
+      const dayOfWeek = startDate.getDay();
+      const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 0, adjust to Monday = 0
+      startDate.setDate(startDate.getDate() - daysFromMonday);
+      startDate.setHours(0, 0, 0, 0);
 
       // 2. Also get the same time period from previous year for YoY comparison
       // PLUS additional weeks ahead for reference points
@@ -174,11 +181,26 @@ export class HistoricalDataService {
       }
 
       // Group data by week (Monday to Sunday) - this will include both current and previous year
-      const allWeeklyData = this.groupDataByWeek(allData, metric, count * 2, true); // Use multi-year mode to get both years
+      const allWeeklyData = this.groupDataByWeek(allData, metric, count + 10, true); // Use multi-year mode to get both years, with buffer
+
+      console.log(`📊 Weekly Data Debug - Requested ${count} weeks:`);
+      console.log(`📊 Total weekly data points: ${allWeeklyData.length}`);
 
       // Separate current year and previous year data
       const currentYear = new Date().getFullYear();
-      const currentYearWeeks = allWeeklyData.filter(w => w.year === currentYear);
+      const currentYearWeeks = allWeeklyData
+        .filter(w => w.year === currentYear)
+        .sort((a, b) => new Date(b.weekStartDate).getTime() - new Date(a.weekStartDate).getTime()) // Sort newest first
+        .slice(0, count) // Take only the requested number of weeks
+        .reverse(); // Then reverse to show chronologically (oldest to newest)
+      
+      console.log(`📊 Current year (${currentYear}) weeks before filtering: ${allWeeklyData.filter(w => w.year === currentYear).length}`);
+      console.log(`📊 Current year weeks after filtering to ${count}: ${currentYearWeeks.length}`);
+      if (currentYearWeeks.length > 0) {
+        console.log(`📊 First week: ${currentYearWeeks[0].weekStartDate} (Week ${currentYearWeeks[0].weekNumber}) = £${currentYearWeeks[0].value.toLocaleString()}`);
+        console.log(`📊 Last week: ${currentYearWeeks[currentYearWeeks.length - 1].weekStartDate} (Week ${currentYearWeeks[currentYearWeeks.length - 1].weekNumber}) = £${currentYearWeeks[currentYearWeeks.length - 1].value.toLocaleString()}`);
+      }
+      
       const previousYearWeeks = allWeeklyData.filter(w => w.year === currentYear - 1);
 
       // Calculate statistics and trend using only current year data
@@ -301,10 +323,10 @@ export class HistoricalDataService {
         const workingDays = weekData.filter(record => {
           const date = new Date(record.date);
           const dayOfWeek = date.getDay();
-          return dayOfWeek !== 0 && dayOfWeek !== 6; // Exclude weekends if needed
+          return dayOfWeek !== 0; // Exclude only Sunday (6-day working week)
         }).length;
 
-        const dailyAverage = weekData.length > 0 ? totalValue / weekData.length : 0;
+        const dailyAverage = workingDays > 0 ? totalValue / workingDays : 0;
         const isCurrentWeek = this.isCurrentWeek(week.weekStart);
 
         return {
@@ -315,7 +337,7 @@ export class HistoricalDataService {
           value: totalValue,
           isCurrentWeek,
           dailyAverage,
-          workingDays: Math.max(weekData.length, workingDays)
+          workingDays: workingDays
         };
       });
 

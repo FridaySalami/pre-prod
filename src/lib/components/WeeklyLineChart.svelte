@@ -470,7 +470,7 @@
 				year: pred.year,
 				value: pred.predictedValue,
 				isCurrentWeek: false,
-				dailyAverage: pred.predictedValue / 7,
+				dailyAverage: pred.predictedValue / 6, // 6-day working week (excludes Sunday)
 				workingDays: 5,
 				isPrediction: true,
 				confidence: pred.confidence
@@ -828,9 +828,15 @@
 			ebay_sales: 'eBay Sales',
 			shopify_sales: 'Shopify Sales',
 			linnworks_total_orders: 'Total Orders',
-			labor_efficiency: 'Labor Efficiency'
+			labor_efficiency: 'Labor Efficiency',
+			// Add any other metrics you might have
+			web_sales: 'Website Sales',
+			retail_sales: 'Retail Store Sales',
+			wholesale_sales: 'Wholesale Sales',
+			returns: 'Returns',
+			customer_satisfaction: 'Customer Satisfaction'
 		};
-		return nameMap[metric] || metric;
+		return nameMap[metric] || metric.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 	}
 
 	function getTrendIcon(direction: string): string {
@@ -997,8 +1003,8 @@
 				: undefined;
 
 			await PdfExportService.exportToPdf({
-				title: `Weekly ${getMetricDisplayName(weeklyData.metric)} Trends`,
-				subtitle: `Last ${data.length} weeks analysis (excludes current incomplete week)`,
+				title: getChartTitle(weeklyData.metric, data.length).title,
+				subtitle: getChartTitle(weeklyData.metric, data.length).subtitle,
 				timeRange: timeRange,
 				metricName: getMetricDisplayName(weeklyData.metric),
 				chartElement: chartContainer,
@@ -1173,6 +1179,32 @@
 	});
 	$effect(() => {});
 
+	// Comprehensive chart title function for different display contexts including email
+	function getChartTitle(
+		metric: string,
+		dataLength: number
+	): {
+		title: string;
+		subtitle: string;
+		emailTitle: string;
+		emailSubject: string;
+	} {
+		const metricName = getMetricDisplayName(metric);
+		const period = `Last ${dataLength} weeks`;
+		const currentDate = new Date().toLocaleDateString('en-GB', {
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric'
+		});
+
+		return {
+			title: `Weekly ${metricName} Analysis`,
+			subtitle: `${period} performance overview (excludes current incomplete week)`,
+			emailTitle: `📊 Weekly ${metricName} Report - ${period}`,
+			emailSubject: `Weekly ${metricName} Performance Report - ${currentDate}`
+		};
+	}
+
 	// ...existing code...
 </script>
 
@@ -1182,73 +1214,56 @@
 			<div class="space-y-1">
 				<CardTitle class="text-xl font-semibold">
 					{#if weeklyData}
-						Weekly {getMetricDisplayName(weeklyData.metric)} Trends
+						{getChartTitle(weeklyData.metric, weeklyData.data.length).title}
 					{:else}
-						Weekly Data
+						Weekly Data Analysis
 					{/if}
 				</CardTitle>
 				{#if weeklyData}
 					<p class="text-sm text-muted-foreground">
-						Last {weeklyData.data.length} weeks analysis
-						<span class="text-xs text-muted-foreground/70">
-							(excludes current incomplete week)
-						</span>
+						{getChartTitle(weeklyData.metric, weeklyData.data.length).subtitle}
 					</p>
+					<!-- Email-friendly tools -->
+					<div class="space-y-2">
+						<div class="flex items-center gap-2 text-xs text-muted-foreground/70">
+							<span class="font-mono bg-muted/30 px-2 py-1 rounded flex-1">
+								Email Subject: {getChartTitle(weeklyData.metric, weeklyData.data.length)
+									.emailSubject}
+							</span>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-6 px-2 text-xs"
+								onclick={() => {
+									navigator.clipboard.writeText(
+										getChartTitle(weeklyData.metric, weeklyData.data.length).emailSubject
+									);
+								}}
+							>
+								📋 Copy
+							</Button>
+						</div>
+						<div class="flex items-center gap-2 text-xs text-muted-foreground/70">
+							<span class="font-mono bg-muted/30 px-2 py-1 rounded flex-1">
+								Email Title: {getChartTitle(weeklyData.metric, weeklyData.data.length).emailTitle}
+							</span>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-6 px-2 text-xs"
+								onclick={() => {
+									navigator.clipboard.writeText(
+										getChartTitle(weeklyData.metric, weeklyData.data.length).emailTitle
+									);
+								}}
+							>
+								📋 Copy
+							</Button>
+						</div>
+					</div>
 				{/if}
 			</div>
 			<div class="flex items-center gap-2">
-				{#if weeklyData && !loading}
-					<!-- Temporarily always show YoY toggle for debugging -->
-					<Button
-						variant={showYearOverYearOverlay ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => {
-							showYearOverYearOverlay = !showYearOverYearOverlay;
-						}}
-						class="flex items-center gap-2"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-							/>
-						</svg>
-						YoY Overlay {hasMultiYearData() ? '✓' : ''}
-					</Button>
-
-					<!-- Smart Predictions Toggle -->
-					<Button
-						variant={showSmartPredictions ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => {
-							showSmartPredictions = !showSmartPredictions;
-							console.log('Smart Predictions toggled:', {
-								enabled: !showSmartPredictions,
-								hasSmartPredictions: !!weeklyData?.smartPredictions,
-								hasWeeks: !!weeklyData?.smartPredictions?.weeks,
-								weeksLength: weeklyData?.smartPredictions?.weeks?.length || 0,
-								smartPredictions: weeklyData?.smartPredictions,
-								methodology: weeklyData?.smartPredictions?.methodology,
-								currentDataLength: weeklyData?.data?.length || 0
-							});
-						}}
-						class="flex items-center gap-2"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-							/>
-						</svg>
-						Smart Forecast {weeklyData?.smartPredictions?.weeks?.length
-							? `(${weeklyData.smartPredictions.weeks.length})`
-							: '(No Data)'}
-					</Button>
-				{/if}
 				{#if weeklyData && !loading}
 					<Button
 						variant="outline"
@@ -1647,6 +1662,64 @@
 				<p>No weekly data available</p>
 			</div>
 		{:else}
+			<!-- Chart Controls -->
+			{#if weeklyData && !loading}
+				<div class="flex items-center justify-between mb-4 px-2">
+					<div class="flex items-center gap-2">
+						<!-- YoY Overlay Toggle -->
+						<Button
+							variant={showYearOverYearOverlay ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => {
+								showYearOverYearOverlay = !showYearOverYearOverlay;
+							}}
+							class="flex items-center gap-2"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+								/>
+							</svg>
+							YoY Overlay {hasMultiYearData() ? '✓' : ''}
+						</Button>
+
+						<!-- Smart Predictions Toggle -->
+						<Button
+							variant={showSmartPredictions ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => {
+								showSmartPredictions = !showSmartPredictions;
+								console.log('Smart Predictions toggled:', {
+									enabled: !showSmartPredictions,
+									hasSmartPredictions: !!weeklyData?.smartPredictions,
+									hasWeeks: !!weeklyData?.smartPredictions?.weeks,
+									weeksLength: weeklyData?.smartPredictions?.weeks?.length || 0,
+									smartPredictions: weeklyData?.smartPredictions,
+									methodology: weeklyData?.smartPredictions?.methodology,
+									currentDataLength: weeklyData?.data?.length || 0
+								});
+							}}
+							class="flex items-center gap-2"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+								/>
+							</svg>
+							Smart Forecast {weeklyData?.smartPredictions?.weeks?.length
+								? `(${weeklyData.smartPredictions.weeks.length})`
+								: '(No Data)'}
+						</Button>
+					</div>
+				</div>
+			{/if}
+
 			<!-- Line Chart -->
 			<div class="relative weekly-chart-container">
 				<svg
@@ -1788,6 +1861,7 @@
 							stroke-width="3"
 							class="cursor-pointer hover:r-7 transition-all"
 							onpointerenter={(e) => handlePointHover(e, index, point)}
+							onpointerleave={handleMouseLeave}
 						/>
 					{/each}
 
@@ -1806,6 +1880,7 @@
 								opacity={prediction.confidence}
 								class="cursor-pointer hover:r-6 transition-all"
 								onpointerenter={(e) => handlePredictionPointHover(e, index, prediction)}
+								onpointerleave={handleMouseLeave}
 							/>
 							<!-- Confidence indicator -->
 							<circle
@@ -1837,6 +1912,7 @@
 									stroke-width="2"
 									class="cursor-pointer hover:r-6 transition-all"
 									onpointerenter={(e) => handleYoyPointHover(e, index, point)}
+									onpointerleave={handleMouseLeave}
 								/>
 							{/each}
 							{#each yoyData.upcomingWeeksReference as point, index}
@@ -1852,6 +1928,7 @@
 									opacity="0.7"
 									class="cursor-pointer hover:r-5 transition-all"
 									onpointerenter={(e) => handleReferencePointHover(e, index, point)}
+									onpointerleave={handleMouseLeave}
 								/>
 								<!-- Add reference label -->
 								<text
@@ -1871,6 +1948,7 @@
 					{#each chartData() as point, index}
 						{@const x = padding.left + xScale()(index)}
 						{@const y = padding.top + yScale()(point.value)}
+						{@const isLatestWeek = index === chartData().length - 1}
 						<g transform="translate({x}, {y - 25})">
 							<!-- Tooltip background -->
 							<rect
@@ -1879,8 +1957,8 @@
 								width="60"
 								height="24"
 								rx="12"
-								fill="rgba(255, 255, 255, 0.95)"
-								stroke="rgba(16, 185, 129, 0.3)"
+								fill={isLatestWeek ? 'rgba(59, 130, 246, 0.95)' : 'rgba(255, 255, 255, 0.95)'}
+								stroke={isLatestWeek ? 'rgba(59, 130, 246, 0.6)' : 'rgba(16, 185, 129, 0.3)'}
 								stroke-width="1"
 								filter="drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))"
 							/>
@@ -1890,7 +1968,9 @@
 								y="0"
 								text-anchor="middle"
 								dominant-baseline="middle"
-								class="text-xs fill-gray-700 font-medium"
+								class={isLatestWeek
+									? 'text-xs fill-white font-medium'
+									: 'text-xs fill-gray-700 font-medium'}
 								style="font-size: 11px;"
 							>
 								{formatValue(point.value, weeklyData.metric)}
@@ -1929,9 +2009,17 @@
 
 				<!-- Tooltip -->
 				{#if hoveredPoint}
+					{@const isLatestWeek =
+						hoveredPoint.index === chartData().length - 1 &&
+						!('isReference' in hoveredPoint.data) &&
+						!('isPrediction' in hoveredPoint.data)}
 					<div
-						class="absolute bg-background border border-border rounded-lg shadow-lg p-3 pointer-events-none z-10 min-w-48"
+						class="absolute border rounded-lg shadow-lg p-3 z-10 min-w-48 {isLatestWeek
+							? 'bg-blue-50 border-blue-200'
+							: 'bg-background border-border'}"
 						style="left: {mousePosition.x + 10}px; top: {mousePosition.y - 10}px;"
+						onmouseleave={handleMouseLeave}
+						role="tooltip"
 					>
 						{#if hoveredPoint.data.isReference}
 							<!-- Reference Point Tooltip -->
@@ -2046,8 +2134,13 @@
 							</div>
 						{:else}
 							<!-- Regular Point Tooltip -->
-							<div class="font-medium text-sm">
+							<div class="font-medium text-sm {isLatestWeek ? 'text-blue-700' : ''}">
 								Week {hoveredPoint.data.weekNumber}, {hoveredPoint.data.year}
+								{#if isLatestWeek}
+									<span class="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full"
+										>Latest</span
+									>
+								{/if}
 							</div>
 							<div class="text-xs text-muted-foreground mb-2">
 								{formatWeekRange(hoveredPoint.data.weekStartDate, hoveredPoint.data.weekEndDate)}
