@@ -90,7 +90,7 @@
 	let sortDirection: 'asc' | 'desc' = $state('asc');
 
 	// Historical lens feature state
-	let displayMode: MetricDisplayMode = $state('current-month');
+	let displayMode: MetricDisplayMode = $state('historical-weekly');
 	let historicalConfig: WeekdayHistoricalConfig = $state({
 		selectedMetric: 'total_sales',
 		selectedWeekday: 'monday',
@@ -144,6 +144,13 @@
 				const currentYear = new Date().getFullYear();
 				for (let year = 2020; year <= currentYear + 1; year++) {
 					availableYears.push(year);
+				}
+
+				// Load initial data based on the default display mode
+				if (displayMode === 'historical-weekly') {
+					await loadWeeklyData();
+				} else if (displayMode === 'historical-weekday') {
+					await loadHistoricalData();
 				}
 			}
 		} catch (error) {
