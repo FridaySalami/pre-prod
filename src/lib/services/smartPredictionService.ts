@@ -10,6 +10,32 @@ export interface PredictionWeights {
   momentum: number;     // Based on recent performance and volatility
 }
 
+export interface PredictionAccuracy {
+  trend: number;
+  seasonal: number;
+  momentum: number;
+  yoy: number;
+}
+
+export interface BacktestResult {
+  accuracy: PredictionAccuracy;
+  averageRMSE: number;
+  averageMAPE: number;
+  totalTests: number;
+  methodRMSE: {
+    trend: number;
+    seasonal: number;
+    momentum: number;
+    yoy: number;
+  };
+  methodMAPE: {
+    trend: number;
+    seasonal: number;
+    momentum: number;
+    yoy: number;
+  };
+}
+
 export interface PredictionContributingFactors {
   trend: number;
   seasonal: number;
@@ -26,6 +52,7 @@ export interface SmartPredictionWeek {
   weekStartDate: string;
   weekEndDate: string;
   isPrediction: true;
+  anomalyLikely?: boolean; // Flag for potential outliers/anomalies
 }
 
 export interface SmartPrediction {
@@ -40,6 +67,7 @@ export interface SmartPrediction {
     seasonalExpectation: number; // Expected seasonal performance
     trendProjection: number;     // Pure trend projection
   };
+  backtestAccuracy?: PredictionAccuracy; // Historical accuracy per method
 }
 
 export class SmartPredictionService {
@@ -117,6 +145,17 @@ export class SmartPredictionService {
     const dominantFactor = this.getDominantFactor(weights);
     const confidenceLevel = this.calculateOverallConfidence(weights, currentData.length);
 
+    // Run backtesting to get historical accuracy if sufficient data
+    let backtestAccuracy: PredictionAccuracy | undefined;
+    if (currentData.length >= 12) { // Need sufficient data for backtesting
+      try {
+        const backtestResult = this.backtestPredictions(currentData, previousYearData);
+        backtestAccuracy = backtestResult.accuracy;
+      } catch (error) {
+        console.warn('Backtesting failed:', error);
+      }
+    }
+
     return {
       weeks: ensemblePredictions,
       methodology: {
@@ -124,7 +163,8 @@ export class SmartPredictionService {
         dominantFactor,
         confidenceLevel
       },
-      comparison
+      comparison,
+      backtestAccuracy
     };
   }
 
@@ -140,7 +180,7 @@ export class SmartPredictionService {
 
     // Trend weight: Based on R² and trend consistency
     const trendR2 = trendAnalysis.r2 || 0;
-    const trendConsistency = this.calculateTrendConsistency(currentData);
+    const trendConsistency = SmartPredictionService.calculateTrendConsistency(currentData);
     const trendWeight = Math.min(1.0, trendR2 * trendConsistency);
 
     // Seasonal weight: Based on detected cycle strength and confidence
@@ -149,10 +189,10 @@ export class SmartPredictionService {
     const seasonalWeight = Math.min(1.0, seasonalStrength * cycleConfidence);
 
     // YoY weight: Based on data availability and consistency
-    const yoyWeight = hasYoYData ? this.calculateYoYConsistency(currentData) : 0;
+    const yoyWeight = hasYoYData ? SmartPredictionService.calculateYoYConsistency(currentData) : 0;
 
     // Momentum weight: Inverse of volatility (ensure minimum weight)
-    const volatility = this.calculateVolatility(currentData.map(d => d.value));
+    const volatility = SmartPredictionService.calculateVolatility(currentData.map(d => d.value));
     const momentumWeight = Math.max(0.2, 1.0 - Math.min(1.0, volatility));
 
     // Normalize weights
@@ -363,12 +403,22 @@ export class SmartPredictionService {
       const yoyValue = yoyPredictions[i];
       const momentumValue = momentumPredictions[i];
 
-      // Weighted ensemble prediction
-      const predictedValue =
-        (trendValue * weights.trend) +
-        (seasonalValue * weights.seasonal) +
-        (yoyValue * weights.yearOverYear) +
-        (momentumValue * weights.momentum);
+      // Ensure positive values for geometric mean (add small epsilon to avoid log(0))
+      const safeTrendValue = Math.max(0.1, trendValue);
+      const safeSeasonalValue = Math.max(0.1, seasonalValue);
+      const safeYoyValue = Math.max(0.1, yoyValue);
+      const safeMomentumValue = Math.max(0.1, momentumValue);
+
+      // Nonlinear ensemble prediction using geometric mean
+      // This approach reduces the impact of outlier predictions and provides
+      // more balanced weighting when predictions vary significantly
+      const predictedValue = Math.pow(
+        (Math.pow(safeTrendValue, weights.trend) *
+          Math.pow(safeSeasonalValue, weights.seasonal) *
+          Math.pow(safeYoyValue, weights.yearOverYear) *
+          Math.pow(safeMomentumValue, weights.momentum)),
+        1 / (weights.trend + weights.seasonal + weights.yearOverYear + weights.momentum)
+      );
 
       // Calculate confidence based on prediction agreement
       const predictions_array = [trendValue, seasonalValue, yoyValue, momentumValue];
@@ -376,6 +426,15 @@ export class SmartPredictionService {
       const variance = predictions_array.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / predictions_array.length;
       const stdDev = Math.sqrt(variance);
       const confidence = Math.max(0.1, Math.min(1.0, 1 - (stdDev / mean)));
+
+      // Outlier Detection
+      const anomalyLikely = this.detectPredictionAnomaly(
+        predictedValue,
+        [safeTrendValue, safeSeasonalValue, safeYoyValue, safeMomentumValue],
+        confidence,
+        mean,
+        stdDev
+      );
 
       // Calculate future week details
       const futureWeekNumber = lastWeek.weekNumber + i + 1;
@@ -393,14 +452,17 @@ export class SmartPredictionService {
         predictedValue: Math.max(0, predictedValue),
         confidence,
         contributingFactors: {
-          trend: trendValue * weights.trend,
-          seasonal: seasonalValue * weights.seasonal,
-          yoy: yoyValue * weights.yearOverYear,
-          momentum: momentumValue * weights.momentum
+          // For geometric mean, show the weighted logarithmic contribution
+          // This represents each method's proportional influence in log space
+          trend: weights.trend * Math.log(safeTrendValue),
+          seasonal: weights.seasonal * Math.log(safeSeasonalValue),
+          yoy: weights.yearOverYear * Math.log(safeYoyValue),
+          momentum: weights.momentum * Math.log(safeMomentumValue)
         },
         weekStartDate: futureStartDate.toISOString().split('T')[0],
         weekEndDate: futureEndDate.toISOString().split('T')[0],
-        isPrediction: true
+        isPrediction: true,
+        anomalyLikely
       });
     }
 
@@ -472,6 +534,296 @@ export class SmartPredictionService {
     if (finalConfidence > 0.75) return 'high';
     if (finalConfidence > 0.5) return 'medium';
     return 'low';
+  }
+
+  /**
+   * Backtest predictions by running forecasts on historical data
+   * This helps evaluate and improve prediction accuracy over time
+   */
+  /**
+   * Backtest predictions by rewinding 4 weeks and comparing forecast vs actual
+   * Tracks RMSE and MAPE for each prediction method
+   */
+  static backtestPredictions(
+    allData: Array<{
+      weekNumber: number;
+      year: number;
+      value: number;
+      weekStartDate: string;
+      weekEndDate: string;
+    }>,
+    previousYearData: Array<{
+      weekNumber: number;
+      year: number;
+      value: number;
+      weekStartDate: string;
+      weekEndDate: string;
+    }>,
+    backtestWeeks: number = 8 // Test last 8 weeks
+  ): BacktestResult {
+
+    const methodErrors = {
+      trend: [] as number[],
+      seasonal: [] as number[],
+      momentum: [] as number[],
+      yoy: [] as number[]
+    };
+
+    const ensembleErrors: number[] = [];
+    let totalTests = 0;
+
+    // Rewind 4 weeks at a time to generate predictions and compare
+    for (let rewindWeeks = 4; rewindWeeks <= Math.min(backtestWeeks, allData.length - 8); rewindWeeks += 4) {
+      // Split data at the rewind point
+      const trainingData = allData.slice(0, allData.length - rewindWeeks);
+      const testData = allData.slice(allData.length - rewindWeeks, allData.length - rewindWeeks + 4);
+
+      if (trainingData.length < 8 || testData.length === 0) continue;
+
+      try {
+        // Generate predictions using only training data
+        const trendAnalysis = this.calculateBasicTrend(trainingData);
+        const seasonalAnalysis = this.calculateBasicSeasonal(trainingData);
+
+        const weights = this.calculateDynamicWeights(
+          trainingData,
+          trendAnalysis,
+          seasonalAnalysis,
+          previousYearData.length > 0
+        );
+
+        // Generate individual method predictions
+        const trendPreds = this.generateTrendPredictions(trainingData, trendAnalysis, 4);
+        const seasonalPreds = this.generateSeasonalPredictions(trainingData, seasonalAnalysis, 4);
+        const yoyPreds = this.generateYoYPredictions(trainingData, previousYearData, 4);
+        const momentumPreds = this.generateMomentumPredictions(trainingData, 4);
+
+        // Calculate ensemble predictions
+        const ensemblePreds = this.combineEnsemblePredictions(
+          trendPreds, seasonalPreds, yoyPreds, momentumPreds, weights, trainingData
+        );
+
+        // Compare against actual values for available test data
+        for (let i = 0; i < Math.min(testData.length, 4); i++) {
+          const actual = testData[i].value;
+          if (actual > 0) { // Valid actual value
+            // Calculate MAPE for each method
+            if (trendPreds[i] > 0) {
+              methodErrors.trend.push(Math.abs((actual - trendPreds[i]) / actual) * 100);
+            }
+            if (seasonalPreds[i] > 0) {
+              methodErrors.seasonal.push(Math.abs((actual - seasonalPreds[i]) / actual) * 100);
+            }
+            if (yoyPreds[i] > 0) {
+              methodErrors.yoy.push(Math.abs((actual - yoyPreds[i]) / actual) * 100);
+            }
+            if (momentumPreds[i] > 0) {
+              methodErrors.momentum.push(Math.abs((actual - momentumPreds[i]) / actual) * 100);
+            }
+
+            // Ensemble MAPE
+            const ensembleValue = ensemblePreds[i]?.predictedValue || 0;
+            if (ensembleValue > 0) {
+              ensembleErrors.push(Math.abs((actual - ensembleValue) / actual) * 100);
+            }
+
+            totalTests++;
+          }
+        }
+      } catch (error) {
+        console.warn('Backtest error for rewind week', rewindWeeks, error);
+      }
+    }
+
+    // Calculate accuracy metrics (1 - MAPE/100)
+    const calculateAccuracy = (errors: number[]): number => {
+      if (errors.length === 0) return 0.5; // Default moderate accuracy
+      const avgMAPE = errors.reduce((sum, err) => sum + err, 0) / errors.length;
+      return Math.max(0, Math.min(1, 1 - (avgMAPE / 100)));
+    };
+
+    const calculateRMSE = (errors: number[]): number => {
+      if (errors.length === 0) return 0;
+      const mse = errors.reduce((sum, err) => sum + err * err, 0) / errors.length;
+      return Math.sqrt(mse);
+    };
+
+    const calculateMAPE = (errors: number[]): number => {
+      if (errors.length === 0) return 0;
+      return errors.reduce((sum, err) => sum + err, 0) / errors.length;
+    };
+
+    return {
+      accuracy: {
+        trend: calculateAccuracy(methodErrors.trend),
+        seasonal: calculateAccuracy(methodErrors.seasonal),
+        momentum: calculateAccuracy(methodErrors.momentum),
+        yoy: calculateAccuracy(methodErrors.yoy)
+      },
+      averageRMSE: calculateRMSE(ensembleErrors),
+      averageMAPE: calculateMAPE(ensembleErrors),
+      totalTests,
+      methodRMSE: {
+        trend: calculateRMSE(methodErrors.trend),
+        seasonal: calculateRMSE(methodErrors.seasonal),
+        momentum: calculateRMSE(methodErrors.momentum),
+        yoy: calculateRMSE(methodErrors.yoy)
+      },
+      methodMAPE: {
+        trend: calculateMAPE(methodErrors.trend),
+        seasonal: calculateMAPE(methodErrors.seasonal),
+        momentum: calculateMAPE(methodErrors.momentum),
+        yoy: calculateMAPE(methodErrors.yoy)
+      }
+    };
+  }
+
+  /**
+   * Helper method for basic trend calculation (for backtesting)
+   */
+  private static calculateBasicTrend(data: any[]): any {
+    if (data.length < 3) return { direction: 'stable', percentage: 0, r2: 0, slope: 0 };
+
+    const values = data.map(d => d.value);
+    const n = values.length;
+    const x = Array.from({ length: n }, (_, i) => i);
+
+    // Simple linear regression
+    const sumX = x.reduce((sum, val) => sum + val, 0);
+    const sumY = values.reduce((sum, val) => sum + val, 0);
+    const sumXY = x.reduce((sum, val, i) => sum + val * values[i], 0);
+    const sumXX = x.reduce((sum, val) => sum + val * val, 0);
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    // Calculate R²
+    const yMean = sumY / n;
+    const totalSumSquares = values.reduce((sum, val) => sum + Math.pow(val - yMean, 2), 0);
+    const residualSumSquares = values.reduce((sum, val, i) => {
+      const predicted = slope * i + intercept;
+      return sum + Math.pow(val - predicted, 2);
+    }, 0);
+
+    const r2 = totalSumSquares > 0 ? 1 - (residualSumSquares / totalSumSquares) : 0;
+
+    const direction = slope > 0.1 ? 'up' : slope < -0.1 ? 'down' : 'stable';
+    const percentage = Math.abs(slope / yMean) * 100;
+
+    return { direction, percentage, r2: Math.max(0, r2), slope };
+  }
+
+  /**
+   * Helper method for basic seasonal calculation (for backtesting)
+   */
+  private static calculateBasicSeasonal(data: any[]): any {
+    if (data.length < 8) {
+      return { seasonalityDetected: false, seasonalStrength: 0 };
+    }
+
+    // Simple seasonality check
+    const values = data.map(d => d.value);
+    let cyclePeriod = 4; // Default 4-week cycle
+    let maxCorrelation = 0;
+
+    // Test different cycle periods
+    for (let period = 3; period <= Math.min(12, Math.floor(values.length / 2)); period++) {
+      let correlation = 0;
+      let count = 0;
+
+      for (let i = period; i < values.length; i++) {
+        if (values[i] > 0 && values[i - period] > 0) {
+          correlation += Math.abs(values[i] - values[i - period]) / values[i];
+          count++;
+        }
+      }
+
+      const avgCorrelation = count > 0 ? 1 - (correlation / count) : 0;
+      if (avgCorrelation > maxCorrelation) {
+        maxCorrelation = avgCorrelation;
+        cyclePeriod = period;
+      }
+    }
+
+    return {
+      seasonalityDetected: maxCorrelation > 0.3,
+      seasonalStrength: maxCorrelation,
+      cyclePeriod: cyclePeriod,
+      primaryCycle: {
+        period: cyclePeriod,
+        strength: maxCorrelation,
+        confidence: maxCorrelation
+      }
+    };
+  }
+
+  /**
+   * Detect potential prediction anomalies/outliers
+   * Flags predictions that may be unreliable due to:
+   * - High standard deviation between prediction methods
+   * - Extreme values relative to historical data
+   * - Low confidence scores
+   */
+  private static detectPredictionAnomaly(
+    predictedValue: number,
+    methodPredictions: number[], // [trend, seasonal, yoy, momentum]
+    confidence: number,
+    methodMean: number,
+    methodStdDev: number
+  ): boolean {
+
+    // Flag 1: High disagreement between methods (high standard deviation)
+    const cvThreshold = 0.3; // Coefficient of variation threshold
+    const coefficientOfVariation = methodMean > 0 ? methodStdDev / methodMean : 0;
+    const highDisagreement = coefficientOfVariation > cvThreshold;
+
+    // Flag 2: Low confidence score
+    const lowConfidence = confidence < 0.4;
+
+    // Flag 3: Extreme prediction relative to method spread
+    const zScore = methodMean > 0 ? Math.abs(predictedValue - methodMean) / methodStdDev : 0;
+    const extremePrediction = zScore > 2.0; // More than 2 standard deviations
+
+    // Flag 4: Individual method predictions with extreme outliers
+    const methodMedian = this.calculateMedian(methodPredictions);
+    const hasOutlierMethod = methodPredictions.some(pred => {
+      if (methodMedian <= 0) return false;
+      const methodZScore = Math.abs(pred - methodMedian) / (methodStdDev || 1);
+      return methodZScore > 2.5;
+    });
+
+    // Flag 5: Zero or negative predictions when positive expected
+    const invalidPrediction = predictedValue <= 0 && methodPredictions.some(p => p > 0);
+
+    // Combine flags - anomaly if multiple conditions are met
+    const anomalyFlags = [
+      highDisagreement,
+      lowConfidence,
+      extremePrediction,
+      hasOutlierMethod,
+      invalidPrediction
+    ];
+
+    const flagCount = anomalyFlags.filter(flag => flag).length;
+
+    // Flag as anomaly if 2 or more conditions are met
+    return flagCount >= 2;
+  }
+
+  /**
+   * Helper method to calculate median of an array
+   */
+  private static calculateMedian(values: number[]): number {
+    if (values.length === 0) return 0;
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+
+    if (sorted.length % 2 === 0) {
+      return (sorted[mid - 1] + sorted[mid]) / 2;
+    } else {
+      return sorted[mid];
+    }
   }
 
   // Helper methods
