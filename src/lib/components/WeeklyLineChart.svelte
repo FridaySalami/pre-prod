@@ -653,6 +653,73 @@
 		return pathParts.join(' ');
 	});
 
+	// Generate smart prediction confidence band path
+	const smartPredictionConfidenceBand = $derived(() => {
+		if (!showSmartPredictions || !smartPredictionData() || smartPredictionData().length === 0)
+			return '';
+
+		const actualData = chartData();
+		const predictionData = smartPredictionData();
+
+		const upperPathParts: string[] = [];
+		const lowerPathParts: string[] = [];
+
+		// Start from the last actual data point
+		if (actualData.length > 0) {
+			const lastActualIndex = actualData.length - 1;
+			const x = padding.left + xScale()(lastActualIndex);
+			const lastActualValue = actualData[lastActualIndex].value;
+
+			// Use the first prediction's method agreement for the starting point
+			const firstPredictionConfidence = predictionData[0]?.confidence || 0.8;
+			const methodDisagreement = 1 - firstPredictionConfidence;
+			const uncertaintyRange = methodDisagreement * 0.3 + 0.1; // 10-40% range
+
+			const upperY = padding.top + yScale()(lastActualValue * (1 + uncertaintyRange));
+			const lowerY = padding.top + yScale()(lastActualValue * (1 - uncertaintyRange));
+
+			upperPathParts.push(`M ${x} ${upperY}`);
+			lowerPathParts.push(`M ${x} ${lowerY}`);
+		}
+
+		// Generate confidence band points for each prediction
+		predictionData.forEach((point, index) => {
+			const x = padding.left + xScale()(actualData.length + index);
+
+			// Convert method agreement to uncertainty range
+			// High agreement (confidence near 1.0) = narrow band (~10-15%)
+			// Low agreement (confidence near 0.1) = wide band (~25-40%)
+			// This reflects how much the different forecasting methods disagree
+			const methodDisagreement = 1 - point.confidence;
+			const uncertaintyRange = methodDisagreement * 0.3 + 0.1; // 10-40% range
+
+			const upperValue = point.predictedValue * (1 + uncertaintyRange);
+			const lowerValue = point.predictedValue * (1 - uncertaintyRange);
+
+			const upperY = padding.top + yScale()(upperValue);
+			const lowerY = padding.top + yScale()(lowerValue);
+
+			upperPathParts.push(`L ${x} ${upperY}`);
+			lowerPathParts.push(`L ${x} ${lowerY}`);
+		});
+
+		// Create a closed path for the confidence band area
+		// Upper path + reverse lower path to create filled area
+		const reversedLowerPath = lowerPathParts
+			.slice()
+			.reverse()
+			.map((part) => part.replace('M ', 'L ').replace('L ', 'L '));
+
+		// Combine paths to create closed area
+		const combinedPath = [
+			...upperPathParts,
+			...reversedLowerPath,
+			'Z' // Close the path
+		].join(' ');
+
+		return combinedPath;
+	});
+
 	// Generate previous year overlay line path
 	const previousYearLinePath = $derived(() => {
 		if (!showYearOverYearOverlay || !yearOverYearData()) return '';
@@ -1662,6 +1729,16 @@
 						stroke-linejoin="round"
 					/>
 
+					<!-- Smart Prediction Confidence Band -->
+					{#if showSmartPredictions && smartPredictionConfidenceBand()}
+						<path
+							d={smartPredictionConfidenceBand()}
+							fill="#f59e0b"
+							fill-opacity="0.15"
+							stroke="none"
+						/>
+					{/if}
+
 					<!-- Smart Prediction Line -->
 					{#if showSmartPredictions && smartPredictionLinePath()}
 						<path
@@ -1926,6 +2003,47 @@
 									</div>
 								{/if}
 							</div>
+						{:else if hoveredPoint.data.isPrediction}
+							<!-- Smart Prediction Point Tooltip -->
+							<div class="font-medium text-sm text-orange-600">
+								🔮 Predicted Week {hoveredPoint.data.weekNumber}, {hoveredPoint.data.year}
+							</div>
+							<div class="text-xs text-muted-foreground mb-2">
+								{formatWeekRange(hoveredPoint.data.weekStartDate, hoveredPoint.data.weekEndDate)}
+							</div>
+							<div class="space-y-1">
+								<div class="flex justify-between">
+									<span class="text-xs text-muted-foreground">Predicted Value:</span>
+									<span class="text-sm font-semibold text-orange-600">
+										{formatValue(hoveredPoint.data.value, weeklyData.metric)}
+									</span>
+								</div>
+								<div class="flex justify-between">
+									<span class="text-xs text-muted-foreground">Method Agreement:</span>
+									<span class="text-xs font-medium text-orange-600">
+										{(hoveredPoint.data.confidence * 100).toFixed(1)}%
+									</span>
+								</div>
+								{#if hoveredPoint.data.anomalyLikely}
+									<div
+										class="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200"
+									>
+										⚠️ Anomaly detected - prediction may be unreliable
+									</div>
+								{/if}
+								<div class="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
+									📊 Forecast uncertainty: ±{((1 - hoveredPoint.data.confidence) * 30 + 10).toFixed(
+										0
+									)}% band
+								</div>
+								<div class="text-xs text-muted-foreground">
+									{hoveredPoint.data.confidence > 0.8
+										? 'High method agreement'
+										: hoveredPoint.data.confidence > 0.6
+											? 'Moderate method agreement'
+											: 'Low method agreement'}
+								</div>
+							</div>
 						{:else}
 							<!-- Regular Point Tooltip -->
 							<div class="font-medium text-sm">
@@ -2030,6 +2148,10 @@
 						<div class="flex items-center gap-2">
 							<div class="w-3 h-3 rounded-full bg-amber-500 opacity-75"></div>
 							<span class="text-muted-foreground">Predicted Values</span>
+						</div>
+						<div class="flex items-center gap-2">
+							<div class="w-4 h-2 bg-amber-500 opacity-20 rounded-sm"></div>
+							<span class="text-muted-foreground">Confidence Band</span>
 						</div>
 					{/if}
 				</div>
