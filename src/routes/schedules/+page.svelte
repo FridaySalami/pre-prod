@@ -32,6 +32,7 @@
 	import { SchedulePerformanceMonitor } from '$lib/schedule/performanceMonitor';
 	import { ScheduleValidator } from '$lib/schedule/validators';
 	import { OptimizedScheduleFetcher, preloadAdjacentMonths } from '$lib/schedule/optimizedFetcher';
+	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
 	import './style.css';
 
 	let session: any = undefined;
@@ -2371,3 +2372,6 @@
 {/if}
 
 <!-- Toast notifications are now handled by the global layout to prevent duplication -->
+
+<!-- Documentation Link -->
+<DocumentationLink section="schedules" position="bottom-left" size="medium" />

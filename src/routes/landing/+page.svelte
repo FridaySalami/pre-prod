@@ -16,6 +16,7 @@
 		AlertDescription,
 		Badge
 	} from '$lib/shadcn/components';
+	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
 
 	// Add authentication check
 	// Start with session as undefined (unknown)
@@ -1848,6 +1849,9 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Documentation Link -->
+	<DocumentationLink section="landing-page" position="bottom-right" size="medium" />
 {:else}
 	<!-- When session is null, onMount should have redirected already -->
 	<div class="loading-container">

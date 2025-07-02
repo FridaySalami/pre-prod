@@ -4,6 +4,7 @@
 	import { userSession } from '$lib/sessionStore';
 	import OrdersList from '$lib/OrdersList.svelte';
 	import DuplicatedDailyProducts from '$lib/DuplicatedDailyProducts.svelte';
+	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
 
 	// Authentication check
 	let session: any = undefined;
@@ -269,8 +270,13 @@
 {:else if session}
 	<div class="analytics-container">
 		<div class="page-header">
-			<h2>Analytics</h2>
-			<p class="subtitle">Performance metrics and business insights</p>
+			<div class="header-content">
+				<div class="header-text">
+					<h2>Analytics</h2>
+					<p class="subtitle">Performance metrics and business insights</p>
+				</div>
+				<DocumentationLink section="analytics" />
+			</div>
 		</div>
 
 		<div class="analytics-content">
@@ -540,17 +546,25 @@
 		margin-bottom: 32px;
 	}
 
-	.page-header h2 {
-		font-size: 1.8em;
-		font-weight: 600;
-		color: #1f2937;
-		margin: 0 0 8px 0;
+	.header-content {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
 	}
 
-	.subtitle {
-		color: #6b7280;
-		font-size: 1.1em;
+	.header-text h2 {
+		margin: 0 0 4px 0;
+		color: #1f2937;
+		font-size: 2rem;
+		font-weight: 600;
+	}
+
+	.header-text .subtitle {
 		margin: 0;
+		color: #6b7280;
+		font-size: 1.1rem;
 	}
 
 	.analytics-content {

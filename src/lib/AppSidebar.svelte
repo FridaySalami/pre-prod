@@ -146,6 +146,14 @@
 			title: 'Schedules',
 			url: '/schedules',
 			icon: 'calendar_today'
+		},
+		{
+			type: 'separator'
+		},
+		{
+			title: 'Documentation',
+			url: '/documentation',
+			icon: 'description'
 		}
 	];
 
