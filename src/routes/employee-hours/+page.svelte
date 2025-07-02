@@ -10,6 +10,7 @@
 		checkHoursExist,
 		type DailyEmployeeHour
 	} from '$lib/dailyHoursService';
+	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
 
 	// Authentication check
 	let session = $state<Session | null | undefined>(undefined);
@@ -262,7 +263,10 @@
 	<div class="container">
 		<!-- Compact Header -->
 		<div class="header">
-			<h1>Employee Hours</h1>
+			<div class="header-content">
+				<h1>Employee Hours</h1>
+				<DocumentationLink section="employee-hours" />
+			</div>
 			<div class="date-picker">
 				<input
 					id="date-input"
@@ -543,20 +547,25 @@
 	/* Compact Header */
 	.header {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 16px;
-		padding: 12px 16px;
-		background: white;
-		border-radius: 8px;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		justify-content: space-between;
+		margin-bottom: 24px;
+		gap: 16px;
+		flex-wrap: wrap;
 	}
 
-	.header h1 {
+	.header-content {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		flex: 1;
+	}
+
+	.header-content h1 {
+		margin: 0;
+		color: #1f2937;
 		font-size: 1.75rem;
 		font-weight: 600;
-		color: #1f2937;
-		margin: 0;
 	}
 
 	.date-picker {
