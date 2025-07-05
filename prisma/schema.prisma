@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Configuration and settings
+model Setting {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  
+  @@map("settings")
+}
+
+// Amazon seller listings
+model AmazonListing {
+  id                      String   @id @default(cuid())
+  sellerSku               String   @unique @map("seller_sku")
+  itemName                String   @map("item_name")
+  price                   Float?
+  merchantShippingGroup   String?  @map("merchant_shipping_group")
+  status                  String
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  
+  @@map("amazon_listings")
+}
+
+// Inventory items
+model Inventory {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sku           String   @unique
+  stockLevel    Int?     @map("stock_level")
+  depth         Float?
+  height        Float?
+  width         Float?
+  purchasePrice Float?   @map("purchase_price")
+  retailPrice   Float?   @map("retail_price")
+  title         String
+  tracked       Boolean  @default(true)
+  weight        Float?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  
+  @@map("inventory")
+}
+
+// Sage report data
+model SageReport {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stockCode              String   @unique @map("stock_code")
+  binName                String?  @map("bin_name")
+  standardCost           Float?   @map("standard_cost")
+  taxRate                Float?   @map("tax_rate")
+  price                  Float?
+  productGroupCode       String?  @map("product_group_code")
+  bomItemTypeId          String?  @map("bom_item_type_id")
+  companyName            String?  @map("company_name")
+  supplierAccountNumber  String?  @map("supplier_account_number")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  
+  @@map("sage_reports")
+}
+
+model LinnworksComposition {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentSKU    String   @map("parent_sku")
+  parentTitle  String?  @map("parent_title")
+  childSKU     String   @map("child_sku")
+  childTitle   String?  @map("child_title")
+  quantity     Int
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([parentSKU, childSKU])
+  @@index([parentSKU])
+  @@index([childSKU])
+  @@map("linnworks_composition")
+}
+
+model LinnworksCompositionSummary {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentSKU       String   @map("parent_sku")
+  parentTitle     String?  @map("parent_title")
+  childSKUs       String?  @map("child_skus")   // JSON string of child SKUs
+  childTitles     String?  @map("child_titles") // JSON string of child titles
+  childQuantities String?  @map("child_quantities") // JSON string of child quantities
+  childPrices     String?  @map("child_prices")  // JSON string of child prices
+  childVATs       String?  @map("child_vats")    // JSON string of child VATs
+  totalQty        Int?     @map("total_qty")
+  totalValue      Float?   @map("total_value")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([parentSKU])
+  @@map("linnworks_composition_summary")
+}
+
+// Import tracking
+model ImportRecord {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  filename         String
+  fileType         String   @map("file_type") // "amazon_listings", "inventory", "sage_reports", "linnworks_composition"
+  status           String   // "pending", "processing", "completed", "failed"
+  recordsTotal     Int?     @map("records_total")
+  recordsProcessed Int?     @map("records_processed")
+  recordsFailed    Int?     @map("records_failed")
+  errors           String?  // JSON string for error details
+  importedAt       DateTime @default(now()) @map("imported_at") @db.Timestamptz
+  
+  @@map("import_records")
+}
+
+// User sessions and audit log
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  action      String
+  entity      String
+  entityId    String   @map("entity_id")
+  changes     String?  // JSON string
+  userId      String?  @map("user_id")
+  userEmail   String?  @map("user_email")
+  timestamp   DateTime @default(now()) @db.Timestamptz
+  
+  @@map("audit_log")
+}

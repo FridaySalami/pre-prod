@@ -50,7 +50,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Check environment variables without importing them
     const hasSupabaseUrl = !!process.env.PUBLIC_SUPABASE_URL;
-    const hasServiceRole = !!process.env.SUPABASE_SERVICE_ROLE;
+    const hasServiceRole = !!process.env.PRIVATE_SUPABASE_SERVICE_KEY;
 
     return new Response(JSON.stringify({
       success: true,

@@ -1,0 +1,4 @@
+seller-sku,item-name,price,merchant-shipping-group,status
+TEST001,Test Product 1,19.99,Standard,active
+TEST002,Test Product 2,29.99,Premium,active
+TEST003,Test Product 3,9.99,Standard,inactive

@@ -1,0 +1,6 @@
+StockItems.Code,BinItems.BinName,StockItems.StandardCost,StockItems.TaxRate,StockItemPrices.Price,ProductGroups.Code,StockItems.BOMItemTypeID,SYSCompanies.CompanyName,SYSSuppliers.AccountNumber
+TEST001,BIN-A1,15.99,0.2,29.99,PG001,TYPE1,Test Company,SUP001
+TEST002,BIN-A2,25.00,0.2,49.99,PG002,TYPE2,Test Company,SUP002
+TEST003,BIN-B1,8.50,0.1,19.99,PG001,TYPE1,Another Company,SUP001
+TEST004,BIN-B2,12.75,0.15,24.99,PG003,TYPE3,Test Company,SUP003
+TEST005,BIN-C1,45.50,0.2,89.99,PG002,TYPE2,Another Company,SUP002

@@ -23,8 +23,8 @@ export const POST: RequestHandler = async ({ request }) => {
     try {
       steps.push("3. Checking environment variables...");
       const hasPublicUrl = !!process.env.PUBLIC_SUPABASE_URL;
-      const hasServiceRole = !!process.env.SUPABASE_SERVICE_ROLE;
-      steps.push(`3. Environment check: PUBLIC_SUPABASE_URL=${hasPublicUrl}, SUPABASE_SERVICE_ROLE=${hasServiceRole}`);
+      const hasServiceRole = !!process.env.PRIVATE_SUPABASE_SERVICE_KEY;
+      steps.push(`3. Environment check: PUBLIC_SUPABASE_URL=${hasPublicUrl}, PRIVATE_SUPABASE_SERVICE_KEY=${hasServiceRole}`);
     } catch (err) {
       steps.push(`3. Environment check failed: ${err}`);
     }
@@ -36,8 +36,8 @@ export const POST: RequestHandler = async ({ request }) => {
       steps.push("4. Supabase import successful");
 
       // Test creating client
-      if (process.env.PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE) {
-        const supabaseAdmin = createClient(process.env.PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE);
+      if (process.env.PUBLIC_SUPABASE_URL && process.env.PRIVATE_SUPABASE_SERVICE_KEY) {
+        const supabaseAdmin = createClient(process.env.PUBLIC_SUPABASE_URL, process.env.PRIVATE_SUPABASE_SERVICE_KEY);
         steps.push("4. Supabase client created successfully");
       }
     } catch (err) {

@@ -1,0 +1,41 @@
+[
+  {
+    "Product_Code": "TEST001",
+    "Product_Name": "Test Product 1",
+    "Category": "electronics",
+    "Supplier": "Test Supplier",
+    "Cost_Price": "10.50",
+    "Selling_Price": "15.75",
+    "Weight": "1.2",
+    "Description": "A test product for development",
+    "Stock_Level": "100",
+    "Reorder_Level": "20",
+    "Active": true
+  },
+  {
+    "Product_Code": "TEST002",
+    "Product_Name": "Test Product 2",
+    "Category": "clothing",
+    "Supplier": "Test Supplier",
+    "Cost_Price": "25.00",
+    "Selling_Price": "49.99",
+    "Weight": "0.5",
+    "Description": "Another test product",
+    "Stock_Level": "50",
+    "Reorder_Level": "10",
+    "Active": true
+  },
+  {
+    "Product_Code": "TEST003",
+    "Product_Name": "Test Product 3",
+    "Category": "home",
+    "Supplier": "Another Supplier",
+    "Cost_Price": "5.25",
+    "Selling_Price": "12.99",
+    "Weight": "2.1",
+    "Description": "Third test product",
+    "Stock_Level": "200",
+    "Reorder_Level": "50",
+    "Active": true
+  }
+]

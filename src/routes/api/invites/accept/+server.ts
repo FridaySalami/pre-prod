@@ -1,13 +1,13 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { SUPABASE_SERVICE_ROLE } from '$env/static/private';
+import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
 
-if (!PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+if (!PUBLIC_SUPABASE_URL || !PRIVATE_SUPABASE_SERVICE_KEY) {
   throw new Error('Missing Supabase configuration in environment variables');
 }
 
-const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
 
 export const POST: RequestHandler = async ({ request }) => {
   const { token, fullName, password } = await request.json();
