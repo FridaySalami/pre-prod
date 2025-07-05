@@ -148,6 +148,11 @@
 			icon: 'calendar_today'
 		},
 		{
+			title: 'Pricer Tool',
+			url: '/pricer',
+			icon: 'calculate'
+		},
+		{
 			type: 'separator'
 		},
 		{

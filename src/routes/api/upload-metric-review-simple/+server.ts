@@ -1,7 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { SUPABASE_SERVICE_ROLE } from '$env/static/private';
+import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
 
 // Simple version without complex imports to isolate the issue
 export const POST: RequestHandler = async ({ request }) => {
@@ -11,14 +11,14 @@ export const POST: RequestHandler = async ({ request }) => {
     steps.push("1. Starting simplified upload test");
 
     // Check environment variables using SvelteKit imports
-    steps.push(`2. Environment check: URL=${!!PUBLIC_SUPABASE_URL}, Role=${!!SUPABASE_SERVICE_ROLE}`);
+    steps.push(`2. Environment check: URL=${!!PUBLIC_SUPABASE_URL}, Role=${!!PRIVATE_SUPABASE_SERVICE_KEY}`);
 
-    if (!PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      throw new Error(`Missing environment variables: URL=${!!PUBLIC_SUPABASE_URL}, Role=${!!SUPABASE_SERVICE_ROLE}`);
+    if (!PUBLIC_SUPABASE_URL || !PRIVATE_SUPABASE_SERVICE_KEY) {
+      throw new Error(`Missing environment variables: URL=${!!PUBLIC_SUPABASE_URL}, Role=${!!PRIVATE_SUPABASE_SERVICE_KEY}`);
     }
 
     // Test Supabase connection
-    const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+    const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
     steps.push("3. Supabase client created");
 
     // Test a simple Supabase query

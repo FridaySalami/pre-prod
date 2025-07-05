@@ -1,0 +1,15 @@
+{
+  "name": "pricer-data-import",
+  "version": "1.0.0",
+  "description": "Data import utilities for Sage and Linnworks",
+  "scripts": {
+    "import:sage": "node scripts/csv-to-json.js data/sage_export.csv data/sage_products.json",
+    "import:linnworks": "node scripts/csv-to-json.js data/linnworks_export.csv data/linnworks_products.json",
+    "import:all": "npm run import:sage && npm run import:linnworks",
+    "validate:json": "node scripts/validate-data.js"
+  },
+  "dependencies": {
+    "csv-parser": "^3.0.0",
+    "fs-extra": "^11.0.0"
+  }
+}

@@ -1,0 +1,304 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+
+	// No tabs needed - single overview page
+</script>
+
+<svelte:head>
+	<title>Pricer Dashboard</title>
+</svelte:head>
+
+<div class="pricer-container">
+	<!-- Header -->
+	<div class="header">
+		<div class="header-content">
+			<h1>Pricer Dashboard</h1>
+			<p>Manage your pricing, listings, and calculations</p>
+		</div>
+	</div>
+
+	<!-- Main Content Area -->
+	<div class="content">
+		<div class="overview-section">
+			<div class="welcome-card">
+				<h2>Welcome to Pricer Dashboard</h2>
+				<p>
+					Your central hub for managing Amazon listings, inventory, pricing rules, and
+					calculations.
+				</p>
+			</div>
+
+			<!-- Two Column Layout -->
+			<div class="main-sections">
+				<!-- Left Column: Calculators -->
+				<div class="section-column">
+					<div class="section-card calculators">
+						<div class="section-header">
+							<div class="section-icon">💰</div>
+							<h3>Calculators</h3>
+							<p>Pricing & shipping calculation tools</p>
+						</div>
+						<div class="section-links">
+							<a href="/inventory-profit-calculator" class="section-link">
+								<div class="link-icon">💰</div>
+								<div class="link-content">
+									<div class="link-title">Inventory Profit Calculator</div>
+									<div class="link-description">Calculate profits, margins, costs, and pricing for all inventory items</div>
+								</div>
+							</a>
+							<a href="/inventory-profit-calculator/scenario-analysis" class="section-link">
+								<div class="link-icon">🚚</div>
+								<div class="link-content">
+									<div class="link-title">SKU Shipping Calculator</div>
+									<div class="link-description">Analyze individual SKU shipping costs and scenarios</div>
+								</div>
+							</a>
+						</div>
+					</div>
+				</div>
+
+				<!-- Right Column: Admin -->
+				<div class="section-column">
+					<div class="section-card admin">
+						<div class="section-header">
+							<div class="section-icon">⚙️</div>
+							<h3>Admin Data Management</h3>
+							<p>Upload and manage core data sources</p>
+						</div>
+						<div class="section-links">
+							<a href="/amazon-listings" class="section-link">
+								<div class="link-icon">📦</div>
+								<div class="link-content">
+									<div class="link-title">Amazon Listings</div>
+									<div class="link-description">Import and manage Amazon seller listings</div>
+								</div>
+							</a>
+							<a href="/inventory" class="section-link">
+								<div class="link-icon">📋</div>
+								<div class="link-content">
+									<div class="link-title">Inventory Data</div>
+									<div class="link-description">Upload and manage inventory items</div>
+								</div>
+							</a>
+							<a href="/linnworks-composition" class="section-link">
+								<div class="link-icon">🧩</div>
+								<div class="link-content">
+									<div class="link-title">Linnworks Composition</div>
+									<div class="link-description">Manage product composition data</div>
+								</div>
+							</a>
+							<a href="/sage-reports" class="section-link">
+								<div class="link-icon">📊</div>
+								<div class="link-content">
+									<div class="link-title">Sage Reports</div>
+									<div class="link-description">Import Sage report data including costs</div>
+								</div>
+							</a>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<style>
+	.pricer-container {
+		min-height: calc(100vh - 140px);
+		background: #f8fafc;
+	}
+
+	.header {
+		background: white;
+		border-bottom: 1px solid #e5e7eb;
+		padding: 24px 32px;
+	}
+
+	.header-content h1 {
+		font-size: 2rem;
+		font-weight: 700;
+		color: #111827;
+		margin: 0 0 8px 0;
+	}
+
+	.header-content p {
+		color: #6b7280;
+		margin: 0;
+		font-size: 1rem;
+	}
+
+	.content {
+		padding: 32px;
+	}
+
+	.overview-section {
+		max-width: 1200px;
+		margin: 0 auto;
+	}
+
+	.welcome-card {
+		background: white;
+		padding: 32px;
+		border-radius: 12px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		margin-bottom: 32px;
+		text-align: center;
+	}
+
+	.welcome-card h2 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: #111827;
+		margin: 0 0 8px 0;
+	}
+
+	.welcome-card p {
+		color: #6b7280;
+		margin: 0;
+	}
+
+	/* Two Column Layout */
+	.main-sections {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 32px;
+	}
+
+	.section-column {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.section-card {
+		background: white;
+		border-radius: 16px;
+		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+		border: 1px solid #e5e7eb;
+		overflow: hidden;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.section-card.calculators {
+		border-color: #2563eb;
+		box-shadow: 0 8px 25px rgba(37, 99, 235, 0.15);
+	}
+
+	.section-card.admin {
+		border-color: #059669;
+		box-shadow: 0 8px 25px rgba(5, 150, 105, 0.15);
+	}
+
+	.section-header {
+		padding: 24px 24px 16px 24px;
+		text-align: center;
+		border-bottom: 1px solid #f3f4f6;
+	}
+
+	.section-icon {
+		font-size: 2.5rem;
+		margin-bottom: 8px;
+	}
+
+	.section-header h3 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: #111827;
+		margin: 0 0 4px 0;
+	}
+
+	.section-header p {
+		color: #6b7280;
+		font-size: 0.875rem;
+		margin: 0;
+	}
+
+	.section-links {
+		padding: 16px;
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.section-link {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		padding: 16px;
+		border-radius: 8px;
+		border: 1px solid #e5e7eb;
+		background: #f9fafb;
+		text-decoration: none;
+		transition: all 0.2s ease;
+	}
+
+	.section-link:hover {
+		background: white;
+		border-color: #2563eb;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+		transform: translateY(-1px);
+	}
+
+	.link-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+
+	.link-content {
+		flex: 1;
+	}
+
+	.link-title {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: #111827;
+		margin-bottom: 2px;
+	}
+
+	.link-description {
+		font-size: 0.75rem;
+		color: #6b7280;
+		line-height: 1.4;
+	}
+
+	@media (max-width: 768px) {
+		.content {
+			padding: 16px;
+		}
+
+		.header {
+			padding: 16px 20px;
+		}
+
+		.main-sections {
+			grid-template-columns: 1fr;
+			gap: 24px;
+		}
+
+		.welcome-card {
+			padding: 24px;
+		}
+
+		.section-header {
+			padding: 20px 20px 12px 20px;
+		}
+
+		.section-links {
+			padding: 12px;
+		}
+
+		.section-link {
+			padding: 12px;
+		}
+
+		.link-title {
+			font-size: 0.8rem;
+		}
+
+		.link-description {
+			font-size: 0.7rem;
+		}
+	}
+</style>

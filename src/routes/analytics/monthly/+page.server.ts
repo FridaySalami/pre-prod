@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { SUPABASE_SERVICE_ROLE } from '$env/static/private';
+import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
 
 // TypeScript interface for the daily metric review data
 interface DailyMetricData {
@@ -23,10 +23,10 @@ interface DailyMetricData {
 export async function load({ url }) {
   console.log('Environment check:', {
     url: PUBLIC_SUPABASE_URL,
-    keyExists: !!SUPABASE_SERVICE_ROLE
+    keyExists: !!PRIVATE_SUPABASE_SERVICE_KEY
   });
 
-  if (!PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+  if (!PUBLIC_SUPABASE_URL || !PRIVATE_SUPABASE_SERVICE_KEY) {
     console.error('Missing Supabase configuration');
     return {
       monthlyData: null,
@@ -39,7 +39,7 @@ export async function load({ url }) {
     };
   }
 
-  const supabase = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+  const supabase = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
 
   // Get year and month from URL params, default to current month
   const year = url.searchParams.get('year') ? parseInt(url.searchParams.get('year')!) : new Date().getFullYear();
