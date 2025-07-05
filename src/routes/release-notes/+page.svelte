@@ -6,13 +6,308 @@
 	<header class="release-header">
 		<h1>Release Notes</h1>
 		<p class="version-info">
-			Latest Version: 1.2 | Release Date: June 17, 2025 | Last Updated: June 19, 2025
+			Latest Version: 1.3 | Release Date: July 5, 2025 | Last Updated: July 5, 2025
 		</p>
 	</header>
 
 	<!-- Accordion container for different versions -->
 	<div class="release-container">
-		<Accordion.Root type="multiple" class="release-accordion" value={['v1.2']}>
+		<Accordion.Root type="multiple" class="release-accordion" value={['v1.3']}>
+			<!-- Version 1.3 Release Notes -->
+			<Accordion.Item value="v1.3" class="version-section">
+				<Accordion.Trigger class="version-header">
+					<div class="version-title">
+						<div class="version-info-left">
+							<h2>Version 1.3</h2>
+							<span class="version-date">July 5, 2025</span>
+						</div>
+					</div>
+				</Accordion.Trigger>
+				<Accordion.Content class="version-content">
+					<section class="release-section">
+						<h3>Operations Dashboard & Pricer Implementation</h3>
+						<ul class="feature-list">
+							<li>
+								Created comprehensive Operations Dashboard (Pricer) as central navigation hub for
+								pricing, inventory, and business operations
+							</li>
+							<li>
+								Implemented clean two-column layout design with Admin and Calculator sections for
+								intuitive navigation
+							</li>
+							<li>
+								Integrated responsive gradient overview cards displaying key metrics: Active
+								Products (9,971), Profit Analysis, and Compositions (10,068)
+							</li>
+							<li>
+								Organized admin functions including Linnworks Composition, Amazon Listings,
+								Inventory Management, Sage Reports, and Composition Summary
+							</li>
+							<li>
+								Added calculator tools section featuring Inventory Profit Calculator and SKU
+								Shipping Calculator for operational analysis
+							</li>
+							<li>
+								Implemented consistent navigation with hover effects, visual indicators, and
+								responsive mobile-friendly design
+							</li>
+							<li>
+								Enhanced breadcrumb navigation across all profit calculator pages with proper
+								back-to-dashboard functionality
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Inventory Profit Calculator System</h3>
+						<ul class="feature-list">
+							<li>
+								Developed comprehensive inventory profit calculator processing all 9,971 products
+								with real-time cost and margin analysis
+							</li>
+							<li>
+								Implemented chunked data fetching to overcome Supabase 1,000 record limits, ensuring
+								complete dataset processing
+							</li>
+							<li>
+								Created sophisticated cost lookup system integrating both Linnworks composition data
+								and Sage reports for accurate pricing
+							</li>
+							<li>
+								Built complex shipping cost calculator with tier-based pricing using weight,
+								dimensions, and Amazon shipping preferences
+							</li>
+							<li>
+								Added comprehensive VAT calculations with 20% VAT rate application for applicable
+								products
+							</li>
+							<li>
+								Implemented Cost + Margin calculations using 23% margin logic (cost ÷ 0.77) for
+								pricing strategy analysis
+							</li>
+							<li>
+								Created Material Total Cost calculations including VAT, box costs, material costs,
+								fragile charges, and base costs
+							</li>
+							<li>
+								Developed Amazon pricing calculator incorporating profit margins, material costs,
+								shipping, and 15% Amazon fee structure
+							</li>
+							<li>
+								Added box size cost lookup system with 30+ predefined box types and associated
+								packaging costs
+							</li>
+							<li>
+								Implemented fragile product identification system with automated 66p fragile charge
+								application for high-risk SKUs
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Linnworks Composition System Enhancement</h3>
+						<ul class="feature-list">
+							<li>
+								Fixed critical Linnworks composition summary generation to process all 10,517
+								composition records instead of 1,000 limit
+							</li>
+							<li>
+								Resolved duplicate record issues in composition summary by implementing proper
+								deletion and chunked fetching strategies
+							</li>
+							<li>
+								Enhanced composition summary to correctly map parent SKUs with child component costs
+								from Sage reports integration
+							</li>
+							<li>
+								Implemented robust JSON array handling for child SKUs, quantities, prices, and VAT
+								rates with safe parsing mechanisms
+							</li>
+							<li>
+								Created comprehensive cost calculation system using child standard costs multiplied
+								by quantities for accurate parent product pricing
+							</li>
+							<li>
+								Added field name standardization between API responses (snake_case) and frontend
+								display requirements
+							</li>
+							<li>
+								Enhanced summary generation with detailed logging and error handling for
+								troubleshooting composition data issues
+							</li>
+							<li>
+								Fixed SKU matching issues ensuring products like "0X-U12R-J16J" properly appear in
+								composition summaries with correct costs
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>SKU Shipping Calculator (Scenario Analysis)</h3>
+						<ul class="feature-list">
+							<li>
+								Developed individual SKU analysis tool for detailed shipping cost and profit
+								scenario modeling
+							</li>
+							<li>
+								Created interactive search functionality allowing users to find and analyze specific
+								products
+							</li>
+							<li>
+								Implemented comprehensive product detail display including dimensions, weight, stock
+								levels, and pricing information
+							</li>
+							<li>
+								Added shipping tier visualization showing how products fit into different shipping
+								cost categories
+							</li>
+							<li>
+								Built margin analysis tools with adjustable margin percentages for pricing strategy
+								testing
+							</li>
+							<li>
+								Integrated Amazon fee calculations with 15% marketplace fee structure for accurate
+								profit projections
+							</li>
+							<li>
+								Added scenario comparison functionality allowing users to model different pricing
+								and shipping strategies
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Data Integration & API Enhancements</h3>
+						<ul class="feature-list">
+							<li>
+								Implemented comprehensive data fetching system handling inventory, Amazon listings,
+								Linnworks compositions, and Sage reports
+							</li>
+							<li>
+								Created efficient chunked data retrieval system processing datasets larger than
+								Supabase default limits
+							</li>
+							<li>
+								Enhanced API error handling with detailed logging and user-friendly error messages
+							</li>
+							<li>
+								Added data deduplication logic ensuring latest records are used when multiple
+								entries exist for same SKU
+							</li>
+							<li>
+								Implemented robust lookup map systems for fast SKU-based data retrieval across
+								multiple data sources
+							</li>
+							<li>
+								Created comprehensive data validation ensuring consistent data types and handling of
+								null/undefined values
+							</li>
+							<li>
+								Added performance optimizations with efficient data processing algorithms for large
+								dataset handling
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>User Interface & Experience Improvements</h3>
+						<ul class="feature-list">
+							<li>
+								Designed responsive table layouts with color-coded profit indicators (green for
+								profitable, red for loss-making products)
+							</li>
+							<li>
+								Implemented comprehensive search and filtering capabilities across all product data
+							</li>
+							<li>
+								Added pagination controls with configurable page sizes (10, 25, 50, 100 products per
+								page)
+							</li>
+							<li>
+								Created detailed product legends explaining color coding and visual indicators
+							</li>
+							<li>
+								Enhanced mobile responsiveness ensuring full functionality across all device types
+							</li>
+							<li>
+								Added export functionality with CSV download capabilities for external analysis
+							</li>
+							<li>
+								Implemented loading states and progress indicators for better user experience during
+								data processing
+							</li>
+							<li>
+								Created contextual breadcrumb navigation for seamless movement between related tools
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Business Logic & Calculation Engine</h3>
+						<ul class="feature-list">
+							<li>
+								Developed sophisticated shipping tier matching algorithm based on weight,
+								dimensions, and service preferences
+							</li>
+							<li>
+								Implemented comprehensive cost hierarchy: base cost → VAT application → material
+								costs → shipping costs → Amazon fees
+							</li>
+							<li>
+								Created intelligent box size matching system with fallback handling for unknown
+								dimensions
+							</li>
+							<li>
+								Added fragile product detection using comprehensive SKU database for accurate charge
+								application
+							</li>
+							<li>
+								Built profit calculation engine with margin analysis and break-even point
+								identification
+							</li>
+							<li>
+								Implemented Amazon marketplace fee structure (15%) with proper profit margin
+								calculations
+							</li>
+							<li>
+								Created material cost standardization (£0.20 per product) for consistent overhead
+								application
+							</li>
+						</ul>
+					</section>
+
+					<section class="release-section">
+						<h3>Performance & Reliability</h3>
+						<ul class="feature-list">
+							<li>
+								Resolved critical performance bottlenecks by implementing chunked data fetching for
+								large datasets
+							</li>
+							<li>
+								Enhanced database query efficiency with proper indexing and optimized data retrieval
+								patterns
+							</li>
+							<li>
+								Added comprehensive error boundaries and fallback mechanisms for robust application
+								stability
+							</li>
+							<li>
+								Implemented data caching strategies to reduce redundant API calls and improve
+								response times
+							</li>
+							<li>
+								Created efficient memory management for processing large product datasets without
+								performance degradation
+							</li>
+							<li>
+								Added monitoring and logging capabilities for tracking system performance and
+								identifying optimization opportunities
+							</li>
+						</ul>
+					</section>
+				</Accordion.Content>
+			</Accordion.Item>
+
 			<!-- Version 1.2 Release Notes -->
 			<Accordion.Item value="v1.2" class="version-section">
 				<Accordion.Trigger class="version-header">
