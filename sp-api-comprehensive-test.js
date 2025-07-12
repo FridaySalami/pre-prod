@@ -28,8 +28,8 @@ const CONFIG = {
   CLIENT_ID: process.env.AMAZON_CLIENT_ID,
   CLIENT_SECRET: process.env.AMAZON_CLIENT_SECRET,
   REFRESH_TOKEN: process.env.AMAZON_REFRESH_TOKEN,
-  AWS_ACCESS_KEY: process.env.AWS_ACCESS_KEY_ID,
-  AWS_SECRET_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+  AWS_ACCESS_KEY: process.env.AMAZON_AWS_ACCESS_KEY_ID,
+  AWS_SECRET_KEY: process.env.AMAZON_AWS_SECRET_ACCESS_KEY,
   REGION: process.env.AMAZON_REGION || 'eu-west-1',
   MARKETPLACE_ID: process.env.AMAZON_MARKETPLACE_ID,
   SELLER_ID: process.env.AMAZON_SELLER_ID
@@ -62,8 +62,8 @@ function validateEnvironment() {
     { name: 'AMAZON_CLIENT_ID', value: CONFIG.CLIENT_ID, required: true },
     { name: 'AMAZON_CLIENT_SECRET', value: CONFIG.CLIENT_SECRET, required: true },
     { name: 'AMAZON_REFRESH_TOKEN', value: CONFIG.REFRESH_TOKEN, required: true },
-    { name: 'AWS_ACCESS_KEY_ID', value: CONFIG.AWS_ACCESS_KEY, required: true },
-    { name: 'AWS_SECRET_ACCESS_KEY', value: CONFIG.AWS_SECRET_KEY, required: true },
+    { name: 'AMAZON_AWS_ACCESS_KEY_ID', value: CONFIG.AWS_ACCESS_KEY, required: true },
+    { name: 'AMAZON_AWS_SECRET_ACCESS_KEY', value: CONFIG.AWS_SECRET_KEY, required: true },
     { name: 'AMAZON_REGION', value: CONFIG.REGION, required: false },
     { name: 'AMAZON_MARKETPLACE_ID', value: CONFIG.MARKETPLACE_ID, required: true },
     { name: 'AMAZON_SELLER_ID', value: CONFIG.SELLER_ID, required: false }
@@ -451,7 +451,7 @@ function generateDiagnosticReport() {
 
   if (!awsOK) {
     console.log('3. ☁️ Generate new AWS access keys in IAM console');
-    console.log('   Update AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env');
+    console.log('   Update AMAZON_AWS_ACCESS_KEY_ID and AMAZON_AWS_SECRET_ACCESS_KEY in .env');
   }
 
   if (hasEndpointData) {

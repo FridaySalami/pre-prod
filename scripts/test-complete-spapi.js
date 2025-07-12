@@ -14,9 +14,9 @@ require('dotenv').config();
 const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.AMAZON_REFRESH_TOKEN;
-const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-const AWS_REGION = process.env.AWS_REGION || 'eu-west-1';
+const AWS_ACCESS_KEY_ID = process.env.AMAZON_AWS_ACCESS_KEY_ID;
+const AWS_SECRET_ACCESS_KEY = process.env.AMAZON_AWS_SECRET_ACCESS_KEY;
+const AWS_REGION = process.env.AMAZON_AWS_REGION || 'eu-west-1';
 const MARKETPLACE_ID = process.env.AMAZON_MARKETPLACE_ID;
 const SELLER_ID = process.env.AMAZON_SELLER_ID;
 
@@ -41,8 +41,8 @@ const missingConfig = [];
 if (!CLIENT_ID) missingConfig.push('AMAZON_CLIENT_ID');
 if (!CLIENT_SECRET) missingConfig.push('AMAZON_CLIENT_SECRET');
 if (!REFRESH_TOKEN) missingConfig.push('AMAZON_REFRESH_TOKEN');
-if (!AWS_ACCESS_KEY_ID) missingConfig.push('AWS_ACCESS_KEY_ID');
-if (!AWS_SECRET_ACCESS_KEY) missingConfig.push('AWS_SECRET_ACCESS_KEY');
+if (!AWS_ACCESS_KEY_ID) missingConfig.push('AMAZON_AWS_ACCESS_KEY_ID');
+if (!AWS_SECRET_ACCESS_KEY) missingConfig.push('AMAZON_AWS_SECRET_ACCESS_KEY');
 if (!MARKETPLACE_ID) missingConfig.push('AMAZON_MARKETPLACE_ID');
 if (!SELLER_ID) missingConfig.push('AMAZON_SELLER_ID');
 

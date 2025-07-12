@@ -85,10 +85,10 @@ async function makeSignedRequest(path) {
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${crypto.createHash('sha256').update(canonicalRequest).digest('hex')}`;
 
-  const signingKey = getSignatureKey(process.env.AWS_SECRET_ACCESS_KEY, dateStamp, region, service);
+  const signingKey = getSignatureKey(process.env.AMAZON_AWS_SECRET_ACCESS_KEY, dateStamp, region, service);
   const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
 
-  const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${process.env.AWS_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${process.env.AMAZON_AWS_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   return new Promise((resolve, reject) => {
     const options = {

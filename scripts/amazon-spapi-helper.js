@@ -20,7 +20,7 @@ class AmazonSPAPI {
     this.marketplaceId = config.marketplaceId;
     this.sellerId = config.sellerId;
     this.host = 'sellingpartnerapi-eu.amazon.com';
-    
+
     this.cachedToken = null;
     this.tokenExpiry = null;
   }
@@ -81,19 +81,19 @@ class AmazonSPAPI {
     const service = 'execute-api';
     const date = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
     const dateStamp = date.slice(0, 8);
-    
+
     const canonicalHeaders = Object.keys(headers)
       .sort()
       .map(key => `${key.toLowerCase()}:${headers[key]}`)
       .join('\n') + '\n';
-    
+
     const signedHeaders = Object.keys(headers)
       .sort()
       .map(key => key.toLowerCase())
       .join(';');
-    
+
     const payloadHash = crypto.createHash('sha256').update(payload).digest('hex');
-    
+
     const canonicalRequest = [
       method,
       uri,
@@ -102,7 +102,7 @@ class AmazonSPAPI {
       signedHeaders,
       payloadHash
     ].join('\n');
-    
+
     const credentialScope = `${dateStamp}/${this.awsRegion}/${service}/aws4_request`;
     const stringToSign = [
       algorithm,
@@ -110,15 +110,15 @@ class AmazonSPAPI {
       credentialScope,
       crypto.createHash('sha256').update(canonicalRequest).digest('hex')
     ].join('\n');
-    
+
     const kDate = crypto.createHmac('sha256', `AWS4${this.awsSecretAccessKey}`).update(dateStamp).digest();
     const kRegion = crypto.createHmac('sha256', kDate).update(this.awsRegion).digest();
     const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
     const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
     const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
-    
+
     const authorization = `${algorithm} Credential=${this.awsAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-    
+
     return {
       'Authorization': authorization,
       'X-Amz-Date': date
@@ -131,16 +131,16 @@ class AmazonSPAPI {
     const querystring = new URLSearchParams(queryParams).toString();
     const method = 'GET';
     const payload = '';
-    
+
     const headers = {
       'host': this.host,
       'x-amz-access-token': accessToken,
       'user-agent': 'MyApp/1.0'
     };
-    
+
     const awsHeaders = this.createSignature(method, path, querystring, headers, payload);
     Object.assign(headers, awsHeaders);
-    
+
     return new Promise((resolve, reject) => {
       const options = {
         hostname: this.host,
@@ -148,7 +148,7 @@ class AmazonSPAPI {
         method: method,
         headers: headers
       };
-      
+
       const req = https.request(options, (res) => {
         let data = '';
         res.on('data', (chunk) => data += chunk);
@@ -165,7 +165,7 @@ class AmazonSPAPI {
           }
         });
       });
-      
+
       req.on('error', reject);
       req.end();
     });
@@ -178,14 +178,14 @@ class AmazonSPAPI {
       MarketplaceId: this.marketplaceId,
       ItemCondition: itemCondition
     };
-    
+
     return this.makeRequest(path, params);
   }
 
   // Get multiple item offers
   async getMultipleItemOffers(asins, itemCondition = 'New') {
     const results = [];
-    
+
     for (const asin of asins) {
       try {
         const offers = await this.getItemOffers(asin, itemCondition);
@@ -201,11 +201,11 @@ class AmazonSPAPI {
           error: error.message
         });
       }
-      
+
       // Rate limiting - wait 100ms between requests
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    
+
     return results;
   }
 
@@ -213,7 +213,7 @@ class AmazonSPAPI {
   extractPricingInfo(offersResponse) {
     const payload = offersResponse.payload;
     const offers = payload.Offers || [];
-    
+
     if (offers.length === 0) {
       return {
         asin: payload.ASIN,
@@ -223,13 +223,13 @@ class AmazonSPAPI {
         offerCount: 0
       };
     }
-    
+
     const prices = offers
       .filter(offer => offer.ListingPrice && offer.ListingPrice.Amount)
       .map(offer => parseFloat(offer.ListingPrice.Amount));
-    
+
     const buyboxOffer = offers.find(offer => offer.IsBuyBoxWinner);
-    
+
     return {
       asin: payload.ASIN,
       hasOffers: true,
@@ -247,14 +247,14 @@ class AmazonSPAPI {
 // Demo usage
 async function demo() {
   require('dotenv').config();
-  
+
   const api = new AmazonSPAPI({
     clientId: process.env.AMAZON_CLIENT_ID,
     clientSecret: process.env.AMAZON_CLIENT_SECRET,
     refreshToken: process.env.AMAZON_REFRESH_TOKEN,
-    awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    awsRegion: process.env.AWS_REGION,
+    awsAccessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID,
+    awsSecretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY,
+    awsRegion: process.env.AMAZON_AWS_REGION,
     marketplaceId: process.env.AMAZON_MARKETPLACE_ID,
     sellerId: process.env.AMAZON_SELLER_ID
   });
@@ -265,11 +265,11 @@ async function demo() {
   try {
     // Test with multiple ASINs
     const testAsins = ['B00A2KD8NY', 'B07P6Y8L3F', 'B08N5WRWNW'];
-    
+
     console.log('📦 Testing multiple products...\n');
-    
+
     const results = await api.getMultipleItemOffers(testAsins.slice(0, 2)); // Test 2 to avoid rate limits
-    
+
     results.forEach((result, index) => {
       console.log(`Product ${index + 1}: ${result.asin}`);
       if (result.success) {
@@ -284,10 +284,10 @@ async function demo() {
       }
       console.log('');
     });
-    
+
     console.log('✅ Live Amazon data access confirmed!');
     console.log('🎯 You can now build your dashboard with real pricing data.');
-    
+
   } catch (error) {
     console.log(`❌ Demo failed: ${error.message}`);
   }

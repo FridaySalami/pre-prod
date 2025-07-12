@@ -14,9 +14,9 @@ require('dotenv').config();
 const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.AMAZON_REFRESH_TOKEN;
-const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-const AWS_REGION = process.env.AWS_REGION || 'eu-west-1';
+const AWS_ACCESS_KEY_ID = process.env.AMAZON_AWS_ACCESS_KEY_ID;
+const AWS_SECRET_ACCESS_KEY = process.env.AMAZON_AWS_SECRET_ACCESS_KEY;
+const AWS_REGION = process.env.AMAZON_AWS_REGION || 'eu-west-1';
 const MARKETPLACE_ID = process.env.AMAZON_MARKETPLACE_ID;
 const SELLER_ID = process.env.AMAZON_SELLER_ID;
 
@@ -73,20 +73,20 @@ function createSignature(method, uri, querystring, headers, payload, region) {
   const service = 'execute-api';
   const date = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
   const dateStamp = date.slice(0, 8);
-  
+
   // Create canonical request
   const canonicalHeaders = Object.keys(headers)
     .sort()
     .map(key => `${key.toLowerCase()}:${headers[key]}`)
     .join('\n') + '\n';
-  
+
   const signedHeaders = Object.keys(headers)
     .sort()
     .map(key => key.toLowerCase())
     .join(';');
-  
+
   const payloadHash = crypto.createHash('sha256').update(payload).digest('hex');
-  
+
   const canonicalRequest = [
     method,
     uri,
@@ -95,7 +95,7 @@ function createSignature(method, uri, querystring, headers, payload, region) {
     signedHeaders,
     payloadHash
   ].join('\n');
-  
+
   // Create string to sign
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
   const stringToSign = [
@@ -104,17 +104,17 @@ function createSignature(method, uri, querystring, headers, payload, region) {
     credentialScope,
     crypto.createHash('sha256').update(canonicalRequest).digest('hex')
   ].join('\n');
-  
+
   // Calculate signature
   const kDate = crypto.createHmac('sha256', `AWS4${AWS_SECRET_ACCESS_KEY}`).update(dateStamp).digest();
   const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
   const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
   const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
   const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
-  
+
   // Create authorization header
   const authorization = `${algorithm} Credential=${AWS_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-  
+
   return {
     'Authorization': authorization,
     'X-Amz-Date': date
@@ -124,7 +124,7 @@ function createSignature(method, uri, querystring, headers, payload, region) {
 // Test Pricing API endpoints
 async function testPricingAPI(accessToken) {
   console.log('📋 Testing Pricing API endpoints...\n');
-  
+
   const endpoints = [
     {
       name: 'Pricing - Get Pricing',
@@ -145,27 +145,27 @@ async function testPricingAPI(accessToken) {
       description: 'Get offers for a specific item'
     }
   ];
-  
+
   for (const endpoint of endpoints) {
     try {
       console.log(`🔍 Testing: ${endpoint.name}`);
       console.log(`   Description: ${endpoint.description}`);
-      
+
       const uri = endpoint.path;
       const querystring = endpoint.query;
       const host = `sellingpartnerapi-eu.amazon.com`;
       const method = 'GET';
       const payload = '';
-      
+
       const headers = {
         'host': host,
         'x-amz-access-token': accessToken,
         'user-agent': 'MyApp/1.0'
       };
-      
+
       const awsHeaders = createSignature(method, uri, querystring, headers, payload, AWS_REGION);
       Object.assign(headers, awsHeaders);
-      
+
       const result = await new Promise((resolve, reject) => {
         const options = {
           hostname: host,
@@ -173,7 +173,7 @@ async function testPricingAPI(accessToken) {
           method: method,
           headers: headers
         };
-        
+
         const req = https.request(options, (res) => {
           let data = '';
           res.on('data', (chunk) => data += chunk);
@@ -185,11 +185,11 @@ async function testPricingAPI(accessToken) {
             });
           });
         });
-        
+
         req.on('error', reject);
         req.end();
       });
-      
+
       if (result.statusCode === 200) {
         console.log(`   ✅ SUCCESS! Status: ${result.statusCode}`);
         try {
@@ -202,9 +202,9 @@ async function testPricingAPI(accessToken) {
         console.log(`   ❌ FAILED! Status: ${result.statusCode}`);
         console.log(`   📄 Response: ${result.data}`);
       }
-      
+
       console.log('');
-      
+
     } catch (error) {
       console.log(`   ❌ ERROR: ${error.message}\n`);
     }
@@ -214,7 +214,7 @@ async function testPricingAPI(accessToken) {
 // Test Product Catalog API (alternative if Pricing fails)
 async function testCatalogAPI(accessToken) {
   console.log('📋 Testing Catalog API endpoints...\n');
-  
+
   const endpoints = [
     {
       name: 'Catalog - Search Catalog Items',
@@ -229,27 +229,27 @@ async function testCatalogAPI(accessToken) {
       description: 'Get specific product details'
     }
   ];
-  
+
   for (const endpoint of endpoints) {
     try {
       console.log(`🔍 Testing: ${endpoint.name}`);
       console.log(`   Description: ${endpoint.description}`);
-      
+
       const uri = endpoint.path;
       const querystring = endpoint.query;
       const host = `sellingpartnerapi-eu.amazon.com`;
       const method = 'GET';
       const payload = '';
-      
+
       const headers = {
         'host': host,
         'x-amz-access-token': accessToken,
         'user-agent': 'MyApp/1.0'
       };
-      
+
       const awsHeaders = createSignature(method, uri, querystring, headers, payload, AWS_REGION);
       Object.assign(headers, awsHeaders);
-      
+
       const result = await new Promise((resolve, reject) => {
         const options = {
           hostname: host,
@@ -257,7 +257,7 @@ async function testCatalogAPI(accessToken) {
           method: method,
           headers: headers
         };
-        
+
         const req = https.request(options, (res) => {
           let data = '';
           res.on('data', (chunk) => data += chunk);
@@ -269,11 +269,11 @@ async function testCatalogAPI(accessToken) {
             });
           });
         });
-        
+
         req.on('error', reject);
         req.end();
       });
-      
+
       if (result.statusCode === 200) {
         console.log(`   ✅ SUCCESS! Status: ${result.statusCode}`);
         try {
@@ -286,9 +286,9 @@ async function testCatalogAPI(accessToken) {
         console.log(`   ❌ FAILED! Status: ${result.statusCode}`);
         console.log(`   📄 Response: ${result.data}`);
       }
-      
+
       console.log('');
-      
+
     } catch (error) {
       console.log(`   ❌ ERROR: ${error.message}\n`);
     }
@@ -302,16 +302,16 @@ async function main() {
     console.log('─'.repeat(40));
     const accessToken = await getAccessToken();
     console.log('✅ Access token obtained successfully!\n');
-    
+
     console.log('📋 STEP 2: Testing Live Data Endpoints');
     console.log('─'.repeat(40));
-    
+
     // Test Pricing API first (you have this permission)
     await testPricingAPI(accessToken);
-    
+
     // Test Catalog API as fallback
     await testCatalogAPI(accessToken);
-    
+
     console.log('='.repeat(60));
     console.log('🎯 TEST COMPLETE');
     console.log('='.repeat(60));
@@ -322,7 +322,7 @@ async function main() {
     console.log('   • Use successful endpoints to build your dashboard');
     console.log('   • Request additional SP-API roles if needed');
     console.log('   • Check Amazon Developer Console for role status');
-    
+
   } catch (error) {
     console.log(`❌ Test failed: ${error.message}`);
   }

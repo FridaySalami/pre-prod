@@ -9,17 +9,17 @@ import { config } from 'dotenv';
 
 config();
 
-const AWS_ACCESS_KEY = process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-const AWS_REGION = process.env.AWS_REGION;
+const AWS_ACCESS_KEY = process.env.AMAZON_AWS_ACCESS_KEY_ID;
+const AWS_SECRET_KEY = process.env.AMAZON_AWS_SECRET_ACCESS_KEY;
+const AWS_REGION = process.env.AMAZON_AWS_REGION;
 
 console.log('🔍 AWS CREDENTIALS VERIFICATION');
 console.log('==============================');
 console.log('');
 console.log('📋 Credentials from your .env file:');
-console.log('AWS_ACCESS_KEY_ID:', AWS_ACCESS_KEY);
-console.log('AWS_SECRET_ACCESS_KEY:', AWS_SECRET_KEY?.substring(0, 10) + '...');
-console.log('AWS_REGION:', AWS_REGION);
+console.log('AMAZON_AWS_ACCESS_KEY_ID:', AWS_ACCESS_KEY);
+console.log('AMAZON_AWS_SECRET_ACCESS_KEY:', AWS_SECRET_KEY?.substring(0, 10) + '...');
+console.log('AMAZON_AWS_REGION:', AWS_REGION);
 console.log('');
 console.log('📋 From your AWS IAM screenshot:');
 console.log('User: amazon-spapi-user');

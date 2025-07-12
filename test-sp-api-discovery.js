@@ -14,8 +14,8 @@ config();
 const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.AMAZON_REFRESH_TOKEN;
-const AWS_ACCESS_KEY = process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+const AWS_ACCESS_KEY = process.env.AMAZON_AWS_ACCESS_KEY_ID;
+const AWS_SECRET_KEY = process.env.AMAZON_AWS_SECRET_ACCESS_KEY;
 const REGION = process.env.AMAZON_REGION || 'eu-west-1';
 const MARKETPLACE_ID = process.env.AMAZON_MARKETPLACE_ID;
 

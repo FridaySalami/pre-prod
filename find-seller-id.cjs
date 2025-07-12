@@ -21,8 +21,8 @@ const config = {
   endpoint: 'https://sellingpartnerapi-eu.amazon.com',
 
   // AWS credentials
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  accessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY,
 
   // SP-API credentials
   refreshToken: process.env.AMAZON_REFRESH_TOKEN,

@@ -116,8 +116,8 @@ async function testAmazonSPAPI() {
     console.log('');
     console.log('🔧 AWS Setup Required:');
     console.log('   • Create AWS IAM user with SP-API permissions');
-    console.log('   • Add AWS_ACCESS_KEY_ID to .env');
-    console.log('   • Add AWS_SECRET_ACCESS_KEY to .env');
+    console.log('   • Add AMAZON_AWS_ACCESS_KEY_ID to .env');
+    console.log('   • Add AMAZON_AWS_SECRET_ACCESS_KEY to .env');
     console.log('   • Update AMAZON_SELLER_ID in .env');
 
   } catch (error) {

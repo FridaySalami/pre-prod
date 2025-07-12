@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { AMAZON_CLIENT_ID, AMAZON_CLIENT_SECRET, AMAZON_REFRESH_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY } from '$env/static/private';
+import { AMAZON_CLIENT_ID, AMAZON_CLIENT_SECRET, AMAZON_REFRESH_TOKEN, AMAZON_AWS_ACCESS_KEY_ID, AMAZON_AWS_SECRET_ACCESS_KEY } from '$env/static/private';
 
 interface DiagnosticResult {
   status: 'pass' | 'fail' | 'warning';
@@ -30,8 +30,8 @@ async function testEnvironmentVariables(): Promise<DiagnosticResult> {
     AMAZON_CLIENT_ID,
     AMAZON_CLIENT_SECRET,
     AMAZON_REFRESH_TOKEN,
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY
+    AMAZON_AWS_ACCESS_KEY_ID,
+    AMAZON_AWS_SECRET_ACCESS_KEY
   };
 
   const missing = Object.entries(required).filter(([_, value]) => !value);
@@ -52,8 +52,8 @@ async function testEnvironmentVariables(): Promise<DiagnosticResult> {
   if (AMAZON_REFRESH_TOKEN && !AMAZON_REFRESH_TOKEN.startsWith('Atzr|')) {
     issues.push('AMAZON_REFRESH_TOKEN format appears invalid');
   }
-  if (AWS_ACCESS_KEY_ID && AWS_ACCESS_KEY_ID.length !== 20) {
-    issues.push('AWS_ACCESS_KEY_ID length appears invalid');
+  if (AMAZON_AWS_ACCESS_KEY_ID && AMAZON_AWS_ACCESS_KEY_ID.length !== 20) {
+    issues.push('AMAZON_AWS_ACCESS_KEY_ID length appears invalid');
   }
 
   if (issues.length > 0) {
@@ -70,7 +70,7 @@ async function testEnvironmentVariables(): Promise<DiagnosticResult> {
     details: {
       amazonClientId: AMAZON_CLIENT_ID?.substring(0, 20) + '...',
       hasRefreshToken: !!AMAZON_REFRESH_TOKEN,
-      awsAccessKeyId: AWS_ACCESS_KEY_ID?.substring(0, 10) + '...'
+      awsAccessKeyId: AMAZON_AWS_ACCESS_KEY_ID?.substring(0, 10) + '...'
     }
   };
 }
@@ -150,14 +150,14 @@ async function testAWSCredentials(): Promise<DiagnosticResult> {
     const credential_scope = `${date}/${region}/${service}/aws4_request`;
     const string_to_sign = `${algorithm}\n${timestamp}\n${credential_scope}\n${crypto.createHash('sha256').update(canonical_request).digest('hex')}`;
 
-    const kDate = crypto.createHmac('sha256', 'AWS4' + AWS_SECRET_ACCESS_KEY).update(date).digest();
+    const kDate = crypto.createHmac('sha256', 'AWS4' + AMAZON_AWS_SECRET_ACCESS_KEY).update(date).digest();
     const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
     const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
     const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
 
     const signature = crypto.createHmac('sha256', kSigning).update(string_to_sign).digest('hex');
 
-    const authorization = `${algorithm} Credential=${AWS_ACCESS_KEY_ID}/${credential_scope}, SignedHeaders=host;x-amz-date, Signature=${signature}`;
+    const authorization = `${algorithm} Credential=${AMAZON_AWS_ACCESS_KEY_ID}/${credential_scope}, SignedHeaders=host;x-amz-date, Signature=${signature}`;
 
     const response = await fetch(`https://${host}/?${querystring}`, {
       method: 'GET',
@@ -220,14 +220,14 @@ async function testSpApiEndpoint(endpoint: string, accessToken: string): Promise
     const credential_scope = `${date}/${region}/${service}/aws4_request`;
     const string_to_sign = `${algorithm}\n${timestamp}\n${credential_scope}\n${crypto.createHash('sha256').update(canonical_request).digest('hex')}`;
 
-    const kDate = crypto.createHmac('sha256', 'AWS4' + AWS_SECRET_ACCESS_KEY).update(date).digest();
+    const kDate = crypto.createHmac('sha256', 'AWS4' + AMAZON_AWS_SECRET_ACCESS_KEY).update(date).digest();
     const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
     const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
     const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
 
     const signature = crypto.createHmac('sha256', kSigning).update(string_to_sign).digest('hex');
 
-    const authorization = `${algorithm} Credential=${AWS_ACCESS_KEY_ID}/${credential_scope}, SignedHeaders=host;x-amz-access-token;x-amz-date, Signature=${signature}`;
+    const authorization = `${algorithm} Credential=${AMAZON_AWS_ACCESS_KEY_ID}/${credential_scope}, SignedHeaders=host;x-amz-access-token;x-amz-date, Signature=${signature}`;
 
     const response = await fetch(`https://${host}${endpoint}`, {
       method: 'GET',

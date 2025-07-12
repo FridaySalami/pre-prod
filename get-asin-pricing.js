@@ -60,7 +60,7 @@ function signRequest(method, path, queryParams, accessToken) {
     crypto.createHash('sha256').update(canonicalRequest).digest('hex')
   ].join('\n');
 
-  const kDate = crypto.createHmac('sha256', `AWS4${process.env.AWS_SECRET_ACCESS_KEY}`).update(date).digest();
+  const kDate = crypto.createHmac('sha256', `AWS4${process.env.AMAZON_AWS_SECRET_ACCESS_KEY}`).update(date).digest();
   const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
   const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
   const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
@@ -68,7 +68,7 @@ function signRequest(method, path, queryParams, accessToken) {
   const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
 
   return {
-    'Authorization': `AWS4-HMAC-SHA256 Credential=${process.env.AWS_ACCESS_KEY_ID}/${date}/${region}/${service}/aws4_request, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    'Authorization': `AWS4-HMAC-SHA256 Credential=${process.env.AMAZON_AWS_ACCESS_KEY_ID}/${date}/${region}/${service}/aws4_request, SignedHeaders=${signedHeaders}, Signature=${signature}`,
     'x-amz-date': timestamp,
     'x-amz-access-token': accessToken
   };
