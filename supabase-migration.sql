@@ -24,6 +24,82 @@ CREATE INDEX IF NOT EXISTS idx_amazon_listings_shipping_group ON amazon_listings
 CREATE INDEX IF NOT EXISTS idx_amazon_listings_price ON amazon_listings(price);
 CREATE INDEX IF NOT EXISTS idx_amazon_listings_created_at ON amazon_listings(created_at);
 
+-- SKU to ASIN Mapping Table
+-- This table stores the mapping between seller SKUs and Amazon ASINs
+-- along with additional product information from Amazon listings
+CREATE TABLE IF NOT EXISTS sku_asin_mapping (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  seller_sku TEXT UNIQUE NOT NULL,
+  item_name TEXT,
+  item_description TEXT,
+  listing_id TEXT,
+  price DECIMAL(10,2),
+  quantity INTEGER,
+  open_date DATE,
+  image_url TEXT,
+  item_is_marketplace BOOLEAN DEFAULT false,
+  product_id_type TEXT,
+  zshop_shipping_fee DECIMAL(10,2),
+  item_note TEXT,
+  item_condition TEXT,
+  zshop_category1 TEXT,
+  zshop_browse_path TEXT,
+  zshop_storefront_feature TEXT,
+  asin1 TEXT,
+  asin2 TEXT,
+  asin3 TEXT,
+  will_ship_internationally BOOLEAN DEFAULT false,
+  expedited_shipping BOOLEAN DEFAULT false,
+  zshop_boldface BOOLEAN DEFAULT false,
+  product_id TEXT,
+  bid_for_featured_placement BOOLEAN DEFAULT false,
+  add_delete TEXT,
+  pending_quantity INTEGER,
+  fulfillment_channel TEXT,
+  merchant_shipping_group TEXT,
+  status TEXT,
+  minimum_order_quantity INTEGER,
+  sell_remainder BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes for SKU-ASIN mapping performance
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_seller_sku ON sku_asin_mapping(seller_sku);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_asin1 ON sku_asin_mapping(asin1);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_asin2 ON sku_asin_mapping(asin2);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_asin3 ON sku_asin_mapping(asin3);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_status ON sku_asin_mapping(status);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_fulfillment_channel ON sku_asin_mapping(fulfillment_channel);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_merchant_shipping_group ON sku_asin_mapping(merchant_shipping_group);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_price ON sku_asin_mapping(price);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_created_at ON sku_asin_mapping(created_at);
+
+-- Simplified SKU-ASIN mapping files table (stores file metadata only)
+CREATE TABLE IF NOT EXISTS sku_asin_mapping_files (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER,
+    upload_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    status TEXT DEFAULT 'active',
+    notes TEXT
+);
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_files_filename ON sku_asin_mapping_files(filename);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_files_upload_date ON sku_asin_mapping_files(upload_date);
+CREATE INDEX IF NOT EXISTS idx_sku_asin_mapping_files_status ON sku_asin_mapping_files(status);
+
+-- Enable RLS
+ALTER TABLE sku_asin_mapping_files ENABLE ROW LEVEL SECURITY;
+
+-- Create policy for authenticated users
+CREATE POLICY "Allow authenticated users to access sku_asin_mapping_files" 
+ON sku_asin_mapping_files FOR ALL 
+TO authenticated 
+USING (true);
+
 -- Inventory Table
 CREATE TABLE IF NOT EXISTS inventory (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -158,6 +234,10 @@ CREATE TRIGGER update_inventory_updated_at BEFORE UPDATE ON inventory FOR EACH R
 CREATE TRIGGER update_sage_reports_updated_at BEFORE UPDATE ON sage_reports FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_linnworks_composition_updated_at BEFORE UPDATE ON linnworks_composition FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_linnworks_composition_summary_updated_at BEFORE UPDATE ON linnworks_composition_summary FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_sku_asin_mapping_updated_at
+    BEFORE UPDATE ON sku_asin_mapping
+    FOR EACH ROW
+    EXECUTE FUNCTION update_sku_asin_mapping_updated_at();
 
 -- Create RLS policies (optional - uncomment if you want to enable RLS)
 -- ALTER TABLE amazon_listings ENABLE ROW LEVEL SECURITY;
@@ -187,3 +267,5 @@ COMMENT ON TABLE sage_reports IS 'Sage accounting system reports with cost and s
 COMMENT ON TABLE linnworks_composition IS 'Linnworks product composition and BOM data';
 COMMENT ON TABLE import_records IS 'Tracking table for CSV file imports and their status';
 COMMENT ON TABLE audit_log IS 'Audit trail for data changes and user actions';
+COMMENT ON TABLE sku_asin_mapping IS 'SKU to ASIN mapping and additional product information from Amazon listings';
+COMMENT ON TABLE sku_asin_mapping_files IS 'Simplified SKU-ASIN mapping files table, stores file metadata only';

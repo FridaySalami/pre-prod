@@ -1,48 +1,95 @@
-// Test Supabase connection directly
-import { createClient } from '@supabase/supabase-js';
+// Test both Supabase connections
+const { createClient } = require('@supabase/supabase-js');
+const dotenv = require('dotenv');
 
-// Use your Supabase credentials directly
-const supabaseUrl = 'https://gvowfbrpmotcfxfzzhxf.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2b3dmYnJwbW90Y2Z4Znp6aHhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAzMTc0NjksImV4cCI6MjA1NTg5MzQ2OX0.CceIKEQr3NYuEZ76mjuFVYRCG_X5lTP8MEQ-4paIoTs';
+// Load environment variables
+dotenv.config();
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Get credentials from env
+const supabaseUrl = process.env.PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.PUBLIC_SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.PRIVATE_SUPABASE_SERVICE_KEY;
+
+// Create both clients for testing
+const supabasePublic = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
 
 console.log('🔍 Testing Supabase connection...');
 
 async function testSupabaseConnection() {
   try {
-    console.log('📡 Testing direct Supabase client connection...');
+    console.log('📡 Testing Supabase public (anon) client connection...');
 
-    // Test basic connection by trying to select from a system table
-    const { data, error } = await supabase
+    // Test basic connection with public client
+    const { data: publicData, error: publicError } = await supabasePublic
       .from('information_schema.tables')
       .select('table_name')
       .eq('table_schema', 'public')
       .limit(5);
 
-    if (error) {
-      console.log('❌ Supabase connection failed:', error.message);
+    if (publicError) {
+      console.log('❌ Supabase PUBLIC connection failed:', publicError.message);
     } else {
-      console.log('✅ Supabase connection successful!');
-      console.log('📋 Found tables:', data.map(t => t.table_name));
+      console.log('✅ Supabase PUBLIC connection successful!');
+      console.log('📋 Found tables (public client):', publicData.map(t => t.table_name));
     }
 
-    // Test our specific tables
-    const tables = ['amazon_listings', 'inventory', 'sage_reports', 'linnworks_composition'];
+    // Test service role (admin) connection
+    console.log('\n📡 Testing Supabase SERVICE ROLE client connection...');
 
+    const { data: adminData, error: adminError } = await supabaseAdmin
+      .from('information_schema.tables')
+      .select('table_name')
+      .eq('table_schema', 'public')
+      .limit(5);
+
+    if (adminError) {
+      console.log('❌ Supabase SERVICE ROLE connection failed:', adminError.message);
+      console.log('Error details:', adminError);
+    } else {
+      console.log('✅ Supabase SERVICE ROLE connection successful!');
+      console.log('📋 Found tables (service role client):', adminData.map(t => t.table_name));
+    }
+
+    // Test specific tables with both clients
+    const tables = ['amazon_listings', 'inventory', 'sku_asin_mapping', 'sku_asin_mapping_files'];
+
+    console.log('\n🔍 Testing specific tables with public client:');
     for (const table of tables) {
       try {
-        const { count, error } = await supabase
+        const { count, error } = await supabasePublic
           .from(table)
           .select('*', { count: 'exact', head: true });
 
         if (error) {
-          console.log(`❌ ${table}: ${error.message}`);
+          console.log(`❌ PUBLIC - ${table}: ${error.message}`);
         } else {
-          console.log(`✅ ${table}: ${count || 0} records`);
+          console.log(`✅ PUBLIC - ${table}: ${count || 0} records`);
         }
       } catch (err) {
-        console.log(`❌ ${table}: ${err.message}`);
+        console.log(`❌ PUBLIC - ${table}: ${err.message}`);
+      }
+    }
+
+    console.log('\n🔍 Testing specific tables with service role client:');
+    for (const table of tables) {
+      try {
+        const { count, error } = await supabaseAdmin
+          .from(table)
+          .select('*', { count: 'exact', head: true });
+
+        if (error) {
+          console.log(`❌ ADMIN - ${table}: ${error.message}`);
+        } else {
+          console.log(`✅ ADMIN - ${table}: ${count || 0} records`);
+        }
+      } catch (err) {
+        console.log(`❌ ADMIN - ${table}: ${err.message}`);
       }
     }
 

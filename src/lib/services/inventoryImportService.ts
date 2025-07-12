@@ -2,7 +2,7 @@
  * Inventory import service for handling CSV uploads and data processing
  */
 
-import { supabaseAdmin } from '../supabaseAdmin.js';
+import { supabaseAdmin } from '../supabaseAdmin';
 
 export interface InventoryItem {
   sku: string;

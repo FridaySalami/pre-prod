@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../supabaseAdmin.js';
+import { supabaseAdmin } from '../supabaseAdmin';
 
 export interface UploadRecord {
   id: string;

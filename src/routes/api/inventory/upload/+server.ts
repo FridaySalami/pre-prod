@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { InventoryImportService } from '$lib/services/inventoryImportService.js';
-import { supabaseAdmin } from '$lib/supabaseAdmin.js';
+import { supabaseAdmin } from '$lib/supabaseAdmin';
 
 /** @type {import('./$types').RequestHandler} */
 export async function POST({ request }) {

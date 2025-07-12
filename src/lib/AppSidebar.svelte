@@ -117,6 +117,11 @@
 			icon: 'dashboard'
 		},
 		{
+			title: 'Buy Box Monitor',
+			url: '/buy-box-monitor',
+			icon: 'visibility'
+		},
+		{
 			type: 'separator'
 		},
 		{
