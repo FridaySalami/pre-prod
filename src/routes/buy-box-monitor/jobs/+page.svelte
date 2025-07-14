@@ -58,6 +58,12 @@
 		margin_difference: number | null;
 		profit_opportunity: number | null;
 
+		// Actual profit calculations
+		current_actual_profit: number | null;
+		buybox_actual_profit: number | null;
+		current_profit_breakdown: string | null;
+		buybox_profit_breakdown: string | null;
+
 		// Recommendations
 		recommended_action: string | null;
 		price_adjustment_needed: number | null;
@@ -997,23 +1003,38 @@
 											<!-- Margin Analysis -->
 											<td class="py-3 px-4">
 												<div class="text-sm space-y-1">
-													{#if result.your_margin_percent_at_current_price !== null}
+													{#if result.current_actual_profit !== null}
 														<div
-															class={`font-medium ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+															class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : 'text-red-600'}`}
 														>
-															Current: {result.your_margin_percent_at_current_price.toFixed(1)}%
+															£{result.current_actual_profit.toFixed(2)} profit
 														</div>
 													{/if}
-													{#if result.margin_percent_at_buybox_price !== null}
+													{#if result.your_margin_percent_at_current_price !== null}
 														<div
-															class={`${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+															class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
 														>
-															At Buy Box: {result.margin_percent_at_buybox_price.toFixed(1)}%
+															Current: {result.your_margin_percent_at_current_price.toFixed(1)}%
+															margin
+														</div>
+													{/if}
+													{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit}
+														<div class="text-xs text-gray-600">
+															At Buy Box: £{result.buybox_actual_profit.toFixed(2)} profit
+														</div>
+													{/if}
+													{#if result.margin_percent_at_buybox_price !== null && result.margin_percent_at_buybox_price !== result.your_margin_percent_at_current_price}
+														<div
+															class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
 														</div>
 													{/if}
 													{#if result.profit_opportunity && result.profit_opportunity > 0}
-														<div class="text-blue-600 font-medium">
-															Opportunity: +£{result.profit_opportunity.toFixed(2)}
+														<div
+															class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded"
+														>
+															+£{result.profit_opportunity.toFixed(2)} opportunity
 														</div>
 													{/if}
 													{#if result.margin_difference}
