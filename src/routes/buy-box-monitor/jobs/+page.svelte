@@ -845,7 +845,10 @@
 								<p class="text-2xl font-bold text-purple-600">{profitableOpportunityCount}</p>
 								<p class="text-xs text-gray-400">Worth pursuing</p>
 							</div>
-							<div class="bg-orange-50 p-3 rounded" title="SKUs with cost data analyzed out of {totalResultsInJob} total">
+							<div
+								class="bg-orange-50 p-3 rounded"
+								title="SKUs with cost data analyzed out of {totalResultsInJob} total"
+							>
 								<p class="text-sm text-gray-500">Margin Analysis</p>
 								<p class="text-2xl font-bold text-orange-600">{marginDataCount}</p>
 								<p class="text-xs text-gray-400">of {totalResultsInJob} SKUs</p>
@@ -856,7 +859,9 @@
 							<div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-center border-t pt-4">
 								<div>
 									<p class="text-sm text-gray-500">Avg Current Profit</p>
-									<p class={`text-lg font-medium ${averageCurrentProfit >= 2 ? 'text-green-600' : averageCurrentProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+									<p
+										class={`text-lg font-medium ${averageCurrentProfit >= 2 ? 'text-green-600' : averageCurrentProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
+									>
 										£{averageCurrentProfit.toFixed(2)}
 									</p>
 								</div>
@@ -1002,12 +1007,16 @@
 															Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
 														</div>
 													{/if}
-													
+
 													<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
 													{#if result.price}
-														<div class="text-red-600">Amazon Fee (15% of £{result.price.toFixed(2)}): £{(result.price * 0.15).toFixed(2)}</div>
+														<div class="text-red-600">
+															Amazon Fee (15% of £{result.price.toFixed(2)}): £{(
+																result.price * 0.15
+															).toFixed(2)}
+														</div>
 													{/if}
-													
+
 													{#if result.break_even_price}
 														<div class="font-bold border-t pt-2 text-red-800">
 															Break-even: £{result.break_even_price.toFixed(2)}
@@ -1038,7 +1047,9 @@
 														</div>
 													{/if}
 													{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit}
-														<div class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}>
+														<div
+															class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
+														>
 															At Buy Box: £{result.buybox_actual_profit.toFixed(2)} profit
 														</div>
 													{/if}
