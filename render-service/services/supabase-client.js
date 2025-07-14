@@ -261,6 +261,99 @@ class SupabaseService {
 
     return count;
   }
+
+  /**
+   * List jobs with pagination
+   */
+  async listJobs(limit = 20, offset = 0) {
+    const { data, error } = await supabase
+      .from('buybox_jobs')
+      .select('*')
+      .order('started_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      throw new Error(`Failed to list jobs: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Get job failures
+   */
+  async getJobFailures(jobId) {
+    const { data, error } = await supabase
+      .from('buybox_failures')
+      .select('*')
+      .eq('job_id', jobId)
+      .order('captured_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to get job failures: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Get job results with filters
+   */
+  async getJobResults(options) {
+    const {
+      jobId,
+      asin,
+      sku,
+      page = 1,
+      limit = 25,
+      offset = 0,
+      showOpportunities = false,
+      showWinners = false,
+      includeAllJobs = false
+    } = options;
+
+    // Build query
+    let query = supabase
+      .from('buybox_data')
+      .select('*', { count: 'exact' });
+
+    // Apply filters
+    if (jobId && !includeAllJobs) {
+      query = query.eq('run_id', jobId);
+    }
+
+    if (asin) {
+      query = query.eq('asin', asin);
+    }
+
+    if (sku) {
+      query = query.eq('sku', sku);
+    }
+
+    if (showOpportunities) {
+      query = query.eq('opportunity_flag', true);
+    }
+
+    if (showWinners) {
+      query = query.eq('is_winner', true);
+    }
+
+    // Apply pagination
+    query = query
+      .order('captured_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      throw new Error(`Failed to get job results: ${error.message}`);
+    }
+
+    return {
+      data,
+      total: count
+    };
+  }
 }
 
 module.exports = {

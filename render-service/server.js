@@ -16,6 +16,8 @@ dotenv.config();
 // Import routes
 const bulkScanRoute = require('./routes/bulk-scan');
 const jobStatusRoute = require('./routes/job-status');
+const jobFailuresRoute = require('./routes/job-failures');
+const jobResultsRoute = require('./routes/job-results');
 const healthRoute = require('./routes/health');
 
 // Create Express app
@@ -37,6 +39,8 @@ app.use((req, res, next) => {
 app.use('/health', healthRoute);
 app.use('/api/bulk-scan', bulkScanRoute);
 app.use('/api/job-status', jobStatusRoute);
+app.use('/api/job-failures', jobFailuresRoute);
+app.use('/api/job-results', jobResultsRoute);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -48,8 +52,11 @@ app.get('/', (req, res) => {
     endpoints: [
       'GET /health - Health check',
       'POST /api/bulk-scan/start - Start bulk scanning job',
+      'GET /api/job-status - List all jobs',
       'GET /api/job-status/:jobId - Get job status',
-      'POST /api/job-status/:jobId/cancel - Cancel job'
+      'POST /api/job-status/:jobId/cancel - Cancel job',
+      'GET /api/job-failures?job_id=:jobId - Get job failures',
+      'GET /api/job-results?job_id=:jobId - Get job results'
     ]
   });
 });

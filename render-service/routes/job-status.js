@@ -10,6 +10,34 @@ const { SupabaseService } = require('../services/supabase-client');
 const router = express.Router();
 
 /**
+ * GET / - List all jobs (when no jobId provided)
+ */
+router.get('/', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = parseInt(req.query.offset) || 0;
+
+    // Get jobs from database
+    const jobs = await SupabaseService.listJobs(limit, offset);
+
+    res.json({
+      success: true,
+      jobs: jobs,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('List jobs error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch jobs',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
  * GET /:jobId - Get job status and progress
  */
 router.get('/:jobId', async (req, res) => {
