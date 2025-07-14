@@ -240,24 +240,31 @@ class AmazonSPAPI {
       const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
       const isWinner = buyBoxOffer?.SellerId === process.env.YOUR_SELLER_ID;
 
+      // Transform to match actual database schema
       return {
         run_id: runId,
         asin: asin,
         sku: sku,
-        buy_box_seller: buyBoxOffer?.SellerName || buyBoxOffer?.SellerId || 'Unknown',
-        buy_box_seller_id: buyBoxOffer?.SellerId || null,
-        buy_box_price: buyBoxPrice,
-        buy_box_shipping: buyBoxShipping,
-        buy_box_currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
-        is_fba: buyBoxOffer?.IsFulfilledByAmazon || false,
-        is_prime: buyBoxOffer?.IsFulfilledByAmazon || false,
-        total_offers: offers.length,
-        lowest_competitor_price: lowestCompetitorPrice,
-        price_difference: lowestCompetitorPrice ? (buyBoxTotal - lowestCompetitorPrice) : null,
-        opportunity_flag: isOpportunity,
+        price: buyBoxPrice, // Database expects 'price', not 'buy_box_price'
+        currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP', // Database expects 'currency', not 'buy_box_currency'
         is_winner: isWinner,
+        competitor_id: buyBoxOffer?.SellerId || null,
+        competitor_name: buyBoxOffer?.SellerName || buyBoxOffer?.SellerId || 'Unknown',
+        competitor_price: buyBoxPrice,
+        marketplace: 'UK', // Default marketplace
+        opportunity_flag: isOpportunity,
+        min_profitable_price: 0.00, // Default value
+        margin_at_buybox: 0.00, // Default value - would need cost data to calculate
+        margin_percent_at_buybox: 0.00, // Default value - would need cost data to calculate  
+        total_offers: offers.length,
+        category: null, // Would need product API to get this
+        brand: null, // Would need product API to get this
         captured_at: new Date().toISOString(),
-        raw_response: JSON.stringify(pricingData)
+        fulfillment_channel: buyBoxOffer?.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
+        merchant_shipping_group: 'UK Shipping', // Default value
+        source: 'spapi', // Indicate this came from SP-API
+        merchant_token: process.env.YOUR_SELLER_ID || 'unknown',
+        buybox_merchant_token: buyBoxOffer?.SellerId || null
       };
     } catch (error) {
       console.error('Error transforming pricing data:', error);
@@ -275,7 +282,7 @@ class AmazonSPAPI {
       const pricingData = await this.getCompetitivePricing(asin);
       const transformedData = this.transformPricingData(pricingData, asin, sku, runId);
 
-      console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${transformedData.buy_box_seller}`);
+      console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${transformedData.competitor_name}`);
 
       return transformedData;
     } catch (error) {
