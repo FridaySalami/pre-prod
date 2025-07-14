@@ -19,6 +19,7 @@ const jobStatusRoute = require('./routes/job-status');
 const jobFailuresRoute = require('./routes/job-failures');
 const jobResultsRoute = require('./routes/job-results');
 const healthRoute = require('./routes/health');
+const debugRoute = require('./routes/debug');
 
 // Create Express app
 const app = express();
@@ -41,6 +42,7 @@ app.use('/api/bulk-scan', bulkScanRoute);
 app.use('/api/job-status', jobStatusRoute);
 app.use('/api/job-failures', jobFailuresRoute);
 app.use('/api/job-results', jobResultsRoute);
+app.use('/api/debug', debugRoute);
 
 // Root endpoint
 app.get('/', (req, res) => {

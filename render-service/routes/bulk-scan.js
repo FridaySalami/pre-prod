@@ -276,16 +276,16 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
   const baseCost = parseFloat((Math.random() * 30 + 5).toFixed(2));
   const shippingCost = parseFloat((Math.random() * 8 + 3).toFixed(2));
   const materialTotalCost = parseFloat((baseCost + Math.random() * 10 + 2).toFixed(2));
-  
+
   // Calculate mock margins
   const amazonFee = mockPrice * 0.15;
   const yourMargin = mockPrice - amazonFee - materialTotalCost - shippingCost;
   const yourMarginPercent = mockPrice > 0 ? (yourMargin / mockPrice) * 100 : 0;
-  
+
   const buyboxAmazonFee = competitorPrice * 0.15;
   const buyboxMargin = competitorPrice - buyboxAmazonFee - materialTotalCost - shippingCost;
   const buyboxMarginPercent = competitorPrice > 0 ? (buyboxMargin / competitorPrice) * 100 : 0;
-  
+
   const marginDifference = buyboxMargin - yourMargin;
   const profitOpportunity = Math.max(0, marginDifference);
   const breakEvenPrice = (materialTotalCost + shippingCost) / 0.85;
@@ -329,7 +329,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     source: 'mock-api',
     merchant_token: yourSellerId,
     buybox_merchant_token: competitorId,
-    
+
     // New margin analysis fields
     your_cost: parseFloat(baseCost.toFixed(2)),
     your_shipping_cost: parseFloat(shippingCost.toFixed(2)),
@@ -337,22 +337,22 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     your_box_cost: parseFloat((Math.random() * 2).toFixed(2)),
     your_vat_amount: parseFloat((baseCost * 0.2).toFixed(2)),
     your_fragile_charge: Math.random() < 0.3 ? 0.66 : 0.00,
-    
+
     // Current pricing margins
     your_margin_at_current_price: parseFloat(yourMargin.toFixed(2)),
     your_margin_percent_at_current_price: parseFloat(yourMarginPercent.toFixed(2)),
-    
+
     // Competitor analysis
     margin_at_buybox_price: parseFloat(buyboxMargin.toFixed(2)),
     margin_percent_at_buybox_price: parseFloat(buyboxMarginPercent.toFixed(2)),
     margin_difference: parseFloat(marginDifference.toFixed(2)),
     profit_opportunity: parseFloat(profitOpportunity.toFixed(2)),
-    
+
     // Recommendations
     recommended_action: recommendedAction,
     price_adjustment_needed: parseFloat((competitorPrice - mockPrice).toFixed(2)),
     break_even_price: parseFloat(breakEvenPrice.toFixed(2)),
-    
+
     // Metadata
     margin_calculation_version: 'v1.0',
     cost_data_source: 'mock'

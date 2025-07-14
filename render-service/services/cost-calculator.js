@@ -117,7 +117,7 @@ class CostCalculator {
       // Calculate all cost components
       const shipping = amazonListing?.merchant_shipping_group || 'Off Amazon';
       const box = `${String(product.width ?? '')}x${String(product.height ?? '')}x${String(product.depth ?? '')}`;
-      
+
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
       const materialCost = 0.20;
@@ -180,9 +180,9 @@ class CostCalculator {
 
     for (const option of serviceOptions) {
       if (productWeight >= option.weightMin && productWeight <= option.weightMax &&
-          productDepth >= option.depthMin && productDepth <= option.depthMax &&
-          productHeight >= option.heightMin && productHeight <= option.heightMax &&
-          productWidth >= option.widthMin && productWidth <= option.widthMax) {
+        productDepth >= option.depthMin && productDepth <= option.depthMax &&
+        productHeight >= option.heightMin && productHeight <= option.heightMax &&
+        productWidth >= option.widthMin && productWidth <= option.widthMax) {
         return option.cost;
       }
     }
@@ -248,7 +248,7 @@ class CostCalculator {
   async enrichBuyBoxData(buyboxData) {
     try {
       const costs = await this.calculateProductCosts(buyboxData.sku);
-      
+
       if (!costs) {
         console.log(`[CostCalculator] No cost data available for SKU: ${buyboxData.sku}`);
         return {
@@ -273,7 +273,7 @@ class CostCalculator {
         your_box_cost: costs.boxCost,
         your_vat_amount: costs.vatAmount,
         your_fragile_charge: costs.fragileCharge,
-        
+
         // Margin analysis
         your_margin_at_current_price: margins.yourMargin,
         your_margin_percent_at_current_price: margins.yourMarginPercent,
@@ -281,12 +281,12 @@ class CostCalculator {
         margin_percent_at_buybox_price: margins.buyboxMarginPercent,
         margin_difference: margins.marginDifference,
         profit_opportunity: margins.profitOpportunity,
-        
+
         // Recommendations
         recommended_action: margins.recommendedAction,
         price_adjustment_needed: buyboxData.competitor_price - buyboxData.price,
         break_even_price: margins.breakEvenPrice,
-        
+
         // Metadata
         margin_calculation_version: 'v1.0',
         cost_data_source: costs.dataSource

@@ -31,7 +31,7 @@ class AmazonSPAPI {
 
     this.accessToken = null;
     this.tokenExpiry = null;
-    
+
     // Initialize cost calculator for margin analysis
     this.costCalculator = new CostCalculator(supabaseClient);
   }
