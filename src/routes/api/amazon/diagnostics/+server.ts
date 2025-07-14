@@ -393,15 +393,15 @@ export const GET: RequestHandler = async ({ url }) => {
   // Generate recommendations
   report.recommendations = [];
 
-  if (report.environment.status === 'fail') {
+  if (['fail', 'warning'].includes(report.environment.status)) {
     report.recommendations.push('Fix environment variable configuration');
   }
 
-  if (report.oauth.status === 'fail') {
+  if ('fail' === report.oauth.status) {
     report.recommendations.push('Complete OAuth authorization flow');
   }
 
-  if (report.aws.status === 'fail') {
+  if ('fail' === report.aws.status) {
     report.recommendations.push('Verify AWS credentials and IAM user permissions');
   }
 

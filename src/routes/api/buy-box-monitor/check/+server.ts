@@ -1,9 +1,11 @@
+
 import { json } from '@sveltejs/kit';
 import { supabaseAdmin } from '$lib/supabaseAdmin';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
+import { checkBuyBoxStatus } from '$lib/buyBoxChecker';
 import type { TransformedBuyBoxData, OfferDetails } from '$lib/types/buybox';
+import path from 'path';
+import fs from 'fs';
+import { spawn } from 'child_process';
 
 /**
  * Buy Box check endpoint for Buy Box Monitor
@@ -54,31 +56,49 @@ export async function GET({ url }) {
       // Continue with Buy Box check even if we couldn't find the product in our database
     }
 
-    // Use my-buy-box-monitor.cjs script to check Buy Box status
+    // Use the new Buy Box checker module instead of spawning child process
     if (!targetAsin) {
       return json({
         success: false,
         error: 'Missing ASIN for Buy Box check'
       }, { status: 400 });
     }
-    const buyBoxData = await checkBuyBox(targetAsin);
+
+    // Import environment variables for the checker
+    const {
+      AMAZON_AWS_ACCESS_KEY_ID,
+      AMAZON_AWS_SECRET_ACCESS_KEY,
+      AMAZON_REFRESH_TOKEN,
+      AMAZON_CLIENT_ID,
+      AMAZON_CLIENT_SECRET,
+      AMAZON_MARKETPLACE_ID
+    } = process.env;
+
+    const envVars = {
+      AMAZON_AWS_ACCESS_KEY_ID: AMAZON_AWS_ACCESS_KEY_ID || '',
+      AMAZON_AWS_SECRET_ACCESS_KEY: AMAZON_AWS_SECRET_ACCESS_KEY || '',
+      AMAZON_REFRESH_TOKEN: AMAZON_REFRESH_TOKEN || '',
+      AMAZON_CLIENT_ID: AMAZON_CLIENT_ID || '',
+      AMAZON_CLIENT_SECRET: AMAZON_CLIENT_SECRET || '',
+      AMAZON_MARKETPLACE_ID: AMAZON_MARKETPLACE_ID || ''
+    };
+
+    const buyBoxData = await checkBuyBoxStatus(targetAsin, envVars);
 
     // Calculate price difference if we have both prices
     let priceDifference = null;
     let priceDifferencePercent = null;
 
-    if (productData?.price && buyBoxData && typeof buyBoxData.buyBoxWinner?.price === 'number') {
-      priceDifference = buyBoxData.buyBoxWinner.price - parseFloat(productData.price);
+    if (productData?.price && buyBoxData && typeof buyBoxData.buyBoxPrice === 'number') {
+      priceDifference = buyBoxData.buyBoxPrice - parseFloat(productData.price);
       priceDifferencePercent = (priceDifference / parseFloat(productData.price)) * 100;
     }
 
-    // Transform the buy box data into a format suitable for the frontend
-    const transformedData = transformBuyBoxData(buyBoxData, targetAsin);
-
+    // The new buyBoxChecker already returns data in the correct format
     return json({
+      ...buyBoxData,
       success: true,
       asin: targetAsin,
-      ...transformedData,
       productData: productData || null,
       priceDifference,
       priceDifferencePercent,
@@ -113,15 +133,15 @@ async function checkBuyBox(asin: string): Promise<any> {
     let stdout = '';
     let stderr = '';
 
-    childProcess.stdout.on('data', (data) => {
+    childProcess.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
     });
 
-    childProcess.stderr.on('data', (data) => {
+    childProcess.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
     });
 
-    childProcess.on('close', (code) => {
+    childProcess.on('close', (code: number) => {
       if (code !== 0) {
         console.error(`Buy Box checker exited with code ${code}`);
         console.error(stderr);
@@ -233,11 +253,11 @@ function transformBuyBoxData(buyBoxData: any, asin: string): TransformedBuyBoxDa
       isPrime: offer.primeEligible === true
     }))
     : [];
-    
+
   // Add your offers to the competitor list for comparison
   if (yourOffers.length > 0) {
     competitorInfo.push(...yourOffers);
-    
+
     // Sort by price for consistent display (lowest price first)
     competitorInfo.sort((a: OfferDetails, b: OfferDetails) => a.totalPrice - b.totalPrice);
   }
