@@ -42,7 +42,10 @@ router.get('/', async (req, res) => {
       environment: {
         nodeVersion: process.version,
         platform: process.platform,
-        port: process.env.PORT || 3001
+        port: process.env.PORT || 3001,
+        useRealAPI: process.env.USE_AMAZON_SPAPI,
+        yourSellerId: process.env.YOUR_SELLER_ID,
+        amazonSellerId: process.env.AMAZON_SELLER_ID
       },
       features: [
         'Bulk ASIN scanning',

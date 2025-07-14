@@ -264,7 +264,15 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
   // Return data structure that matches buybox_data table schema
   const mockPrice = parseFloat((Math.random() * 100 + 10).toFixed(2));
   const competitorPrice = parseFloat((mockPrice + (Math.random() - 0.5) * 20).toFixed(2));
-  const isWinner = mockPrice <= competitorPrice;
+
+  // Get your seller ID for comparison
+  const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID || 'A2D8NG39VURSL3';
+
+  // 30% chance you're the winner for testing
+  const isWinner = Math.random() < 0.3;
+  const competitorId = isWinner ? 'A' + Math.random().toString(36).substring(2, 15).toUpperCase() : yourSellerId;
+
+  console.log(`Mock ASIN ${asinCode}: Your ID: ${yourSellerId}, Winner: ${isWinner}`);
 
   return {
     // Required fields that match the database schema
@@ -274,7 +282,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     price: mockPrice,
     currency: 'GBP',
     is_winner: isWinner,
-    competitor_id: 'A' + Math.random().toString(36).substring(2, 15).toUpperCase(),
+    competitor_id: competitorId,
     competitor_name: `MockSeller${Math.floor(Math.random() * 1000)}`,
     competitor_price: competitorPrice,
     marketplace: 'UK',

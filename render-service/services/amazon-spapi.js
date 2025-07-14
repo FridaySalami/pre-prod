@@ -194,9 +194,9 @@ class AmazonSPAPI {
       console.error(`SP-API error for ASIN ${asin}:`, error.message);
 
       // Re-throw known error types
-      if (error.message.includes('RATE_LIMITED') || 
-          error.message.includes('ACCESS_DENIED') || 
-          error.message.includes('ASIN_NOT_FOUND')) {
+      if (error.message.includes('RATE_LIMITED') ||
+        error.message.includes('ACCESS_DENIED') ||
+        error.message.includes('ASIN_NOT_FOUND')) {
         throw error;
       } else {
         throw new Error(`SP_API_ERROR: ${error.message}`);
@@ -218,14 +218,19 @@ class AmazonSPAPI {
       // Find Buy Box winner
       const buyBoxOffer = offers.find(offer => offer.IsBuyBoxWinner === true);
 
-      // Get all competitor prices for analysis
-      const competitorPrices = offers
-        .filter(offer => !offer.IsBuyBoxWinner)
-        .map(offer => ({
-          price: offer.ListingPrice?.Amount || 0,
-          shipping: offer.Shipping?.Amount || 0,
-          total: (offer.ListingPrice?.Amount || 0) + (offer.Shipping?.Amount || 0)
-        }));
+      // Check if YOU are the Buy Box winner
+      const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID;
+      const isWinner = buyBoxOffer?.SellerId === yourSellerId;
+
+      console.log(`ASIN ${asin}: Buy Box owned by ${buyBoxOffer?.SellerId}, Your ID: ${yourSellerId}, Winner: ${isWinner}`);
+
+      // Get all competitor prices for analysis (excluding your offers)
+      const competitorOffers = offers.filter(offer => offer.SellerId !== yourSellerId);
+      const competitorPrices = competitorOffers.map(offer => ({
+        price: offer.ListingPrice?.Amount || 0,
+        shipping: offer.Shipping?.Amount || 0,
+        total: (offer.ListingPrice?.Amount || 0) + (offer.Shipping?.Amount || 0)
+      }));
 
       // Calculate metrics
       const lowestCompetitorPrice = competitorPrices.length > 0
@@ -238,7 +243,6 @@ class AmazonSPAPI {
 
       // Determine opportunity and winner status
       const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
-      const isWinner = buyBoxOffer?.SellerId === process.env.YOUR_SELLER_ID;
 
       // Transform to match actual database schema
       return {
