@@ -5,7 +5,6 @@
  * and transforms it into the format expected by our database schema.
  */
 
-const axios = require('axios');
 const crypto = require('crypto');
 
 class AmazonSPAPI {
@@ -43,24 +42,35 @@ class AmazonSPAPI {
     }
 
     try {
-      const response = await axios.post('https://api.amazon.com/auth/o2/token', {
+      const body = new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: this.config.refreshToken,
         client_id: this.config.clientId,
         client_secret: this.config.clientSecret
-      }, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
       });
 
-      this.accessToken = response.data.access_token;
+      const response = await fetch('https://api.amazon.com/auth/o2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body.toString()
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      this.accessToken = data.access_token;
       // Token expires in 1 hour, refresh 5 minutes early
-      this.tokenExpiry = new Date(Date.now() + (response.data.expires_in - 300) * 1000);
+      this.tokenExpiry = new Date(Date.now() + (data.expires_in - 300) * 1000);
 
       return this.accessToken;
     } catch (error) {
-      console.error('Failed to get Amazon access token:', error.response?.data || error.message);
+      console.error('Failed to get Amazon access token:', error.message);
       throw new Error('Failed to authenticate with Amazon SP-API');
     }
   }
@@ -158,22 +168,36 @@ class AmazonSPAPI {
       .join('&')}`;
 
     try {
-      const response = await axios.get(url, {
+      const response = await fetch(url, {
+        method: 'GET',
         headers: signedHeaders,
-        timeout: 30000 // 30 second timeout
+        signal: AbortSignal.timeout(30000) // 30 second timeout
       });
 
-      return response.data;
-    } catch (error) {
-      console.error(`SP-API error for ASIN ${asin}:`, error.response?.data || error.message);
+      if (!response.ok) {
+        // Check for specific error types
+        if (response.status === 429) {
+          throw new Error('RATE_LIMITED');
+        } else if (response.status === 403) {
+          throw new Error('ACCESS_DENIED');
+        } else if (response.status === 404) {
+          throw new Error('ASIN_NOT_FOUND');
+        } else {
+          const errorText = await response.text();
+          throw new Error(`SP_API_ERROR: HTTP ${response.status}: ${errorText}`);
+        }
+      }
 
-      // Check for specific error types
-      if (error.response?.status === 429) {
-        throw new Error('RATE_LIMITED');
-      } else if (error.response?.status === 403) {
-        throw new Error('ACCESS_DENIED');
-      } else if (error.response?.status === 404) {
-        throw new Error('ASIN_NOT_FOUND');
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error(`SP-API error for ASIN ${asin}:`, error.message);
+
+      // Re-throw known error types
+      if (error.message.includes('RATE_LIMITED') || 
+          error.message.includes('ACCESS_DENIED') || 
+          error.message.includes('ASIN_NOT_FOUND')) {
+        throw error;
       } else {
         throw new Error(`SP_API_ERROR: ${error.message}`);
       }
