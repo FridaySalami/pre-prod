@@ -141,13 +141,27 @@ async function processBulkScan(jobId, asins) {
           await rateLimiter.waitForNextRequest();
 
           // TODO: Implement actual Amazon SP-API call here
-          const buyBoxData = await mockAmazonApiCall(asin);
+          const buyBoxData = await mockAmazonApiCall(asin.asin1, asin.seller_sku, jobId);
 
           if (buyBoxData) {
             // Store successful result
             await SupabaseService.insertBuyBoxData(buyBoxData);
             successCount++;
           } else {
+            // Record the mock failure
+            try {
+              await SupabaseService.recordFailure(
+                jobId,
+                asin.asin1,
+                asin.seller_sku,
+                'Mock API call failed - simulated failure',
+                'MOCK_FAILURE',
+                1,
+                { message: 'Simulated failure for testing' }
+              );
+            } catch (logError) {
+              console.error('Failed to log mock failure:', logError);
+            }
             failCount++;
           }
 
@@ -157,7 +171,23 @@ async function processBulkScan(jobId, asins) {
           }
 
         } catch (asinError) {
-          console.error(`Error processing ASIN ${asin}:`, asinError);
+          console.error(`Error processing ASIN ${asin.asin1} (SKU: ${asin.seller_sku}):`, asinError);
+          
+          // Record the failure with detailed information
+          try {
+            await SupabaseService.recordFailure(
+              jobId,
+              asin.asin1,
+              asin.seller_sku,
+              `Processing error: ${asinError.message}`,
+              'PROCESSING_ERROR',
+              1,
+              { error: asinError.message, stack: asinError.stack }
+            );
+          } catch (logError) {
+            console.error('Failed to log failure:', logError);
+          }
+          
           failCount++;
         }
       }
@@ -182,22 +212,46 @@ async function processBulkScan(jobId, asins) {
 /**
  * Mock Amazon API call - TO BE REPLACED with actual SP-API integration
  */
-async function mockAmazonApiCall(asin) {
+async function mockAmazonApiCall(asinCode, sku, runId) {
   // Simulate API processing time
   await new Promise(resolve => setTimeout(resolve, 100));
 
-  // Mock success/failure (90% success rate)
-  if (Math.random() < 0.9) {
-    return {
-      asin: asin,
-      buyBoxPrice: (Math.random() * 100 + 10).toFixed(2),
-      buyBoxSeller: 'MockSeller' + Math.floor(Math.random() * 1000),
-      timestamp: new Date().toISOString(),
-      source: 'mock-api'
-    };
+  // Mock success/failure (10% failure rate for testing)
+  if (Math.random() < 0.1) {
+    return null; // Simulate failure
   }
 
-  return null; // Simulate failure
+  // Return data structure that matches buybox_data table schema
+  const mockPrice = parseFloat((Math.random() * 100 + 10).toFixed(2));
+  const competitorPrice = parseFloat((mockPrice + (Math.random() - 0.5) * 20).toFixed(2));
+  const isWinner = mockPrice <= competitorPrice;
+  
+  return {
+    // Required fields that match the database schema
+    run_id: runId, // Link to the job that created this data
+    asin: asinCode,
+    sku: sku || `SKU-${asinCode}`, // Use provided SKU or fallback
+    price: mockPrice,
+    currency: 'GBP',
+    is_winner: isWinner,
+    competitor_id: 'A' + Math.random().toString(36).substring(2, 15).toUpperCase(),
+    competitor_name: `MockSeller${Math.floor(Math.random() * 1000)}`,
+    competitor_price: competitorPrice,
+    marketplace: 'UK',
+    opportunity_flag: !isWinner && (competitorPrice - mockPrice) > 5,
+    min_profitable_price: parseFloat((mockPrice * 0.8).toFixed(2)),
+    margin_at_buybox: parseFloat((mockPrice * 0.3).toFixed(2)),
+    margin_percent_at_buybox: parseFloat((0.3 + Math.random() * 0.2).toFixed(4)),
+    total_offers: Math.floor(Math.random() * 10) + 1,
+    category: 'Electronics',
+    brand: 'MockBrand',
+    captured_at: new Date().toISOString(),
+    fulfillment_channel: Math.random() > 0.5 ? 'AMAZON' : 'DEFAULT',
+    merchant_shipping_group: 'UK Shipping',
+    source: 'mock-api',
+    merchant_token: 'A2D8NG39VURSL3', // Our mock merchant token
+    buybox_merchant_token: 'A' + Math.random().toString(36).substring(2, 15).toUpperCase()
+  };
 }
 
 /**

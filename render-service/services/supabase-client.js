@@ -201,22 +201,33 @@ class SupabaseService {
   }
 
   /**
-   * Log failed ASIN processing
+   * Log failed ASIN processing (Legacy method - deprecated)
    */
   async logFailure(runId, asin, sku, errorMessage) {
+    // Deprecated - use recordFailure instead
+    return this.recordFailure(runId, asin, sku, errorMessage, 'PROCESSING_FAILED', 1, {});
+  }
+
+  /**
+   * Record detailed failure information
+   */
+  async recordFailure(jobId, asin, sku, reason, errorCode = 'UNKNOWN', attemptNumber = 1, rawError = {}) {
     const { data, error } = await supabase
       .from('buybox_failures')
       .insert({
-        run_id: runId,
+        job_id: jobId,
         asin: asin,
         sku: sku,
-        error_message: errorMessage,
-        failed_at: new Date().toISOString()
+        reason: reason,
+        error_code: errorCode,
+        attempt_number: attemptNumber,
+        raw_error: typeof rawError === 'string' ? rawError : JSON.stringify(rawError),
+        captured_at: new Date().toISOString()
       })
       .select();
 
     if (error) {
-      console.error('Failed to log failure:', error);
+      console.error('Failed to record failure:', error);
       // Don't throw here as it's just logging
     }
 

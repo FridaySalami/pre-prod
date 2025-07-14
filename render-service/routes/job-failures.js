@@ -15,7 +15,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const jobId = req.query.job_id;
-    
+
     if (!jobId) {
       return res.status(400).json({
         success: false,

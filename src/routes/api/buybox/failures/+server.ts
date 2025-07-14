@@ -1,40 +1,34 @@
 import { json } from '@sveltejs/kit';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { RENDER_SERVICE_URL } from '$env/static/private';
 
 /**
- * Get Buy Box job failures 
+ * Get Buy Box job failures (proxy to Render service)
  */
 export async function GET({ url }) {
   try {
-    const jobId = url.searchParams.get('job_id');
-    if (!jobId) {
-      return json({
-        success: false,
-        error: 'job_id parameter is required'
-      }, { status: 400 });
-    }
+    // Extract query parameters
+    const searchParams = url.searchParams;
+    const queryString = searchParams.toString();
 
-    const { data: failures, error } = await supabaseAdmin
-      .from('buybox_failures')
-      .select('*')
-      .eq('job_id', jobId)
-      .order('captured_at', { ascending: false });
+    // Proxy request to Render service
+    const renderUrl = `${RENDER_SERVICE_URL}/api/job-failures${queryString ? '?' + queryString : ''}`;
 
-    if (error) {
-      console.error('Error fetching job failures:', error);
-      return json({
-        success: false,
-        error: error.message || 'Failed to fetch job failures'
-      }, { status: 500 });
-    }
-
-    return json({
-      success: true,
-      failures,
+    const response = await fetch(renderUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
 
+    if (!response.ok) {
+      throw new Error(`Render service responded with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return json(data);
+
   } catch (error) {
-    console.error('Buy Box failures error:', error);
+    console.error('Buy Box failures proxy error:', error);
     return json({
       success: false,
       error: (error as Error).message || 'Failed to fetch Buy Box failures'
