@@ -21,8 +21,8 @@ const USE_REAL_API = process.env.USE_AMAZON_SPAPI === 'true';
 
 if (USE_REAL_API) {
   try {
-    amazonAPI = new AmazonSPAPI();
-    console.log('✅ Amazon SP-API client initialized');
+    amazonAPI = new AmazonSPAPI(SupabaseService.client);
+    console.log('✅ Amazon SP-API client initialized with Supabase client');
   } catch (error) {
     console.warn('⚠️ Amazon SP-API client initialization failed:', error.message);
     console.warn('⚠️ Falling back to mock data');
@@ -250,7 +250,7 @@ async function processBulkScan(jobId, asins) {
 }
 
 /**
- * Mock Amazon API call - TO BE REPLACED with actual SP-API integration
+ * Mock Amazon API call with margin analysis
  */
 async function mockAmazonApiCall(asinCode, sku, runId) {
   // Simulate API processing time
@@ -261,7 +261,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     return null; // Simulate failure
   }
 
-  // Return data structure that matches buybox_data table schema
+  // Return data structure that matches buybox_data table schema with margin fields
   const mockPrice = parseFloat((Math.random() * 100 + 10).toFixed(2));
   const competitorPrice = parseFloat((mockPrice + (Math.random() - 0.5) * 20).toFixed(2));
 
@@ -270,15 +270,45 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
 
   // 30% chance you're the winner for testing
   const isWinner = Math.random() < 0.3;
-  const competitorId = isWinner ? 'A' + Math.random().toString(36).substring(2, 15).toUpperCase() : yourSellerId;
+  const competitorId = isWinner ? yourSellerId : 'A' + Math.random().toString(36).substring(2, 15).toUpperCase();
 
-  console.log(`Mock ASIN ${asinCode}: Your ID: ${yourSellerId}, Winner: ${isWinner}`);
+  // Mock cost data for margin calculations
+  const baseCost = parseFloat((Math.random() * 30 + 5).toFixed(2));
+  const shippingCost = parseFloat((Math.random() * 8 + 3).toFixed(2));
+  const materialTotalCost = parseFloat((baseCost + Math.random() * 10 + 2).toFixed(2));
+  
+  // Calculate mock margins
+  const amazonFee = mockPrice * 0.15;
+  const yourMargin = mockPrice - amazonFee - materialTotalCost - shippingCost;
+  const yourMarginPercent = mockPrice > 0 ? (yourMargin / mockPrice) * 100 : 0;
+  
+  const buyboxAmazonFee = competitorPrice * 0.15;
+  const buyboxMargin = competitorPrice - buyboxAmazonFee - materialTotalCost - shippingCost;
+  const buyboxMarginPercent = competitorPrice > 0 ? (buyboxMargin / competitorPrice) * 100 : 0;
+  
+  const marginDifference = buyboxMargin - yourMargin;
+  const profitOpportunity = Math.max(0, marginDifference);
+  const breakEvenPrice = (materialTotalCost + shippingCost) / 0.85;
+
+  // Determine recommended action
+  let recommendedAction;
+  if (buyboxMarginPercent < 5) {
+    recommendedAction = 'not_profitable';
+  } else if (buyboxMarginPercent < 10) {
+    recommendedAction = 'investigate';
+  } else if (profitOpportunity > 1) {
+    recommendedAction = 'match_buybox';
+  } else {
+    recommendedAction = 'hold_price';
+  }
+
+  console.log(`Mock ASIN ${asinCode}: Your ID: ${yourSellerId}, Winner: ${isWinner}, Action: ${recommendedAction}`);
 
   return {
     // Required fields that match the database schema
-    run_id: runId, // Link to the job that created this data
+    run_id: runId,
     asin: asinCode,
-    sku: sku || `SKU-${asinCode}`, // Use provided SKU or fallback
+    sku: sku || `SKU-${asinCode}`,
     price: mockPrice,
     currency: 'GBP',
     is_winner: isWinner,
@@ -297,8 +327,35 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     fulfillment_channel: Math.random() > 0.5 ? 'AMAZON' : 'DEFAULT',
     merchant_shipping_group: 'UK Shipping',
     source: 'mock-api',
-    merchant_token: 'A2D8NG39VURSL3', // Our mock merchant token
-    buybox_merchant_token: 'A' + Math.random().toString(36).substring(2, 15).toUpperCase()
+    merchant_token: yourSellerId,
+    buybox_merchant_token: competitorId,
+    
+    // New margin analysis fields
+    your_cost: parseFloat(baseCost.toFixed(2)),
+    your_shipping_cost: parseFloat(shippingCost.toFixed(2)),
+    your_material_total_cost: parseFloat(materialTotalCost.toFixed(2)),
+    your_box_cost: parseFloat((Math.random() * 2).toFixed(2)),
+    your_vat_amount: parseFloat((baseCost * 0.2).toFixed(2)),
+    your_fragile_charge: Math.random() < 0.3 ? 0.66 : 0.00,
+    
+    // Current pricing margins
+    your_margin_at_current_price: parseFloat(yourMargin.toFixed(2)),
+    your_margin_percent_at_current_price: parseFloat(yourMarginPercent.toFixed(2)),
+    
+    // Competitor analysis
+    margin_at_buybox_price: parseFloat(buyboxMargin.toFixed(2)),
+    margin_percent_at_buybox_price: parseFloat(buyboxMarginPercent.toFixed(2)),
+    margin_difference: parseFloat(marginDifference.toFixed(2)),
+    profit_opportunity: parseFloat(profitOpportunity.toFixed(2)),
+    
+    // Recommendations
+    recommended_action: recommendedAction,
+    price_adjustment_needed: parseFloat((competitorPrice - mockPrice).toFixed(2)),
+    break_even_price: parseFloat(breakEvenPrice.toFixed(2)),
+    
+    // Metadata
+    margin_calculation_version: 'v1.0',
+    cost_data_source: 'mock'
   };
 }
 

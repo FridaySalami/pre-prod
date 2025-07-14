@@ -6,9 +6,10 @@
  */
 
 const crypto = require('crypto');
+const CostCalculator = require('./cost-calculator');
 
 class AmazonSPAPI {
-  constructor() {
+  constructor(supabaseClient) {
     this.config = {
       clientId: process.env.AMAZON_CLIENT_ID,
       clientSecret: process.env.AMAZON_CLIENT_SECRET,
@@ -30,6 +31,9 @@ class AmazonSPAPI {
 
     this.accessToken = null;
     this.tokenExpiry = null;
+    
+    // Initialize cost calculator for margin analysis
+    this.costCalculator = new CostCalculator(supabaseClient);
   }
 
   /**
@@ -277,20 +281,24 @@ class AmazonSPAPI {
   }
 
   /**
-   * Get Buy Box data for a single ASIN
+   * Get Buy Box data for a single ASIN with margin analysis
    */
   async getBuyBoxData(asin, sku, runId) {
     try {
-      console.log(`Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}`);
+      console.log(`[SP-API] Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}`);
 
       const pricingData = await this.getCompetitivePricing(asin);
       const transformedData = this.transformPricingData(pricingData, asin, sku, runId);
 
-      console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${transformedData.competitor_name}`);
+      // Enrich with cost and margin analysis
+      console.log(`[SP-API] Enriching with margin analysis for SKU: ${sku}`);
+      const enrichedData = await this.costCalculator.enrichBuyBoxData(transformedData);
 
-      return transformedData;
+      console.log(`[SP-API] Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedData.competitor_name}, Recommended action: ${enrichedData.recommended_action}`);
+
+      return enrichedData;
     } catch (error) {
-      console.error(`Failed to get Buy Box data for ASIN ${asin}:`, error);
+      console.error(`[SP-API] Failed to get Buy Box data for ASIN ${asin}:`, error);
       throw error;
     }
   }
