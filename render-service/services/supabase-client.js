@@ -320,6 +320,9 @@ class SupabaseService {
       offset = 0,
       showOpportunities = false,
       showWinners = false,
+      showProfitable = false,
+      minMargin = 0,
+      recommendation = null,
       includeAllJobs = false
     } = options;
 
@@ -349,6 +352,19 @@ class SupabaseService {
       query = query.eq('is_winner', true);
     }
 
+    // New margin-based filters
+    if (showProfitable) {
+      query = query.gt('profit_opportunity', 0);
+    }
+
+    if (minMargin > 0) {
+      query = query.gte('your_margin_percent_at_current_price', minMargin);
+    }
+
+    if (recommendation) {
+      query = query.eq('recommended_action', recommendation);
+    }
+
     // Apply pagination
     query = query
       .order('captured_at', { ascending: false })
@@ -363,6 +379,53 @@ class SupabaseService {
     return {
       data,
       total: count
+    };
+  }
+
+  /**
+   * Get job summary statistics
+   */
+  async getJobSummaryStats(options) {
+    const {
+      jobId,
+      asin,
+      sku,
+      includeAllJobs = false
+    } = options;
+
+    // Build base query for the same job/filters
+    let baseQuery = supabase.from('buybox_data').select('*');
+
+    // Apply same filters as main query
+    if (jobId && !includeAllJobs) {
+      baseQuery = baseQuery.eq('run_id', jobId);
+    }
+
+    if (asin) {
+      baseQuery = baseQuery.eq('asin', asin);
+    }
+
+    if (sku) {
+      baseQuery = baseQuery.eq('sku', sku);
+    }
+
+    const { data: allResults, error } = await baseQuery;
+
+    if (error) {
+      throw new Error(`Failed to get job summary stats: ${error.message}`);
+    }
+
+    // Calculate summary statistics
+    const winners_count = allResults.filter(r => r.is_winner).length;
+    const opportunities_count = allResults.filter(r => r.opportunity_flag).length;
+    const profitable_opportunities_count = allResults.filter(r => r.profit_opportunity && r.profit_opportunity > 0).length;
+    const margin_data_count = allResults.filter(r => r.your_margin_percent_at_current_price !== null).length;
+
+    return {
+      winners_count,
+      opportunities_count,
+      profitable_opportunities_count,
+      margin_data_count
     };
   }
 }

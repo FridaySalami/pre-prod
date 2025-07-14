@@ -34,6 +34,9 @@ router.get('/', async (req, res) => {
     // Parse filter parameters
     const showOpportunities = req.query.show_opportunities === 'true';
     const showWinners = req.query.show_winners === 'true';
+    const showProfitable = req.query.show_profitable === 'true';
+    const minMargin = parseFloat(req.query.min_margin) || 0;
+    const recommendation = req.query.recommendation !== 'all' ? req.query.recommendation : null;
     const includeAllJobs = req.query.include_all_jobs === 'true';
 
     // Get results from database
@@ -46,6 +49,17 @@ router.get('/', async (req, res) => {
       offset,
       showOpportunities,
       showWinners,
+      showProfitable,
+      minMargin,
+      recommendation,
+      includeAllJobs
+    });
+
+    // Get summary statistics for the job (without pagination)
+    const summaryStats = await SupabaseService.getJobSummaryStats({
+      jobId,
+      asin,
+      sku,
       includeAllJobs
     });
 
@@ -55,6 +69,10 @@ router.get('/', async (req, res) => {
       total: results.total,
       page: page,
       limit: limit,
+      winners_count: summaryStats.winners_count,
+      opportunities_count: summaryStats.opportunities_count,
+      profitable_opportunities_count: summaryStats.profitable_opportunities_count,
+      margin_data_count: summaryStats.margin_data_count,
       timestamp: new Date().toISOString()
     });
 
