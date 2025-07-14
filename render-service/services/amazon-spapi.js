@@ -224,9 +224,18 @@ class AmazonSPAPI {
 
       // Check if YOU are the Buy Box winner
       const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID;
+
+      // CRITICAL FIX: Find YOUR specific seller offer to get YOUR actual listed price
+      const yourOffer = offers.find(offer => offer.SellerId === yourSellerId);
+
+      if (!yourOffer) {
+        throw new Error(`Your seller offer not found for ASIN ${asin}. Your Seller ID: ${yourSellerId}. Available sellers: ${offers.map(o => o.SellerId).join(', ')}`);
+      }
+
       const isWinner = buyBoxOffer?.SellerId === yourSellerId;
 
       console.log(`ASIN ${asin}: Buy Box owned by ${buyBoxOffer?.SellerId}, Your ID: ${yourSellerId}, Winner: ${isWinner}`);
+      console.log(`ASIN ${asin}: Your listed price: £${yourOffer.ListingPrice?.Amount}, Buy Box price: £${buyBoxOffer?.ListingPrice?.Amount}`);
 
       // Get all competitor prices for analysis (excluding your offers)
       const competitorOffers = offers.filter(offer => offer.SellerId !== yourSellerId);
@@ -241,6 +250,12 @@ class AmazonSPAPI {
         ? Math.min(...competitorPrices.map(p => p.total))
         : null;
 
+      // YOUR actual pricing data
+      const yourPrice = yourOffer.ListingPrice?.Amount || 0;
+      const yourShipping = yourOffer.Shipping?.Amount || 0;
+      const yourTotal = yourPrice + yourShipping;
+
+      // Buy Box winner's pricing data
       const buyBoxPrice = buyBoxOffer?.ListingPrice?.Amount || 0;
       const buyBoxShipping = buyBoxOffer?.Shipping?.Amount || 0;
       const buyBoxTotal = buyBoxPrice + buyBoxShipping;
@@ -253,12 +268,12 @@ class AmazonSPAPI {
         run_id: runId,
         asin: asin,
         sku: sku,
-        price: buyBoxPrice, // Database expects 'price', not 'buy_box_price'
-        currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP', // Database expects 'currency', not 'buy_box_currency'
+        price: yourPrice, // FIXED: Use YOUR actual listed price, not buy box price
+        currency: yourOffer.ListingPrice?.CurrencyCode || 'GBP',
         is_winner: isWinner,
         competitor_id: buyBoxOffer?.SellerId || null,
         competitor_name: buyBoxOffer?.SellerName || buyBoxOffer?.SellerId || 'Unknown',
-        competitor_price: buyBoxPrice,
+        competitor_price: isWinner ? null : buyBoxPrice, // FIXED: Only set competitor price if you're not winning
         marketplace: 'UK', // Default marketplace
         opportunity_flag: isOpportunity,
         min_profitable_price: 0.00, // Default value
@@ -268,10 +283,10 @@ class AmazonSPAPI {
         category: null, // Would need product API to get this
         brand: null, // Would need product API to get this
         captured_at: new Date().toISOString(),
-        fulfillment_channel: buyBoxOffer?.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
+        fulfillment_channel: yourOffer.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
         merchant_shipping_group: 'UK Shipping', // Default value
         source: 'spapi', // Indicate this came from SP-API
-        merchant_token: process.env.YOUR_SELLER_ID || 'unknown',
+        merchant_token: yourSellerId,
         buybox_merchant_token: buyBoxOffer?.SellerId || null
       };
     } catch (error) {
