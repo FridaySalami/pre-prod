@@ -8,11 +8,26 @@
 const express = require('express');
 const { SupabaseService } = require('../services/supabase-client');
 const { RateLimiter, BatchProcessor } = require('../utils/rate-limiter');
+const { AmazonSPAPI } = require('../services/amazon-spapi');
 
 const router = express.Router();
 
 // Global rate limiter for Amazon SP-API
 const rateLimiter = new RateLimiter();
+
+// Amazon SP-API client (only initialize if we have credentials)
+let amazonAPI = null;
+const USE_REAL_API = process.env.USE_AMAZON_SPAPI === 'true';
+
+if (USE_REAL_API) {
+  try {
+    amazonAPI = new AmazonSPAPI();
+    console.log('✅ Amazon SP-API client initialized');
+  } catch (error) {
+    console.warn('⚠️ Amazon SP-API client initialization failed:', error.message);
+    console.warn('⚠️ Falling back to mock data');
+  }
+}
 
 /**
  * POST /start - Start a bulk ASIN scan
@@ -140,8 +155,33 @@ async function processBulkScan(jobId, asins) {
           // Rate limit before API call
           await rateLimiter.waitForNextRequest();
 
-          // TODO: Implement actual Amazon SP-API call here
-          const buyBoxData = await mockAmazonApiCall(asin.asin1, asin.seller_sku, jobId);
+          let buyBoxData = null;
+
+          if (USE_REAL_API && amazonAPI) {
+            // Use real Amazon SP-API
+            try {
+              buyBoxData = await amazonAPI.getBuyBoxData(asin.asin1, asin.seller_sku, jobId);
+            } catch (apiError) {
+              console.error(`Amazon SP-API error for ASIN ${asin.asin1}:`, apiError.message);
+
+              // Record the API failure
+              await SupabaseService.recordFailure(
+                jobId,
+                asin.asin1,
+                asin.seller_sku,
+                `Amazon SP-API error: ${apiError.message}`,
+                apiError.message.includes('RATE_LIMITED') ? 'RATE_LIMITED' : 'SP_API_ERROR',
+                1,
+                { error: apiError.message, asin: asin.asin1, sku: asin.seller_sku }
+              );
+
+              failCount++;
+              continue; // Skip to next ASIN
+            }
+          } else {
+            // Use mock API for testing
+            buyBoxData = await mockAmazonApiCall(asin.asin1, asin.seller_sku, jobId);
+          }
 
           if (buyBoxData) {
             // Store successful result
@@ -172,7 +212,7 @@ async function processBulkScan(jobId, asins) {
 
         } catch (asinError) {
           console.error(`Error processing ASIN ${asin.asin1} (SKU: ${asin.seller_sku}):`, asinError);
-          
+
           // Record the failure with detailed information
           try {
             await SupabaseService.recordFailure(
@@ -187,7 +227,7 @@ async function processBulkScan(jobId, asins) {
           } catch (logError) {
             console.error('Failed to log failure:', logError);
           }
-          
+
           failCount++;
         }
       }
@@ -225,7 +265,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
   const mockPrice = parseFloat((Math.random() * 100 + 10).toFixed(2));
   const competitorPrice = parseFloat((mockPrice + (Math.random() - 0.5) * 20).toFixed(2));
   const isWinner = mockPrice <= competitorPrice;
-  
+
   return {
     // Required fields that match the database schema
     run_id: runId, // Link to the job that created this data
