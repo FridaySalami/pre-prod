@@ -73,6 +73,10 @@ router.get('/', async (req, res) => {
       opportunities_count: summaryStats.opportunities_count,
       profitable_opportunities_count: summaryStats.profitable_opportunities_count,
       margin_data_count: summaryStats.margin_data_count,
+      total_profit_opportunity: summaryStats.total_profit_opportunity,
+      match_buybox_count: summaryStats.match_buybox_count,
+      average_current_profit: summaryStats.average_current_profit,
+      total_results_in_job: summaryStats.total_results,
       timestamp: new Date().toISOString()
     });
 

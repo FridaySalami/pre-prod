@@ -47,6 +47,8 @@
 		your_box_cost: number | null;
 		your_vat_amount: number | null;
 		your_fragile_charge: number | null;
+		material_cost_only: number | null;
+		total_operating_cost: number | null;
 
 		// Current pricing margins
 		your_margin_at_current_price: number | null;
@@ -109,6 +111,10 @@
 	let opportunityCount = 0;
 	let profitableOpportunityCount = 0;
 	let marginDataCount = 0;
+	let totalProfitOpportunity = 0;
+	let matchBuyboxCount = 0;
+	let averageCurrentProfit = 0;
+	let totalResultsInJob = 0;
 
 	// Rate limit settings for new scans
 	let newScanRateLimit = 0.5; // Default to a more conservative 0.5 requests/second
@@ -194,6 +200,10 @@
 			opportunityCount = resultsData.opportunities_count;
 			profitableOpportunityCount = resultsData.profitable_opportunities_count || 0;
 			marginDataCount = resultsData.margin_data_count || 0;
+			totalProfitOpportunity = resultsData.total_profit_opportunity || 0;
+			matchBuyboxCount = resultsData.match_buybox_count || 0;
+			averageCurrentProfit = resultsData.average_current_profit || 0;
+			totalResultsInJob = resultsData.total_results_in_job || 0;
 
 			// Fetch job failures
 			const failuresResponse = await fetch(`/api/buybox/failures?job_id=${jobId}`);
@@ -821,58 +831,48 @@
 								<p class="text-2xl font-bold">{totalResults}</p>
 							</div>
 							<div class="bg-green-50 p-3 rounded">
-								<p class="text-sm text-gray-500">Buy Box Winners</p>
-								<p class="text-2xl font-bold">{winnerCount}</p>
+								<p class="text-sm text-gray-500">Buy Box Won</p>
+								<p class="text-2xl font-bold text-green-600">{winnerCount}</p>
+								<p class="text-xs text-gray-400">We own buy box</p>
 							</div>
 							<div class="bg-yellow-50 p-3 rounded">
 								<p class="text-sm text-gray-500">Opportunities</p>
-								<p class="text-2xl font-bold">{opportunityCount}</p>
+								<p class="text-2xl font-bold text-yellow-600">{opportunityCount}</p>
+								<p class="text-xs text-gray-400">Potential gains</p>
 							</div>
 							<div class="bg-purple-50 p-3 rounded">
 								<p class="text-sm text-gray-500">Profitable Opportunities</p>
-								<p class="text-2xl font-bold">{profitableOpportunityCount}</p>
+								<p class="text-2xl font-bold text-purple-600">{profitableOpportunityCount}</p>
+								<p class="text-xs text-gray-400">Worth pursuing</p>
 							</div>
-							<div class="bg-orange-50 p-3 rounded">
+							<div class="bg-orange-50 p-3 rounded" title="SKUs with cost data analyzed out of {totalResultsInJob} total">
 								<p class="text-sm text-gray-500">Margin Analysis</p>
-								<p class="text-2xl font-bold">{marginDataCount}</p>
+								<p class="text-2xl font-bold text-orange-600">{marginDataCount}</p>
+								<p class="text-xs text-gray-400">of {totalResultsInJob} SKUs</p>
 							</div>
 						</div>
 
 						{#if jobResults.length > 0}
 							<div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-center border-t pt-4">
 								<div>
-									<p class="text-sm text-gray-500">Avg Current Margin</p>
-									<p class="text-lg font-medium">
-										{#if jobResults.filter((r) => r.your_margin_percent_at_current_price !== null).length > 0}
-											{(
-												jobResults
-													.filter((r) => r.your_margin_percent_at_current_price !== null)
-													.reduce(
-														(sum, r) => sum + (r.your_margin_percent_at_current_price || 0),
-														0
-													) /
-												jobResults.filter((r) => r.your_margin_percent_at_current_price !== null)
-													.length
-											).toFixed(1)}%
-										{:else}
-											N/A
-										{/if}
+									<p class="text-sm text-gray-500">Avg Current Profit</p>
+									<p class={`text-lg font-medium ${averageCurrentProfit >= 2 ? 'text-green-600' : averageCurrentProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+										£{averageCurrentProfit.toFixed(2)}
 									</p>
 								</div>
 								<div>
 									<p class="text-sm text-gray-500">Total Profit Opportunity</p>
 									<p class="text-lg font-medium text-green-600">
-										£{jobResults
-											.filter((r) => r.profit_opportunity && r.profit_opportunity > 0)
-											.reduce((sum, r) => sum + (r.profit_opportunity || 0), 0)
-											.toFixed(2)}
+										£{totalProfitOpportunity.toFixed(2)}
 									</p>
+									<p class="text-xs text-gray-400">If matched to buy box</p>
 								</div>
 								<div>
-									<p class="text-sm text-gray-500">Match Buy Box</p>
+									<p class="text-sm text-gray-500">Needs Price Match</p>
 									<p class="text-lg font-medium text-blue-600">
-										{jobResults.filter((r) => r.recommended_action === 'match_buybox').length} SKUs
+										{matchBuyboxCount} SKUs
 									</p>
+									<p class="text-xs text-gray-400">Recommended actions</p>
 								</div>
 							</div>
 						{/if}
@@ -980,21 +980,40 @@
 											<!-- Cost Breakdown -->
 											<td class="py-3 px-4">
 												<div class="text-xs space-y-1">
+													<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
 													{#if result.your_cost}
 														<div>Base: £{result.your_cost.toFixed(2)}</div>
 													{/if}
-													{#if result.your_shipping_cost}
-														<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
+													{#if result.your_vat_amount}
+														<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
 													{/if}
 													{#if result.your_box_cost}
 														<div>Box: £{result.your_box_cost.toFixed(2)}</div>
 													{/if}
-													{#if result.your_fragile_charge}
+													<div>Material: £0.20</div>
+													{#if result.your_fragile_charge && result.your_fragile_charge > 0}
 														<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
 													{/if}
-													{#if result.your_material_total_cost}
-														<div class="font-medium border-t pt-1">
-															Total: £{result.your_material_total_cost.toFixed(2)}
+													{#if result.your_shipping_cost}
+														<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
+													{/if}
+													{#if result.total_operating_cost}
+														<div class="font-medium border-t pt-1 text-blue-800">
+															Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
+														</div>
+													{/if}
+													
+													<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
+													{#if result.price}
+														<div class="text-red-600">Amazon Fee (15% of £{result.price.toFixed(2)}): £{(result.price * 0.15).toFixed(2)}</div>
+													{/if}
+													
+													{#if result.break_even_price}
+														<div class="font-bold border-t pt-2 text-red-800">
+															Break-even: £{result.break_even_price.toFixed(2)}
+														</div>
+														<div class="text-xs text-gray-500">
+															(£{result.total_operating_cost?.toFixed(2)} ÷ 0.85)
 														</div>
 													{/if}
 												</div>
@@ -1005,7 +1024,7 @@
 												<div class="text-sm space-y-1">
 													{#if result.current_actual_profit !== null}
 														<div
-															class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : 'text-red-600'}`}
+															class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
 														>
 															£{result.current_actual_profit.toFixed(2)} profit
 														</div>
@@ -1019,7 +1038,7 @@
 														</div>
 													{/if}
 													{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit}
-														<div class="text-xs text-gray-600">
+														<div class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}>
 															At Buy Box: £{result.buybox_actual_profit.toFixed(2)} profit
 														</div>
 													{/if}

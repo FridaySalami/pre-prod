@@ -420,12 +420,30 @@ class SupabaseService {
     const opportunities_count = allResults.filter(r => r.opportunity_flag).length;
     const profitable_opportunities_count = allResults.filter(r => r.profit_opportunity && r.profit_opportunity > 0).length;
     const margin_data_count = allResults.filter(r => r.your_margin_percent_at_current_price !== null).length;
+    
+    // Calculate total profit opportunity (sum of all positive profit opportunities)
+    const total_profit_opportunity = allResults
+      .filter(r => r.profit_opportunity && r.profit_opportunity > 0)
+      .reduce((sum, r) => sum + (r.profit_opportunity || 0), 0);
+    
+    // Calculate SKUs needing price adjustments (recommended to match buy box)
+    const match_buybox_count = allResults.filter(r => r.recommended_action === 'match_buybox').length;
+    
+    // Calculate average current profit for SKUs with margin data
+    const skus_with_actual_profit = allResults.filter(r => r.current_actual_profit !== null);
+    const average_current_profit = skus_with_actual_profit.length > 0 
+      ? skus_with_actual_profit.reduce((sum, r) => sum + (r.current_actual_profit || 0), 0) / skus_with_actual_profit.length
+      : 0;
 
     return {
       winners_count,
       opportunities_count,
       profitable_opportunities_count,
-      margin_data_count
+      margin_data_count,
+      total_profit_opportunity: parseFloat(total_profit_opportunity.toFixed(2)),
+      match_buybox_count,
+      average_current_profit: parseFloat(average_current_profit.toFixed(2)),
+      total_results: allResults.length
     };
   }
 }
