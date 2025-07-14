@@ -1,10 +1,8 @@
+#!/usr/bin/env node
+
 /**
- * Script to clear all data from the buybox-data table and run a fresh Buy Box check
- * 
- * This will:
- * 1. Connect to Supabase
- * 2. Clear all data from the buybox-data table
- * 3. Start a fresh Buy Box check job with conservative rate limits
+ * Clear all buybox data and run a fresh comprehensive check
+ * Updated: Fixed database schema issue (job_id vs run_id) - ready for deployment
  */
 
 import 'dotenv/config';
