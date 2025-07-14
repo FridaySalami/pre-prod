@@ -34,20 +34,20 @@ async function checkTableSchema() {
       columns.forEach(col => {
         console.log(`   • ${col}`);
       });
-      
+
       console.log(`\n📊 Total columns: ${columns.length}`);
-      
+
       // Check specifically for job_id
       if (columns.includes('job_id')) {
         console.log('✅ job_id column EXISTS');
       } else {
         console.log('❌ job_id column MISSING');
-        
+
         // Check what we have instead
-        const possibleJobCols = columns.filter(col => 
+        const possibleJobCols = columns.filter(col =>
           col.includes('job') || col.includes('run') || col.includes('id')
         );
-        
+
         if (possibleJobCols.length > 0) {
           console.log('🔍 Possible job/run related columns:');
           possibleJobCols.forEach(col => {
@@ -55,7 +55,7 @@ async function checkTableSchema() {
           });
         }
       }
-      
+
     } else {
       console.log('⚠️ Table exists but is empty - cannot inspect columns');
     }
