@@ -371,3 +371,6 @@ module.exports = {
   supabase,
   SupabaseService: new SupabaseService()
 };
+
+// Add client property to SupabaseService for easy access
+module.exports.SupabaseService.client = supabase;
