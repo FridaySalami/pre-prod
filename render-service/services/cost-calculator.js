@@ -3,6 +3,9 @@
 
 class CostCalculator {
   constructor(supabaseClient) {
+    if (!supabaseClient) {
+      console.warn('[CostCalculator] Warning: No Supabase client provided, cost calculations will be unavailable');
+    }
     this.db = supabaseClient;
     this.initializeLookupTables();
   }
@@ -87,6 +90,12 @@ class CostCalculator {
   async calculateProductCosts(sku) {
     try {
       console.log(`[CostCalculator] Calculating costs for SKU: ${sku}`);
+
+      // Check if database client is available
+      if (!this.db) {
+        console.log(`[CostCalculator] No database client available for SKU: ${sku}`);
+        return null;
+      }
 
       // Fetch product data
       const { data: product, error: productError } = await this.db
@@ -247,6 +256,16 @@ class CostCalculator {
 
   async enrichBuyBoxData(buyboxData) {
     try {
+      // Validate inputs
+      if (!buyboxData || !buyboxData.sku) {
+        console.log(`[CostCalculator] Invalid buybox data provided`);
+        return {
+          ...buyboxData,
+          cost_data_source: 'error',
+          recommended_action: 'data_unavailable'
+        };
+      }
+
       const costs = await this.calculateProductCosts(buyboxData.sku);
 
       if (!costs) {
