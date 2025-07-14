@@ -12,7 +12,7 @@ const { RateLimiter, BatchProcessor } = require('../utils/rate-limiter');
 const router = express.Router();
 
 // Global rate limiter for Amazon SP-API
-const rateLimiter = new RateLimiter(2100); // 2.1 seconds between requests
+const rateLimiter = new RateLimiter();
 
 /**
  * POST /start - Start a bulk ASIN scan
@@ -138,7 +138,7 @@ async function processBulkScan(jobId, asins) {
       for (const asin of batch) {
         try {
           // Rate limit before API call
-          await rateLimiter.waitForNext();
+          await rateLimiter.waitForNextRequest();
 
           // TODO: Implement actual Amazon SP-API call here
           const buyBoxData = await mockAmazonApiCall(asin);
@@ -165,7 +165,7 @@ async function processBulkScan(jobId, asins) {
       // Wait between batches (except for last batch)
       if (batchIndex < batches.length - 1) {
         console.log(`Waiting ${30} seconds before next batch...`);
-        await batchProcessor.waitBetweenBatches();
+        await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
       }
     }
 
