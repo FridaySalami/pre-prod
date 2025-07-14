@@ -283,6 +283,22 @@ class CostCalculator {
         buyboxData.competitor_price
       );
 
+      // Calculate detailed profit breakdown
+      const currentPrice = buyboxData.price;
+      const buyboxPrice = buyboxData.competitor_price;
+      const amazonFeeRate = 0.15;
+
+      // Current price profit calculation
+      const currentAmazonFee = currentPrice * amazonFeeRate;
+      const currentNetRevenue = currentPrice - currentAmazonFee;
+      const totalOperatingCost = costs.materialTotalCost + costs.shippingCost;
+      const currentActualProfit = currentNetRevenue - totalOperatingCost;
+
+      // Buybox price profit calculation
+      const buyboxAmazonFee = buyboxPrice * amazonFeeRate;
+      const buyboxNetRevenue = buyboxPrice - buyboxAmazonFee;
+      const buyboxActualProfit = buyboxNetRevenue - totalOperatingCost;
+
       return {
         ...buyboxData,
         // Cost breakdown
@@ -293,6 +309,13 @@ class CostCalculator {
         your_vat_amount: costs.vatAmount,
         your_fragile_charge: costs.fragileCharge,
 
+        // Enhanced cost breakdown for UI clarity
+        material_cost_only: costs.materialTotalCost,
+        total_operating_cost: totalOperatingCost,
+        material_cost_breakdown: `Base: £${costs.baseCost.toFixed(2)} + Box: £${costs.boxCost.toFixed(2)} + Material: £0.20 + VAT: £${costs.vatAmount.toFixed(2)} + Fragile: £${costs.fragileCharge.toFixed(2)} = £${costs.materialTotalCost.toFixed(2)}`,
+        operating_cost_breakdown: `Material: £${costs.materialTotalCost.toFixed(2)} + Shipping: £${costs.shippingCost.toFixed(2)} = £${totalOperatingCost.toFixed(2)}`,
+        breakeven_calculation: `(£${costs.materialTotalCost.toFixed(2)} + £${costs.shippingCost.toFixed(2)}) ÷ (1 - 0.15) = £${totalOperatingCost.toFixed(2)} ÷ 0.85 = £${margins.breakEvenPrice.toFixed(2)}`,
+
         // Margin analysis
         your_margin_at_current_price: margins.yourMargin,
         your_margin_percent_at_current_price: margins.yourMarginPercent,
@@ -300,6 +323,12 @@ class CostCalculator {
         margin_percent_at_buybox_price: margins.buyboxMarginPercent,
         margin_difference: margins.marginDifference,
         profit_opportunity: margins.profitOpportunity,
+
+        // Actual profit calculations
+        current_actual_profit: parseFloat(currentActualProfit.toFixed(2)),
+        buybox_actual_profit: parseFloat(buyboxActualProfit.toFixed(2)),
+        current_profit_breakdown: `£${currentPrice.toFixed(2)} - £${currentAmazonFee.toFixed(2)} (Amazon) - £${totalOperatingCost.toFixed(2)} (Costs) = £${currentActualProfit.toFixed(2)}`,
+        buybox_profit_breakdown: `£${buyboxPrice.toFixed(2)} - £${buyboxAmazonFee.toFixed(2)} (Amazon) - £${totalOperatingCost.toFixed(2)} (Costs) = £${buyboxActualProfit.toFixed(2)}`,
 
         // Recommendations
         recommended_action: margins.recommendedAction,

@@ -39,7 +39,7 @@
 		margin_at_buybox: number | null;
 		margin_percent_at_buybox: number | null;
 		captured_at: string;
-		
+
 		// Enhanced margin analysis fields
 		your_cost: number | null;
 		your_shipping_cost: number | null;
@@ -47,22 +47,22 @@
 		your_box_cost: number | null;
 		your_vat_amount: number | null;
 		your_fragile_charge: number | null;
-		
+
 		// Current pricing margins
 		your_margin_at_current_price: number | null;
 		your_margin_percent_at_current_price: number | null;
-		
+
 		// Competitor analysis
 		margin_at_buybox_price: number | null;
 		margin_percent_at_buybox_price: number | null;
 		margin_difference: number | null;
 		profit_opportunity: number | null;
-		
+
 		// Recommendations
 		recommended_action: string | null;
 		price_adjustment_needed: number | null;
 		break_even_price: number | null;
-		
+
 		// Metadata
 		margin_calculation_version: string | null;
 		cost_data_source: string | null;
@@ -763,7 +763,9 @@
 							<div class="space-y-2">
 								<h3 class="font-medium text-gray-700">Recommendations</h3>
 								<div>
-									<label for="recommendation-filter" class="block text-sm text-gray-600">Action</label>
+									<label for="recommendation-filter" class="block text-sm text-gray-600"
+										>Action</label
+									>
 									<select
 										id="recommendation-filter"
 										class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm"
@@ -829,17 +831,22 @@
 								<p class="text-2xl font-bold">{marginDataCount}</p>
 							</div>
 						</div>
-						
+
 						{#if jobResults.length > 0}
 							<div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-center border-t pt-4">
 								<div>
 									<p class="text-sm text-gray-500">Avg Current Margin</p>
 									<p class="text-lg font-medium">
-										{#if jobResults.filter(r => r.your_margin_percent_at_current_price !== null).length > 0}
-											{(jobResults
-												.filter(r => r.your_margin_percent_at_current_price !== null)
-												.reduce((sum, r) => sum + (r.your_margin_percent_at_current_price || 0), 0) / 
-												jobResults.filter(r => r.your_margin_percent_at_current_price !== null).length
+										{#if jobResults.filter((r) => r.your_margin_percent_at_current_price !== null).length > 0}
+											{(
+												jobResults
+													.filter((r) => r.your_margin_percent_at_current_price !== null)
+													.reduce(
+														(sum, r) => sum + (r.your_margin_percent_at_current_price || 0),
+														0
+													) /
+												jobResults.filter((r) => r.your_margin_percent_at_current_price !== null)
+													.length
 											).toFixed(1)}%
 										{:else}
 											N/A
@@ -850,7 +857,7 @@
 									<p class="text-sm text-gray-500">Total Profit Opportunity</p>
 									<p class="text-lg font-medium text-green-600">
 										£{jobResults
-											.filter(r => r.profit_opportunity && r.profit_opportunity > 0)
+											.filter((r) => r.profit_opportunity && r.profit_opportunity > 0)
 											.reduce((sum, r) => sum + (r.profit_opportunity || 0), 0)
 											.toFixed(2)}
 									</p>
@@ -858,7 +865,7 @@
 								<div>
 									<p class="text-sm text-gray-500">Match Buy Box</p>
 									<p class="text-lg font-medium text-blue-600">
-										{jobResults.filter(r => r.recommended_action === 'match_buybox').length} SKUs
+										{jobResults.filter((r) => r.recommended_action === 'match_buybox').length} SKUs
 									</p>
 								</div>
 							</div>
@@ -926,11 +933,15 @@
 													<div class="font-medium text-gray-900">{result.sku}</div>
 													<div class="text-gray-500">{result.asin}</div>
 													{#if result.is_winner}
-														<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+														<span
+															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+														>
 															🏆 Buy Box Winner
 														</span>
 													{:else if result.opportunity_flag}
-														<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+														<span
+															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+														>
 															⚡ Opportunity
 														</span>
 													{/if}
@@ -940,13 +951,21 @@
 											<!-- Price Analysis -->
 											<td class="py-3 px-4">
 												<div class="text-sm">
-													<div class="font-medium">Current: £{result.price?.toFixed(2) || 'N/A'}</div>
+													<div class="font-medium">
+														Current: £{result.price?.toFixed(2) || 'N/A'}
+													</div>
 													{#if result.break_even_price}
-														<div class="text-gray-600">Break-even: £{result.break_even_price.toFixed(2)}</div>
+														<div class="text-gray-600">
+															Break-even: £{result.break_even_price.toFixed(2)}
+														</div>
 													{/if}
 													{#if result.price_adjustment_needed && result.price_adjustment_needed !== 0}
-														<div class={`text-xs ${result.price_adjustment_needed > 0 ? 'text-red-600' : 'text-green-600'}`}>
-															Adjust: {result.price_adjustment_needed > 0 ? '+' : ''}£{result.price_adjustment_needed.toFixed(2)}
+														<div
+															class={`text-xs ${result.price_adjustment_needed > 0 ? 'text-red-600' : 'text-green-600'}`}
+														>
+															Adjust: {result.price_adjustment_needed > 0
+																? '+'
+																: ''}£{result.price_adjustment_needed.toFixed(2)}
 														</div>
 													{/if}
 												</div>
@@ -968,7 +987,9 @@
 														<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
 													{/if}
 													{#if result.your_material_total_cost}
-														<div class="font-medium border-t pt-1">Total: £{result.your_material_total_cost.toFixed(2)}</div>
+														<div class="font-medium border-t pt-1">
+															Total: £{result.your_material_total_cost.toFixed(2)}
+														</div>
 													{/if}
 												</div>
 											</td>
@@ -977,12 +998,16 @@
 											<td class="py-3 px-4">
 												<div class="text-sm space-y-1">
 													{#if result.your_margin_percent_at_current_price !== null}
-														<div class={`font-medium ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}>
+														<div
+															class={`font-medium ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+														>
 															Current: {result.your_margin_percent_at_current_price.toFixed(1)}%
 														</div>
 													{/if}
 													{#if result.margin_percent_at_buybox_price !== null}
-														<div class={`${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}>
+														<div
+															class={`${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+														>
 															At Buy Box: {result.margin_percent_at_buybox_price.toFixed(1)}%
 														</div>
 													{/if}
@@ -992,8 +1017,12 @@
 														</div>
 													{/if}
 													{#if result.margin_difference}
-														<div class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}>
-															Difference: {result.margin_difference > 0 ? '+' : ''}£{result.margin_difference.toFixed(2)}
+														<div
+															class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															Difference: {result.margin_difference > 0
+																? '+'
+																: ''}£{result.margin_difference.toFixed(2)}
 														</div>
 													{/if}
 												</div>
@@ -1002,12 +1031,14 @@
 											<!-- Recommendation -->
 											<td class="py-3 px-4">
 												{#if result.recommended_action}
-													<span class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium
+													<span
+														class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium
 														${result.recommended_action === 'match_buybox' ? 'bg-blue-100 text-blue-800' : ''}
 														${result.recommended_action === 'hold_price' ? 'bg-green-100 text-green-800' : ''}
 														${result.recommended_action === 'investigate' ? 'bg-yellow-100 text-yellow-800' : ''}
 														${result.recommended_action === 'not_profitable' ? 'bg-red-100 text-red-800' : ''}
-													`}>
+													`}
+													>
 														{#if result.recommended_action === 'match_buybox'}
 															📈 Match Buy Box
 														{:else if result.recommended_action === 'hold_price'}

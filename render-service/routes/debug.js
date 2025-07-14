@@ -10,9 +10,9 @@ const router = express.Router();
 router.post('/test-cost-calc', async (req, res) => {
   try {
     const { sku } = req.body;
-    
+
     if (!sku) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'SKU is required',
         timestamp: new Date().toISOString()
       });
@@ -22,10 +22,10 @@ router.post('/test-cost-calc', async (req, res) => {
 
     // Initialize cost calculator
     const costCalculator = new CostCalculator(SupabaseService.client);
-    
+
     // Test the cost calculation
     const costs = await costCalculator.calculateProductCosts(sku);
-    
+
     if (!costs) {
       return res.json({
         sku,
