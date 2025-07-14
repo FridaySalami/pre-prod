@@ -145,7 +145,7 @@ async function main() {
           await supabase
             .from('buybox_data')
             .insert({
-              job_id: jobId,
+              run_id: jobId,
               asin: asin,
               total_offers: result.totalOffers,
               buy_box_price: result.buyBoxWinner?.totalPrice,
