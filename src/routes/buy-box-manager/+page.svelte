@@ -9,6 +9,7 @@
 		asin: string;
 		sku: string;
 		price: number | null;
+		competitor_price: number | null;
 		is_winner: boolean;
 		opportunity_flag: boolean;
 		margin_at_buybox: number | null;
@@ -245,6 +246,60 @@
 		console.log('Add to watchlist:', item.sku);
 	}
 
+	// Compare pricing between scanned data and live pricing
+	async function comparePricing(item: BuyBoxData): Promise<void> {
+		try {
+			// Get live pricing data from buy-box-monitor
+			const response = await fetch(
+				`/api/buy-box-monitor/check?asin=${encodeURIComponent(item.asin)}`
+			);
+			const liveData = await response.json();
+
+			if (!response.ok) {
+				alert(`Error fetching live data: ${liveData.error}`);
+				return;
+			}
+
+			// Get SKU mapping data to find your actual listed price
+			const skuResponse = await fetch(
+				`/api/buy-box-monitor/search?query=${encodeURIComponent(item.sku)}&limit=1`
+			);
+			const skuData = await skuResponse.json();
+
+			let yourActualPrice = null;
+			if (skuResponse.ok && skuData.results?.[0]?.price) {
+				yourActualPrice = parseFloat(skuData.results[0].price);
+			}
+
+			const scannedPrice = item.price;
+			const liveBuyBoxPrice = liveData.buyBoxPrice;
+
+			let message = `🔍 PRICING COMPARISON FOR ${item.sku}\n\n`;
+			message += `📊 Scanned Data (from database):\n`;
+			message += `   Your Price: £${scannedPrice?.toFixed(2) || 'N/A'}\n`;
+			message += `   Competitor Price: £${item.competitor_price?.toFixed(2) || 'N/A'}\n`;
+			message += `   Captured: ${new Date(item.captured_at).toLocaleString()}\n\n`;
+
+			message += `🔴 Live Data (current Amazon):\n`;
+			if (yourActualPrice) {
+				message += `   Your Listed Price: £${yourActualPrice.toFixed(2)}\n`;
+			}
+			message += `   Buy Box Price: £${liveBuyBoxPrice?.toFixed(2) || 'N/A'}\n`;
+			message += `   Buy Box Winner: ${liveData.buyBoxWinner || 'Unknown'}\n\n`;
+
+			if (yourActualPrice && scannedPrice && Math.abs(yourActualPrice - scannedPrice) > 0.01) {
+				message += `⚠️ PRICE DISCREPANCY DETECTED!\n`;
+				message += `   Difference: £${(yourActualPrice - scannedPrice).toFixed(2)}\n`;
+				message += `   This suggests the scanner captured old/incorrect data.\n`;
+			}
+
+			alert(message);
+		} catch (error) {
+			console.error('Error comparing pricing:', error);
+			alert('Failed to compare pricing. Check console for details.');
+		}
+	}
+
 	// Format date
 	function formatDate(dateString: string): string {
 		return new Date(dateString).toLocaleDateString();
@@ -281,6 +336,43 @@
 		<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6" role="alert">
 			<p>{errorMessage}</p>
 		</div>
+	{/if}
+
+	<!-- Data Freshness Alert -->
+	{#if !isLoading && buyboxData.length > 0}
+		{@const oldestData = Math.min(
+			...buyboxData.map((item) => new Date(item.captured_at).getTime())
+		)}
+		{@const oldestAge = Math.floor((Date.now() - oldestData) / (1000 * 60 * 60))}
+		{#if oldestAge > 24}
+			<div
+				class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-6"
+				role="alert"
+			>
+				<div class="flex justify-between items-center">
+					<div>
+						<p class="font-medium">⚠️ Some data may be outdated</p>
+						<p class="text-sm">
+							Oldest data is {oldestAge} hours old. Consider running a fresh scan for accurate pricing.
+						</p>
+					</div>
+					<div class="flex gap-2">
+						<a
+							href="/buy-box-monitor/jobs"
+							class="bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded text-sm"
+						>
+							Run New Scan
+						</a>
+						<button
+							on:click={loadBuyBoxData}
+							class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
+						>
+							Refresh Data
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 	{/if}
 
 	<!-- Summary Statistics -->
@@ -531,21 +623,72 @@
 								<!-- Price Analysis -->
 								<td class="py-4 px-6">
 									<div class="text-sm">
-										<div class="font-medium">
-											Current: £{result.price?.toFixed(2) || 'N/A'}
-										</div>
+										{#if result.is_winner}
+											<!-- When you're winning the Buy Box -->
+											<div class="font-medium text-green-700">
+												🏆 Your Buy Box Price: £{result.price?.toFixed(2) || 'N/A'}
+											</div>
+										{:else}
+											<!-- When you're not winning the Buy Box -->
+											<div class="font-medium text-gray-700">
+												📦 Your Listed Price: £{result.price?.toFixed(2) || 'N/A'}
+											</div>
+											{#if result.competitor_price && result.price !== null}
+												<div class="text-red-600 font-medium">
+													🥇 Buy Box Price: £{result.competitor_price.toFixed(2)}
+												</div>
+												<div class="text-xs text-gray-500">
+													Difference: £{(result.price - result.competitor_price).toFixed(2)}
+													({result.price > result.competitor_price ? 'Higher' : 'Lower'})
+												</div>
+											{/if}
+										{/if}
+
 										{#if result.break_even_price}
-											<div class="text-gray-600">
-												Break-even: £{result.break_even_price.toFixed(2)}
+											<div class="text-gray-600 mt-1">
+												⚖️ Break-even: £{result.break_even_price.toFixed(2)}
 											</div>
 										{/if}
+
+										<!-- Data Freshness Warning -->
+										{#if Date.now() - new Date(result.captured_at).getTime() > 24 * 60 * 60 * 1000}
+											{@const dataAge = Math.floor(
+												(Date.now() - new Date(result.captured_at).getTime()) / (1000 * 60 * 60)
+											)}
+											<div class="bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
+												<div class="text-xs text-yellow-800 font-medium">
+													⚠️ Data may be outdated ({dataAge}h old)
+												</div>
+												<div class="text-xs text-yellow-600 mt-1">
+													<a
+														href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
+														class="underline hover:text-yellow-800"
+														target="_blank"
+													>
+														Check live pricing →
+													</a>
+												</div>
+											</div>
+										{/if}
+
+										<!-- Beat Buy Box by 1p Price (only when not winning) -->
+										{#if !result.is_winner && result.competitor_price}
+											{@const beatBuyBoxPrice = result.competitor_price - 0.01}
+											<div class="text-purple-700 font-medium border-t pt-1 mt-1">
+												🎯 Beat Buy Box: £{beatBuyBoxPrice.toFixed(2)}
+											</div>
+											<div class="text-xs text-purple-600">
+												(£{result.competitor_price.toFixed(2)} - £0.01)
+											</div>
+										{/if}
+
 										{#if result.price_adjustment_needed && result.price_adjustment_needed !== 0}
 											<div
-												class={`text-xs ${result.price_adjustment_needed > 0 ? 'text-red-600' : 'text-green-600'}`}
+												class={`text-xs mt-1 ${result.price_adjustment_needed < 0 ? 'text-green-600' : 'text-red-600'}`}
 											>
-												Adjust: {result.price_adjustment_needed > 0
-													? '+'
-													: ''}£{result.price_adjustment_needed.toFixed(2)}
+												Suggested: {result.price_adjustment_needed < 0
+													? ''
+													: '+'}£{result.price_adjustment_needed.toFixed(2)} adjustment
 											</div>
 										{/if}
 									</div>
@@ -611,25 +754,65 @@
 											<div
 												class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
 											>
-												Current: {result.your_margin_percent_at_current_price.toFixed(1)}% margin
+												📊 Current Price: {result.your_margin_percent_at_current_price.toFixed(1)}%
+												margin
 											</div>
 										{/if}
+
+										<!-- Beat Buy Box by 1p Analysis (only when not winning) -->
+										{#if !result.is_winner && result.competitor_price && result.total_operating_cost}
+											{@const beatBuyBoxPrice = result.competitor_price - 0.01}
+											{@const beatBuyBoxAmazonFee = beatBuyBoxPrice * 0.15}
+											{@const beatBuyBoxProfit =
+												beatBuyBoxPrice - beatBuyBoxAmazonFee - result.total_operating_cost}
+											{@const beatBuyBoxMarginPercent =
+												beatBuyBoxPrice > 0 ? (beatBuyBoxProfit / beatBuyBoxPrice) * 100 : 0}
+
+											<div class="border-t pt-1 mt-2">
+												<div class="text-xs font-medium text-purple-700 mb-1">
+													🎯 Beat Buy Box by 1p (£{beatBuyBoxPrice.toFixed(2)}):
+												</div>
+												<div
+													class={`text-xs font-medium ${beatBuyBoxProfit >= 1 ? 'text-green-600' : beatBuyBoxProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
+												>
+													£{beatBuyBoxProfit.toFixed(2)} profit ({beatBuyBoxMarginPercent.toFixed(
+														1
+													)}% margin)
+												</div>
+												{#if beatBuyBoxProfit > (result.current_actual_profit || 0)}
+													<div class="text-xs text-green-600">
+														+£{(beatBuyBoxProfit - (result.current_actual_profit || 0)).toFixed(2)} vs
+														current
+													</div>
+												{/if}
+											</div>
+										{/if}
+
+										<!-- Match Buy Box Exactly (existing calculation) -->
 										{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit}
-											<div
-												class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
-											>
-												At Buy Box: £{result.buybox_actual_profit.toFixed(2)} profit
+											<div class="border-t pt-1 mt-1">
+												<div class="text-xs font-medium text-gray-700 mb-1">
+													🎯 Match Buy Box Exactly:
+												</div>
+												<div
+													class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
+												>
+													£{result.buybox_actual_profit.toFixed(2)} profit
+												</div>
+												{#if result.margin_percent_at_buybox_price !== null}
+													<div
+														class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+													>
+														({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
+													</div>
+												{/if}
 											</div>
 										{/if}
-										{#if result.margin_percent_at_buybox_price !== null && result.margin_percent_at_buybox_price !== result.your_margin_percent_at_current_price}
-											<div
-												class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
-											>
-												({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
-											</div>
-										{/if}
+
 										{#if result.profit_opportunity && result.profit_opportunity > 0}
-											<div class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+											<div
+												class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded mt-2"
+											>
 												+£{result.profit_opportunity.toFixed(2)} opportunity
 											</div>
 										{/if}
@@ -681,6 +864,19 @@
 											on:click={() => viewProductDetails(result.asin, result.sku)}
 										>
 											View Details
+										</button>
+										<a
+											href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
+											target="_blank"
+											class="text-green-600 hover:text-green-800 underline text-xs"
+										>
+											Verify Live Price
+										</a>
+										<button
+											class="text-orange-600 hover:text-orange-800 underline text-xs"
+											on:click={() => comparePricing(result)}
+										>
+											🔍 Compare Pricing
 										</button>
 										{#if result.recommended_action === 'match_buybox'}
 											<button

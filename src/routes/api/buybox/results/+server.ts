@@ -6,6 +6,7 @@ interface BuyBoxResult {
   asin: string;
   sku: string;
   price: number | null;
+  competitor_price: number | null;
   is_winner: boolean;
   opportunity_flag: boolean;
   margin_at_buybox: number | null;
@@ -69,7 +70,7 @@ export async function GET({ url }) {
         .select('id')
         .order('created_at', { ascending: false })
         .limit(1);
-      
+
       if (latestJob && latestJob.length > 0) {
         query = query.eq('job_id', latestJob[0].id);
       }
@@ -87,10 +88,10 @@ export async function GET({ url }) {
     const results = data || [];
     const totalWinners = results.filter(item => item.is_winner).length;
     const totalOpportunities = results.filter(item => item.opportunity_flag).length;
-    const totalProfitable = results.filter(item => 
+    const totalProfitable = results.filter(item =>
       item.profit_opportunity && item.profit_opportunity > 0
     ).length;
-    const totalMarginAnalyzed = results.filter(item => 
+    const totalMarginAnalyzed = results.filter(item =>
       item.your_margin_percent_at_current_price !== null
     ).length;
 
