@@ -9,13 +9,13 @@ class RateLimiter {
     // Amazon SP-API rate limits - Smart retry approach
     this.limits = {
       // Product Pricing API: 0.5 requests per second (Amazon official)
-      // Use normal Amazon rate + intelligent retry when rate limited
+      // Use conservative Amazon rate + intelligent retry when rate limited
       productPricing: {
-        requestsPerSecond: 0.48, // Close to Amazon's 0.5 req/sec
-        minDelay: 2100, // 2.1 seconds between requests (Amazon's official rate)
-        retryDelay: 4000, // 4 seconds sleep when rate limited
-        adaptiveDelay: 2100, // Current adaptive delay (starts at minimum)
-        maxDelay: 8000 // Maximum delay cap (8 seconds for persistent issues)
+        requestsPerSecond: 0.4, // More conservative - 0.4 req/sec 
+        minDelay: 2500, // 2.5 seconds between requests (more conservative)
+        retryDelay: 6000, // 6 seconds sleep when rate limited (increased)
+        adaptiveDelay: 2500, // Current adaptive delay (starts at minimum)
+        maxDelay: 12000 // Maximum delay cap (12 seconds for persistent issues)
       },
       // Competitive Pricing API: 1 request per second  
       competitivePricing: {

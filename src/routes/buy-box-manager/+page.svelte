@@ -918,6 +918,20 @@
 											</div>
 										{/if}
 
+										{#if result.total_operating_cost && result.price}
+											<div class="font-bold border-t pt-2 text-orange-800">
+												Total Cost After Fees: £{(
+													result.total_operating_cost +
+													result.price * 0.15
+												).toFixed(2)}
+											</div>
+											<div class="text-xs text-gray-500">
+												(£{result.total_operating_cost.toFixed(2)} + £{(
+													result.price * 0.15
+												).toFixed(2)})
+											</div>
+										{/if}
+
 										{#if result.break_even_price}
 											<div class="font-bold border-t pt-2 text-red-800">
 												Break-even: £{result.break_even_price.toFixed(2)}
