@@ -118,38 +118,77 @@
 		isLoading = true;
 		errorMessage = '';
 
+		const requestStartTime = Date.now();
+		console.log('🔵 Frontend: Starting Buy Box data request at', new Date().toISOString());
+
 		try {
 			// Get latest data from all jobs - use a more reasonable limit for production
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-			const response = await fetch('/api/buybox/results?include_all_jobs=true&limit=5000', {
+			const url = '/api/buybox/results?include_all_jobs=true&limit=5000';
+			console.log('🔵 Frontend: Requesting URL:', url);
+			console.log('🔵 Frontend: Request timeout set to 30 seconds');
+
+			const requestTime = Date.now();
+			const response = await fetch(url, {
 				signal: controller.signal
 			});
 			clearTimeout(timeoutId);
 
+			const fetchTime = Date.now() - requestTime;
+			console.log('🔵 Frontend: Fetch completed in', fetchTime + 'ms');
+			console.log('🔵 Frontend: Response status:', response.status, response.statusText);
+			console.log('🔵 Frontend: Response headers:', Object.fromEntries(response.headers.entries()));
+
+			const parseStartTime = Date.now();
 			const data = await response.json();
+			const parseTime = Date.now() - parseStartTime;
+
+			console.log('🔵 Frontend: JSON parse completed in', parseTime + 'ms');
+			console.log('🔵 Frontend: Response data keys:', Object.keys(data));
+
+			if (data.debug) {
+				console.log('🔵 Frontend: Server debug info:', data.debug);
+			}
 
 			if (!response.ok) {
+				console.error('🔴 Frontend: API error response:', data);
 				throw new Error(data.error || 'Failed to load buy box data');
 			}
 
+			console.log('🔵 Frontend: Processing', data.results?.length || 0, 'results');
 			buyboxData = data.results;
 			allRawData = [...data.results]; // Store all raw data for historical counting
 
 			// Deduplicate to show only latest data per SKU by default
 			if (showLatestOnly) {
+				const beforeDedup = buyboxData.length;
 				buyboxData = deduplicateLatestData(buyboxData);
+				console.log(
+					'🔵 Frontend: Deduplicated from',
+					beforeDedup,
+					'to',
+					buyboxData.length,
+					'records'
+				);
 			}
 
 			calculateSummaryStats();
 			applyFilters();
+
+			const totalTime = Date.now() - requestStartTime;
+			console.log('🟢 Frontend: Buy Box data loaded successfully in', totalTime + 'ms');
 		} catch (error: unknown) {
-			console.error('Error loading buy box data:', error);
+			const totalTime = Date.now() - requestStartTime;
+			console.error('🔴 Frontend: Error loading buy box data after', totalTime + 'ms:', error);
+
 			if (error instanceof Error && error.name === 'AbortError') {
+				console.error('🔴 Frontend: Request was aborted due to timeout');
 				errorMessage =
 					'Request timed out. The server is taking too long to respond. Try refreshing or reducing the data range.';
 			} else {
+				console.error('🔴 Frontend: Request failed with error:', error);
 				errorMessage =
 					error instanceof Error
 						? error.message
