@@ -1,8 +1,10 @@
-#!/usr/bin/env node
-
 /**
- * Clear all buybox data and run a fresh comprehensive check
- * Updated: Fixed database schema issue (job_id vs run_id) - ready for deployment
+ * Script to clear all data from the buybox-data table and run a fresh Buy Box check
+ * 
+ * This will:
+ * 1. Connect to Supabase
+ * 2. Clear all data from the buybox-data table
+ * 3. Start a fresh Buy Box check job with conservative rate limits
  */
 
 import 'dotenv/config';
@@ -143,7 +145,7 @@ async function main() {
           await supabase
             .from('buybox_data')
             .insert({
-              run_id: jobId,
+              job_id: jobId,
               asin: asin,
               total_offers: result.totalOffers,
               buy_box_price: result.buyBoxWinner?.totalPrice,

@@ -107,32 +107,4 @@ export interface BuyBoxResponse {
   priceDifferencePercent: number | null;
   originalSku: string | null;
   recommendations?: string[];
-
-  // Margin Analysis Fields
-  your_cost?: number;
-  your_shipping_cost?: number;
-  your_material_total_cost?: number;
-  your_box_cost?: number;
-  your_vat_amount?: number;
-  your_fragile_charge?: number;
-  material_cost_only?: number;
-  total_operating_cost?: number;
-  material_cost_breakdown?: string;
-  operating_cost_breakdown?: string;
-  breakeven_calculation?: string;
-  your_margin_at_current_price?: number;
-  your_margin_percent_at_current_price?: number;
-  margin_at_buybox_price?: number;
-  margin_percent_at_buybox_price?: number;
-  margin_difference?: number;
-  profit_opportunity?: number;
-  current_actual_profit?: number;
-  buybox_actual_profit?: number;
-  current_profit_breakdown?: string;
-  buybox_profit_breakdown?: string;
-  recommended_action?: string;
-  price_adjustment_needed?: number;
-  break_even_price?: number;
-  margin_calculation_version?: string;
-  cost_data_source?: string;
 }

@@ -5,11 +5,11 @@
  * and transforms it into the format expected by our database schema.
  */
 
+const axios = require('axios');
 const crypto = require('crypto');
-const CostCalculator = require('./cost-calculator');
 
 class AmazonSPAPI {
-  constructor(supabaseClient) {
+  constructor() {
     this.config = {
       clientId: process.env.AMAZON_CLIENT_ID,
       clientSecret: process.env.AMAZON_CLIENT_SECRET,
@@ -31,9 +31,6 @@ class AmazonSPAPI {
 
     this.accessToken = null;
     this.tokenExpiry = null;
-
-    // Initialize cost calculator for margin analysis
-    this.costCalculator = new CostCalculator(supabaseClient);
   }
 
   /**
@@ -46,35 +43,24 @@ class AmazonSPAPI {
     }
 
     try {
-      const body = new URLSearchParams({
+      const response = await axios.post('https://api.amazon.com/auth/o2/token', {
         grant_type: 'refresh_token',
         refresh_token: this.config.refreshToken,
         client_id: this.config.clientId,
         client_secret: this.config.clientSecret
-      });
-
-      const response = await fetch('https://api.amazon.com/auth/o2/token', {
-        method: 'POST',
+      }, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: body.toString()
+        }
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-
-      this.accessToken = data.access_token;
+      this.accessToken = response.data.access_token;
       // Token expires in 1 hour, refresh 5 minutes early
-      this.tokenExpiry = new Date(Date.now() + (data.expires_in - 300) * 1000);
+      this.tokenExpiry = new Date(Date.now() + (response.data.expires_in - 300) * 1000);
 
       return this.accessToken;
     } catch (error) {
-      console.error('Failed to get Amazon access token:', error.message);
+      console.error('Failed to get Amazon access token:', error.response?.data || error.message);
       throw new Error('Failed to authenticate with Amazon SP-API');
     }
   }
@@ -172,36 +158,22 @@ class AmazonSPAPI {
       .join('&')}`;
 
     try {
-      const response = await fetch(url, {
-        method: 'GET',
+      const response = await axios.get(url, {
         headers: signedHeaders,
-        signal: AbortSignal.timeout(30000) // 30 second timeout
+        timeout: 30000 // 30 second timeout
       });
 
-      if (!response.ok) {
-        // Check for specific error types
-        if (response.status === 429) {
-          throw new Error('RATE_LIMITED');
-        } else if (response.status === 403) {
-          throw new Error('ACCESS_DENIED');
-        } else if (response.status === 404) {
-          throw new Error('ASIN_NOT_FOUND');
-        } else {
-          const errorText = await response.text();
-          throw new Error(`SP_API_ERROR: HTTP ${response.status}: ${errorText}`);
-        }
-      }
-
-      const data = await response.json();
-      return data;
+      return response.data;
     } catch (error) {
-      console.error(`SP-API error for ASIN ${asin}:`, error.message);
+      console.error(`SP-API error for ASIN ${asin}:`, error.response?.data || error.message);
 
-      // Re-throw known error types
-      if (error.message.includes('RATE_LIMITED') ||
-        error.message.includes('ACCESS_DENIED') ||
-        error.message.includes('ASIN_NOT_FOUND')) {
-        throw error;
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ASIN_NOT_FOUND');
       } else {
         throw new Error(`SP_API_ERROR: ${error.message}`);
       }
@@ -222,72 +194,46 @@ class AmazonSPAPI {
       // Find Buy Box winner
       const buyBoxOffer = offers.find(offer => offer.IsBuyBoxWinner === true);
 
-      // Check if YOU are the Buy Box winner
-      const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID;
-
-      // CRITICAL FIX: Find YOUR specific seller offer to get YOUR actual listed price
-      const yourOffer = offers.find(offer => offer.SellerId === yourSellerId);
-
-      if (!yourOffer) {
-        throw new Error(`Your seller offer not found for ASIN ${asin}. Your Seller ID: ${yourSellerId}. Available sellers: ${offers.map(o => o.SellerId).join(', ')}`);
-      }
-
-      const isWinner = buyBoxOffer?.SellerId === yourSellerId;
-
-      console.log(`ASIN ${asin}: Buy Box owned by ${buyBoxOffer?.SellerId}, Your ID: ${yourSellerId}, Winner: ${isWinner}`);
-      console.log(`ASIN ${asin}: Your listed price: £${yourOffer.ListingPrice?.Amount}, Buy Box price: £${buyBoxOffer?.ListingPrice?.Amount}`);
-
-      // Get all competitor prices for analysis (excluding your offers)
-      const competitorOffers = offers.filter(offer => offer.SellerId !== yourSellerId);
-      const competitorPrices = competitorOffers.map(offer => ({
-        price: offer.ListingPrice?.Amount || 0,
-        shipping: offer.Shipping?.Amount || 0,
-        total: (offer.ListingPrice?.Amount || 0) + (offer.Shipping?.Amount || 0)
-      }));
+      // Get all competitor prices for analysis
+      const competitorPrices = offers
+        .filter(offer => !offer.IsBuyBoxWinner)
+        .map(offer => ({
+          price: offer.ListingPrice?.Amount || 0,
+          shipping: offer.Shipping?.Amount || 0,
+          total: (offer.ListingPrice?.Amount || 0) + (offer.Shipping?.Amount || 0)
+        }));
 
       // Calculate metrics
       const lowestCompetitorPrice = competitorPrices.length > 0
         ? Math.min(...competitorPrices.map(p => p.total))
         : null;
 
-      // YOUR actual pricing data
-      const yourPrice = yourOffer.ListingPrice?.Amount || 0;
-      const yourShipping = yourOffer.Shipping?.Amount || 0;
-      const yourTotal = yourPrice + yourShipping;
-
-      // Buy Box winner's pricing data
       const buyBoxPrice = buyBoxOffer?.ListingPrice?.Amount || 0;
       const buyBoxShipping = buyBoxOffer?.Shipping?.Amount || 0;
       const buyBoxTotal = buyBoxPrice + buyBoxShipping;
 
       // Determine opportunity and winner status
       const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
+      const isWinner = buyBoxOffer?.SellerId === process.env.YOUR_SELLER_ID;
 
-      // Transform to match actual database schema
       return {
         run_id: runId,
         asin: asin,
         sku: sku,
-        price: yourPrice, // FIXED: Use YOUR actual listed price, not buy box price
-        currency: yourOffer.ListingPrice?.CurrencyCode || 'GBP',
-        is_winner: isWinner,
-        competitor_id: buyBoxOffer?.SellerId || null,
-        competitor_name: buyBoxOffer?.SellerName || buyBoxOffer?.SellerId || 'Unknown',
-        competitor_price: isWinner ? null : buyBoxPrice, // FIXED: Only set competitor price if you're not winning
-        marketplace: 'UK', // Default marketplace
-        opportunity_flag: isOpportunity,
-        min_profitable_price: 0.00, // Default value
-        margin_at_buybox: 0.00, // Default value - would need cost data to calculate
-        margin_percent_at_buybox: 0.00, // Default value - would need cost data to calculate  
+        buy_box_seller: buyBoxOffer?.SellerName || buyBoxOffer?.SellerId || 'Unknown',
+        buy_box_seller_id: buyBoxOffer?.SellerId || null,
+        buy_box_price: buyBoxPrice,
+        buy_box_shipping: buyBoxShipping,
+        buy_box_currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
+        is_fba: buyBoxOffer?.IsFulfilledByAmazon || false,
+        is_prime: buyBoxOffer?.IsFulfilledByAmazon || false,
         total_offers: offers.length,
-        category: null, // Would need product API to get this
-        brand: null, // Would need product API to get this
+        lowest_competitor_price: lowestCompetitorPrice,
+        price_difference: lowestCompetitorPrice ? (buyBoxTotal - lowestCompetitorPrice) : null,
+        opportunity_flag: isOpportunity,
+        is_winner: isWinner,
         captured_at: new Date().toISOString(),
-        fulfillment_channel: yourOffer.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
-        merchant_shipping_group: 'UK Shipping', // Default value
-        source: 'spapi', // Indicate this came from SP-API
-        merchant_token: yourSellerId,
-        buybox_merchant_token: buyBoxOffer?.SellerId || null
+        raw_response: JSON.stringify(pricingData)
       };
     } catch (error) {
       console.error('Error transforming pricing data:', error);
@@ -296,24 +242,20 @@ class AmazonSPAPI {
   }
 
   /**
-   * Get Buy Box data for a single ASIN with margin analysis
+   * Get Buy Box data for a single ASIN
    */
   async getBuyBoxData(asin, sku, runId) {
     try {
-      console.log(`[SP-API] Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}`);
+      console.log(`Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}`);
 
       const pricingData = await this.getCompetitivePricing(asin);
       const transformedData = this.transformPricingData(pricingData, asin, sku, runId);
 
-      // Enrich with cost and margin analysis
-      console.log(`[SP-API] Enriching with margin analysis for SKU: ${sku}`);
-      const enrichedData = await this.costCalculator.enrichBuyBoxData(transformedData);
+      console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${transformedData.buy_box_seller}`);
 
-      console.log(`[SP-API] Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedData.competitor_name}, Recommended action: ${enrichedData.recommended_action}`);
-
-      return enrichedData;
+      return transformedData;
     } catch (error) {
-      console.error(`[SP-API] Failed to get Buy Box data for ASIN ${asin}:`, error);
+      console.error(`Failed to get Buy Box data for ASIN ${asin}:`, error);
       throw error;
     }
   }

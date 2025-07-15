@@ -1,121 +1,146 @@
 import { json } from '@sveltejs/kit';
-import { supabaseAdmin } from '$lib/supabaseServer';
-
-interface BuyBoxResult {
-  id: string;
-  asin: string;
-  sku: string;
-  price: number | null;
-  competitor_price: number | null;
-  is_winner: boolean;
-  opportunity_flag: boolean;
-  margin_at_buybox: number | null;
-  margin_percent_at_buybox: number | null;
-  captured_at: string;
-  your_cost: number | null;
-  your_shipping_cost: number | null;
-  your_material_total_cost: number | null;
-  your_box_cost: number | null;
-  your_vat_amount: number | null;
-  your_fragile_charge: number | null;
-  material_cost_only: number | null;
-  total_operating_cost: number | null;
-  your_margin_at_current_price: number | null;
-  your_margin_percent_at_current_price: number | null;
-  margin_at_buybox_price: number | null;
-  margin_percent_at_buybox_price: number | null;
-  margin_difference: number | null;
-  profit_opportunity: number | null;
-  current_actual_profit: number | null;
-  buybox_actual_profit: number | null;
-  current_profit_breakdown: string | null;
-  buybox_profit_breakdown: string | null;
-  recommended_action: string | null;
-  price_adjustment_needed: number | null;
-  break_even_price: number | null;
-  margin_calculation_version: string | null;
-  cost_data_source: string | null;
-}
+import { supabaseAdmin } from '$lib/supabaseAdmin';
 
 /**
- * Get Buy Box results directly from Supabase
+ * Get Buy Box job results 
  */
 export async function GET({ url }) {
   try {
-    const searchParams = url.searchParams;
-    const limit = parseInt(searchParams.get('limit') || '100');
-    const includeAllJobs = searchParams.get('include_all_jobs') === 'true';
-    const jobId = searchParams.get('job_id');
-    const search = searchParams.get('search');
+    const jobId = url.searchParams.get('job_id');
+    const asin = url.searchParams.get('asin');
+    const sku = url.searchParams.get('sku');
+
+    // Require either job_id or asin/sku
+    if (!jobId && !asin && !sku) {
+      return json({
+        success: false,
+        error: 'Either job_id, asin, or sku parameter is required'
+      }, { status: 400 });
+    }
+
+    const page = parseInt(url.searchParams.get('page') || '1', 10);
+    const limit = parseInt(url.searchParams.get('limit') || '25', 10);
+    const offset = (page - 1) * limit;
+
+    // Parse filter parameters
+    const showOpportunities = url.searchParams.get('show_opportunities') === 'true';
+    const showWinners = url.searchParams.get('show_winners') === 'true';
+    const includeAllJobs = url.searchParams.get('include_all_jobs') === 'true';
 
     // Build query
     let query = supabaseAdmin
       .from('buybox_data')
-      .select('*')
-      .order('captured_at', { ascending: false });
+      .select('*');
 
     // Apply filters
     if (jobId) {
-      query = query.eq('job_id', jobId);
+      query = query.eq('run_id', jobId);
     }
 
-    if (search) {
-      query = query.or(`sku.ilike.%${search}%,asin.ilike.%${search}%`);
+    if (asin) {
+      query = query.eq('asin', asin);
     }
 
-    if (!includeAllJobs && !jobId) {
-      // Get latest job ID if not including all jobs
-      const { data: latestJob } = await supabaseAdmin
-        .from('buybox_jobs')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (latestJob && latestJob.length > 0) {
-        query = query.eq('job_id', latestJob[0].id);
-      }
+    if (sku) {
+      query = query.eq('sku', sku);
     }
 
-    query = query.limit(limit);
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(`Database error: ${error.message}`);
+    if (showOpportunities) {
+      query = query.eq('opportunity_flag', true);
     }
 
-    // Calculate summary statistics
-    const results = data || [];
-    const totalWinners = results.filter(item => item.is_winner).length;
-    const totalOpportunities = results.filter(item => item.opportunity_flag).length;
-    const totalProfitable = results.filter(item =>
-      item.profit_opportunity && item.profit_opportunity > 0
-    ).length;
-    const totalMarginAnalyzed = results.filter(item =>
-      item.your_margin_percent_at_current_price !== null
-    ).length;
+    if (showWinners) {
+      query = query.eq('is_winner', true);
+    }
 
-    const profitableItems = results.filter(item => item.current_actual_profit !== null);
-    const avgProfit = profitableItems.length > 0
-      ? profitableItems.reduce((sum, item) => sum + (item.current_actual_profit || 0), 0) / profitableItems.length
-      : 0;
+    // Fetch paginated results
+    const { data: results, error: resultsError } = await query
+      .order('captured_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
-    const totalPotentialProfit = results
-      .filter(item => item.profit_opportunity && item.profit_opportunity > 0)
-      .reduce((sum, item) => sum + (item.profit_opportunity || 0), 0);
+    // Build total count query with the same filters
+    let countQuery = supabaseAdmin
+      .from('buybox_data')
+      .select('id', { count: 'exact' });
+
+    if (jobId) {
+      countQuery = countQuery.eq('run_id', jobId);
+    }
+
+    if (asin) {
+      countQuery = countQuery.eq('asin', asin);
+    }
+
+    if (sku) {
+      countQuery = countQuery.eq('sku', sku);
+    }
+
+    if (showOpportunities) {
+      countQuery = countQuery.eq('opportunity_flag', true);
+    }
+
+    if (showWinners) {
+      countQuery = countQuery.eq('is_winner', true);
+    }
+
+    // Get total count separately
+    const { count: totalCount } = await countQuery;
+
+    if (resultsError) {
+      console.error('Error fetching job results:', resultsError);
+      return json({
+        success: false,
+        error: resultsError.message || 'Failed to fetch job results'
+      }, { status: 500 });
+    }
+
+    // Get counts for winners and opportunities
+    let winnersCountQuery = supabaseAdmin
+      .from('buybox_data')
+      .select('*', { count: 'exact', head: true });
+
+    if (jobId && !includeAllJobs) {
+      winnersCountQuery = winnersCountQuery.eq('run_id', jobId);
+    }
+
+    if (asin) {
+      winnersCountQuery = winnersCountQuery.eq('asin', asin);
+    }
+
+    if (sku) {
+      winnersCountQuery = winnersCountQuery.eq('sku', sku);
+    }
+
+    winnersCountQuery = winnersCountQuery.eq('is_winner', true);
+    const { count: winnersCount } = await winnersCountQuery;
+
+    let opportunitiesCountQuery = supabaseAdmin
+      .from('buybox_data')
+      .select('*', { count: 'exact', head: true });
+
+    if (jobId && !includeAllJobs) {
+      opportunitiesCountQuery = opportunitiesCountQuery.eq('run_id', jobId);
+    }
+
+    if (asin) {
+      opportunitiesCountQuery = opportunitiesCountQuery.eq('asin', asin);
+    }
+
+    if (sku) {
+      opportunitiesCountQuery = opportunitiesCountQuery.eq('sku', sku);
+    }
+
+    opportunitiesCountQuery = opportunitiesCountQuery.eq('opportunity_flag', true);
+    const { count: opportunitiesCount } = await opportunitiesCountQuery;
 
     return json({
       success: true,
       results,
-      summary: {
-        total_count: results.length,
-        buybox_winners: totalWinners,
-        opportunities: totalOpportunities,
-        profitable_opportunities: totalProfitable,
-        margin_analyzed_count: totalMarginAnalyzed,
-        average_profit: avgProfit,
-        total_profit_opportunity: totalPotentialProfit
-      }
+      total: totalCount,
+      winners_count: winnersCount,
+      opportunities_count: opportunitiesCount,
+      page,
+      limit
     });
 
   } catch (error) {
