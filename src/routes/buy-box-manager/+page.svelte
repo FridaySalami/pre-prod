@@ -329,6 +329,21 @@
 			filtered = filtered.filter((item) => item.your_margin_percent_at_current_price !== null);
 		}
 
+		// Filter out items missing base cost price (your_cost) to avoid inflated profit calculations
+		const beforeBaseCostFilter = filtered.length;
+		filtered = filtered.filter((item) => {
+			const hasBaseCost =
+				item.your_cost !== null && item.your_cost !== undefined && item.your_cost > 0;
+			if (!hasBaseCost) {
+				console.log(`🚫 Filtering out ${item.sku} - missing base cost:`, item.your_cost);
+			}
+			return hasBaseCost;
+		});
+		const afterBaseCostFilter = filtered.length;
+		console.log(
+			`🔍 Base cost filter: ${beforeBaseCostFilter} → ${afterBaseCostFilter} items (removed ${beforeBaseCostFilter - afterBaseCostFilter})`
+		);
+
 		// Profit filter
 		if (minProfitFilter > 0) {
 			filtered = filtered.filter(
@@ -589,6 +604,10 @@
 						Only showing products with cost data for better performance. This excludes ~50-70% of
 						records without margin calculations, significantly reducing load times.
 					</p>
+					<p class="text-xs text-green-600 mt-1">
+						🔍 Also filtering out items missing base cost price to ensure accurate profit
+						calculations.
+					</p>
 				</div>
 				<button
 					on:click={() => {
@@ -625,6 +644,29 @@
 				</button>
 			</div>
 		</div>
+	{/if}
+
+	<!-- Base Cost Filtering Info -->
+	{#if !isLoading && buyboxData.length > 0}
+		{@const itemsWithoutBaseCost = allRawData.filter(
+			(item) => !item.your_cost || item.your_cost <= 0
+		).length}
+		{#if itemsWithoutBaseCost > 0}
+			<div
+				class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-6"
+				role="alert"
+			>
+				<div class="flex justify-between items-center">
+					<div>
+						<p class="font-medium">💰 Base Cost Filtering Active</p>
+						<p class="text-sm">
+							Hiding {itemsWithoutBaseCost} items missing or with £0.00 base cost price data to ensure
+							accurate profit calculations. Items without cost data would show inflated profits.
+						</p>
+					</div>
+				</div>
+			</div>
+		{/if}
 	{/if}
 
 	<!-- Data Freshness Alert -->
@@ -1108,8 +1150,10 @@
 								<td class="py-4 px-6">
 									<div class="text-xs space-y-1">
 										<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
-										{#if result.your_cost}
+										{#if result.your_cost && result.your_cost > 0}
 											<div>Base: £{result.your_cost.toFixed(2)}</div>
+										{:else}
+											<div class="text-red-600 font-medium">⚠️ Base: Missing/£0.00</div>
 										{/if}
 										{#if result.your_vat_amount}
 											<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
