@@ -122,12 +122,12 @@
 			// Get latest data from all jobs - use a more reasonable limit for production
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-			
-			const response = await fetch('/api/buybox/results?include_all_jobs=true&limit=10000', {
+
+			const response = await fetch('/api/buybox/results?include_all_jobs=true&limit=5000', {
 				signal: controller.signal
 			});
 			clearTimeout(timeoutId);
-			
+
 			const data = await response.json();
 
 			if (!response.ok) {
@@ -147,10 +147,13 @@
 		} catch (error: unknown) {
 			console.error('Error loading buy box data:', error);
 			if (error instanceof Error && error.name === 'AbortError') {
-				errorMessage = 'Request timed out. The server is taking too long to respond. Try refreshing or reducing the data range.';
+				errorMessage =
+					'Request timed out. The server is taking too long to respond. Try refreshing or reducing the data range.';
 			} else {
 				errorMessage =
-					error instanceof Error ? error.message : 'An error occurred while loading data. Please try again.';
+					error instanceof Error
+						? error.message
+						: 'An error occurred while loading data. Please try again.';
 			}
 		} finally {
 			isLoading = false;

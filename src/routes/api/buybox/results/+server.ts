@@ -5,6 +5,9 @@ import { supabaseAdmin } from '$lib/supabaseAdmin';
  * Get Buy Box job results 
  */
 export async function GET({ url }) {
+  const startTime = Date.now();
+  console.log(`🟦 BuyBox API called with params: ${url.searchParams.toString()}`);
+  
   try {
     const jobId = url.searchParams.get('job_id');
     const asin = url.searchParams.get('asin');
@@ -17,9 +20,9 @@ export async function GET({ url }) {
         success: false,
         error: 'Either job_id, asin, sku parameter, or include_all_jobs=true is required'
       }, { status: 400 });
-    }    const page = parseInt(url.searchParams.get('page') || '1', 10);
+    } const page = parseInt(url.searchParams.get('page') || '1', 10);
     const limit = parseInt(url.searchParams.get('limit') || '25', 10);
-    
+
     // For very large limits (>1000), use batch fetching
     const usePagination = limit <= 1000;
     const offset = usePagination ? (page - 1) * limit : 0;
@@ -69,16 +72,21 @@ export async function GET({ url }) {
       // For large limits, fetch in batches to avoid Supabase limits
       let allResults: any[] = [];
       let currentOffset = 0;
-      const batchSize = 1000; // Supabase safe batch size
+      const batchSize = 500; // Reduced batch size for production stability
       let hasMore = true;
-      const maxRecords = Math.min(limit, 25000); // Cap at 25k records for production performance
+      const maxRecords = Math.min(limit, 10000); // Reduced cap to 10k records for production
 
       while (hasMore && currentOffset < maxRecords) {
+        const batchStart = Date.now();
         const batchQuery = query.order('captured_at', { ascending: false })
           .range(currentOffset, currentOffset + batchSize - 1);
         const response = await batchQuery;
+        
+        const batchTime = Date.now() - batchStart;
+        console.log(`🟦 Batch ${Math.floor(currentOffset / batchSize) + 1}: ${batchTime}ms, ${response.data?.length || 0} records`);
 
         if (response.error) {
+          console.error('🟥 Batch error:', response.error);
           resultsError = response.error;
           break;
         }
@@ -177,6 +185,9 @@ export async function GET({ url }) {
     opportunitiesCountQuery = opportunitiesCountQuery.eq('opportunity_flag', true);
     const { count: opportunitiesCount } = await opportunitiesCountQuery;
 
+    const totalTime = Date.now() - startTime;
+    console.log(`🟩 BuyBox API completed: ${totalTime}ms, ${results?.length || 0} results returned`);
+
     return json({
       success: true,
       results: results,
@@ -188,7 +199,8 @@ export async function GET({ url }) {
     });
 
   } catch (error) {
-    console.error('Buy Box results error:', error);
+    const totalTime = Date.now() - startTime;
+    console.error('🟥 Buy Box results error after', totalTime + 'ms:', error);
     return json({
       success: false,
       error: (error as Error).message || 'Failed to fetch Buy Box results'
