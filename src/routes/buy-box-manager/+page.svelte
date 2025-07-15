@@ -781,51 +781,73 @@
 											<!-- Debug: Show when no product title is found -->
 											<div class="text-xs text-gray-400 mb-1 italic">No product title found</div>
 										{/if}
-										<div class="font-medium text-gray-700">{result.sku}</div>
-										<div class="text-gray-500 text-xs">{result.asin}</div>
-										{#if !showLatestOnly}
-											{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-											<div class="text-xs text-purple-600 font-medium mt-1">
-												📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
-												{new Date(result.captured_at).toLocaleTimeString([], {
-													hour: '2-digit',
-													minute: '2-digit'
-												})}
-												{#if totalEntries > 1}
-													<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
-														{totalEntries} entries
+										<div>
+											<a
+												href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
+													result.sku
+												)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="font-medium text-blue-600 hover:text-blue-800 underline"
+												title="Manage price in Amazon Seller Central"
+											>
+												{result.sku} 📝
+											</a>
+										</div>
+										<div>
+											<a
+												href="https://amazon.co.uk/dp/{result.asin}"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
+												title="View on Amazon UK"
+											>
+												{result.asin} →
+											</a>
+											{#if !showLatestOnly}
+												{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+												<div class="text-xs text-purple-600 font-medium mt-1">
+													📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
+													{new Date(result.captured_at).toLocaleTimeString([], {
+														hour: '2-digit',
+														minute: '2-digit'
+													})}
+													{#if totalEntries > 1}
+														<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
+															{totalEntries} entries
+														</span>
+													{/if}
+												</div>
+											{/if}
+											<div class="mt-1">
+												{#if result.is_winner}
+													<span
+														class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+													>
+														🏆 Buy Box Winner
+													</span>
+												{:else if result.opportunity_flag}
+													<span
+														class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+													>
+														⚡ Opportunity
 													</span>
 												{/if}
 											</div>
-										{/if}
-										<div class="mt-1">
-											{#if result.is_winner}
-												<span
-													class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
-												>
-													🏆 Buy Box Winner
-												</span>
-											{:else if result.opportunity_flag}
-												<span
-													class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
-												>
-													⚡ Opportunity
-												</span>
-											{/if}
-										</div>
-										<div class="text-xs text-gray-400 mt-1">
-											Last checked: {formatDate(result.captured_at)}
-											{#if showLatestOnly}
-												{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-												{#if totalEntries > 1}
-													<span class="text-blue-600 ml-1">
-														(Latest of {totalEntries} scans)
-													</span>
+											<div class="text-xs text-gray-400 mt-1">
+												Last checked: {formatDate(result.captured_at)}
+												{#if showLatestOnly}
+													{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+													{#if totalEntries > 1}
+														<span class="text-blue-600 ml-1">
+															(Latest of {totalEntries} scans)
+														</span>
+													{/if}
 												{/if}
-											{/if}
+											</div>
 										</div>
-									</div>
-								</td>
+									</div></td
+								>
 
 								<!-- Price Analysis -->
 								<td class="py-4 px-6">

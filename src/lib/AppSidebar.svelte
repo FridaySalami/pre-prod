@@ -122,6 +122,11 @@
 			icon: 'visibility'
 		},
 		{
+			title: 'Buy Box Manager',
+			url: '/buy-box-manager',
+			icon: 'manage_search'
+		},
+		{
 			type: 'separator'
 		},
 		{
