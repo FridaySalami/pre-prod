@@ -123,9 +123,9 @@ export async function GET({ url }) {
       console.log(`🔵 [REQ-${requestId}] Using batch fetching`);
       let allResults: any[] = [];
       let currentOffset = 0;
-      const batchSize = 500; // Reduced batch size for production stability
+      const batchSize = 300; // Further reduced batch size for response size limits
       let hasMore = true;
-      const maxRecords = Math.min(limit, 10000); // Reduced cap to 10k records for production
+      const maxRecords = Math.min(limit, 2000); // Reduced cap to 2k records due to 6MB response limit
 
       console.log(`🔵 [REQ-${requestId}] Batch config: batchSize=${batchSize}, maxRecords=${maxRecords}`);
 
@@ -299,18 +299,22 @@ export async function GET({ url }) {
     console.log(`� [REQ-${requestId}] All count queries completed in ${totalCountTime}ms`);
 
     const totalTime = Date.now() - startTime;
-    console.log(`🟢 [REQ-${requestId}] Request completed successfully: ${totalTime}ms total, ${results?.length || 0} results`);
-    console.log(`🟢 [REQ-${requestId}] Response size: ~${JSON.stringify({ results, total: totalCount }).length} characters`);
+    
+    // Optimize response size by removing verbose fields if response is too large
+    const optimizedResults = results.map(record => ({
+      ...record,
+      // Remove potentially large text fields if they exist
+      current_profit_breakdown: record.current_profit_breakdown ? 
+        (record.current_profit_breakdown.length > 100 ? record.current_profit_breakdown.substring(0, 100) + '...' : record.current_profit_breakdown) : null,
+      buybox_profit_breakdown: record.buybox_profit_breakdown ? 
+        (record.buybox_profit_breakdown.length > 100 ? record.buybox_profit_breakdown.substring(0, 100) + '...' : record.buybox_profit_breakdown) : null,
+      product_title: record.product_title ? 
+        (record.product_title.length > 150 ? record.product_title.substring(0, 150) + '...' : record.product_title) : null
+    }));
 
-    // Final memory check
-    if (typeof process !== 'undefined' && process.memoryUsage) {
-      const memUsage = process.memoryUsage();
-      console.log(`🟢 [REQ-${requestId}] Final Memory - RSS: ${Math.round(memUsage.rss / 1024 / 1024)}MB, Heap: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`);
-    }
-
-    return json({
+    const responsePayload = {
       success: true,
-      results: results,
+      results: optimizedResults,
       total: totalCount,
       winners_count: winnersCount,
       opportunities_count: opportunitiesCount,
@@ -319,10 +323,45 @@ export async function GET({ url }) {
       debug: {
         requestId,
         totalTime,
-        resultCount: results?.length || 0,
-        timestamp: new Date().toISOString()
+        resultCount: optimizedResults?.length || 0,
+        timestamp: new Date().toISOString(),
+        optimized: true
       }
-    });
+    };
+
+    const responseSize = JSON.stringify(responsePayload).length;
+    const responseSizeMB = (responseSize / 1024 / 1024).toFixed(2);
+    
+    console.log(`🟢 [REQ-${requestId}] Request completed successfully: ${totalTime}ms total, ${optimizedResults?.length || 0} results`);
+    console.log(`🟢 [REQ-${requestId}] Response size: ${responseSize} bytes (${responseSizeMB}MB)`);
+    
+    // Check if response is approaching the 6MB Netlify limit
+    const maxSizeBytes = 6 * 1024 * 1024; // 6MB in bytes
+    if (responseSize > maxSizeBytes * 0.9) { // 90% of limit
+      console.log(`🟡 [REQ-${requestId}] WARNING: Response size (${responseSizeMB}MB) approaching 6MB limit`);
+    }
+    
+    if (responseSize > maxSizeBytes) {
+      console.error(`🔴 [REQ-${requestId}] ERROR: Response size (${responseSizeMB}MB) exceeds 6MB limit`);
+      return json({
+        success: false,
+        error: `Response too large (${responseSizeMB}MB). Please reduce the limit parameter or add more filters.`,
+        debug: {
+          requestId,
+          responseSize: responseSizeMB + 'MB',
+          limit: limit,
+          actualResults: optimizedResults?.length || 0
+        }
+      }, { status: 413 });
+    }
+    
+    // Final memory check
+    if (typeof process !== 'undefined' && process.memoryUsage) {
+      const memUsage = process.memoryUsage();
+      console.log(`🟢 [REQ-${requestId}] Final Memory - RSS: ${Math.round(memUsage.rss / 1024 / 1024)}MB, Heap: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`);
+    }
+
+    return json(responsePayload);
 
   } catch (error) {
     const totalTime = Date.now() - startTime;

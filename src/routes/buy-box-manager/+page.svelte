@@ -126,7 +126,7 @@
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-			const url = '/api/buybox/results?include_all_jobs=true&limit=5000';
+			const url = '/api/buybox/results?include_all_jobs=true&limit=2000';
 			console.log('🔵 Frontend: Requesting URL:', url);
 			console.log('🔵 Frontend: Request timeout set to 30 seconds');
 
@@ -154,7 +154,15 @@
 
 			if (!response.ok) {
 				console.error('🔴 Frontend: API error response:', data);
-				throw new Error(data.error || 'Failed to load buy box data');
+				
+				// Handle specific error types
+				if (data.errorType === 'Function.ResponseSizeTooLarge') {
+					throw new Error('The dataset is too large for a single request. Please use filters to reduce the data size, or try the "Latest data only" option.');
+				} else if (response.status === 413) {
+					throw new Error(`Response too large: ${data.error || 'Please reduce the limit or add filters'}`);
+				} else {
+					throw new Error(data.error || 'Failed to load buy box data');
+				}
 			}
 
 			console.log('🔵 Frontend: Processing', data.results?.length || 0, 'results');
@@ -452,7 +460,20 @@
 
 	{#if errorMessage}
 		<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6" role="alert">
-			<p>{errorMessage}</p>
+			<p class="font-medium">Error Loading Data</p>
+			<p class="text-sm mt-1">{errorMessage}</p>
+			{#if errorMessage.includes('too large') || errorMessage.includes('size')}
+				<div class="mt-3 p-3 bg-red-50 rounded text-sm">
+					<p class="font-medium text-red-800 mb-2">💡 Tips to reduce data size:</p>
+					<ul class="list-disc list-inside space-y-1 text-red-700">
+						<li>Use "Latest data only" filter (enabled by default)</li>
+						<li>Add search filters for specific SKUs or ASINs</li>
+						<li>Filter by category (Winners, Opportunities, etc.)</li>
+						<li>Use minimum profit/margin filters</li>
+						<li>Contact support if you need access to larger datasets</li>
+					</ul>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
