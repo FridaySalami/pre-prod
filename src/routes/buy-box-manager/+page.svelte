@@ -9,7 +9,8 @@
 		asin: string;
 		sku: string;
 		product_title?: string | null;
-		price: number | null;
+		price: number | null; // This is the buybox price (competitor's price)
+		your_current_price: number | null; // This is our current listed price
 		competitor_price: number | null;
 		is_winner: boolean;
 		opportunity_flag: boolean;
@@ -84,7 +85,7 @@
 
 	// Initialize and load data
 	onMount(async () => {
-		await loadBuyBoxData();
+		await refreshData();
 	});
 
 	// Deduplicate data to show only the latest entry per SKU
@@ -114,8 +115,13 @@
 	// Get all raw data for counting duplicates in historical mode
 	let allRawData: BuyBoxData[] = [];
 
-	// Load buy box data from API
-	async function loadBuyBoxData(): Promise<void> {
+	// Wrapper function for UI-triggered loads (no parameters)
+	async function refreshData(): Promise<void> {
+		await loadBuyBoxData();
+	}
+
+	// Load buy box data from API with optional retry limit
+	async function loadBuyBoxData(retryLimit: number | null = null): Promise<void> {
 		isLoading = true;
 		errorMessage = '';
 
@@ -123,13 +129,20 @@
 		console.log('🔵 Frontend: Starting Buy Box data request at', new Date().toISOString());
 
 		try {
+			// Use retry limit if provided, otherwise use the current limit
+			const currentLimit = retryLimit || 4000;
+
 			// Get latest data from all jobs - use a more reasonable limit for production
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-			const url = `/api/buybox/results?include_all_jobs=true&limit=2000${includeNoMarginData ? '&include_no_margin=true' : ''}`;
+			const url = `/api/buybox/results?include_all_jobs=true&limit=${currentLimit}${includeNoMarginData ? '&include_no_margin=true' : ''}`;
 			console.log('🔵 Frontend: Requesting URL:', url);
 			console.log('🔵 Frontend: Request timeout set to 30 seconds');
+
+			if (retryLimit) {
+				console.log(`🔄 Frontend: Retrying with reduced limit: ${retryLimit} (was 4000)`);
+			}
 
 			const requestTime = Date.now();
 			const response = await fetch(url, {
@@ -157,9 +170,27 @@
 				console.error('🔴 Frontend: API error response:', data);
 
 				// Handle specific error types
-				if (data.errorType === 'Function.ResponseSizeTooLarge') {
+				if (
+					data.errorType === 'Function.ResponseSizeTooLarge' &&
+					data.autoRetryWith &&
+					!retryLimit
+				) {
+					console.log(`🔄 Frontend: Auto-retrying with suggested limit: ${data.autoRetryWith}`);
+
+					// Show a brief notification about the retry
+					errorMessage = `Dataset too large (${data.debug?.actualResults || 'unknown'} records). Automatically reducing to ${data.autoRetryWith} records...`;
+
+					// Wait a brief moment for user to see the message, then retry
+					setTimeout(() => {
+						loadBuyBoxData(data.autoRetryWith);
+					}, 1500);
+
+					return;
+				} else if (data.errorType === 'Function.ResponseSizeTooLarge') {
+					const suggestions =
+						data.suggestions?.join('\n• ') || 'Please try reducing the data size.';
 					throw new Error(
-						'The dataset is too large for a single request. Please use filters to reduce the data size, or try the "Latest data only" option.'
+						`Dataset too large for single request (${data.debug?.actualResults || 'unknown'} records, ${data.debug?.responseSize || 'unknown size'}).\n\nSuggestions:\n• ${suggestions}`
 					);
 				} else if (response.status === 413) {
 					throw new Error(
@@ -171,6 +202,14 @@
 			}
 
 			console.log('🔵 Frontend: Processing', data.results?.length || 0, 'results');
+
+			// If we successfully loaded with a reduced limit, show info about it
+			if (retryLimit && retryLimit < 4000) {
+				console.log(
+					`🟢 Frontend: Successfully loaded ${data.results?.length || 0} records with reduced limit of ${retryLimit}`
+				);
+			}
+
 			buyboxData = data.results;
 			allRawData = [...data.results]; // Store all raw data for historical counting
 
@@ -192,6 +231,11 @@
 
 			const totalTime = Date.now() - requestStartTime;
 			console.log('🟢 Frontend: Buy Box data loaded successfully in', totalTime + 'ms');
+
+			// Clear any retry-related error messages on success
+			if (retryLimit) {
+				errorMessage = '';
+			}
 		} catch (error: unknown) {
 			const totalTime = Date.now() - requestStartTime;
 			console.error('🔴 Frontend: Error loading buy box data after', totalTime + 'ms:', error);
@@ -450,7 +494,7 @@
 		<div class="flex gap-3">
 			<button
 				class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
-				on:click={loadBuyBoxData}
+				on:click={refreshData}
 			>
 				Refresh Data
 			</button>
@@ -499,7 +543,7 @@
 				<button
 					on:click={() => {
 						showLatestOnly = false;
-						loadBuyBoxData();
+						refreshData();
 					}}
 					class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
 				>
@@ -522,7 +566,7 @@
 				<button
 					on:click={() => {
 						showLatestOnly = true;
-						loadBuyBoxData();
+						refreshData();
 					}}
 					class="bg-purple-600 hover:bg-purple-700 text-white py-1 px-3 rounded text-sm"
 				>
@@ -542,14 +586,14 @@
 				<div>
 					<p class="font-medium">🎯 Optimized View (Default)</p>
 					<p class="text-sm">
-						Only showing products with cost data for better performance. This excludes ~50-70% of records 
-						without margin calculations, significantly reducing load times.
+						Only showing products with cost data for better performance. This excludes ~50-70% of
+						records without margin calculations, significantly reducing load times.
 					</p>
 				</div>
 				<button
 					on:click={() => {
 						includeNoMarginData = true;
-						loadBuyBoxData();
+						refreshData();
 					}}
 					class="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded text-sm"
 				>
@@ -566,13 +610,14 @@
 				<div>
 					<p class="font-medium">📊 Complete Dataset (Slower)</p>
 					<p class="text-sm">
-						Including all records even without cost data. This significantly increases load times and may hit size limits.
+						Including all records even without cost data. This significantly increases load times
+						and may hit size limits.
 					</p>
 				</div>
 				<button
 					on:click={() => {
 						includeNoMarginData = false;
-						loadBuyBoxData();
+						refreshData();
 					}}
 					class="bg-orange-600 hover:bg-orange-700 text-white py-1 px-3 rounded text-sm"
 				>
@@ -608,7 +653,7 @@
 							Run New Scan
 						</a>
 						<button
-							on:click={loadBuyBoxData}
+							on:click={refreshData}
 							class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
 						>
 							Refresh Data
@@ -743,7 +788,7 @@
 			</div>
 		</div>
 
-		<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+		<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
 			<!-- Latest Data Only Filter -->
 			<div class="flex items-center">
 				<input
@@ -751,7 +796,7 @@
 					id="latestOnly"
 					class="mr-2"
 					bind:checked={showLatestOnly}
-					on:change={loadBuyBoxData}
+					on:change={refreshData}
 				/>
 				<label for="latestOnly" class="text-sm">
 					Show only latest data per SKU
@@ -778,7 +823,7 @@
 					id="includeNoMargin"
 					class="mr-2"
 					bind:checked={includeNoMarginData}
-					on:change={loadBuyBoxData}
+					on:change={refreshData}
 				/>
 				<label for="includeNoMargin" class="text-sm">
 					Include records without cost data
@@ -842,7 +887,7 @@
 						<button
 							on:click={() => {
 								showLatestOnly = false;
-								loadBuyBoxData();
+								refreshData();
 							}}
 							class="text-blue-600 hover:text-blue-800 underline"
 						>
@@ -852,7 +897,7 @@
 						<button
 							on:click={() => {
 								showLatestOnly = true;
-								loadBuyBoxData();
+								refreshData();
 							}}
 							class="text-purple-600 hover:text-purple-800 underline"
 						>
@@ -1004,24 +1049,24 @@
 									<div class="text-sm space-y-1">
 										<!-- Our Price -->
 										<div class="font-medium text-gray-900">
-											Our Price: £{result.price?.toFixed(2) || 'N/A'}
+											Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
 											{#if result.is_winner}
 												<span class="text-green-600 ml-1">🏆</span>
 											{/if}
 										</div>
 
 										<!-- Buy Box Price -->
-										{#if result.competitor_price && result.competitor_price !== result.price}
+										{#if result.price && result.price !== result.your_current_price}
+											<div class="font-medium text-gray-700">
+												Buy Box Price: £{result.price.toFixed(2)}
+											</div>
+										{:else if result.competitor_price && result.competitor_price !== result.your_current_price}
 											<div class="font-medium text-gray-700">
 												Buy Box Price: £{result.competitor_price.toFixed(2)}
 											</div>
-										{:else if result.buybox_price && result.buybox_price !== result.price}
-											<div class="font-medium text-gray-700">
-												Buy Box Price: £{result.buybox_price.toFixed(2)}
-											</div>
-										{:else if result.is_winner && result.price}
+										{:else if result.is_winner && result.your_current_price}
 											<div class="font-medium text-green-700">
-												Buy Box Price: £{result.price.toFixed(2)} (You)
+												Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
 											</div>
 										{:else}
 											<div class="font-medium text-gray-500">Buy Box Price: N/A</div>
@@ -1086,24 +1131,24 @@
 										{/if}
 
 										<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
-										{#if result.price}
+										{#if result.your_current_price}
 											<div class="text-red-600">
-												Amazon Fee (15% of £{result.price.toFixed(2)}): £{(
-													result.price * 0.15
+												Amazon Fee (15% of £{result.your_current_price.toFixed(2)}): £{(
+													result.your_current_price * 0.15
 												).toFixed(2)}
 											</div>
 										{/if}
 
-										{#if result.total_operating_cost && result.price}
+										{#if result.total_operating_cost && result.your_current_price}
 											<div class="font-bold border-t pt-2 text-orange-800">
 												Total Cost After Fees: £{(
 													result.total_operating_cost +
-													result.price * 0.15
+													result.your_current_price * 0.15
 												).toFixed(2)}
 											</div>
 											<div class="text-xs text-gray-500">
 												(£{result.total_operating_cost.toFixed(2)} + £{(
-													result.price * 0.15
+													result.your_current_price * 0.15
 												).toFixed(2)})
 											</div>
 										{/if}
@@ -1139,8 +1184,8 @@
 										{/if}
 
 										<!-- Beat Buy Box by 1p Analysis (only when not winning) -->
-										{#if !result.is_winner && result.competitor_price && result.total_operating_cost}
-											{@const beatBuyBoxPrice = result.competitor_price - 0.01}
+										{#if !result.is_winner && result.price && result.total_operating_cost}
+											{@const beatBuyBoxPrice = result.price - 0.01}
 											{@const beatBuyBoxAmazonFee = beatBuyBoxPrice * 0.15}
 											{@const beatBuyBoxProfit =
 												beatBuyBoxPrice - beatBuyBoxAmazonFee - result.total_operating_cost}

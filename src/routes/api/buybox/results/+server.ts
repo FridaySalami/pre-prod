@@ -132,7 +132,7 @@ export async function GET({ url }) {
       let currentOffset = 0;
       const batchSize = 300; // Further reduced batch size for response size limits
       let hasMore = true;
-      const maxRecords = Math.min(limit, 2000); // Reduced cap to 2k records due to 6MB response limit
+      const maxRecords = Math.min(limit, 4000); // Increased cap to 4k records for testing
 
       console.log(`🔵 [REQ-${requestId}] Batch config: batchSize=${batchSize}, maxRecords=${maxRecords}`);
 
@@ -321,7 +321,7 @@ export async function GET({ url }) {
     console.log(`� [REQ-${requestId}] All count queries completed in ${totalCountTime}ms`);
 
     const totalTime = Date.now() - startTime;
-    
+
     console.log(`🟢 [REQ-${requestId}] Request completed successfully: ${totalTime}ms total, ${results?.length || 0} results`);
 
     const responsePayload = {
@@ -342,29 +342,49 @@ export async function GET({ url }) {
 
     const responseSize = JSON.stringify(responsePayload).length;
     const responseSizeMB = (responseSize / 1024 / 1024).toFixed(2);
-    
+
     console.log(`🟢 [REQ-${requestId}] Response size: ${responseSize} bytes (${responseSizeMB}MB)`);
-    
+
     // Check if response is approaching the 6MB Netlify limit
     const maxSizeBytes = 6 * 1024 * 1024; // 6MB in bytes
     if (responseSize > maxSizeBytes * 0.9) { // 90% of limit
       console.log(`🟡 [REQ-${requestId}] WARNING: Response size (${responseSizeMB}MB) approaching 6MB limit`);
     }
-    
+
     if (responseSize > maxSizeBytes) {
       console.error(`🔴 [REQ-${requestId}] ERROR: Response size (${responseSizeMB}MB) exceeds 6MB limit`);
+
+      // Calculate a suggested limit based on the current response size
+      const currentRecords = results?.length || 0;
+      const bytesPerRecord = currentRecords > 0 ? responseSize / currentRecords : 2000; // fallback estimate
+      const suggestedLimit = Math.floor((maxSizeBytes * 0.8) / bytesPerRecord); // 80% of limit for safety
+      const recommendedLimit = Math.max(1000, Math.min(suggestedLimit, 3000)); // between 1k-3k
+
+      console.log(`🔴 [REQ-${requestId}] Calculated ${bytesPerRecord.toFixed(0)} bytes per record, suggesting limit of ${recommendedLimit}`);
+
       return json({
         success: false,
-        error: `Response too large (${responseSizeMB}MB). Please reduce the limit parameter or add more filters.`,
+        error: `Response too large (${responseSizeMB}MB). Dataset contains ${currentRecords} records but response exceeds 6MB limit.`,
+        errorType: 'Function.ResponseSizeTooLarge',
+        autoRetryWith: recommendedLimit,
+        suggestions: [
+          `Try reducing limit to ${recommendedLimit} records`,
+          'Use "Latest data only" filter (enabled by default)',
+          'Add search filters for specific SKUs or ASINs',
+          'Use category filters (Winners, Opportunities, etc.)',
+          'Apply minimum profit/margin filters'
+        ],
         debug: {
           requestId,
           responseSize: responseSizeMB + 'MB',
-          limit: limit,
-          actualResults: results?.length || 0
+          currentLimit: limit,
+          actualResults: currentRecords,
+          suggestedLimit: recommendedLimit,
+          bytesPerRecord: Math.round(bytesPerRecord)
         }
       }, { status: 413 });
     }
-    
+
     // Final memory check
     if (typeof process !== 'undefined' && process.memoryUsage) {
       const memUsage = process.memoryUsage();
