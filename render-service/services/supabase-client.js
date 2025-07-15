@@ -147,24 +147,62 @@ class SupabaseService {
    * Get all active ASINs for monitoring
    */
   async getActiveAsins(limit = null, offset = 0) {
-    let query = supabase
-      .from('sku_asin_mapping')
-      .select('seller_sku, asin1, item_name, price')
-      .eq('status', 'Active')
-      .not('asin1', 'is', null)
-      .order('seller_sku');
-
+    // If a specific limit is requested, use the original logic
     if (limit) {
-      query = query.range(offset, offset + limit - 1);
+      let query = supabase
+        .from('sku_asin_mapping')
+        .select('seller_sku, asin1, item_name, price')
+        .eq('status', 'Active')
+        .not('asin1', 'is', null)
+        .order('seller_sku')
+        .range(offset, offset + limit - 1);
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new Error(`Failed to get active ASINs: ${error.message}`);
+      }
+
+      return data;
     }
 
-    const { data, error } = await query;
+    // No limit specified - fetch ALL records using pagination
+    console.log('📊 Fetching all active ASINs from database (may take a moment)...');
+    let allAsins = [];
+    let currentOffset = 0;
+    const pageSize = 1000;
+    let hasMore = true;
 
-    if (error) {
-      throw new Error(`Failed to get active ASINs: ${error.message}`);
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('sku_asin_mapping')
+        .select('seller_sku, asin1, item_name, price')
+        .eq('status', 'Active')
+        .not('asin1', 'is', null)
+        .order('seller_sku')
+        .range(currentOffset, currentOffset + pageSize - 1);
+
+      if (error) {
+        throw new Error(`Failed to get active ASINs at offset ${currentOffset}: ${error.message}`);
+      }
+
+      if (data && data.length > 0) {
+        allAsins = allAsins.concat(data);
+        console.log(`📄 Fetched page ${Math.floor(currentOffset / pageSize) + 1}: ${data.length} ASINs (total: ${allAsins.length})`);
+
+        // If we got less than pageSize, we've reached the end
+        if (data.length < pageSize) {
+          hasMore = false;
+        } else {
+          currentOffset += pageSize;
+        }
+      } else {
+        hasMore = false;
+      }
     }
 
-    return data;
+    console.log(`✅ Fetched ${allAsins.length} active ASINs from database (${Math.ceil(allAsins.length / pageSize)} pages)`);
+    return allAsins;
   }
 
   /**
@@ -246,6 +284,9 @@ class SupabaseService {
 
     if (limit) {
       query = query.range(offset, offset + limit - 1);
+    } else {
+      // No limit specified - fetch all records (Supabase default limit is 1000, so set high limit)
+      query = query.limit(10000); // Set high limit to get all records
     }
 
     const { data, error } = await query;
@@ -254,6 +295,7 @@ class SupabaseService {
       throw new Error(`Failed to get all ASINs: ${error.message}`);
     }
 
+    console.log(`✅ Fetched ${data.length} total ASINs from database`);
     return data;
   }
 
@@ -457,11 +499,11 @@ class SupabaseService {
 
     let query = supabase
       .from('sku_asin_mapping')
-      .select('product_title')
+      .select('item_name')
       .limit(1);
 
     if (sku) {
-      query = query.eq('sku', sku);
+      query = query.eq('seller_sku', sku);
     } else if (asin) {
       query = query.eq('asin1', asin);
     }
@@ -473,7 +515,7 @@ class SupabaseService {
       return null;
     }
 
-    return data && data.length > 0 ? data[0].product_title : null;
+    return data && data.length > 0 ? data[0].item_name : null;
   }
 }
 

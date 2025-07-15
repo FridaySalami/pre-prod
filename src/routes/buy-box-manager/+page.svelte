@@ -66,6 +66,7 @@
 	let showOnlyWithMarginData = false;
 	let minProfitFilter = 0;
 	let minMarginFilter = 0;
+	let showLatestOnly = true; // New filter to show only latest data per SKU
 
 	// Pagination
 	let currentPage = 1;
@@ -85,6 +86,33 @@
 		await loadBuyBoxData();
 	});
 
+	// Deduplicate data to show only the latest entry per SKU
+	function deduplicateLatestData(data: BuyBoxData[]): BuyBoxData[] {
+		const skuMap = new Map<string, BuyBoxData>();
+
+		// Sort by captured_at desc to ensure we process latest first
+		const sortedData = [...data].sort(
+			(a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime()
+		);
+
+		// Keep only the latest entry for each SKU
+		sortedData.forEach((item) => {
+			if (!skuMap.has(item.sku)) {
+				skuMap.set(item.sku, item);
+			}
+		});
+
+		return Array.from(skuMap.values());
+	}
+
+	// Count historical entries for each SKU (used in historical mode)
+	function getHistoricalCount(sku: string, allData: BuyBoxData[]): number {
+		return allData.filter((item) => item.sku === sku).length;
+	}
+
+	// Get all raw data for counting duplicates in historical mode
+	let allRawData: BuyBoxData[] = [];
+
 	// Load buy box data from API
 	async function loadBuyBoxData(): Promise<void> {
 		isLoading = true;
@@ -100,6 +128,13 @@
 			}
 
 			buyboxData = data.results;
+			allRawData = [...data.results]; // Store all raw data for historical counting
+
+			// Deduplicate to show only latest data per SKU by default
+			if (showLatestOnly) {
+				buyboxData = deduplicateLatestData(buyboxData);
+			}
+
 			calculateSummaryStats();
 			applyFilters();
 		} catch (error: unknown) {
@@ -368,6 +403,56 @@
 		</div>
 	{/if}
 
+	<!-- Data Deduplication Info -->
+	{#if !isLoading && buyboxData.length > 0 && showLatestOnly}
+		<div
+			class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-6"
+			role="alert"
+		>
+			<div class="flex justify-between items-center">
+				<div>
+					<p class="font-medium">📊 Showing Latest Data Only</p>
+					<p class="text-sm">
+						Displaying the most recent scan data for each SKU. Multiple daily scans are
+						deduplicated.
+					</p>
+				</div>
+				<button
+					on:click={() => {
+						showLatestOnly = false;
+						loadBuyBoxData();
+					}}
+					class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
+				>
+					Show All Historical Data
+				</button>
+			</div>
+		</div>
+	{:else if !isLoading && buyboxData.length > 0 && !showLatestOnly}
+		<div
+			class="bg-purple-100 border border-purple-400 text-purple-700 px-4 py-3 rounded mb-6"
+			role="alert"
+		>
+			<div class="flex justify-between items-center">
+				<div>
+					<p class="font-medium">🕒 Showing All Historical Data</p>
+					<p class="text-sm">
+						Displaying all scan records including multiple entries per SKU from different times.
+					</p>
+				</div>
+				<button
+					on:click={() => {
+						showLatestOnly = true;
+						loadBuyBoxData();
+					}}
+					class="bg-purple-600 hover:bg-purple-700 text-white py-1 px-3 rounded text-sm"
+				>
+					Show Latest Only
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Data Freshness Alert -->
 	{#if !isLoading && buyboxData.length > 0}
 		{@const oldestData = Math.min(
@@ -425,7 +510,14 @@
 		<div class="bg-blue-50 p-4 rounded-lg border">
 			<h3 class="text-sm font-medium text-gray-500 mb-1">Analyzed</h3>
 			<p class="text-2xl font-bold text-blue-600">{totalMarginAnalyzed}</p>
-			<p class="text-xs text-gray-400">of {buyboxData.length} SKUs</p>
+			<p class="text-xs text-gray-400">
+				of {buyboxData.length} SKUs
+				{#if showLatestOnly}
+					<span class="block text-blue-600">(Latest data only)</span>
+				{:else}
+					<span class="block text-purple-600">(All historical data)</span>
+				{/if}
+			</p>
 		</div>
 		<div class="bg-orange-50 p-4 rounded-lg border">
 			<h3 class="text-sm font-medium text-gray-500 mb-1">Avg Profit</h3>
@@ -523,6 +615,21 @@
 		</div>
 
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+			<!-- Latest Data Only Filter -->
+			<div class="flex items-center">
+				<input
+					type="checkbox"
+					id="latestOnly"
+					class="mr-2"
+					bind:checked={showLatestOnly}
+					on:change={loadBuyBoxData}
+				/>
+				<label for="latestOnly" class="text-sm">
+					Show only latest data per SKU
+					<span class="text-xs text-gray-500 block"> (Hides duplicate scans from same day) </span>
+				</label>
+			</div>
+
 			<!-- Margin Data Filter -->
 			<div class="flex items-center">
 				<input
@@ -575,9 +682,39 @@
 	<!-- Results -->
 	<div class="bg-white rounded-lg shadow">
 		<div class="px-6 py-4 border-b border-gray-200">
-			<h2 class="font-semibold">
-				Buy Box Results ({totalResults} items)
-			</h2>
+			<div class="flex justify-between items-center">
+				<h2 class="font-semibold">
+					Buy Box Results ({totalResults} items)
+					{#if showLatestOnly}
+						<span class="text-sm font-normal text-blue-600"> - Latest data only </span>
+					{:else}
+						<span class="text-sm font-normal text-purple-600"> - All historical data </span>
+					{/if}
+				</h2>
+				<div class="text-sm text-gray-500">
+					{#if showLatestOnly}
+						<button
+							on:click={() => {
+								showLatestOnly = false;
+								loadBuyBoxData();
+							}}
+							class="text-blue-600 hover:text-blue-800 underline"
+						>
+							View history
+						</button>
+					{:else}
+						<button
+							on:click={() => {
+								showLatestOnly = true;
+								loadBuyBoxData();
+							}}
+							class="text-purple-600 hover:text-purple-800 underline"
+						>
+							Latest only
+						</button>
+					{/if}
+				</div>
+			</div>
 		</div>
 
 		{#if isLoading}
@@ -646,6 +783,21 @@
 										{/if}
 										<div class="font-medium text-gray-700">{result.sku}</div>
 										<div class="text-gray-500 text-xs">{result.asin}</div>
+										{#if !showLatestOnly}
+											{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+											<div class="text-xs text-purple-600 font-medium mt-1">
+												📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
+												{new Date(result.captured_at).toLocaleTimeString([], {
+													hour: '2-digit',
+													minute: '2-digit'
+												})}
+												{#if totalEntries > 1}
+													<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
+														{totalEntries} entries
+													</span>
+												{/if}
+											</div>
+										{/if}
 										<div class="mt-1">
 											{#if result.is_winner}
 												<span
@@ -663,6 +815,14 @@
 										</div>
 										<div class="text-xs text-gray-400 mt-1">
 											Last checked: {formatDate(result.captured_at)}
+											{#if showLatestOnly}
+												{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+												{#if totalEntries > 1}
+													<span class="text-blue-600 ml-1">
+														(Latest of {totalEntries} scans)
+													</span>
+												{/if}
+											{/if}
 										</div>
 									</div>
 								</td>

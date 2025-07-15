@@ -29,6 +29,8 @@ if (USE_REAL_API) {
     console.warn('⚠️ Amazon SP-API client initialization failed:', error.message);
     console.warn('⚠️ Falling back to mock data');
   }
+} else {
+  console.log('ℹ️  Using mock data (USE_AMAZON_SPAPI not set to true)');
 }
 
 // Initialize cost calculator for mock data enrichment
@@ -145,7 +147,7 @@ async function processBulkScan(jobId, asins) {
     // Update job status to running
     await SupabaseService.updateJobProgress(jobId, 0, 0, 'running');
 
-    // Create batch processor
+    // Create batch processor with normal timing now that we have smart retry
     const batchProcessor = new BatchProcessor(50, 30000); // 50 ASINs per batch, 30 second delay
 
     let successCount = 0;
@@ -154,6 +156,9 @@ async function processBulkScan(jobId, asins) {
     // Process batches
     const batches = batchProcessor.createBatches(asins);
     console.log(`Processing ${batches.length} batches for job ${jobId}`);
+
+    // Print initial rate limiter status
+    rateLimiter.printReport();
 
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
@@ -170,7 +175,7 @@ async function processBulkScan(jobId, asins) {
           if (USE_REAL_API && amazonAPI) {
             // Use real Amazon SP-API
             try {
-              buyBoxData = await amazonAPI.getBuyBoxData(asin.asin1, asin.seller_sku, jobId);
+              buyBoxData = await amazonAPI.getBuyBoxData(asin.asin1, asin.seller_sku, jobId, rateLimiter);
             } catch (apiError) {
               console.error(`Amazon SP-API error for ASIN ${asin.asin1}:`, apiError.message);
 
@@ -248,6 +253,15 @@ async function processBulkScan(jobId, asins) {
           // Update progress every 10 ASINs
           if ((successCount + failCount) % 10 === 0) {
             await SupabaseService.updateJobProgress(jobId, successCount, failCount, 'running');
+            // Print rate limiter stats every 10 items
+            rateLimiter.printReport();
+          }
+
+          // If we hit too many consecutive rate limits, pause for extra time
+          const stats = rateLimiter.getStats();
+          if (stats.consecutiveRateLimits >= 3) {
+            console.log(`⚠️  Pausing for 60 seconds due to consecutive rate limits...`);
+            await new Promise(resolve => setTimeout(resolve, 60000));
           }
 
         } catch (asinError) {
@@ -274,12 +288,14 @@ async function processBulkScan(jobId, asins) {
 
       // Wait between batches (except for last batch)
       if (batchIndex < batches.length - 1) {
-        console.log(`Waiting ${30} seconds before next batch...`);
-        await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
+        console.log(`⏸️  Batch ${batchIndex + 1} completed. Waiting 30s before next batch...`);
+        rateLimiter.printReport(); // Show stats between batches
+        await rateLimiter.sleep(30000); // 30 second gap between batches
       }
     }
 
-    // Complete the job
+    // Complete the job with final stats
+    rateLimiter.printReport();
     await SupabaseService.completeJob(jobId, successCount, failCount);
     console.log(`Job ${jobId} completed: ${successCount} successful, ${failCount} failed`);
 

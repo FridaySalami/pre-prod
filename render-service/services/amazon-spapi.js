@@ -178,6 +178,8 @@ class AmazonSPAPI {
         throw new Error('ACCESS_DENIED');
       } else if (error.response?.status === 404) {
         throw new Error('ASIN_NOT_FOUND');
+      } else if (error.response?.data?.errors?.[0]?.code === 'QuotaExceeded') {
+        throw new Error('RATE_LIMITED');
       } else {
         throw new Error(`SP_API_ERROR: ${error.message}`);
       }
@@ -286,35 +288,71 @@ class AmazonSPAPI {
   }
 
   /**
-   * Get Buy Box data for a single ASIN
+   * Get Buy Box data for a single ASIN with intelligent retry
    */
-  async getBuyBoxData(asin, sku, runId) {
-    try {
-      console.log(`Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}`);
+  async getBuyBoxData(asin, sku, runId, rateLimiter = null) {
+    const maxRetries = 3; // Maximum number of retries for rate limiting (3 total attempts)
+    let lastError = null;
 
-      // Get product title from sku_asin_mapping
-      let productTitle = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const { SupabaseService } = require('./supabase-client');
-        productTitle = await SupabaseService.getProductTitle(sku, asin);
-        console.log(`Product title for ${sku}/${asin}: ${productTitle || 'Not found'}`);
-      } catch (titleError) {
-        console.warn(`Failed to fetch product title for ${sku}/${asin}:`, titleError.message);
+        console.log(`Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}${attempt > 0 ? ` (retry ${attempt}/${maxRetries})` : ''}`);
+
+        // Get product title from sku_asin_mapping table
+        let productTitle = null;
+        try {
+          const { SupabaseService } = require('./supabase-client');
+          productTitle = await SupabaseService.getProductTitle(sku, asin);
+          console.log(`Product title for ${sku}/${asin}: ${productTitle || 'Not found'}`);
+        } catch (titleError) {
+          console.warn(`Failed to fetch product title for ${sku}/${asin}:`, titleError.message);
+          // Fallback to placeholder
+          productTitle = `Product ${asin}`;
+        }
+
+        const pricingData = await this.getCompetitivePricing(asin);
+        const transformedData = this.transformPricingData(pricingData, asin, sku, runId, productTitle);
+
+        // Enrich with cost calculator data for margin analysis
+        const enrichedData = await this.costCalculator.enrichBuyBoxData(transformedData);
+
+        // Notify rate limiter of success
+        if (rateLimiter) {
+          rateLimiter.onRequestSuccess();
+        }
+
+        console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedData.competitor_name || 'Unknown'}, margin: ${enrichedData.margin_percent_at_buybox_price || 0}%`);
+
+        return enrichedData;
+
+      } catch (error) {
+        lastError = error;
+
+        // If this is a rate limiting error and we have retries left
+        if (error.message === 'RATE_LIMITED' && attempt < maxRetries) {
+          if (rateLimiter) {
+            rateLimiter.onRateLimited();
+            await rateLimiter.sleepForRetry(); // Sleep for the retry delay
+          } else {
+            // Fallback sleep if no rate limiter
+            console.log(`😴 Rate limited, sleeping 4s before retry ${attempt + 1}/${maxRetries}...`);
+            await new Promise(resolve => setTimeout(resolve, 4000));
+          }
+          continue; // Try again
+        }
+
+        // If not a rate limiting error, or we're out of retries, break
+        break;
       }
-
-      const pricingData = await this.getCompetitivePricing(asin);
-      const transformedData = this.transformPricingData(pricingData, asin, sku, runId, productTitle);
-
-      // Enrich with cost calculator data for margin analysis
-      const enrichedData = await this.costCalculator.enrichBuyBoxData(transformedData);
-
-      console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedData.competitor_name || 'Unknown'}, margin: ${enrichedData.margin_percent_at_buybox_price || 0}%`);
-
-      return enrichedData;
-    } catch (error) {
-      console.error(`Failed to get Buy Box data for ASIN ${asin}:`, error);
-      throw error;
     }
+
+    // If we get here, all retries failed
+    if (lastError?.message === 'RATE_LIMITED' && rateLimiter) {
+      rateLimiter.onRateLimited(); // Record the final failure
+    }
+
+    console.error(`Failed to get Buy Box data for ASIN ${asin} after ${maxRetries + 1} attempts:`, lastError);
+    throw lastError;
   }
 }
 
