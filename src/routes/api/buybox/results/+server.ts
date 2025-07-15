@@ -21,7 +21,10 @@ export async function GET({ url }) {
 
     const page = parseInt(url.searchParams.get('page') || '1', 10);
     const limit = parseInt(url.searchParams.get('limit') || '25', 10);
-    const offset = (page - 1) * limit;
+
+    // For very large limits (>10000), remove pagination entirely
+    const usePagination = limit <= 10000;
+    const offset = usePagination ? (page - 1) * limit : 0;
 
     // Parse filter parameters
     const showOpportunities = url.searchParams.get('show_opportunities') === 'true';
@@ -53,10 +56,44 @@ export async function GET({ url }) {
       query = query.eq('is_winner', true);
     }
 
-    // Fetch paginated results
-    const { data: results, error: resultsError } = await query
-      .order('captured_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    // Fetch results (with or without pagination)
+    let results: any[] = [];
+    let resultsError: any = null;
+
+    if (usePagination) {
+      // Use normal pagination for smaller limits
+      const resultsQuery = query.order('captured_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      const response = await resultsQuery;
+      results = response.data || [];
+      resultsError = response.error;
+    } else {
+      // For large limits, fetch in batches to avoid Supabase limits
+      let allResults: any[] = [];
+      let currentOffset = 0;
+      const batchSize = 1000; // Supabase safe batch size
+      let hasMore = true;
+
+      while (hasMore && currentOffset < 100000) { // Safety limit to prevent infinite loops
+        const batchQuery = query.order('captured_at', { ascending: false })
+          .range(currentOffset, currentOffset + batchSize - 1);
+        const response = await batchQuery;
+
+        if (response.error) {
+          resultsError = response.error;
+          break;
+        }
+
+        const batchResults = response.data || [];
+        allResults = allResults.concat(batchResults);
+
+        // If we got less than batchSize, we've reached the end
+        hasMore = batchResults.length === batchSize;
+        currentOffset += batchSize;
+      }
+
+      results = allResults;
+    }
 
     if (resultsError) {
       console.error('Error fetching job results:', resultsError);

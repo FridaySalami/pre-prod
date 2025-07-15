@@ -120,7 +120,7 @@
 
 		try {
 			// Get latest data from all jobs
-			const response = await fetch('/api/buybox/results?include_all_jobs=true&limit=1000');
+			const response = await fetch('/api/buybox/results?include_all_jobs=true&limit=50000');
 			const data = await response.json();
 
 			if (!response.ok) {
