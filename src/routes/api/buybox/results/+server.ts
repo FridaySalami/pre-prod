@@ -17,13 +17,11 @@ export async function GET({ url }) {
         success: false,
         error: 'Either job_id, asin, sku parameter, or include_all_jobs=true is required'
       }, { status: 400 });
-    }
-
-    const page = parseInt(url.searchParams.get('page') || '1', 10);
+    }    const page = parseInt(url.searchParams.get('page') || '1', 10);
     const limit = parseInt(url.searchParams.get('limit') || '25', 10);
-
-    // For very large limits (>10000), remove pagination entirely
-    const usePagination = limit <= 10000;
+    
+    // For very large limits (>1000), use batch fetching
+    const usePagination = limit <= 1000;
     const offset = usePagination ? (page - 1) * limit : 0;
 
     // Parse filter parameters
@@ -73,8 +71,9 @@ export async function GET({ url }) {
       let currentOffset = 0;
       const batchSize = 1000; // Supabase safe batch size
       let hasMore = true;
+      const maxRecords = Math.min(limit, 25000); // Cap at 25k records for production performance
 
-      while (hasMore && currentOffset < 100000) { // Safety limit to prevent infinite loops
+      while (hasMore && currentOffset < maxRecords) {
         const batchQuery = query.order('captured_at', { ascending: false })
           .range(currentOffset, currentOffset + batchSize - 1);
         const response = await batchQuery;
@@ -87,8 +86,8 @@ export async function GET({ url }) {
         const batchResults = response.data || [];
         allResults = allResults.concat(batchResults);
 
-        // If we got less than batchSize, we've reached the end
-        hasMore = batchResults.length === batchSize;
+        // If we got less than batchSize or reached our limit, we're done
+        hasMore = batchResults.length === batchSize && (currentOffset + batchSize) < maxRecords;
         currentOffset += batchSize;
       }
 

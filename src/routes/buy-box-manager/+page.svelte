@@ -119,8 +119,15 @@
 		errorMessage = '';
 
 		try {
-			// Get latest data from all jobs
-			const response = await fetch('/api/buybox/results?include_all_jobs=true&limit=50000');
+			// Get latest data from all jobs - use a more reasonable limit for production
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+			
+			const response = await fetch('/api/buybox/results?include_all_jobs=true&limit=10000', {
+				signal: controller.signal
+			});
+			clearTimeout(timeoutId);
+			
 			const data = await response.json();
 
 			if (!response.ok) {
@@ -139,8 +146,12 @@
 			applyFilters();
 		} catch (error: unknown) {
 			console.error('Error loading buy box data:', error);
-			errorMessage =
-				error instanceof Error ? error.message : 'An error occurred while loading data';
+			if (error instanceof Error && error.name === 'AbortError') {
+				errorMessage = 'Request timed out. The server is taking too long to respond. Try refreshing or reducing the data range.';
+			} else {
+				errorMessage =
+					error instanceof Error ? error.message : 'An error occurred while loading data. Please try again.';
+			}
 		} finally {
 			isLoading = false;
 		}
@@ -719,7 +730,11 @@
 
 		{#if isLoading}
 			<div class="p-8 text-center">
-				<p>Loading buy box data...</p>
+				<div class="flex flex-col items-center gap-4">
+					<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+					<p class="text-lg font-medium">Loading buy box data...</p>
+					<p class="text-sm text-gray-500">This may take a few moments for large datasets</p>
+				</div>
 			</div>
 		{:else if paginatedData.length === 0}
 			<div class="p-8 text-center">
