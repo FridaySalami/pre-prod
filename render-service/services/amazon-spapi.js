@@ -7,9 +7,10 @@
 
 const axios = require('axios');
 const crypto = require('crypto');
+const CostCalculator = require('./cost-calculator');
 
 class AmazonSPAPI {
-  constructor() {
+  constructor(supabaseClient) {
     this.config = {
       clientId: process.env.AMAZON_CLIENT_ID,
       clientSecret: process.env.AMAZON_CLIENT_SECRET,
@@ -31,6 +32,9 @@ class AmazonSPAPI {
 
     this.accessToken = null;
     this.tokenExpiry = null;
+
+    // Initialize cost calculator
+    this.costCalculator = new CostCalculator(supabaseClient);
   }
 
   /**
@@ -183,7 +187,7 @@ class AmazonSPAPI {
   /**
    * Transform SP-API pricing response into our database format
    */
-  transformPricingData(pricingData, asin, sku, runId) {
+  transformPricingData(pricingData, asin, sku, runId, productTitle = null) {
     try {
       const offers = pricingData?.payload?.Offers || [];
 
@@ -191,13 +195,20 @@ class AmazonSPAPI {
         throw new Error('No offers found for ASIN');
       }
 
+      // Get your seller ID for comparison
+      const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID;
+
       // Find Buy Box winner
       const buyBoxOffer = offers.find(offer => offer.IsBuyBoxWinner === true);
+
+      // Find YOUR current offer
+      const yourOffer = offers.find(offer => offer.SellerId === yourSellerId);
 
       // Get all competitor prices for analysis
       const competitorPrices = offers
         .filter(offer => !offer.IsBuyBoxWinner)
         .map(offer => ({
+          sellerId: offer.SellerId,
           price: offer.ListingPrice?.Amount || 0,
           shipping: offer.Shipping?.Amount || 0,
           total: (offer.ListingPrice?.Amount || 0) + (offer.Shipping?.Amount || 0)
@@ -208,32 +219,65 @@ class AmazonSPAPI {
         ? Math.min(...competitorPrices.map(p => p.total))
         : null;
 
+      // Buy Box pricing
       const buyBoxPrice = buyBoxOffer?.ListingPrice?.Amount || 0;
       const buyBoxShipping = buyBoxOffer?.Shipping?.Amount || 0;
       const buyBoxTotal = buyBoxPrice + buyBoxShipping;
 
-      // Determine opportunity and winner status
+      // Your current pricing
+      const yourCurrentPrice = yourOffer?.ListingPrice?.Amount || 0;
+      const yourCurrentShipping = yourOffer?.Shipping?.Amount || 0;
+      const yourCurrentTotal = yourCurrentPrice + yourCurrentShipping;
+
+      // Determine winner status and opportunity
+      const isWinner = buyBoxOffer?.SellerId === yourSellerId;
       const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
-      const isWinner = buyBoxOffer?.SellerId === process.env.YOUR_SELLER_ID;
+
+      // Calculate price gap
+      const priceGap = isWinner ? 0 : (yourCurrentPrice - buyBoxPrice);
+
+      console.log(`Buy Box analysis for ${asin}: Your ID: ${yourSellerId}, Buy Box Owner: ${buyBoxOffer?.SellerId}, Winner: ${isWinner}`);
+      console.log(`Pricing for ${asin}: Your Price: £${yourCurrentPrice}, Buy Box Price: £${buyBoxPrice}, Gap: £${priceGap.toFixed(2)}`);
 
       return {
         run_id: runId,
         asin: asin,
         sku: sku,
-        buy_box_seller: buyBoxOffer?.SellerName || buyBoxOffer?.SellerId || 'Unknown',
-        buy_box_seller_id: buyBoxOffer?.SellerId || null,
-        buy_box_price: buyBoxPrice,
-        buy_box_shipping: buyBoxShipping,
-        buy_box_currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
-        is_fba: buyBoxOffer?.IsFulfilledByAmazon || false,
-        is_prime: buyBoxOffer?.IsFulfilledByAmazon || false,
-        total_offers: offers.length,
-        lowest_competitor_price: lowestCompetitorPrice,
-        price_difference: lowestCompetitorPrice ? (buyBoxTotal - lowestCompetitorPrice) : null,
-        opportunity_flag: isOpportunity,
+        product_title: productTitle,
+
+        // Use YOUR current price as the main price field for margin calculations
+        price: yourCurrentPrice || buyBoxPrice, // Fallback to buy box price if your offer not found
+        currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
         is_winner: isWinner,
+        competitor_id: buyBoxOffer?.SellerId || null,
+        competitor_name: buyBoxOffer?.SellerName || 'Unknown',
+        competitor_price: buyBoxPrice,
+        marketplace: 'UK',
+        opportunity_flag: isOpportunity,
+        min_profitable_price: buyBoxPrice * 0.8,
+        margin_at_buybox: buyBoxPrice * 0.3,
+        margin_percent_at_buybox: 0.3,
+        total_offers: offers.length,
+        category: 'Unknown',
+        brand: 'Unknown',
         captured_at: new Date().toISOString(),
-        raw_response: JSON.stringify(pricingData)
+        fulfillment_channel: buyBoxOffer?.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
+        merchant_shipping_group: 'UK Shipping',
+        source: 'sp-api',
+        merchant_token: yourSellerId,
+        buybox_merchant_token: buyBoxOffer?.SellerId || null,
+
+        // Enhanced pricing clarity fields
+        your_current_price: yourCurrentPrice,
+        your_current_shipping: yourCurrentShipping,
+        your_current_total: yourCurrentTotal,
+        buybox_price: buyBoxPrice,
+        buybox_shipping: buyBoxShipping,
+        buybox_total: buyBoxTotal,
+        price_gap: parseFloat(priceGap.toFixed(2)),
+        price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
+        pricing_status: isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox'),
+        your_offer_found: !!yourOffer
       };
     } catch (error) {
       console.error('Error transforming pricing data:', error);
@@ -248,12 +292,25 @@ class AmazonSPAPI {
     try {
       console.log(`Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}`);
 
+      // Get product title from sku_asin_mapping
+      let productTitle = null;
+      try {
+        const { SupabaseService } = require('./supabase-client');
+        productTitle = await SupabaseService.getProductTitle(sku, asin);
+        console.log(`Product title for ${sku}/${asin}: ${productTitle || 'Not found'}`);
+      } catch (titleError) {
+        console.warn(`Failed to fetch product title for ${sku}/${asin}:`, titleError.message);
+      }
+
       const pricingData = await this.getCompetitivePricing(asin);
-      const transformedData = this.transformPricingData(pricingData, asin, sku, runId);
+      const transformedData = this.transformPricingData(pricingData, asin, sku, runId, productTitle);
 
-      console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${transformedData.buy_box_seller}`);
+      // Enrich with cost calculator data for margin analysis
+      const enrichedData = await this.costCalculator.enrichBuyBoxData(transformedData);
 
-      return transformedData;
+      console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedData.competitor_name || 'Unknown'}, margin: ${enrichedData.margin_percent_at_buybox_price || 0}%`);
+
+      return enrichedData;
     } catch (error) {
       console.error(`Failed to get Buy Box data for ASIN ${asin}:`, error);
       throw error;

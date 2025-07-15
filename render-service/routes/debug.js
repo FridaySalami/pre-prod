@@ -61,7 +61,7 @@ router.get('/', async (req, res) => {
 router.get('/test-db', async (req, res) => {
   try {
     const asinCount = await SupabaseService.getActiveAsinCount();
-    
+
     res.json({
       success: true,
       database: {

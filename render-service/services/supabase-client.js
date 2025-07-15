@@ -446,6 +446,35 @@ class SupabaseService {
       total_results: allResults.length
     };
   }
+
+  /**
+   * Get product title by SKU or ASIN
+   */
+  async getProductTitle(sku = null, asin = null) {
+    if (!sku && !asin) {
+      return null;
+    }
+
+    let query = supabase
+      .from('sku_asin_mapping')
+      .select('product_title')
+      .limit(1);
+
+    if (sku) {
+      query = query.eq('sku', sku);
+    } else if (asin) {
+      query = query.eq('asin1', asin);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.warn(`Failed to get product title for SKU: ${sku}, ASIN: ${asin}:`, error.message);
+      return null;
+    }
+
+    return data && data.length > 0 ? data[0].product_title : null;
+  }
 }
 
 module.exports = {

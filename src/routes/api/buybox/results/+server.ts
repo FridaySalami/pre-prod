@@ -9,12 +9,13 @@ export async function GET({ url }) {
     const jobId = url.searchParams.get('job_id');
     const asin = url.searchParams.get('asin');
     const sku = url.searchParams.get('sku');
+    const includeAllJobs = url.searchParams.get('include_all_jobs') === 'true';
 
-    // Require either job_id or asin/sku
-    if (!jobId && !asin && !sku) {
+    // Require either job_id, asin, sku, or include_all_jobs flag
+    if (!jobId && !asin && !sku && !includeAllJobs) {
       return json({
         success: false,
-        error: 'Either job_id, asin, or sku parameter is required'
+        error: 'Either job_id, asin, sku parameter, or include_all_jobs=true is required'
       }, { status: 400 });
     }
 
@@ -25,7 +26,6 @@ export async function GET({ url }) {
     // Parse filter parameters
     const showOpportunities = url.searchParams.get('show_opportunities') === 'true';
     const showWinners = url.searchParams.get('show_winners') === 'true';
-    const includeAllJobs = url.searchParams.get('include_all_jobs') === 'true';
 
     // Build query
     let query = supabaseAdmin
@@ -57,6 +57,14 @@ export async function GET({ url }) {
     const { data: results, error: resultsError } = await query
       .order('captured_at', { ascending: false })
       .range(offset, offset + limit - 1);
+
+    if (resultsError) {
+      console.error('Error fetching job results:', resultsError);
+      return json({
+        success: false,
+        error: (resultsError as any)?.message || 'Failed to fetch job results'
+      }, { status: 500 });
+    }
 
     // Build total count query with the same filters
     let countQuery = supabaseAdmin
@@ -90,7 +98,7 @@ export async function GET({ url }) {
       console.error('Error fetching job results:', resultsError);
       return json({
         success: false,
-        error: resultsError.message || 'Failed to fetch job results'
+        error: (resultsError as any)?.message || 'Failed to fetch job results'
       }, { status: 500 });
     }
 
@@ -135,7 +143,7 @@ export async function GET({ url }) {
 
     return json({
       success: true,
-      results,
+      results: results,
       total: totalCount,
       winners_count: winnersCount,
       opportunities_count: opportunitiesCount,

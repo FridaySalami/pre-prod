@@ -8,6 +8,7 @@
 		id: string;
 		asin: string;
 		sku: string;
+		product_title?: string | null;
 		price: number | null;
 		competitor_price: number | null;
 		is_winner: boolean;
@@ -60,7 +61,7 @@
 
 	// Search and filters
 	let searchQuery = '';
-	let categoryFilter = 'all'; // all, winners, losers, opportunities, profitable
+	let categoryFilter = 'all'; // all, winners, losers, opportunities, profitable, not_profitable, match_buybox, hold_price, investigate
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, sku_asc
 	let showOnlyWithMarginData = false;
 	let minProfitFilter = 0;
@@ -141,7 +142,10 @@
 		if (searchQuery.trim()) {
 			const query = searchQuery.toLowerCase();
 			filtered = filtered.filter(
-				(item) => item.sku.toLowerCase().includes(query) || item.asin.toLowerCase().includes(query)
+				(item) =>
+					item.sku.toLowerCase().includes(query) ||
+					item.asin.toLowerCase().includes(query) ||
+					(item.product_title?.toLowerCase().includes(query) ?? false)
 			);
 		}
 
@@ -160,6 +164,18 @@
 				filtered = filtered.filter(
 					(item) => item.profit_opportunity && item.profit_opportunity > 0
 				);
+				break;
+			case 'not_profitable':
+				filtered = filtered.filter((item) => item.recommended_action === 'not_profitable');
+				break;
+			case 'match_buybox':
+				filtered = filtered.filter((item) => item.recommended_action === 'match_buybox');
+				break;
+			case 'hold_price':
+				filtered = filtered.filter((item) => item.recommended_action === 'hold_price');
+				break;
+			case 'investigate':
+				filtered = filtered.filter((item) => item.recommended_action === 'investigate');
 				break;
 		}
 
@@ -300,9 +316,23 @@
 		}
 	}
 
-	// Format date
+	// Format date with time
 	function formatDate(dateString: string): string {
-		return new Date(dateString).toLocaleDateString();
+		const date = new Date(dateString);
+		return (
+			date.toLocaleDateString() +
+			' at ' +
+			date.toLocaleTimeString([], {
+				hour: '2-digit',
+				minute: '2-digit'
+			})
+		);
+	}
+
+	// Truncate long product titles
+	function truncateTitle(title: string, maxLength: number = 60): string {
+		if (title.length <= maxLength) return title;
+		return title.substring(0, maxLength) + '...';
 	}
 </script>
 
@@ -421,12 +451,12 @@
 			<!-- Search -->
 			<div>
 				<label for="search" class="block text-sm font-medium text-gray-700 mb-1"
-					>Search SKU/ASIN</label
+					>Search SKU/ASIN/Product</label
 				>
 				<input
 					id="search"
 					type="text"
-					placeholder="Enter SKU or ASIN"
+					placeholder="Enter SKU, ASIN, or Product Title"
 					class="w-full border rounded px-3 py-2"
 					bind:value={searchQuery}
 					on:input={applyFilters}
@@ -447,6 +477,12 @@
 					<option value="losers">❌ Not Winning</option>
 					<option value="opportunities">⚡ Opportunities</option>
 					<option value="profitable">💰 Profitable Ops</option>
+					<optgroup label="Recommendations">
+						<option value="not_profitable">🚫 Not Profitable</option>
+						<option value="match_buybox">🎯 Match Buy Box</option>
+						<option value="hold_price">✋ Hold Price</option>
+						<option value="investigate">🔍 Investigate</option>
+					</optgroup>
 				</select>
 			</div>
 
@@ -597,8 +633,19 @@
 								<!-- Product Info -->
 								<td class="py-4 px-6">
 									<div class="text-sm">
-										<div class="font-medium text-gray-900">{result.sku}</div>
-										<div class="text-gray-500">{result.asin}</div>
+										{#if result.product_title}
+											<div
+												class="font-medium text-gray-900 mb-1 leading-tight cursor-help"
+												title={result.product_title}
+											>
+												{truncateTitle(result.product_title)}
+											</div>
+										{:else}
+											<!-- Debug: Show when no product title is found -->
+											<div class="text-xs text-gray-400 mb-1 italic">No product title found</div>
+										{/if}
+										<div class="font-medium text-gray-700">{result.sku}</div>
+										<div class="text-gray-500 text-xs">{result.asin}</div>
 										<div class="mt-1">
 											{#if result.is_winner}
 												<span
@@ -622,32 +669,35 @@
 
 								<!-- Price Analysis -->
 								<td class="py-4 px-6">
-									<div class="text-sm">
-										{#if result.is_winner}
-											<!-- When you're winning the Buy Box -->
+									<div class="text-sm space-y-1">
+										<!-- Our Price -->
+										<div class="font-medium text-gray-900">
+											Our Price: £{result.price?.toFixed(2) || 'N/A'}
+											{#if result.is_winner}
+												<span class="text-green-600 ml-1">🏆</span>
+											{/if}
+										</div>
+
+										<!-- Buy Box Price -->
+										{#if result.competitor_price}
+											<div class="font-medium text-gray-700">
+												Buy Box Price: £{result.competitor_price.toFixed(2)}
+											</div>
+										{:else if result.is_winner && result.price}
 											<div class="font-medium text-green-700">
-												🏆 Your Buy Box Price: £{result.price?.toFixed(2) || 'N/A'}
+												Buy Box Price: £{result.price.toFixed(2)} (You)
 											</div>
 										{:else}
-											<!-- When you're not winning the Buy Box -->
-											<div class="font-medium text-gray-700">
-												📦 Your Listed Price: £{result.price?.toFixed(2) || 'N/A'}
-											</div>
-											{#if result.competitor_price && result.price !== null}
-												<div class="text-red-600 font-medium">
-													🥇 Buy Box Price: £{result.competitor_price.toFixed(2)}
-												</div>
-												<div class="text-xs text-gray-500">
-													Difference: £{(result.price - result.competitor_price).toFixed(2)}
-													({result.price > result.competitor_price ? 'Higher' : 'Lower'})
-												</div>
-											{/if}
+											<div class="font-medium text-gray-500">Buy Box Price: N/A</div>
 										{/if}
 
+										<!-- Break Even Price -->
 										{#if result.break_even_price}
-											<div class="text-gray-600 mt-1">
-												⚖️ Break-even: £{result.break_even_price.toFixed(2)}
+											<div class="font-medium text-gray-600">
+												Break Even Price: £{result.break_even_price.toFixed(2)}
 											</div>
+										{:else}
+											<div class="font-medium text-gray-500">Break Even Price: N/A</div>
 										{/if}
 
 										<!-- Data Freshness Warning -->
@@ -668,27 +718,6 @@
 														Check live pricing →
 													</a>
 												</div>
-											</div>
-										{/if}
-
-										<!-- Beat Buy Box by 1p Price (only when not winning) -->
-										{#if !result.is_winner && result.competitor_price}
-											{@const beatBuyBoxPrice = result.competitor_price - 0.01}
-											<div class="text-purple-700 font-medium border-t pt-1 mt-1">
-												🎯 Beat Buy Box: £{beatBuyBoxPrice.toFixed(2)}
-											</div>
-											<div class="text-xs text-purple-600">
-												(£{result.competitor_price.toFixed(2)} - £0.01)
-											</div>
-										{/if}
-
-										{#if result.price_adjustment_needed && result.price_adjustment_needed !== 0}
-											<div
-												class={`text-xs mt-1 ${result.price_adjustment_needed < 0 ? 'text-green-600' : 'text-red-600'}`}
-											>
-												Suggested: {result.price_adjustment_needed < 0
-													? ''
-													: '+'}£{result.price_adjustment_needed.toFixed(2)} adjustment
 											</div>
 										{/if}
 									</div>

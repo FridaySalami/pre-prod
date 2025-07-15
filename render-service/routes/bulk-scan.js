@@ -9,6 +9,7 @@ const express = require('express');
 const { SupabaseService } = require('../services/supabase-client');
 const { RateLimiter, BatchProcessor } = require('../utils/rate-limiter');
 const { AmazonSPAPI } = require('../services/amazon-spapi');
+const CostCalculator = require('../services/cost-calculator');
 
 const router = express.Router();
 
@@ -17,6 +18,7 @@ const rateLimiter = new RateLimiter();
 
 // Amazon SP-API client (only initialize if we have credentials)
 let amazonAPI = null;
+let costCalculator = null;
 const USE_REAL_API = process.env.USE_AMAZON_SPAPI === 'true';
 
 if (USE_REAL_API) {
@@ -27,6 +29,14 @@ if (USE_REAL_API) {
     console.warn('⚠️ Amazon SP-API client initialization failed:', error.message);
     console.warn('⚠️ Falling back to mock data');
   }
+}
+
+// Initialize cost calculator for mock data enrichment
+try {
+  costCalculator = new CostCalculator(SupabaseService.client);
+  console.log('✅ Cost calculator initialized');
+} catch (error) {
+  console.warn('⚠️ Cost calculator initialization failed:', error.message);
 }
 
 /**
@@ -181,12 +191,42 @@ async function processBulkScan(jobId, asins) {
           } else {
             // Use mock API for testing
             buyBoxData = await mockAmazonApiCall(asin.asin1, asin.seller_sku, jobId);
+
+            // Enrich mock data with cost calculator if available
+            if (buyBoxData && costCalculator) {
+              try {
+                buyBoxData = await costCalculator.enrichBuyBoxData(buyBoxData);
+              } catch (enrichError) {
+                console.warn(`Failed to enrich mock data for ASIN ${asin.asin1}:`, enrichError.message);
+              }
+            }
           }
 
           if (buyBoxData) {
             // Store successful result
-            await SupabaseService.insertBuyBoxData(buyBoxData);
-            successCount++;
+            try {
+              await SupabaseService.insertBuyBoxData(buyBoxData);
+              successCount++;
+              console.log(`✅ Stored data for ASIN ${asin.asin1}, SKU: ${asin.seller_sku}`);
+            } catch (insertError) {
+              console.error(`❌ Failed to store data for ASIN ${asin.asin1}:`, insertError.message);
+
+              // Record the database insertion failure
+              try {
+                await SupabaseService.recordFailure(
+                  jobId,
+                  asin.asin1,
+                  asin.seller_sku,
+                  `Database insertion failed: ${insertError.message}`,
+                  'DB_INSERT_ERROR',
+                  1,
+                  { error: insertError.message, buyBoxData }
+                );
+              } catch (logError) {
+                console.error('Failed to log database insertion failure:', logError);
+              }
+              failCount++;
+            }
           } else {
             // Record the mock failure
             try {
@@ -261,6 +301,15 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     return null; // Simulate failure
   }
 
+  // Get product title from sku_asin_mapping
+  let productTitle = null;
+  try {
+    productTitle = await SupabaseService.getProductTitle(sku, asinCode);
+    console.log(`Mock API - Product title for ${sku}/${asinCode}: ${productTitle || 'Not found'}`);
+  } catch (titleError) {
+    console.warn(`Failed to fetch product title for ${sku}/${asinCode}:`, titleError.message);
+  }
+
   // Return data structure that matches buybox_data table schema with margin fields
   const mockPrice = parseFloat((Math.random() * 100 + 10).toFixed(2));
   const competitorPrice = parseFloat((mockPrice + (Math.random() - 0.5) * 20).toFixed(2));
@@ -272,19 +321,39 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
   const isWinner = Math.random() < 0.3;
   const competitorId = isWinner ? yourSellerId : 'A' + Math.random().toString(36).substring(2, 15).toUpperCase();
 
+  // Determine pricing scenario
+  let yourCurrentPrice, buyBoxPrice;
+  if (isWinner) {
+    // If you're the winner, your price IS the buy box price
+    yourCurrentPrice = mockPrice;
+    buyBoxPrice = mockPrice;
+  } else {
+    // If you're not the winner, create a price gap
+    buyBoxPrice = competitorPrice;
+    // Your price could be higher (missed buy box) or lower (but not winning due to other factors)
+    yourCurrentPrice = Math.random() < 0.7
+      ? parseFloat((buyBoxPrice + Math.random() * 5 + 0.5).toFixed(2)) // 70% chance you're priced higher
+      : parseFloat((buyBoxPrice - Math.random() * 2).toFixed(2)); // 30% chance you're priced lower but not winning
+  }
+
+  const priceGap = yourCurrentPrice - buyBoxPrice;
+  const pricingStatus = isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox');
+
+  console.log(`Mock ASIN ${asinCode}: Your ID: ${yourSellerId}, Winner: ${isWinner}, Your Price: £${yourCurrentPrice}, Buy Box: £${buyBoxPrice}, Gap: £${priceGap.toFixed(2)}`);
+
   // Mock cost data for margin calculations
   const baseCost = parseFloat((Math.random() * 30 + 5).toFixed(2));
   const shippingCost = parseFloat((Math.random() * 8 + 3).toFixed(2));
   const materialTotalCost = parseFloat((baseCost + Math.random() * 10 + 2).toFixed(2));
 
-  // Calculate mock margins
-  const amazonFee = mockPrice * 0.15;
-  const yourMargin = mockPrice - amazonFee - materialTotalCost - shippingCost;
-  const yourMarginPercent = mockPrice > 0 ? (yourMargin / mockPrice) * 100 : 0;
+  // Calculate mock margins using the correct pricing
+  const amazonFee = yourCurrentPrice * 0.15;
+  const yourMargin = yourCurrentPrice - amazonFee - materialTotalCost - shippingCost;
+  const yourMarginPercent = yourCurrentPrice > 0 ? (yourMargin / yourCurrentPrice) * 100 : 0;
 
-  const buyboxAmazonFee = competitorPrice * 0.15;
-  const buyboxMargin = competitorPrice - buyboxAmazonFee - materialTotalCost - shippingCost;
-  const buyboxMarginPercent = competitorPrice > 0 ? (buyboxMargin / competitorPrice) * 100 : 0;
+  const buyboxAmazonFee = buyBoxPrice * 0.15;
+  const buyboxMargin = buyBoxPrice - buyboxAmazonFee - materialTotalCost - shippingCost;
+  const buyboxMarginPercent = buyBoxPrice > 0 ? (buyboxMargin / buyBoxPrice) * 100 : 0;
 
   const marginDifference = buyboxMargin - yourMargin;
   const profitOpportunity = Math.max(0, marginDifference);
@@ -302,23 +371,22 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     recommendedAction = 'hold_price';
   }
 
-  console.log(`Mock ASIN ${asinCode}: Your ID: ${yourSellerId}, Winner: ${isWinner}, Action: ${recommendedAction}`);
-
   return {
     // Required fields that match the database schema
     run_id: runId,
     asin: asinCode,
     sku: sku || `SKU-${asinCode}`,
-    price: mockPrice,
+    product_title: productTitle,
+    price: yourCurrentPrice, // Use YOUR current price for margin calculations
     currency: 'GBP',
     is_winner: isWinner,
     competitor_id: competitorId,
     competitor_name: `MockSeller${Math.floor(Math.random() * 1000)}`,
-    competitor_price: competitorPrice,
+    competitor_price: buyBoxPrice, // This is the buy box price
     marketplace: 'UK',
-    opportunity_flag: !isWinner && (competitorPrice - mockPrice) > 5,
-    min_profitable_price: parseFloat((mockPrice * 0.8).toFixed(2)),
-    margin_at_buybox: parseFloat((mockPrice * 0.3).toFixed(2)),
+    opportunity_flag: !isWinner && (buyBoxPrice - yourCurrentPrice) > 5,
+    min_profitable_price: parseFloat((yourCurrentPrice * 0.8).toFixed(2)),
+    margin_at_buybox: parseFloat((yourCurrentPrice * 0.3).toFixed(2)),
     margin_percent_at_buybox: parseFloat((0.3 + Math.random() * 0.2).toFixed(4)),
     total_offers: Math.floor(Math.random() * 10) + 1,
     category: 'Electronics',
@@ -329,6 +397,18 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     source: 'mock-api',
     merchant_token: yourSellerId,
     buybox_merchant_token: competitorId,
+
+    // Enhanced pricing clarity fields  
+    your_current_price: yourCurrentPrice,
+    your_current_shipping: 0, // Mock free shipping
+    your_current_total: yourCurrentPrice,
+    buybox_price: buyBoxPrice,
+    buybox_shipping: 0, // Mock free shipping
+    buybox_total: buyBoxPrice,
+    price_gap: parseFloat(priceGap.toFixed(2)),
+    price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
+    pricing_status: pricingStatus,
+    your_offer_found: true, // Mock that your offer was found
 
     // New margin analysis fields
     your_cost: parseFloat(baseCost.toFixed(2)),
@@ -350,7 +430,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
 
     // Recommendations
     recommended_action: recommendedAction,
-    price_adjustment_needed: parseFloat((competitorPrice - mockPrice).toFixed(2)),
+    price_adjustment_needed: parseFloat((buyBoxPrice - yourCurrentPrice).toFixed(2)),
     break_even_price: parseFloat(breakEvenPrice.toFixed(2)),
 
     // Metadata
