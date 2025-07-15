@@ -39,6 +39,41 @@
 		margin_at_buybox: number | null;
 		margin_percent_at_buybox: number | null;
 		captured_at: string;
+
+		// Enhanced margin analysis fields
+		your_cost: number | null;
+		your_shipping_cost: number | null;
+		your_material_total_cost: number | null;
+		your_box_cost: number | null;
+		your_vat_amount: number | null;
+		your_fragile_charge: number | null;
+		material_cost_only: number | null;
+		total_operating_cost: number | null;
+
+		// Current pricing margins
+		your_margin_at_current_price: number | null;
+		your_margin_percent_at_current_price: number | null;
+
+		// Competitor analysis
+		margin_at_buybox_price: number | null;
+		margin_percent_at_buybox_price: number | null;
+		margin_difference: number | null;
+		profit_opportunity: number | null;
+
+		// Actual profit calculations
+		current_actual_profit: number | null;
+		buybox_actual_profit: number | null;
+		current_profit_breakdown: string | null;
+		buybox_profit_breakdown: string | null;
+
+		// Recommendations
+		recommended_action: string | null;
+		price_adjustment_needed: number | null;
+		break_even_price: number | null;
+
+		// Metadata
+		margin_calculation_version: string | null;
+		cost_data_source: string | null;
 	}
 
 	// State management
@@ -62,6 +97,9 @@
 	// Filters for results
 	let showOnlyOpportunities = false;
 	let showOnlyWinners = false;
+	let showOnlyProfitable = false;
+	let minMarginFilter = 0;
+	let recommendationFilter = 'all';
 
 	// Pagination
 	let currentPage = 1;
@@ -71,6 +109,12 @@
 	// Stats for selected job
 	let winnerCount = 0;
 	let opportunityCount = 0;
+	let profitableOpportunityCount = 0;
+	let marginDataCount = 0;
+	let totalProfitOpportunity = 0;
+	let matchBuyboxCount = 0;
+	let averageCurrentProfit = 0;
+	let totalResultsInJob = 0;
 
 	// Rate limit settings for new scans
 	let newScanRateLimit = 0.5; // Default to a more conservative 0.5 requests/second
@@ -141,7 +185,8 @@
 			// Fetch job results
 			const resultsResponse = await fetch(
 				`/api/buybox/results?job_id=${jobId}&page=${currentPage}&limit=${itemsPerPage}` +
-					`&show_opportunities=${showOnlyOpportunities}&show_winners=${showOnlyWinners}`
+					`&show_opportunities=${showOnlyOpportunities}&show_winners=${showOnlyWinners}` +
+					`&show_profitable=${showOnlyProfitable}&min_margin=${minMarginFilter}&recommendation=${recommendationFilter}`
 			);
 			const resultsData = await resultsResponse.json();
 
@@ -153,6 +198,12 @@
 			totalResults = resultsData.total;
 			winnerCount = resultsData.winners_count;
 			opportunityCount = resultsData.opportunities_count;
+			profitableOpportunityCount = resultsData.profitable_opportunities_count || 0;
+			marginDataCount = resultsData.margin_data_count || 0;
+			totalProfitOpportunity = resultsData.total_profit_opportunity || 0;
+			matchBuyboxCount = resultsData.match_buybox_count || 0;
+			averageCurrentProfit = resultsData.average_current_profit || 0;
+			totalResultsInJob = resultsData.total_results_in_job || 0;
 
 			// Fetch job failures
 			const failuresResponse = await fetch(`/api/buybox/failures?job_id=${jobId}`);
@@ -674,30 +725,97 @@
 				<div class="bg-white rounded shadow mb-6">
 					<h2 class="bg-gray-100 py-2 px-4 font-semibold border-b">Results Filter</h2>
 					<div class="p-4">
-						<div class="flex flex-wrap gap-4">
-							<div class="flex items-center">
-								<input
-									type="checkbox"
-									id="show-opportunities"
-									class="mr-2"
-									bind:checked={showOnlyOpportunities}
-								/>
-								<label for="show-opportunities">Show Opportunities Only</label>
+						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+							<!-- Basic Filters -->
+							<div class="space-y-2">
+								<h3 class="font-medium text-gray-700">Basic Filters</h3>
+								<div class="flex items-center">
+									<input
+										type="checkbox"
+										id="show-opportunities"
+										class="mr-2"
+										bind:checked={showOnlyOpportunities}
+									/>
+									<label for="show-opportunities" class="text-sm">Show Opportunities Only</label>
+								</div>
+								<div class="flex items-center">
+									<input
+										type="checkbox"
+										id="show-winners"
+										class="mr-2"
+										bind:checked={showOnlyWinners}
+									/>
+									<label for="show-winners" class="text-sm">Show Winners Only</label>
+								</div>
+								<div class="flex items-center">
+									<input
+										type="checkbox"
+										id="show-profitable"
+										class="mr-2"
+										bind:checked={showOnlyProfitable}
+									/>
+									<label for="show-profitable" class="text-sm">Show Profitable Opportunities</label>
+								</div>
 							</div>
-							<div class="flex items-center">
-								<input
-									type="checkbox"
-									id="show-winners"
-									class="mr-2"
-									bind:checked={showOnlyWinners}
-								/>
-								<label for="show-winners">Show Winners Only</label>
+
+							<!-- Margin Filters -->
+							<div class="space-y-2">
+								<h3 class="font-medium text-gray-700">Margin Filters</h3>
+								<div>
+									<label for="min-margin" class="block text-sm text-gray-600">Min Margin %</label>
+									<input
+										type="number"
+										id="min-margin"
+										class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm"
+										placeholder="0"
+										min="0"
+										max="100"
+										bind:value={minMarginFilter}
+									/>
+								</div>
 							</div>
+
+							<!-- Recommendation Filters -->
+							<div class="space-y-2">
+								<h3 class="font-medium text-gray-700">Recommendations</h3>
+								<div>
+									<label for="recommendation-filter" class="block text-sm text-gray-600"
+										>Action</label
+									>
+									<select
+										id="recommendation-filter"
+										class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm"
+										bind:value={recommendationFilter}
+									>
+										<option value="all">All Recommendations</option>
+										<option value="match_buybox">📈 Match Buy Box</option>
+										<option value="hold_price">✋ Hold Price</option>
+										<option value="investigate">🔍 Investigate</option>
+										<option value="not_profitable">❌ Not Profitable</option>
+									</select>
+								</div>
+							</div>
+						</div>
+
+						<div class="flex gap-2 mt-4 pt-4 border-t">
 							<button
-								class="bg-gray-200 hover:bg-gray-300 py-1 px-3 rounded"
+								class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded text-sm"
 								on:click={applyFilters}
 							>
 								Apply Filters
+							</button>
+							<button
+								class="bg-gray-200 hover:bg-gray-300 py-2 px-4 rounded text-sm"
+								on:click={() => {
+									showOnlyOpportunities = false;
+									showOnlyWinners = false;
+									showOnlyProfitable = false;
+									minMarginFilter = 0;
+									recommendationFilter = 'all';
+									applyFilters();
+								}}
+							>
+								Clear Filters
 							</button>
 						</div>
 					</div>
@@ -707,20 +825,62 @@
 				<div class="bg-white rounded shadow mb-6">
 					<h2 class="bg-gray-100 py-2 px-4 font-semibold border-b">Results Summary</h2>
 					<div class="p-4">
-						<div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+						<div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-center">
 							<div class="bg-blue-50 p-3 rounded">
 								<p class="text-sm text-gray-500">Total Results</p>
 								<p class="text-2xl font-bold">{totalResults}</p>
 							</div>
 							<div class="bg-green-50 p-3 rounded">
-								<p class="text-sm text-gray-500">Buy Box Winners</p>
-								<p class="text-2xl font-bold">{winnerCount}</p>
+								<p class="text-sm text-gray-500">Buy Box Won</p>
+								<p class="text-2xl font-bold text-green-600">{winnerCount}</p>
+								<p class="text-xs text-gray-400">We own buy box</p>
 							</div>
 							<div class="bg-yellow-50 p-3 rounded">
 								<p class="text-sm text-gray-500">Opportunities</p>
-								<p class="text-2xl font-bold">{opportunityCount}</p>
+								<p class="text-2xl font-bold text-yellow-600">{opportunityCount}</p>
+								<p class="text-xs text-gray-400">Potential gains</p>
+							</div>
+							<div class="bg-purple-50 p-3 rounded">
+								<p class="text-sm text-gray-500">Profitable Opportunities</p>
+								<p class="text-2xl font-bold text-purple-600">{profitableOpportunityCount}</p>
+								<p class="text-xs text-gray-400">Worth pursuing</p>
+							</div>
+							<div
+								class="bg-orange-50 p-3 rounded"
+								title="SKUs with cost data analyzed out of {totalResultsInJob} total"
+							>
+								<p class="text-sm text-gray-500">Margin Analysis</p>
+								<p class="text-2xl font-bold text-orange-600">{marginDataCount}</p>
+								<p class="text-xs text-gray-400">of {totalResultsInJob} SKUs</p>
 							</div>
 						</div>
+
+						{#if jobResults.length > 0}
+							<div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-center border-t pt-4">
+								<div>
+									<p class="text-sm text-gray-500">Avg Current Profit</p>
+									<p
+										class={`text-lg font-medium ${averageCurrentProfit >= 2 ? 'text-green-600' : averageCurrentProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
+									>
+										£{averageCurrentProfit.toFixed(2)}
+									</p>
+								</div>
+								<div>
+									<p class="text-sm text-gray-500">Total Profit Opportunity</p>
+									<p class="text-lg font-medium text-green-600">
+										£{totalProfitOpportunity.toFixed(2)}
+									</p>
+									<p class="text-xs text-gray-400">If matched to buy box</p>
+								</div>
+								<div>
+									<p class="text-sm text-gray-500">Needs Price Match</p>
+									<p class="text-lg font-medium text-blue-600">
+										{matchBuyboxCount} SKUs
+									</p>
+									<p class="text-xs text-gray-400">Recommended actions</p>
+								</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 
@@ -743,23 +903,23 @@
 									<tr>
 										<th
 											class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>SKU</th
+											>Product</th
 										>
 										<th
 											class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>ASIN</th
+											>Price Analysis</th
 										>
 										<th
 											class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>Price</th
+											>Cost Breakdown</th
 										>
 										<th
 											class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>Buy Box</th
+											>Margin Analysis</th
 										>
 										<th
 											class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>Margin</th
+											>Recommendation</th
 										>
 										<th
 											class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
@@ -774,31 +934,180 @@
 											hover:bg-gray-50 
 											${result.opportunity_flag ? 'bg-yellow-50' : ''} 
 											${result.is_winner ? 'bg-green-50' : ''}
+											${result.recommended_action === 'match_buybox' ? 'border-l-4 border-l-blue-500' : ''}
+											${result.recommended_action === 'not_profitable' ? 'border-l-4 border-l-red-500' : ''}
 										`}
 										>
-											<td class="py-3 px-4">{result.sku}</td>
-											<td class="py-3 px-4">{result.asin}</td>
-											<td class="py-3 px-4">£{result.price?.toFixed(2) || 'N/A'}</td>
+											<!-- Product Info -->
 											<td class="py-3 px-4">
-												{#if result.is_winner}
-													<span class="text-green-600">✓ Winner</span>
-												{:else}
-													<span class="text-red-600">✗ Not Winner</span>
-												{/if}
+												<div class="text-sm">
+													<div class="font-medium text-gray-900">{result.sku}</div>
+													<div class="text-gray-500">{result.asin}</div>
+													{#if result.is_winner}
+														<span
+															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+														>
+															🏆 Buy Box Winner
+														</span>
+													{:else if result.opportunity_flag}
+														<span
+															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+														>
+															⚡ Opportunity
+														</span>
+													{/if}
+												</div>
 											</td>
+
+											<!-- Price Analysis -->
 											<td class="py-3 px-4">
-												{#if result.margin_percent_at_buybox !== null}
+												<div class="text-sm">
+													<div class="font-medium">
+														Current: £{result.price?.toFixed(2) || 'N/A'}
+													</div>
+													{#if result.break_even_price}
+														<div class="text-gray-600">
+															Break-even: £{result.break_even_price.toFixed(2)}
+														</div>
+													{/if}
+													{#if result.price_adjustment_needed && result.price_adjustment_needed !== 0}
+														<div
+															class={`text-xs ${result.price_adjustment_needed > 0 ? 'text-red-600' : 'text-green-600'}`}
+														>
+															Adjust: {result.price_adjustment_needed > 0
+																? '+'
+																: ''}£{result.price_adjustment_needed.toFixed(2)}
+														</div>
+													{/if}
+												</div>
+											</td>
+
+											<!-- Cost Breakdown -->
+											<td class="py-3 px-4">
+												<div class="text-xs space-y-1">
+													<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
+													{#if result.your_cost}
+														<div>Base: £{result.your_cost.toFixed(2)}</div>
+													{/if}
+													{#if result.your_vat_amount}
+														<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
+													{/if}
+													{#if result.your_box_cost}
+														<div>Box: £{result.your_box_cost.toFixed(2)}</div>
+													{/if}
+													<div>Material: £0.20</div>
+													{#if result.your_fragile_charge && result.your_fragile_charge > 0}
+														<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
+													{/if}
+													{#if result.your_shipping_cost}
+														<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
+													{/if}
+													{#if result.total_operating_cost}
+														<div class="font-medium border-t pt-1 text-blue-800">
+															Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
+														</div>
+													{/if}
+
+													<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
+													{#if result.price}
+														<div class="text-red-600">
+															Amazon Fee (15% of £{result.price.toFixed(2)}): £{(
+																result.price * 0.15
+															).toFixed(2)}
+														</div>
+													{/if}
+
+													{#if result.break_even_price}
+														<div class="font-bold border-t pt-2 text-red-800">
+															Break-even: £{result.break_even_price.toFixed(2)}
+														</div>
+														<div class="text-xs text-gray-500">
+															(£{result.total_operating_cost?.toFixed(2)} ÷ 0.85)
+														</div>
+													{/if}
+												</div>
+											</td>
+
+											<!-- Margin Analysis -->
+											<td class="py-3 px-4">
+												<div class="text-sm space-y-1">
+													{#if result.current_actual_profit !== null}
+														<div
+															class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
+														>
+															£{result.current_actual_profit.toFixed(2)} profit
+														</div>
+													{/if}
+													{#if result.your_margin_percent_at_current_price !== null}
+														<div
+															class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															Current: {result.your_margin_percent_at_current_price.toFixed(1)}%
+															margin
+														</div>
+													{/if}
+													{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit}
+														<div
+															class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
+														>
+															At Buy Box: £{result.buybox_actual_profit.toFixed(2)} profit
+														</div>
+													{/if}
+													{#if result.margin_percent_at_buybox_price !== null && result.margin_percent_at_buybox_price !== result.your_margin_percent_at_current_price}
+														<div
+															class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
+														</div>
+													{/if}
+													{#if result.profit_opportunity && result.profit_opportunity > 0}
+														<div
+															class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded"
+														>
+															+£{result.profit_opportunity.toFixed(2)} opportunity
+														</div>
+													{/if}
+													{#if result.margin_difference}
+														<div
+															class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															Difference: {result.margin_difference > 0
+																? '+'
+																: ''}£{result.margin_difference.toFixed(2)}
+														</div>
+													{/if}
+												</div>
+											</td>
+
+											<!-- Recommendation -->
+											<td class="py-3 px-4">
+												{#if result.recommended_action}
 													<span
-														class={result.margin_percent_at_buybox >= 10
-															? 'text-green-600'
-															: 'text-red-600'}
+														class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium
+														${result.recommended_action === 'match_buybox' ? 'bg-blue-100 text-blue-800' : ''}
+														${result.recommended_action === 'hold_price' ? 'bg-green-100 text-green-800' : ''}
+														${result.recommended_action === 'investigate' ? 'bg-yellow-100 text-yellow-800' : ''}
+														${result.recommended_action === 'not_profitable' ? 'bg-red-100 text-red-800' : ''}
+													`}
 													>
-														{result.margin_percent_at_buybox.toFixed(1)}%
+														{#if result.recommended_action === 'match_buybox'}
+															📈 Match Buy Box
+														{:else if result.recommended_action === 'hold_price'}
+															✋ Hold Price
+														{:else if result.recommended_action === 'investigate'}
+															🔍 Investigate
+														{:else if result.recommended_action === 'not_profitable'}
+															❌ Not Profitable
+														{:else}
+															{result.recommended_action}
+														{/if}
 													</span>
 												{:else}
-													N/A
+													<span class="text-gray-400 text-xs">No data</span>
 												{/if}
 											</td>
+
+											<!-- Actions -->
 											<td class="py-3 px-4">
 												<button
 													class="text-blue-600 hover:text-blue-800 underline text-sm"
