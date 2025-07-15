@@ -54,8 +54,9 @@ export async function GET({ url }) {
     // Parse filter parameters
     const showOpportunities = url.searchParams.get('show_opportunities') === 'true';
     const showWinners = url.searchParams.get('show_winners') === 'true';
+    const includeNoMarginData = url.searchParams.get('include_no_margin') === 'true';
 
-    console.log(`🔵 [REQ-${requestId}] Filters - opportunities: ${showOpportunities}, winners: ${showWinners}`);
+    console.log(`🔵 [REQ-${requestId}] Filters - opportunities: ${showOpportunities}, winners: ${showWinners}, includeNoMargin: ${includeNoMarginData}`);
 
     // Build query
     console.log(`🔵 [REQ-${requestId}] Building Supabase query...`);
@@ -64,6 +65,12 @@ export async function GET({ url }) {
     let query = supabaseAdmin
       .from('buybox_data')
       .select('*');
+
+    // OPTIMIZATION: Filter out records with no margin data by default (significantly reduces response size)
+    if (!includeNoMarginData) {
+      query = query.not('total_operating_cost', 'is', null);
+      console.log(`🔵 [REQ-${requestId}] Applied filter: total_operating_cost IS NOT NULL (excludes records without margin data)`);
+    }
 
     // Apply filters
     if (jobId) {
@@ -200,6 +207,11 @@ export async function GET({ url }) {
       .from('buybox_data')
       .select('id', { count: 'exact' });
 
+    // Apply the same margin filter to count query
+    if (!includeNoMarginData) {
+      countQuery = countQuery.not('total_operating_cost', 'is', null);
+    }
+
     if (jobId) {
       countQuery = countQuery.eq('run_id', jobId);
     }
@@ -244,6 +256,11 @@ export async function GET({ url }) {
       .from('buybox_data')
       .select('*', { count: 'exact', head: true });
 
+    // Apply the same margin filter to winners count
+    if (!includeNoMarginData) {
+      winnersCountQuery = winnersCountQuery.not('total_operating_cost', 'is', null);
+    }
+
     if (jobId && !includeAllJobs) {
       winnersCountQuery = winnersCountQuery.eq('run_id', jobId);
     }
@@ -273,6 +290,11 @@ export async function GET({ url }) {
       .from('buybox_data')
       .select('*', { count: 'exact', head: true });
 
+    // Apply the same margin filter to opportunities count
+    if (!includeNoMarginData) {
+      opportunitiesCountQuery = opportunitiesCountQuery.not('total_operating_cost', 'is', null);
+    }
+
     if (jobId && !includeAllJobs) {
       opportunitiesCountQuery = opportunitiesCountQuery.eq('run_id', jobId);
     }
@@ -300,21 +322,11 @@ export async function GET({ url }) {
 
     const totalTime = Date.now() - startTime;
     
-    // Optimize response size by removing verbose fields if response is too large
-    const optimizedResults = results.map(record => ({
-      ...record,
-      // Remove potentially large text fields if they exist
-      current_profit_breakdown: record.current_profit_breakdown ? 
-        (record.current_profit_breakdown.length > 100 ? record.current_profit_breakdown.substring(0, 100) + '...' : record.current_profit_breakdown) : null,
-      buybox_profit_breakdown: record.buybox_profit_breakdown ? 
-        (record.buybox_profit_breakdown.length > 100 ? record.buybox_profit_breakdown.substring(0, 100) + '...' : record.buybox_profit_breakdown) : null,
-      product_title: record.product_title ? 
-        (record.product_title.length > 150 ? record.product_title.substring(0, 150) + '...' : record.product_title) : null
-    }));
+    console.log(`🟢 [REQ-${requestId}] Request completed successfully: ${totalTime}ms total, ${results?.length || 0} results`);
 
     const responsePayload = {
       success: true,
-      results: optimizedResults,
+      results: results, // Use unmodified results to avoid any field truncation issues
       total: totalCount,
       winners_count: winnersCount,
       opportunities_count: opportunitiesCount,
@@ -323,16 +335,14 @@ export async function GET({ url }) {
       debug: {
         requestId,
         totalTime,
-        resultCount: optimizedResults?.length || 0,
-        timestamp: new Date().toISOString(),
-        optimized: true
+        resultCount: results?.length || 0,
+        timestamp: new Date().toISOString()
       }
     };
 
     const responseSize = JSON.stringify(responsePayload).length;
     const responseSizeMB = (responseSize / 1024 / 1024).toFixed(2);
     
-    console.log(`🟢 [REQ-${requestId}] Request completed successfully: ${totalTime}ms total, ${optimizedResults?.length || 0} results`);
     console.log(`🟢 [REQ-${requestId}] Response size: ${responseSize} bytes (${responseSizeMB}MB)`);
     
     // Check if response is approaching the 6MB Netlify limit
@@ -350,7 +360,7 @@ export async function GET({ url }) {
           requestId,
           responseSize: responseSizeMB + 'MB',
           limit: limit,
-          actualResults: optimizedResults?.length || 0
+          actualResults: results?.length || 0
         }
       }, { status: 413 });
     }

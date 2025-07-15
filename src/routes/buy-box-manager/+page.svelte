@@ -64,6 +64,7 @@
 	let categoryFilter = 'all'; // all, winners, losers, opportunities, profitable, not_profitable, match_buybox, hold_price, investigate
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, sku_asc
 	let showOnlyWithMarginData = false;
+	let includeNoMarginData = false; // New option to include records without margin data
 	let minProfitFilter = 0;
 	let minMarginFilter = 0;
 	let showLatestOnly = true; // New filter to show only latest data per SKU
@@ -126,7 +127,7 @@
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-			const url = '/api/buybox/results?include_all_jobs=true&limit=2000';
+			const url = `/api/buybox/results?include_all_jobs=true&limit=2000${includeNoMarginData ? '&include_no_margin=true' : ''}`;
 			console.log('🔵 Frontend: Requesting URL:', url);
 			console.log('🔵 Frontend: Request timeout set to 30 seconds');
 
@@ -154,12 +155,16 @@
 
 			if (!response.ok) {
 				console.error('🔴 Frontend: API error response:', data);
-				
+
 				// Handle specific error types
 				if (data.errorType === 'Function.ResponseSizeTooLarge') {
-					throw new Error('The dataset is too large for a single request. Please use filters to reduce the data size, or try the "Latest data only" option.');
+					throw new Error(
+						'The dataset is too large for a single request. Please use filters to reduce the data size, or try the "Latest data only" option.'
+					);
 				} else if (response.status === 413) {
-					throw new Error(`Response too large: ${data.error || 'Please reduce the limit or add filters'}`);
+					throw new Error(
+						`Response too large: ${data.error || 'Please reduce the limit or add filters'}`
+					);
 				} else {
 					throw new Error(data.error || 'Failed to load buy box data');
 				}
@@ -527,6 +532,56 @@
 		</div>
 	{/if}
 
+	<!-- Optimization Info -->
+	{#if !includeNoMarginData}
+		<div
+			class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6"
+			role="alert"
+		>
+			<div class="flex justify-between items-center">
+				<div>
+					<p class="font-medium">🎯 Optimized View (Default)</p>
+					<p class="text-sm">
+						Only showing products with cost data for better performance. This excludes ~50-70% of records 
+						without margin calculations, significantly reducing load times.
+					</p>
+				</div>
+				<button
+					on:click={() => {
+						includeNoMarginData = true;
+						loadBuyBoxData();
+					}}
+					class="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded text-sm"
+				>
+					Include All Records
+				</button>
+			</div>
+		</div>
+	{:else}
+		<div
+			class="bg-orange-100 border border-orange-400 text-orange-700 px-4 py-3 rounded mb-6"
+			role="alert"
+		>
+			<div class="flex justify-between items-center">
+				<div>
+					<p class="font-medium">📊 Complete Dataset (Slower)</p>
+					<p class="text-sm">
+						Including all records even without cost data. This significantly increases load times and may hit size limits.
+					</p>
+				</div>
+				<button
+					on:click={() => {
+						includeNoMarginData = false;
+						loadBuyBoxData();
+					}}
+					class="bg-orange-600 hover:bg-orange-700 text-white py-1 px-3 rounded text-sm"
+				>
+					Use Optimized View
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Data Freshness Alert -->
 	{#if !isLoading && buyboxData.length > 0}
 		{@const oldestData = Math.min(
@@ -688,7 +743,7 @@
 			</div>
 		</div>
 
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+		<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
 			<!-- Latest Data Only Filter -->
 			<div class="flex items-center">
 				<input
@@ -716,6 +771,21 @@
 				<label for="marginData" class="text-sm">Only show items with margin data</label>
 			</div>
 
+			<!-- Include No Margin Data -->
+			<div class="flex items-center">
+				<input
+					type="checkbox"
+					id="includeNoMargin"
+					class="mr-2"
+					bind:checked={includeNoMarginData}
+					on:change={loadBuyBoxData}
+				/>
+				<label for="includeNoMargin" class="text-sm">
+					Include records without cost data
+					<span class="text-xs text-gray-500 block"> (Increases data size significantly) </span>
+				</label>
+			</div>
+
 			<!-- Min Profit Filter -->
 			<div>
 				<label for="minProfit" class="block text-sm font-medium text-gray-700 mb-1"
@@ -732,7 +802,9 @@
 					on:input={applyFilters}
 				/>
 			</div>
+		</div>
 
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
 			<!-- Min Margin Filter -->
 			<div>
 				<label for="minMargin" class="block text-sm font-medium text-gray-700 mb-1"
@@ -939,9 +1011,13 @@
 										</div>
 
 										<!-- Buy Box Price -->
-										{#if result.competitor_price}
+										{#if result.competitor_price && result.competitor_price !== result.price}
 											<div class="font-medium text-gray-700">
 												Buy Box Price: £{result.competitor_price.toFixed(2)}
+											</div>
+										{:else if result.buybox_price && result.buybox_price !== result.price}
+											<div class="font-medium text-gray-700">
+												Buy Box Price: £{result.buybox_price.toFixed(2)}
 											</div>
 										{:else if result.is_winner && result.price}
 											<div class="font-medium text-green-700">
