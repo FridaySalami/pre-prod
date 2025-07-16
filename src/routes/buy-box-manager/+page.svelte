@@ -14,26 +14,21 @@
 		competitor_price: number | null;
 		is_winner: boolean;
 		opportunity_flag: boolean;
-		margin_at_buybox: number | null;
-		margin_percent_at_buybox: number | null;
 		captured_at: string;
 
-		// Enhanced margin analysis fields
+		// Essential cost fields (others removed to reduce response size)
 		your_cost: number | null;
 		your_shipping_cost: number | null;
 		your_material_total_cost: number | null;
 		your_box_cost: number | null;
 		your_vat_amount: number | null;
 		your_fragile_charge: number | null;
-		material_cost_only: number | null;
 		total_operating_cost: number | null;
 
 		// Current pricing margins
-		your_margin_at_current_price: number | null;
 		your_margin_percent_at_current_price: number | null;
 
 		// Competitor analysis
-		margin_at_buybox_price: number | null;
 		margin_percent_at_buybox_price: number | null;
 		margin_difference: number | null;
 		profit_opportunity: number | null;
@@ -41,17 +36,16 @@
 		// Actual profit calculations
 		current_actual_profit: number | null;
 		buybox_actual_profit: number | null;
-		current_profit_breakdown: string | null;
-		buybox_profit_breakdown: string | null;
 
 		// Recommendations
 		recommended_action: string | null;
-		price_adjustment_needed: number | null;
 		break_even_price: number | null;
 
-		// Metadata
-		margin_calculation_version: string | null;
-		cost_data_source: string | null;
+		// Removed fields to reduce response size:
+		// margin_at_buybox, margin_percent_at_buybox, material_cost_only,
+		// your_margin_at_current_price, margin_at_buybox_price,
+		// current_profit_breakdown, buybox_profit_breakdown,
+		// price_adjustment_needed, margin_calculation_version, cost_data_source
 	}
 
 	// State management
@@ -87,6 +81,40 @@
 	let totalMarginAnalyzed = 0;
 	let avgProfit = 0;
 	let totalPotentialProfit = 0;
+
+	// UI State
+	let alertsExpanded = false;
+	let selectedItems = new Set<string>(); // Track selected item IDs for bulk actions
+	let filtersExpanded = false;
+
+	// Track active filters for better UX
+	let activeCardFilter = ''; // Track which summary card filter is active
+	let activePresetFilter = ''; // Track which preset filter is active
+	let hasActiveFilters = false; // Track if any filters are applied
+
+	// Filter presets
+	const filterPresets = [
+		{
+			name: 'High Profit Opportunities',
+			emoji: '💎',
+			filters: { categoryFilter: 'opportunities', minProfitFilter: 2, sortBy: 'profit_desc' }
+		},
+		{
+			name: 'Urgent Price Updates',
+			emoji: '🚨',
+			filters: { categoryFilter: 'match_buybox', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'New Competition',
+			emoji: '⚔️',
+			filters: { categoryFilter: 'losers', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'Winning Products',
+			emoji: '🏆',
+			filters: { categoryFilter: 'winners', sortBy: 'profit_desc' }
+		}
+	];
 
 	// Initialize and load data
 	onMount(async () => {
@@ -134,8 +162,8 @@
 		console.log('🔵 Frontend: Starting Buy Box data request at', new Date().toISOString());
 
 		try {
-			// Use retry limit if provided, otherwise use the current limit
-			const currentLimit = retryLimit || 4000;
+			// Use retry limit if provided, otherwise use a more conservative limit
+			const currentLimit = retryLimit || 3000; // Reduced from 4000 to be safer
 
 			// Get latest data from all jobs - use a more reasonable limit for production
 			const controller = new AbortController();
@@ -400,6 +428,9 @@
 		filteredData = filtered;
 		totalResults = filtered.length;
 		currentPage = 1; // Reset to first page when filtering
+
+		// Update active filter state
+		checkActiveFilters();
 	}
 
 	// Get paginated data
@@ -544,7 +575,7 @@
 
 	// Fallback function to load titles individually
 	async function loadProductTitlesIndividually(skus: string[]): Promise<void> {
-		const maxConcurrent = 5; // Limit concurrent requests
+		const maxConcurrent = 3; // Reduced from 5 to limit API load
 		const chunks = [];
 
 		for (let i = 0; i < skus.length; i += maxConcurrent) {
@@ -595,6 +626,138 @@
 		console.log(`🔍 getProductTitle(${sku}): ${cached || 'null'} (cache v${cacheVersion})`);
 		return cached || null;
 	}
+
+	// Comprehensive filter reset function
+	function resetAllFilters(): void {
+		// Reset all filter variables to defaults
+		searchQuery = '';
+		categoryFilter = 'all';
+		sortBy = 'captured_at';
+		minProfitFilter = 0;
+		minMarginFilter = 0;
+		showOnlyWithMarginData = false;
+
+		// Reset filter state tracking
+		activeCardFilter = '';
+		activePresetFilter = '';
+		hasActiveFilters = false;
+
+		// Clear selections
+		selectedItems.clear();
+		selectedItems = selectedItems;
+
+		// Apply the reset filters
+		applyFilters();
+	}
+
+	// Check if any filters are currently active
+	function checkActiveFilters(): void {
+		hasActiveFilters =
+			searchQuery !== '' ||
+			categoryFilter !== 'all' ||
+			minProfitFilter > 0 ||
+			minMarginFilter > 0 ||
+			showOnlyWithMarginData ||
+			activeCardFilter !== '' ||
+			activePresetFilter !== '';
+	}
+
+	// Apply filter preset
+	function applyFilterPreset(preset: (typeof filterPresets)[0]): void {
+		// Reset other active filters first
+		activeCardFilter = '';
+
+		// Apply preset filters
+		categoryFilter = preset.filters.categoryFilter;
+		minProfitFilter = preset.filters.minProfitFilter || 0;
+		sortBy = preset.filters.sortBy;
+
+		// Track this preset as active
+		activePresetFilter = preset.name;
+
+		applyFilters();
+		checkActiveFilters();
+	}
+
+	// Handle summary card clicks with improved feedback
+	function handleSummaryCardClick(filterType: string): void {
+		// Reset other active filters first
+		activePresetFilter = '';
+
+		switch (filterType) {
+			case 'winners':
+				categoryFilter = 'winners';
+				activeCardFilter = 'Buy Box Winners';
+				break;
+			case 'opportunities':
+				categoryFilter = 'opportunities';
+				activeCardFilter = 'Opportunities';
+				break;
+			case 'profitable':
+				categoryFilter = 'profitable';
+				activeCardFilter = 'Profitable Items';
+				break;
+			case 'analyzed':
+				showOnlyWithMarginData = true;
+				activeCardFilter = 'Items with Margin Data';
+				break;
+			case 'high-profit':
+			case 'avg-profit':
+			case 'potential':
+				minProfitFilter = 2;
+				sortBy = 'current_actual_profit';
+				activeCardFilter = 'High Profit Items';
+				break;
+			case 'total':
+			default:
+				// Reset to show all
+				resetAllFilters();
+				return;
+		}
+
+		applyFilters();
+		checkActiveFilters();
+	}
+
+	// Bulk actions
+	function toggleItemSelection(itemId: string): void {
+		if (selectedItems.has(itemId)) {
+			selectedItems.delete(itemId);
+		} else {
+			selectedItems.add(itemId);
+		}
+		selectedItems = selectedItems; // Force reactivity
+	}
+
+	function selectAllVisible(): void {
+		paginatedData.forEach((item) => selectedItems.add(item.id));
+		selectedItems = selectedItems;
+	}
+
+	function clearSelection(): void {
+		selectedItems.clear();
+		selectedItems = selectedItems;
+	}
+
+	function bulkMarkForUpdate(): void {
+		const selectedProducts = paginatedData.filter((item) => selectedItems.has(item.id));
+		console.log(
+			'Bulk mark for update:',
+			selectedProducts.map((p) => p.sku)
+		);
+		// TODO: Implement bulk price update functionality
+		alert(`Marked ${selectedProducts.length} products for price updates`);
+	}
+
+	function bulkAddToWatchlist(): void {
+		const selectedProducts = paginatedData.filter((item) => selectedItems.has(item.id));
+		console.log(
+			'Bulk add to watchlist:',
+			selectedProducts.map((p) => p.sku)
+		);
+		// TODO: Implement bulk watchlist functionality
+		alert(`Added ${selectedProducts.length} products to watchlist`);
+	}
 </script>
 
 <svelte:head>
@@ -642,219 +805,433 @@
 		</div>
 	{/if}
 
-	<!-- Data Deduplication Info -->
-	{#if !isLoading && buyboxData.length > 0 && showLatestOnly}
-		<div
-			class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-6"
-			role="alert"
-		>
-			<div class="flex justify-between items-center">
-				<div>
-					<p class="font-medium">📊 Showing Latest Data Only</p>
-					<p class="text-sm">
-						Displaying the most recent scan data for each SKU. Multiple daily scans are
-						deduplicated.
-					</p>
-				</div>
-				<button
-					on:click={() => {
-						showLatestOnly = false;
-						refreshData();
-					}}
-					class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
-				>
-					Show All Historical Data
-				</button>
-			</div>
-		</div>
-	{:else if !isLoading && buyboxData.length > 0 && !showLatestOnly}
-		<div
-			class="bg-purple-100 border border-purple-400 text-purple-700 px-4 py-3 rounded mb-6"
-			role="alert"
-		>
-			<div class="flex justify-between items-center">
-				<div>
-					<p class="font-medium">🕒 Showing All Historical Data</p>
-					<p class="text-sm">
-						Displaying all scan records including multiple entries per SKU from different times.
-					</p>
-				</div>
-				<button
-					on:click={() => {
-						showLatestOnly = true;
-						refreshData();
-					}}
-					class="bg-purple-600 hover:bg-purple-700 text-white py-1 px-3 rounded text-sm"
-				>
-					Show Latest Only
-				</button>
-			</div>
-		</div>
-	{/if}
-
-	<!-- Optimization Info -->
-	{#if !includeNoMarginData}
-		<div
-			class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6"
-			role="alert"
-		>
-			<div class="flex justify-between items-center">
-				<div>
-					<p class="font-medium">🎯 Optimized View (Default)</p>
-					<p class="text-sm">
-						Only showing products with cost data for better performance. This excludes ~50-70% of
-						records without margin calculations, significantly reducing load times.
-					</p>
-					<p class="text-xs text-green-600 mt-1">
-						🔍 Also filtering out items missing base cost price to ensure accurate profit
-						calculations.
-					</p>
-				</div>
-				<button
-					on:click={() => {
-						includeNoMarginData = true;
-						refreshData();
-					}}
-					class="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded text-sm"
-				>
-					Include All Records
-				</button>
-			</div>
-		</div>
-	{:else}
-		<div
-			class="bg-orange-100 border border-orange-400 text-orange-700 px-4 py-3 rounded mb-6"
-			role="alert"
-		>
-			<div class="flex justify-between items-center">
-				<div>
-					<p class="font-medium">📊 Complete Dataset (Slower)</p>
-					<p class="text-sm">
-						Including all records even without cost data. This significantly increases load times
-						and may hit size limits.
-					</p>
-				</div>
-				<button
-					on:click={() => {
-						includeNoMarginData = false;
-						refreshData();
-					}}
-					class="bg-orange-600 hover:bg-orange-700 text-white py-1 px-3 rounded text-sm"
-				>
-					Use Optimized View
-				</button>
-			</div>
-		</div>
-	{/if}
-
-	<!-- Base Cost Filtering Info -->
+	<!-- Consolidated Smart Status Panel -->
 	{#if !isLoading && buyboxData.length > 0}
-		{@const itemsWithoutBaseCost = allRawData.filter(
-			(item) => !item.your_cost || item.your_cost <= 0
-		).length}
-		{#if itemsWithoutBaseCost > 0}
-			<div
-				class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-6"
-				role="alert"
-			>
+		<div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
+			<!-- Status Header -->
+			<div class="bg-gradient-to-r from-blue-50 to-green-50 px-4 py-3 border-b">
 				<div class="flex justify-between items-center">
-					<div>
-						<p class="font-medium">💰 Base Cost Filtering Active</p>
-						<p class="text-sm">
-							Hiding {itemsWithoutBaseCost} items missing or with £0.00 base cost price data to ensure
-							accurate profit calculations. Items without cost data would show inflated profits.
-						</p>
+					<div class="flex items-center gap-3">
+						<div class="text-lg font-medium text-gray-900">📊 Dataset Status</div>
+						<div class="flex gap-2">
+							{#if showLatestOnly}
+								<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+									Latest Only
+								</span>
+							{:else}
+								<span class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium">
+									Historical Data
+								</span>
+							{/if}
+							{#if !includeNoMarginData}
+								<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
+									Optimized View
+								</span>
+							{/if}
+						</div>
 					</div>
+					<button
+						on:click={() => (alertsExpanded = !alertsExpanded)}
+						class="text-gray-500 hover:text-gray-700 transition-colors"
+					>
+						{alertsExpanded ? '▼' : '▶'} Details
+					</button>
+				</div>
+
+				<!-- Quick Summary -->
+				<div class="mt-2 text-sm text-gray-600">
+					{totalResults} products displayed •
+					{totalWinners} wins •
+					{totalOpportunities} opportunities • £{totalPotentialProfit.toFixed(0)} potential
 				</div>
 			</div>
-		{/if}
+
+			<!-- Expandable Details -->
+			{#if alertsExpanded}
+				<div class="p-4 space-y-3 bg-gray-50">
+					<!-- Data Mode Info -->
+					<div class="flex items-start gap-3">
+						<div class="text-blue-500 mt-0.5">📊</div>
+						<div class="flex-1">
+							<div class="font-medium text-gray-900 mb-1">Data Mode</div>
+							{#if showLatestOnly}
+								<p class="text-sm text-gray-600">
+									Showing latest scan data per SKU. Multiple daily scans are deduplicated.
+								</p>
+								<button
+									on:click={() => {
+										showLatestOnly = false;
+										refreshData();
+									}}
+									class="text-blue-600 hover:text-blue-800 text-xs underline mt-1"
+								>
+									Switch to historical data
+								</button>
+							{:else}
+								<p class="text-sm text-gray-600">
+									Showing all scan records including multiple entries per SKU.
+								</p>
+								<button
+									on:click={() => {
+										showLatestOnly = true;
+										refreshData();
+									}}
+									class="text-purple-600 hover:text-purple-800 text-xs underline mt-1"
+								>
+									Switch to latest only
+								</button>
+							{/if}
+						</div>
+					</div>
+
+					<!-- Optimization Info -->
+					<div class="flex items-start gap-3">
+						<div class="text-green-500 mt-0.5">🎯</div>
+						<div class="flex-1">
+							<div class="font-medium text-gray-900 mb-1">Performance Mode</div>
+							{#if !includeNoMarginData}
+								<p class="text-sm text-gray-600">
+									Only showing products with cost data. Excludes ~50-70% of records without margin
+									calculations.
+								</p>
+								<button
+									on:click={() => {
+										includeNoMarginData = true;
+										refreshData();
+									}}
+									class="text-green-600 hover:text-green-800 text-xs underline mt-1"
+								>
+									Include all records (slower)
+								</button>
+							{:else}
+								<p class="text-sm text-gray-600">
+									Including all records. This increases load times and may hit size limits.
+								</p>
+								<button
+									on:click={() => {
+										includeNoMarginData = false;
+										refreshData();
+									}}
+									class="text-orange-600 hover:text-orange-800 text-xs underline mt-1"
+								>
+									Use optimized view
+								</button>
+							{/if}
+						</div>
+					</div>
+
+					<!-- Base Cost Filtering -->
+					{#if !isLoading && buyboxData.length > 0}
+						{@const itemsWithoutBaseCost = allRawData.filter(
+							(item) => !item.your_cost || item.your_cost <= 0
+						).length}
+						{#if itemsWithoutBaseCost > 0}
+							<div class="flex items-start gap-3">
+								<div class="text-blue-500 mt-0.5">💰</div>
+								<div class="flex-1">
+									<div class="font-medium text-gray-900 mb-1">Cost Data Filtering</div>
+									<p class="text-sm text-gray-600">
+										Hiding {itemsWithoutBaseCost} items missing base cost data to ensure accurate profit
+										calculations.
+									</p>
+								</div>
+							</div>
+						{/if}
+					{/if}
+
+					<!-- Data Freshness -->
+					{#if !isLoading && buyboxData.length > 0}
+						{@const oldestData = Math.min(
+							...buyboxData.map((item) => new Date(item.captured_at).getTime())
+						)}
+						{@const oldestAge = Math.floor((Date.now() - oldestData) / (1000 * 60 * 60))}
+						{#if oldestAge > 24}
+							<div class="flex items-start gap-3">
+								<div class="text-yellow-500 mt-0.5">⚠️</div>
+								<div class="flex-1">
+									<div class="font-medium text-gray-900 mb-1">Data Freshness Warning</div>
+									<p class="text-sm text-gray-600">
+										Oldest data is {oldestAge} hours old. Consider running a fresh scan.
+									</p>
+									<div class="flex gap-2 mt-2">
+										<a
+											href="/buy-box-monitor/jobs"
+											class="bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded text-xs"
+										>
+											Run New Scan
+										</a>
+										<button
+											on:click={refreshData}
+											class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-xs"
+										>
+											Refresh Data
+										</button>
+									</div>
+								</div>
+							</div>
+						{/if}
+					{/if}
+				</div>
+			{/if}
+		</div>
 	{/if}
 
-	<!-- Data Freshness Alert -->
+	<!-- Enhanced Summary Statistics Cards -->
 	{#if !isLoading && buyboxData.length > 0}
-		{@const oldestData = Math.min(
-			...buyboxData.map((item) => new Date(item.captured_at).getTime())
-		)}
-		{@const oldestAge = Math.floor((Date.now() - oldestData) / (1000 * 60 * 60))}
-		{#if oldestAge > 24}
-			<div
-				class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-6"
-				role="alert"
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+			<!-- Winners Card -->
+			<button
+				on:click={() => handleSummaryCardClick('winners')}
+				class={`bg-green-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
+					activeCardFilter === 'Buy Box Winners' ? 'ring-2 ring-green-400 bg-green-100' : ''
+				}`}
 			>
-				<div class="flex justify-between items-center">
-					<div>
-						<p class="font-medium">⚠️ Some data may be outdated</p>
-						<p class="text-sm">
-							Oldest data is {oldestAge} hours old. Consider running a fresh scan for accurate pricing.
-						</p>
-					</div>
-					<div class="flex gap-2">
-						<a
-							href="/buy-box-monitor/jobs"
-							class="bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded text-sm"
-						>
-							Run New Scan
-						</a>
-						<button
-							on:click={refreshData}
-							class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
-						>
-							Refresh Data
-						</button>
-					</div>
-				</div>
-			</div>
-		{/if}
+				<h3 class="text-sm font-medium text-gray-500 mb-1">Buy Box Won</h3>
+				<p class="text-2xl font-bold text-green-600">{totalWinners}</p>
+				<p class="text-xs text-gray-400">
+					{activeCardFilter === 'Buy Box Winners'
+						? 'Active filter - click to clear'
+						: 'Click to filter winners'}
+				</p>
+			</button>
+
+			<!-- Opportunities Card -->
+			<button
+				on:click={() => handleSummaryCardClick('opportunities')}
+				class={`bg-yellow-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
+					activeCardFilter === 'Opportunities' ? 'ring-2 ring-yellow-400 bg-yellow-100' : ''
+				}`}
+			>
+				<h3 class="text-sm font-medium text-gray-500 mb-1">Opportunities</h3>
+				<p class="text-2xl font-bold text-yellow-600">{totalOpportunities}</p>
+				<p class="text-xs text-gray-400">
+					{activeCardFilter === 'Opportunities'
+						? 'Active filter - click to clear'
+						: 'Click to find opportunities'}
+				</p>
+			</button>
+
+			<!-- Profitable Ops Card -->
+			<button
+				on:click={() => handleSummaryCardClick('profitable')}
+				class={`bg-purple-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
+					activeCardFilter === 'Profitable Items' ? 'ring-2 ring-purple-400 bg-purple-100' : ''
+				}`}
+			>
+				<h3 class="text-sm font-medium text-gray-500 mb-1">Profitable Ops</h3>
+				<p class="text-2xl font-bold text-purple-600">{totalProfitable}</p>
+				<p class="text-xs text-gray-400">
+					{activeCardFilter === 'Profitable Items'
+						? 'Active filter - click to clear'
+						: 'Click for profitable items'}
+				</p>
+			</button>
+
+			<!-- Analyzed Card -->
+			<button
+				on:click={() => handleSummaryCardClick('analyzed')}
+				class="bg-blue-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
+			>
+				<h3 class="text-sm font-medium text-gray-500 mb-1">Analyzed</h3>
+				<p class="text-2xl font-bold text-blue-600">{totalMarginAnalyzed}</p>
+				<p class="text-xs text-gray-400">
+					of {buyboxData.length} SKUs
+					{#if showLatestOnly}
+						<span class="block text-blue-600">(Latest data only)</span>
+					{:else}
+						<span class="block text-purple-600">(All historical data)</span>
+					{/if}
+				</p>
+			</button>
+
+			<!-- Average Profit Card -->
+			<button
+				on:click={() => handleSummaryCardClick('avg-profit')}
+				class="bg-orange-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
+			>
+				<h3 class="text-sm font-medium text-gray-500 mb-1">Avg Profit</h3>
+				<p
+					class={`text-2xl font-bold ${avgProfit >= 2 ? 'text-green-600' : avgProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
+				>
+					£{avgProfit.toFixed(2)}
+				</p>
+				<p class="text-xs text-gray-400">Click for high-profit items</p>
+			</button>
+
+			<!-- Potential Profit Card -->
+			<button
+				on:click={() => handleSummaryCardClick('potential')}
+				class="bg-indigo-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
+			>
+				<h3 class="text-sm font-medium text-gray-500 mb-1">Potential</h3>
+				<p class="text-2xl font-bold text-indigo-600">£{totalPotentialProfit.toFixed(2)}</p>
+				<p class="text-xs text-gray-400">Click for all opportunities</p>
+			</button>
+		</div>
 	{/if}
 
-	<!-- Summary Statistics -->
-	<div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
-		<div class="bg-green-50 p-4 rounded-lg border">
-			<h3 class="text-sm font-medium text-gray-500 mb-1">Buy Box Won</h3>
-			<p class="text-2xl font-bold text-green-600">{totalWinners}</p>
-			<p class="text-xs text-gray-400">Currently winning</p>
-		</div>
-		<div class="bg-yellow-50 p-4 rounded-lg border">
-			<h3 class="text-sm font-medium text-gray-500 mb-1">Opportunities</h3>
-			<p class="text-2xl font-bold text-yellow-600">{totalOpportunities}</p>
-			<p class="text-xs text-gray-400">Potential gains</p>
-		</div>
-		<div class="bg-purple-50 p-4 rounded-lg border">
-			<h3 class="text-sm font-medium text-gray-500 mb-1">Profitable Ops</h3>
-			<p class="text-2xl font-bold text-purple-600">{totalProfitable}</p>
-			<p class="text-xs text-gray-400">Worth pursuing</p>
-		</div>
-		<div class="bg-blue-50 p-4 rounded-lg border">
-			<h3 class="text-sm font-medium text-gray-500 mb-1">Analyzed</h3>
-			<p class="text-2xl font-bold text-blue-600">{totalMarginAnalyzed}</p>
-			<p class="text-xs text-gray-400">
-				of {buyboxData.length} SKUs
-				{#if showLatestOnly}
-					<span class="block text-blue-600">(Latest data only)</span>
-				{:else}
-					<span class="block text-purple-600">(All historical data)</span>
-				{/if}
-			</p>
-		</div>
-		<div class="bg-orange-50 p-4 rounded-lg border">
-			<h3 class="text-sm font-medium text-gray-500 mb-1">Avg Profit</h3>
-			<p
-				class={`text-2xl font-bold ${avgProfit >= 2 ? 'text-green-600' : avgProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
-			>
-				£{avgProfit.toFixed(2)}
-			</p>
-			<p class="text-xs text-gray-400">Per SKU</p>
-		</div>
-		<div class="bg-indigo-50 p-4 rounded-lg border">
-			<h3 class="text-sm font-medium text-gray-500 mb-1">Potential</h3>
-			<p class="text-2xl font-bold text-indigo-600">£{totalPotentialProfit.toFixed(2)}</p>
-			<p class="text-xs text-gray-400">Total opportunity</p>
-		</div>
-	</div>
-
-	<!-- Filters and Search -->
+	<!-- Enhanced Filters and Search -->
 	<div class="bg-white rounded-lg shadow p-6 mb-6">
-		<h2 class="font-semibold mb-4">Filters & Search</h2>
+		<div class="flex items-center justify-between mb-4">
+			<h2 class="font-semibold">Filters & Search</h2>
+			<button
+				on:click={() => (filtersExpanded = !filtersExpanded)}
+				class="text-gray-500 hover:text-gray-700 transition-colors text-sm"
+			>
+				{filtersExpanded ? '▼ Collapse' : '▶ Expand All'}
+			</button>
+		</div>
+
+		<!-- Quick Filter Presets -->
+		<div class="mb-6">
+			<h3 class="text-sm font-medium text-gray-700 mb-3">Quick Filters</h3>
+			<div class="flex flex-wrap gap-2">
+				{#each filterPresets as preset}
+					<div
+						class={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+							activePresetFilter === preset.name
+								? 'bg-blue-100 text-blue-800 ring-2 ring-blue-300'
+								: 'bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer'
+						}`}
+					>
+						<button on:click={() => applyFilterPreset(preset)} class="flex items-center gap-2">
+							<span>{preset.emoji}</span>
+							<span>{preset.name}</span>
+						</button>
+						{#if activePresetFilter === preset.name}
+							<button
+								on:click={resetAllFilters}
+								class="ml-1 text-blue-600 hover:text-blue-800"
+								title="Clear this filter"
+							>
+								×
+							</button>
+						{/if}
+					</div>
+				{/each}
+				<button
+					on:click={resetAllFilters}
+					class="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+				>
+					🔄 Clear All
+				</button>
+			</div>
+		</div>
+
+		<!-- Active Filters Indicator -->
+		{#if hasActiveFilters}
+			<div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<span class="text-sm font-medium text-blue-900">Active Filters:</span>
+						<div class="flex flex-wrap gap-1">
+							{#if activeCardFilter}
+								<span
+									class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+								>
+									📊 {activeCardFilter}
+									<button
+										on:click={resetAllFilters}
+										class="text-blue-600 hover:text-blue-800 ml-1"
+										title="Clear this filter"
+									>
+										×
+									</button>
+								</span>
+							{/if}
+							{#if activePresetFilter}
+								<span
+									class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+								>
+									🎯 {activePresetFilter}
+									<button
+										on:click={resetAllFilters}
+										class="text-green-600 hover:text-green-800 ml-1"
+										title="Clear this filter"
+									>
+										×
+									</button>
+								</span>
+							{/if}
+							{#if searchQuery}
+								<span
+									class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+								>
+									🔍 Search: "{searchQuery}"
+									<button
+										on:click={() => {
+											searchQuery = '';
+											applyFilters();
+										}}
+										class="text-yellow-600 hover:text-yellow-800 ml-1"
+										title="Clear search"
+									>
+										×
+									</button>
+								</span>
+							{/if}
+							{#if categoryFilter !== 'all'}
+								<span
+									class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+								>
+									📂 Category: {categoryFilter}
+									<button
+										on:click={() => {
+											categoryFilter = 'all';
+											applyFilters();
+										}}
+										class="text-purple-600 hover:text-purple-800 ml-1"
+										title="Clear category filter"
+									>
+										×
+									</button>
+								</span>
+							{/if}
+							{#if minProfitFilter > 0}
+								<span
+									class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+								>
+									💰 Min Profit: £{minProfitFilter}
+									<button
+										on:click={() => {
+											minProfitFilter = 0;
+											applyFilters();
+										}}
+										class="text-green-600 hover:text-green-800 ml-1"
+										title="Clear profit filter"
+									>
+										×
+									</button>
+								</span>
+							{/if}
+							{#if minMarginFilter > 0}
+								<span
+									class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+								>
+									📊 Min Margin: {minMarginFilter}%
+									<button
+										on:click={() => {
+											minMarginFilter = 0;
+											applyFilters();
+										}}
+										class="text-orange-600 hover:text-orange-800 ml-1"
+										title="Clear margin filter"
+									>
+										×
+									</button>
+								</span>
+							{/if}
+						</div>
+					</div>
+					<button
+						on:click={resetAllFilters}
+						class="text-blue-600 hover:text-blue-800 text-sm underline"
+					>
+						Clear All Filters
+					</button>
+				</div>
+			</div>
+		{/if}
 
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
 			<!-- Search -->
@@ -1064,10 +1441,65 @@
 				<p>No results found with current filters</p>
 			</div>
 		{:else}
+			<!-- Enhanced Data Table with Bulk Selection -->
 			<div class="overflow-x-auto">
+				<!-- Bulk Actions Bar -->
+				{#if selectedItems.size > 0}
+					<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-4">
+								<span class="text-sm font-medium text-blue-900">
+									{selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+								</span>
+								<button
+									on:click={selectAllVisible}
+									class="text-blue-600 hover:text-blue-800 text-sm underline"
+								>
+									Select all visible ({paginatedData.length})
+								</button>
+								<button
+									on:click={clearSelection}
+									class="text-gray-600 hover:text-gray-800 text-sm underline"
+								>
+									Clear selection
+								</button>
+							</div>
+							<div class="flex gap-2">
+								<button
+									on:click={bulkMarkForUpdate}
+									class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm"
+								>
+									📝 Mark for Price Update
+								</button>
+								<button
+									on:click={bulkAddToWatchlist}
+									class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm"
+								>
+									👁️ Add to Watchlist
+								</button>
+							</div>
+						</div>
+					</div>
+				{/if}
+
 				<table class="min-w-full">
 					<thead class="bg-gray-50">
 						<tr>
+							<th class="py-3 px-3 text-left">
+								<input
+									type="checkbox"
+									checked={selectedItems.size > 0 && selectedItems.size === paginatedData.length}
+									on:change={(e) => {
+										const target = e.target as HTMLInputElement;
+										if (target?.checked) {
+											selectAllVisible();
+										} else {
+											clearSelection();
+										}
+									}}
+									class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+								/>
+							</th>
 							<th
 								class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
 								>Product</th
@@ -1103,8 +1535,19 @@
 									${result.is_winner ? 'bg-green-50' : ''}
 									${result.recommended_action === 'match_buybox' ? 'border-l-4 border-l-blue-500' : ''}
 									${result.recommended_action === 'not_profitable' ? 'border-l-4 border-l-red-500' : ''}
+									${selectedItems.has(result.id) ? 'ring-2 ring-blue-300' : ''}
 								`}
 							>
+								<!-- Selection Checkbox -->
+								<td class="py-4 px-3">
+									<input
+										type="checkbox"
+										checked={selectedItems.has(result.id)}
+										on:change={() => toggleItemSelection(result.id)}
+										class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+									/>
+								</td>
+
 								<!-- Product Info -->
 								<td class="py-4 px-6">
 									<div class="text-sm">

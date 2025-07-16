@@ -62,9 +62,34 @@ export async function GET({ url }) {
     console.log(`🔵 [REQ-${requestId}] Building Supabase query...`);
     const queryStartTime = Date.now();
 
+    // OPTIMIZATION: Only select columns that are actually used in buy-box-manager interface
+    // This significantly reduces response size by excluding unused columns
+    const selectedColumns = [
+      'id', 'asin', 'sku', 'captured_at',
+      // Status flags
+      'is_winner', 'opportunity_flag',
+      // Pricing fields
+      'price', 'your_current_price', 'competitor_price', 'break_even_price',
+      // Cost breakdown fields
+      'your_cost', 'your_shipping_cost', 'your_material_total_cost', 'your_box_cost',
+      'your_vat_amount', 'your_fragile_charge', 'total_operating_cost',
+      // Profit and margin analysis
+      'current_actual_profit', 'buybox_actual_profit',
+      'your_margin_percent_at_current_price', 'margin_percent_at_buybox_price',
+      'margin_difference', 'profit_opportunity',
+      // Recommendations
+      'recommended_action'
+      // Removed: product_title (lazy loaded), material_cost_only, current_profit_breakdown, 
+      // buybox_profit_breakdown, price_adjustment_needed, margin_calculation_version, 
+      // cost_data_source, and other metadata fields not displayed in UI
+    ];
+
+    console.log(`🔵 [REQ-${requestId}] Selecting ${selectedColumns.length} columns (optimized from SELECT *):`);
+    console.log(`🔵 [REQ-${requestId}] ${selectedColumns.join(', ')}`);
+
     let query = supabaseAdmin
       .from('buybox_data')
-      .select('*');
+      .select(selectedColumns.join(','));
 
     // OPTIMIZATION: Filter out records with no margin data by default (significantly reduces response size)
     if (!includeNoMarginData) {
