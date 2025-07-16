@@ -7,6 +7,7 @@ export interface DailyEmployeeHour {
   employee_role: string;
   work_date: string; // Format: YYYY-MM-DD
   hours_worked: number;
+  estimated_packages_shipped?: number; // Total packages shipped for this date (stored with first employee record)
   created_at?: string;
   updated_at?: string;
   created_by?: string;

@@ -60,12 +60,14 @@
 	let employees: Employee[] = $state([]);
 	let selectedDate = $state(new Date().toISOString().split('T')[0]);
 	let employeeHours: Record<string, number> = $state({});
+	let estimatedPackagesShipped = $state(0);
 	let loading = $state(false);
 	let saving = $state(false);
 	let saveStatus = $state('');
 	let error = $state('');
 	let hasExistingData = $state(false);
 	let savedHours: Record<string, number> = $state({}); // Track last saved state
+	let savedPackagesShipped = $state(0); // Track last saved packages shipped
 
 	// Derived calculations
 	let employeesWithHours = $derived(() => {
@@ -116,15 +118,59 @@
 		return Object.values(roleBreakdown()).reduce((total, role) => total + role.totalHours, 0);
 	});
 
+	// Calculate associate hours only
+	let associateHours = $derived(() => {
+		return employeesWithHours()
+			.filter((emp) => emp.role === 'Associate')
+			.reduce((total, emp) => total + emp.hours, 0);
+	});
+
+	// Calculate shipments per hour based on associate hours only
+	let shipmentsPerHour = $derived(() => {
+		const associateTotal = associateHours();
+		if (associateTotal === 0 || estimatedPackagesShipped === 0) {
+			return 0;
+		}
+		return estimatedPackagesShipped / associateTotal;
+	});
+
+	// Calculate recommended hour reduction to meet 18 shipments per hour target
+	let hourReductionRecommendation = $derived(() => {
+		const currentShipmentsPerHour = shipmentsPerHour();
+		const targetShipmentsPerHour = 18;
+		const currentAssociateHours = associateHours();
+
+		if (
+			estimatedPackagesShipped === 0 ||
+			currentAssociateHours === 0 ||
+			currentShipmentsPerHour >= targetShipmentsPerHour
+		) {
+			return { reduction: 0, show: false };
+		}
+
+		// Calculate optimal hours needed for target rate
+		const optimalHours = estimatedPackagesShipped / targetShipmentsPerHour;
+		const hoursToReduce = currentAssociateHours - optimalHours;
+
+		return {
+			reduction: Math.max(0, hoursToReduce),
+			show: hoursToReduce > 0
+		};
+	});
+
 	// Check if current hours differ from last saved state
 	let hasUnsavedChanges = $derived.by(() => {
 		if (saveStatus === 'success') return false; // Don't show changes message right after save
 
-		return employees.some((emp) => {
+		const hoursChanged = employees.some((emp) => {
 			const currentHours = employeeHours[emp.id] || 0;
 			const lastSavedHours = savedHours[emp.id] || 0;
 			return currentHours !== lastSavedHours;
 		});
+
+		const packagesChanged = estimatedPackagesShipped !== savedPackagesShipped;
+
+		return hoursChanged || packagesChanged;
 	});
 
 	async function loadEmployees() {
@@ -185,6 +231,7 @@
 			resetHours[emp.id] = 0;
 		});
 		employeeHours = resetHours;
+		estimatedPackagesShipped = 0;
 	}
 
 	function formatDate(dateStr: string): string {
@@ -242,6 +289,7 @@
 			resetHours[emp.id] = 0;
 		});
 		employeeHours = resetHours;
+		estimatedPackagesShipped = 0;
 		saveStatus = ''; // Clear any success messages
 
 		// Load existing hours for the new date
@@ -402,6 +450,40 @@
 				<p>Loading...</p>
 			</div>
 		{:else}
+			<!-- Packages Shipped Input Section -->
+			<div class="packages-section">
+				<div class="packages-input-container">
+					<label for="packages-input" class="packages-label">Estimated Packages Shipped</label>
+					<input
+						id="packages-input"
+						type="number"
+						min="0"
+						step="1"
+						bind:value={estimatedPackagesShipped}
+						class="packages-input"
+						placeholder="0"
+					/>
+				</div>
+
+				<div class="metrics-container">
+					<!-- Shipments per Hour Display -->
+					{#if estimatedPackagesShipped > 0 && associateHours() > 0}
+						<div class="metric-display productivity">
+							<span class="metric-value">{shipmentsPerHour().toFixed(1)}</span>
+							<span class="metric-label">Current Shipments/Hour</span>
+						</div>
+					{/if}
+
+					<!-- Hour Reduction Recommendation -->
+					{#if hourReductionRecommendation().show}
+						<div class="metric-display recommendation">
+							<span class="metric-value">{hourReductionRecommendation().reduction.toFixed(1)}</span>
+							<span class="metric-label">Hours to reduce to meet 18 shipments/hour</span>
+						</div>
+					{/if}
+				</div>
+			</div>
+
 			<!-- Main Content Area -->
 			<div class="main-content">
 				<!-- Employee Input Section (Left Half) -->
@@ -1010,12 +1092,117 @@
 	.bottom-stats {
 		display: flex;
 		justify-content: center;
+		align-items: center;
 		gap: 30px;
 		margin-top: 6px;
 		padding: 10px 14px;
 		background: white;
 		border-radius: 8px;
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		flex-wrap: wrap;
+	}
+
+	/* Packages Section */
+	.packages-section {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 24px;
+		margin-bottom: 16px;
+		padding: 16px 20px;
+		background: white;
+		border-radius: 8px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		border: 1px solid #e5e7eb;
+		flex-wrap: wrap;
+	}
+
+	.packages-input-container {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 6px;
+		min-width: 150px;
+	}
+
+	.packages-label {
+		font-size: 0.875rem;
+		color: #374151;
+		font-weight: 600;
+		letter-spacing: 0.025em;
+	}
+
+	.packages-input {
+		width: 120px;
+		height: 40px;
+		padding: 8px 12px;
+		border: 1.5px solid #d1d5db;
+		border-radius: 6px;
+		font-size: 1rem;
+		font-weight: 600;
+		text-align: center;
+		background: white;
+		transition: all 0.2s ease;
+	}
+
+	.packages-input:focus {
+		outline: none;
+		border-color: #3b82f6;
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+	}
+
+	.packages-input::-webkit-outer-spin-button,
+	.packages-input::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+
+	.packages-input[type='number'] {
+		appearance: textfield;
+		-moz-appearance: textfield;
+	}
+
+	.metrics-container {
+		display: flex;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+
+	.metric-display {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		padding: 12px 20px;
+		border-radius: 8px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		min-width: 140px;
+	}
+
+	.metric-display.productivity {
+		background: linear-gradient(135deg, #10b981, #047857);
+		color: white;
+	}
+
+	.metric-display.recommendation {
+		background: linear-gradient(135deg, #f59e0b, #d97706);
+		color: white;
+	}
+
+	.metric-value {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: white;
+	}
+
+	.metric-label {
+		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.9);
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		text-align: center;
+		line-height: 1.3;
 	}
 
 	.stat-item {
@@ -1055,8 +1242,6 @@
 	.stat-item.highlight .stat-label {
 		color: rgba(255, 255, 255, 0.9);
 	}
-
-	/* Responsive Design */
 	@media (max-width: 1200px) {
 		.main-content {
 			grid-template-columns: 1fr 350px;
@@ -1227,22 +1412,34 @@
 			gap: 16px;
 			padding: 16px;
 			margin-top: 16px;
+			flex-wrap: wrap;
 		}
 
-		.stat-item {
+		.packages-section {
+			flex-direction: column;
+			gap: 16px;
+			padding: 16px;
+			text-align: center;
+		}
+
+		.packages-input-container {
+			align-items: center;
+		}
+
+		.packages-input {
+			width: 140px;
+			height: 44px;
+			font-size: 16px;
+		}
+
+		.metrics-container {
+			justify-content: center;
+			gap: 12px;
+		}
+
+		.metric-display {
 			padding: 12px 16px;
-		}
-
-		.stat-value {
-			font-size: 1.5rem;
-		}
-
-		.stat-label {
-			font-size: 14px;
-		}
-
-		.stat-item.highlight .stat-value {
-			font-size: 1.75rem;
+			min-width: 120px;
 		}
 	}
 
@@ -1368,4 +1565,6 @@
 			font-size: 2rem;
 		}
 	}
+
+	/* Responsive Design */
 </style>
