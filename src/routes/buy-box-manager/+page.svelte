@@ -1885,20 +1885,6 @@
 										>
 											View Details
 										</a>
-										<a
-											href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
-											target="_blank"
-											rel="noopener noreferrer"
-											class="text-green-600 hover:text-green-800 underline text-xs"
-										>
-											Verify Live Price
-										</a>
-										<button
-											class="text-orange-600 hover:text-orange-800 underline text-xs"
-											on:click={() => comparePricing(result)}
-										>
-											🔍 Compare Pricing
-										</button>
 										{#if result.recommended_action === 'match_buybox'}
 											<button
 												class="text-green-600 hover:text-green-800 underline text-xs"
@@ -1907,12 +1893,9 @@
 												Mark for Update
 											</button>
 										{/if}
-										<button
-											class="text-purple-600 hover:text-purple-800 underline text-xs"
-											on:click={() => addToWatchlist(result)}
-										>
-											Add to Watchlist
-										</button>
+										<span class="text-gray-400 text-xs cursor-not-allowed">
+											Add to Watchlist (Coming Soon)
+										</span>
 									</div>
 								</td>
 							</tr>
