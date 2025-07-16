@@ -1877,15 +1877,18 @@
 								<!-- Actions -->
 								<td class="py-4 px-6">
 									<div class="flex flex-col gap-1">
-										<button
+										<a
+											href="/buy-box-monitor?query={encodeURIComponent(result.sku || result.asin)}"
+											target="_blank"
+											rel="noopener noreferrer"
 											class="text-blue-600 hover:text-blue-800 underline text-xs"
-											on:click={() => viewProductDetails(result.asin, result.sku)}
 										>
 											View Details
-										</button>
+										</a>
 										<a
 											href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
 											target="_blank"
+											rel="noopener noreferrer"
 											class="text-green-600 hover:text-green-800 underline text-xs"
 										>
 											Verify Live Price
