@@ -140,6 +140,11 @@
 			icon: 'trending_up'
 		},
 		{
+			title: 'Sales Analytics',
+			url: '/sales-analytics',
+			icon: 'bar_chart'
+		},
+		{
 			type: 'separator'
 		},
 		{

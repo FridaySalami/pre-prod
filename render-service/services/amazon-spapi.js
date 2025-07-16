@@ -354,6 +354,199 @@ class AmazonSPAPI {
     console.error(`Failed to get Buy Box data for ASIN ${asin} after ${maxRetries + 1} attempts:`, lastError);
     throw lastError;
   }
+
+  /**
+   * Get orders data for sales analysis
+   */
+  async getOrders(startDate, endDate = null, maxResults = 50) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'GET';
+    const path = '/orders/v0/orders';
+
+    // Set date range (default to last 30 days if no endDate provided)
+    const start = startDate instanceof Date ? startDate : new Date(startDate);
+    const end = endDate ? (endDate instanceof Date ? endDate : new Date(endDate)) : new Date();
+
+    const queryParams = {
+      MarketplaceIds: this.config.marketplace,
+      CreatedAfter: start.toISOString(),
+      CreatedBefore: end.toISOString(),
+      MaxResultsPerPage: Math.min(maxResults, 100) // Amazon limit is 100
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update('').digest('hex')
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, queryParams, headers, '');
+
+    const url = `${this.config.endpoint}${path}?${Object.keys(queryParams)
+      .map(key => `${key}=${encodeURIComponent(queryParams[key])}`)
+      .join('&')}`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Orders API error:`, error.response?.data || error.message);
+
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else {
+        throw new Error(`ORDERS_API_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Get order items for a specific order (to get SKU sales data)
+   */
+  async getOrderItems(orderId) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'GET';
+    const path = `/orders/v0/orders/${orderId}/orderItems`;
+    const queryParams = {};
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update('').digest('hex')
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, queryParams, headers, '');
+
+    const url = `${this.config.endpoint}${path}`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Order Items API error for order ${orderId}:`, error.response?.data || error.message);
+
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else {
+        throw new Error(`ORDER_ITEMS_API_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Get sales data for a specific SKU or ASIN over a date range
+   */
+  async getSalesDataBySkuOrAsin(skuOrAsin, startDate, endDate = null, maxOrders = 100) {
+    try {
+      console.log(`📊 Getting sales data for ${skuOrAsin} from ${startDate} to ${endDate || 'now'}`);
+
+      // Get orders in the date range
+      const ordersResponse = await this.getOrders(startDate, endDate, maxOrders);
+      const orders = ordersResponse?.payload?.Orders || [];
+
+      if (orders.length === 0) {
+        return {
+          sku_or_asin: skuOrAsin,
+          date_range: { start: startDate, end: endDate },
+          total_quantity_sold: 0,
+          total_revenue: 0,
+          total_orders: 0,
+          orders: [],
+          summary: 'No orders found in date range'
+        };
+      }
+
+      console.log(`Found ${orders.length} orders, checking for SKU/ASIN ${skuOrAsin}...`);
+
+      let totalQuantity = 0;
+      let totalRevenue = 0;
+      let matchingOrders = [];
+
+      // Check each order for our SKU/ASIN
+      for (const order of orders) {
+        try {
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          const orderItemsResponse = await this.getOrderItems(order.AmazonOrderId);
+          const orderItems = orderItemsResponse?.payload?.OrderItems || [];
+
+          // Find items matching our SKU/ASIN
+          const matchingItems = orderItems.filter(item =>
+            item.SellerSKU === skuOrAsin ||
+            item.ASIN === skuOrAsin
+          );
+
+          if (matchingItems.length > 0) {
+            for (const item of matchingItems) {
+              const quantity = parseInt(item.QuantityOrdered) || 0;
+              const itemPrice = parseFloat(item.ItemPrice?.Amount) || 0;
+
+              totalQuantity += quantity;
+              totalRevenue += itemPrice;
+
+              matchingOrders.push({
+                order_id: order.AmazonOrderId,
+                order_date: order.PurchaseDate,
+                sku: item.SellerSKU,
+                asin: item.ASIN,
+                product_name: item.Title,
+                quantity: quantity,
+                unit_price: itemPrice / quantity,
+                total_price: itemPrice,
+                currency: item.ItemPrice?.CurrencyCode || 'GBP'
+              });
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to get order items for ${order.AmazonOrderId}:`, error.message);
+          continue;
+        }
+      }
+
+      const salesSummary = {
+        sku_or_asin: skuOrAsin,
+        date_range: {
+          start: startDate,
+          end: endDate || new Date().toISOString().split('T')[0]
+        },
+        total_quantity_sold: totalQuantity,
+        total_revenue: parseFloat(totalRevenue.toFixed(2)),
+        total_orders: matchingOrders.length,
+        average_order_value: matchingOrders.length > 0 ? parseFloat((totalRevenue / matchingOrders.length).toFixed(2)) : 0,
+        orders: matchingOrders,
+        summary: `Found ${totalQuantity} units sold across ${matchingOrders.length} orders, total revenue: £${totalRevenue.toFixed(2)}`
+      };
+
+      console.log(`📈 Sales Summary for ${skuOrAsin}: ${totalQuantity} units, £${totalRevenue.toFixed(2)} revenue`);
+
+      return salesSummary;
+
+    } catch (error) {
+      console.error('Error getting sales data:', error);
+      throw new Error(`Failed to get sales data: ${error.message}`);
+    }
+  }
 }
 
 module.exports = { AmazonSPAPI };
