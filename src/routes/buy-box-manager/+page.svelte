@@ -431,6 +431,13 @@
 
 		// Update active filter state
 		checkActiveFilters();
+
+		// Force product title loading for new filtered results
+		setTimeout(() => {
+			if (filteredData.length > 0) {
+				loadProductTitlesForPage();
+			}
+		}, 100);
 	}
 
 	// Get paginated data
@@ -442,9 +449,23 @@
 	// Create a reactive map for product titles to force re-renders
 	$: reactiveProductTitles = new Map(productTitleCache);
 
-	// Load product titles when paginated data changes
+	// Load product titles when paginated data changes or when filtering
 	$: if (paginatedData.length > 0) {
-		loadProductTitlesForPage();
+		// Use a small delay to ensure the DOM has updated
+		setTimeout(() => {
+			loadProductTitlesForPage();
+		}, 50);
+	}
+
+	// Also trigger on filteredData changes to handle filtering
+	$: if (filteredData.length > 0 && paginatedData.length > 0) {
+		// Check if any items in current page are missing titles
+		const missingTitles = paginatedData.some((item) => !productTitleCache.has(item.sku));
+		if (missingTitles) {
+			setTimeout(() => {
+				loadProductTitlesForPage();
+			}, 50);
+		}
 	}
 
 	// Handle pagination
@@ -545,7 +566,16 @@
 
 	// Load product titles for currently visible items from sku_asin_mapping
 	async function loadProductTitlesForPage(): Promise<void> {
-		if (loadingProductTitles || paginatedData.length === 0) return;
+		// Prevent concurrent loading
+		if (loadingProductTitles) {
+			console.log('🔍 Already loading product titles, skipping...');
+			return;
+		}
+
+		if (paginatedData.length === 0) {
+			console.log('🔍 No paginated data, skipping title loading');
+			return;
+		}
 
 		// Get SKUs that don't have cached titles
 		const skusToLoad = paginatedData
@@ -558,16 +588,28 @@
 		}
 
 		loadingProductTitles = true;
-		console.log(`🔍 Loading product titles for ${skusToLoad.length} SKUs:`, skusToLoad);
+		console.log(
+			`🔍 Loading product titles for ${skusToLoad.length} SKUs after filtering:`,
+			skusToLoad
+		);
 
 		try {
 			// For now, skip batch API and go straight to individual requests since /api/sku-mapping/batch doesn't exist yet
 			console.log('🔄 Using individual requests for product titles');
 			await loadProductTitlesIndividually(skusToLoad);
+
+			// Force a reactivity update
+			productTitleCache = new Map(productTitleCache);
+			console.log('✅ Product titles loaded and cache updated');
 		} catch (error) {
 			console.error('❌ Error loading product titles:', error);
-			// Fallback to individual requests
-			await loadProductTitlesIndividually(skusToLoad);
+			// Fallback to individual requests if not already using them
+			try {
+				await loadProductTitlesIndividually(skusToLoad);
+				productTitleCache = new Map(productTitleCache);
+			} catch (fallbackError) {
+				console.error('❌ Fallback title loading also failed:', fallbackError);
+			}
 		} finally {
 			loadingProductTitles = false;
 		}
@@ -1402,7 +1444,28 @@
 						<span class="text-sm font-normal text-purple-600"> - All historical data </span>
 					{/if}
 				</h2>
-				<div class="text-sm text-gray-500">
+				<div class="flex items-center gap-3 text-sm text-gray-500">
+					{#if loadingProductTitles}
+						<span class="text-blue-600 flex items-center gap-1">
+							<div
+								class="animate-spin rounded-full h-3 w-3 border border-blue-600 border-t-transparent"
+							></div>
+							Loading titles...
+						</span>
+					{:else}
+						<button
+							on:click={() => {
+								// Force reload product titles for current page
+								const skusToReload = paginatedData.map((item) => item.sku);
+								skusToReload.forEach((sku) => productTitleCache.delete(sku));
+								loadProductTitlesForPage();
+							}}
+							class="text-blue-600 hover:text-blue-800 underline"
+							title="Reload product titles for current page"
+						>
+							🔄 Refresh Titles
+						</button>
+					{/if}
 					{#if showLatestOnly}
 						<button
 							on:click={() => {
