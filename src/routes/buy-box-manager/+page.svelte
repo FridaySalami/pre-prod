@@ -60,6 +60,10 @@
 	let isLoading = true;
 	let errorMessage = '';
 
+	// Product title cache and loading state
+	let productTitleCache = new Map<string, string>(); // SKU -> product title
+	let loadingProductTitles = false;
+
 	// Search and filters
 	let searchQuery = '';
 	let categoryFilter = 'all'; // all, winners, losers, opportunities, profitable, not_profitable, match_buybox, hold_price, investigate
@@ -286,12 +290,18 @@
 		// Search filter
 		if (searchQuery.trim()) {
 			const query = searchQuery.toLowerCase();
-			filtered = filtered.filter(
-				(item) =>
-					item.sku.toLowerCase().includes(query) ||
-					item.asin.toLowerCase().includes(query) ||
-					(item.product_title?.toLowerCase().includes(query) ?? false)
-			);
+			filtered = filtered.filter((item) => {
+				const matchesSku = item.sku.toLowerCase().includes(query);
+				const matchesAsin = item.asin.toLowerCase().includes(query);
+
+				// Check cached product title first, then fallback to original product_title
+				const cachedTitle = getProductTitle(item.sku);
+				const matchesTitle =
+					cachedTitle?.toLowerCase().includes(query) ||
+					(item.product_title?.toLowerCase().includes(query) ?? false);
+
+				return matchesSku || matchesAsin || matchesTitle;
+			});
 		}
 
 		// Category filter
@@ -399,6 +409,11 @@
 		currentPage * itemsPerPage
 	);
 
+	// Load product titles when paginated data changes
+	$: if (paginatedData.length > 0) {
+		loadProductTitlesForPage();
+	}
+
 	// Handle pagination
 	function changePage(newPage: number): void {
 		if (newPage >= 1 && newPage <= Math.ceil(totalResults / itemsPerPage)) {
@@ -493,6 +508,88 @@
 	function truncateTitle(title: string, maxLength: number = 60): string {
 		if (title.length <= maxLength) return title;
 		return title.substring(0, maxLength) + '...';
+	}
+
+	// Load product titles for currently visible items from sku_asin_mapping
+	async function loadProductTitlesForPage(): Promise<void> {
+		if (loadingProductTitles || paginatedData.length === 0) return;
+
+		// Get SKUs that don't have cached titles
+		const skusToLoad = paginatedData
+			.filter((item) => !productTitleCache.has(item.sku))
+			.map((item) => item.sku);
+
+		if (skusToLoad.length === 0) return;
+
+		loadingProductTitles = true;
+		console.log(`🔍 Loading product titles for ${skusToLoad.length} SKUs:`, skusToLoad);
+
+		try {
+			// Create query string for multiple SKUs
+			const skuParams = skusToLoad.map((sku) => `sku=${encodeURIComponent(sku)}`).join('&');
+			const response = await fetch(`/api/sku-mapping/batch?${skuParams}`);
+
+			if (!response.ok) {
+				// Fallback: load titles one by one using existing search API
+				console.log('🔄 Batch API not available, falling back to individual requests');
+				await loadProductTitlesIndividually(skusToLoad);
+				return;
+			}
+
+			const data = await response.json();
+			if (data.success && data.results) {
+				// Cache the results
+				data.results.forEach((mapping: any) => {
+					if (mapping.seller_sku && mapping.item_name) {
+						productTitleCache.set(mapping.seller_sku, mapping.item_name);
+					}
+				});
+				console.log(`✅ Loaded ${data.results.length} product titles via batch API`);
+			}
+		} catch (error) {
+			console.error('❌ Error loading product titles:', error);
+			// Fallback to individual requests
+			await loadProductTitlesIndividually(skusToLoad);
+		} finally {
+			loadingProductTitles = false;
+		}
+	}
+
+	// Fallback function to load titles individually
+	async function loadProductTitlesIndividually(skus: string[]): Promise<void> {
+		const maxConcurrent = 5; // Limit concurrent requests
+		const chunks = [];
+
+		for (let i = 0; i < skus.length; i += maxConcurrent) {
+			chunks.push(skus.slice(i, i + maxConcurrent));
+		}
+
+		for (const chunk of chunks) {
+			const promises = chunk.map(async (sku) => {
+				try {
+					const response = await fetch(
+						`/api/buy-box-monitor/search?query=${encodeURIComponent(sku)}&limit=1`
+					);
+					const data = await response.json();
+
+					if (data.success && data.results?.[0]?.item_name) {
+						productTitleCache.set(sku, data.results[0].item_name);
+					}
+				} catch (error) {
+					console.warn(`Failed to load title for SKU ${sku}:`, error);
+				}
+			});
+
+			await Promise.all(promises);
+			// Small delay between chunks to avoid overwhelming the API
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+		console.log(`✅ Loaded product titles individually for ${skus.length} SKUs`);
+	}
+
+	// Get product title from cache or return fallback
+	function getProductTitle(sku: string): string | null {
+		return productTitleCache.get(sku) || null;
 	}
 </script>
 
@@ -1007,15 +1104,27 @@
 								<!-- Product Info -->
 								<td class="py-4 px-6">
 									<div class="text-sm">
-										{#if result.product_title}
+										{#if getProductTitle(result.sku)}
+											{@const cachedTitle = getProductTitle(result.sku)}
+											<div
+												class="font-medium text-gray-900 mb-1 leading-tight cursor-help"
+												title={cachedTitle || ''}
+											>
+												{truncateTitle(cachedTitle || '')}
+											</div>
+										{:else if result.product_title}
+											<!-- Fallback to original product_title if available -->
 											<div
 												class="font-medium text-gray-900 mb-1 leading-tight cursor-help"
 												title={result.product_title}
 											>
 												{truncateTitle(result.product_title)}
 											</div>
+										{:else if loadingProductTitles}
+											<!-- Show loading state -->
+											<div class="text-xs text-gray-400 mb-1 italic">Loading product title...</div>
 										{:else}
-											<!-- Debug: Show when no product title is found -->
+											<!-- Show when no product title is found -->
 											<div class="text-xs text-gray-400 mb-1 italic">No product title found</div>
 										{/if}
 										<div>

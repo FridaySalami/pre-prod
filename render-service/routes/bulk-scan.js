@@ -317,11 +317,12 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     return null; // Simulate failure
   }
 
-  // Get product title from sku_asin_mapping
+  // Get product title from sku_asin_mapping - NO LONGER SAVING TO buybox_data
   let productTitle = null;
   try {
     productTitle = await SupabaseService.getProductTitle(sku, asinCode);
     console.log(`Mock API - Product title for ${sku}/${asinCode}: ${productTitle || 'Not found'}`);
+    // Note: We still fetch the title for logging/validation but don't save it to buybox_data
   } catch (titleError) {
     console.warn(`Failed to fetch product title for ${sku}/${asinCode}:`, titleError.message);
   }
@@ -408,7 +409,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     run_id: runId,
     asin: asinCode,
     sku: sku || `SKU-${asinCode}`,
-    product_title: productTitle,
+    // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
     price: yourCurrentPrice, // Use YOUR current price for margin calculations
     currency: 'GBP',
     is_winner: isWinner,
