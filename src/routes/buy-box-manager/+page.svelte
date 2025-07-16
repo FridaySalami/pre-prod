@@ -8,7 +8,7 @@
 		id: string;
 		asin: string;
 		sku: string;
-		product_title?: string | null;
+		// product_title removed - now loaded lazily from sku_asin_mapping
 		price: number | null; // This is the buybox price (competitor's price)
 		your_current_price: number | null; // This is our current listed price
 		competitor_price: number | null;
@@ -63,6 +63,7 @@
 	// Product title cache and loading state
 	let productTitleCache = new Map<string, string>(); // SKU -> product title
 	let loadingProductTitles = false;
+	let cacheVersion = 0; // Used to trigger reactivity when cache changes
 
 	// Search and filters
 	let searchQuery = '';
@@ -294,11 +295,9 @@
 				const matchesSku = item.sku.toLowerCase().includes(query);
 				const matchesAsin = item.asin.toLowerCase().includes(query);
 
-				// Check cached product title first, then fallback to original product_title
+				// Check cached product title (loaded from sku_asin_mapping)
 				const cachedTitle = getProductTitle(item.sku);
-				const matchesTitle =
-					cachedTitle?.toLowerCase().includes(query) ||
-					(item.product_title?.toLowerCase().includes(query) ?? false);
+				const matchesTitle = cachedTitle?.toLowerCase().includes(query) ?? false;
 
 				return matchesSku || matchesAsin || matchesTitle;
 			});
@@ -408,6 +407,9 @@
 		(currentPage - 1) * itemsPerPage,
 		currentPage * itemsPerPage
 	);
+
+	// Create a reactive map for product titles to force re-renders
+	$: reactiveProductTitles = new Map(productTitleCache);
 
 	// Load product titles when paginated data changes
 	$: if (paginatedData.length > 0) {
@@ -519,33 +521,18 @@
 			.filter((item) => !productTitleCache.has(item.sku))
 			.map((item) => item.sku);
 
-		if (skusToLoad.length === 0) return;
+		if (skusToLoad.length === 0) {
+			console.log('🔍 No SKUs need titles - all are cached');
+			return;
+		}
 
 		loadingProductTitles = true;
 		console.log(`🔍 Loading product titles for ${skusToLoad.length} SKUs:`, skusToLoad);
 
 		try {
-			// Create query string for multiple SKUs
-			const skuParams = skusToLoad.map((sku) => `sku=${encodeURIComponent(sku)}`).join('&');
-			const response = await fetch(`/api/sku-mapping/batch?${skuParams}`);
-
-			if (!response.ok) {
-				// Fallback: load titles one by one using existing search API
-				console.log('🔄 Batch API not available, falling back to individual requests');
-				await loadProductTitlesIndividually(skusToLoad);
-				return;
-			}
-
-			const data = await response.json();
-			if (data.success && data.results) {
-				// Cache the results
-				data.results.forEach((mapping: any) => {
-					if (mapping.seller_sku && mapping.item_name) {
-						productTitleCache.set(mapping.seller_sku, mapping.item_name);
-					}
-				});
-				console.log(`✅ Loaded ${data.results.length} product titles via batch API`);
-			}
+			// For now, skip batch API and go straight to individual requests since /api/sku-mapping/batch doesn't exist yet
+			console.log('🔄 Using individual requests for product titles');
+			await loadProductTitlesIndividually(skusToLoad);
 		} catch (error) {
 			console.error('❌ Error loading product titles:', error);
 			// Fallback to individual requests
@@ -567,16 +554,29 @@
 		for (const chunk of chunks) {
 			const promises = chunk.map(async (sku) => {
 				try {
+					console.log(`🔍 Fetching title for SKU: ${sku}`);
 					const response = await fetch(
 						`/api/buy-box-monitor/search?query=${encodeURIComponent(sku)}&limit=1`
 					);
 					const data = await response.json();
 
+					console.log(`📄 Response for ${sku}:`, {
+						success: data.success,
+						resultsCount: data.results?.length || 0,
+						firstResult: data.results?.[0],
+						itemName: data.results?.[0]?.item_name
+					});
+
 					if (data.success && data.results?.[0]?.item_name) {
 						productTitleCache.set(sku, data.results[0].item_name);
+						cacheVersion++; // Trigger reactivity
+						productTitleCache = productTitleCache; // Force Svelte reactivity
+						console.log(`✅ Cached title for ${sku}: ${data.results[0].item_name}`);
+					} else {
+						console.warn(`⚠️ No title found for SKU ${sku}:`, data);
 					}
 				} catch (error) {
-					console.warn(`Failed to load title for SKU ${sku}:`, error);
+					console.warn(`❌ Failed to load title for SKU ${sku}:`, error);
 				}
 			});
 
@@ -589,7 +589,11 @@
 
 	// Get product title from cache or return fallback
 	function getProductTitle(sku: string): string | null {
-		return productTitleCache.get(sku) || null;
+		// Reference both cacheVersion and reactiveProductTitles to ensure reactivity
+		cacheVersion; // This makes Svelte track when the cache changes
+		const cached = reactiveProductTitles.get(sku) || productTitleCache.get(sku);
+		console.log(`🔍 getProductTitle(${sku}): ${cached || 'null'} (cache v${cacheVersion})`);
+		return cached || null;
 	}
 </script>
 
@@ -1111,14 +1115,6 @@
 												title={cachedTitle || ''}
 											>
 												{truncateTitle(cachedTitle || '')}
-											</div>
-										{:else if result.product_title}
-											<!-- Fallback to original product_title if available -->
-											<div
-												class="font-medium text-gray-900 mb-1 leading-tight cursor-help"
-												title={result.product_title}
-											>
-												{truncateTitle(result.product_title)}
 											</div>
 										{:else if loadingProductTitles}
 											<!-- Show loading state -->
