@@ -1111,7 +1111,10 @@
 												Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
 											</div>
 										{:else}
-											<div class="font-medium text-gray-500">Buy Box Price: N/A</div>
+											<div class="font-medium text-gray-500">
+												Buy Box Price: N/A
+												<span class="text-xs block text-orange-600">No Buy Box detected</span>
+											</div>
 										{/if}
 
 										<!-- Break Even Price -->
@@ -1227,37 +1230,20 @@
 											</div>
 										{/if}
 
-										<!-- Beat Buy Box by 1p Analysis (only when not winning) -->
-										{#if !result.is_winner && result.price && result.total_operating_cost}
-											{@const beatBuyBoxPrice = result.price - 0.01}
-											{@const beatBuyBoxAmazonFee = beatBuyBoxPrice * 0.15}
-											{@const beatBuyBoxProfit =
-												beatBuyBoxPrice - beatBuyBoxAmazonFee - result.total_operating_cost}
-											{@const beatBuyBoxMarginPercent =
-												beatBuyBoxPrice > 0 ? (beatBuyBoxProfit / beatBuyBoxPrice) * 100 : 0}
-
+										<!-- No competition detected message -->
+										{#if !result.is_winner && !result.price && !result.competitor_price}
 											<div class="border-t pt-1 mt-2">
-												<div class="text-xs font-medium text-purple-700 mb-1">
-													🎯 Beat Buy Box by 1p (£{beatBuyBoxPrice.toFixed(2)}):
+												<div class="text-xs font-medium text-green-700 mb-1">
+													🏆 No Competition Detected
 												</div>
-												<div
-													class={`text-xs font-medium ${beatBuyBoxProfit >= 1 ? 'text-green-600' : beatBuyBoxProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
-												>
-													£{beatBuyBoxProfit.toFixed(2)} profit ({beatBuyBoxMarginPercent.toFixed(
-														1
-													)}% margin)
+												<div class="text-xs text-green-600">
+													You may have the buy box by default - consider checking live pricing
 												</div>
-												{#if beatBuyBoxProfit > (result.current_actual_profit || 0)}
-													<div class="text-xs text-green-600">
-														+£{(beatBuyBoxProfit - (result.current_actual_profit || 0)).toFixed(2)} vs
-														current
-													</div>
-												{/if}
 											</div>
 										{/if}
 
-										<!-- Match Buy Box Exactly (existing calculation) -->
-										{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit}
+										<!-- Match Buy Box Exactly (only when there's valid buy box data AND actual competition) -->
+										{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit && (result.price || result.competitor_price) && ((result.price && result.price > 0) || (result.competitor_price && result.competitor_price > 0))}
 											<div class="border-t pt-1 mt-1">
 												<div class="text-xs font-medium text-gray-700 mb-1">
 													🎯 Match Buy Box Exactly:
@@ -1274,6 +1260,15 @@
 														({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
 													</div>
 												{/if}
+												{#if result.margin_difference}
+													<div
+														class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
+													>
+														Difference: {result.margin_difference > 0
+															? '+'
+															: ''}£{result.margin_difference.toFixed(2)}
+													</div>
+												{/if}
 											</div>
 										{/if}
 
@@ -1284,21 +1279,26 @@
 												+£{result.profit_opportunity.toFixed(2)} opportunity
 											</div>
 										{/if}
-										{#if result.margin_difference}
-											<div
-												class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
-											>
-												Difference: {result.margin_difference > 0
-													? '+'
-													: ''}£{result.margin_difference.toFixed(2)}
-											</div>
-										{/if}
 									</div>
 								</td>
 
 								<!-- Recommendation -->
 								<td class="py-4 px-6">
-									{#if result.recommended_action}
+									{#if !result.price && !result.competitor_price}
+										<!-- No competition detected -->
+										<span
+											class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800"
+										>
+											🏆 No Competition
+										</span>
+									{:else if result.recommended_action === 'not_profitable' && !result.price && !result.competitor_price}
+										<!-- Not profitable but no competition - suggest investigation -->
+										<span
+											class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+										>
+											🔍 Investigate
+										</span>
+									{:else if result.recommended_action}
 										<span
 											class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium
 											${result.recommended_action === 'match_buybox' ? 'bg-blue-100 text-blue-800' : ''}
@@ -1313,8 +1313,10 @@
 												✋ Hold Price
 											{:else if result.recommended_action === 'investigate'}
 												🔍 Investigate
-											{:else if result.recommended_action === 'not_profitable'}
+											{:else if result.recommended_action === 'not_profitable' && (result.price || result.competitor_price)}
 												❌ Not Profitable
+											{:else if result.recommended_action === 'not_profitable'}
+												🔍 Check Live Pricing
 											{:else}
 												{result.recommended_action}
 											{/if}

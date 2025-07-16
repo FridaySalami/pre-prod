@@ -294,10 +294,17 @@ class CostCalculator {
       const totalOperatingCost = costs.materialTotalCost + costs.shippingCost;
       const currentActualProfit = currentNetRevenue - totalOperatingCost;
 
-      // Buybox price profit calculation
-      const buyboxAmazonFee = buyboxPrice * amazonFeeRate;
-      const buyboxNetRevenue = buyboxPrice - buyboxAmazonFee;
-      const buyboxActualProfit = buyboxNetRevenue - totalOperatingCost;
+      // Buybox price profit calculation (only if valid buy box price exists)
+      let buyboxAmazonFee, buyboxNetRevenue, buyboxActualProfit;
+      if (buyboxPrice && buyboxPrice > 0) {
+        buyboxAmazonFee = buyboxPrice * amazonFeeRate;
+        buyboxNetRevenue = buyboxPrice - buyboxAmazonFee;
+        buyboxActualProfit = buyboxNetRevenue - totalOperatingCost;
+      } else {
+        buyboxAmazonFee = null;
+        buyboxNetRevenue = null;
+        buyboxActualProfit = null;
+      }
 
       return {
         ...buyboxData,
@@ -326,9 +333,11 @@ class CostCalculator {
 
         // Actual profit calculations
         current_actual_profit: parseFloat(currentActualProfit.toFixed(2)),
-        buybox_actual_profit: parseFloat(buyboxActualProfit.toFixed(2)),
+        buybox_actual_profit: buyboxActualProfit !== null ? parseFloat(buyboxActualProfit.toFixed(2)) : null,
         current_profit_breakdown: `£${currentPrice.toFixed(2)} - £${currentAmazonFee.toFixed(2)} (Amazon) - £${totalOperatingCost.toFixed(2)} (Costs) = £${currentActualProfit.toFixed(2)}`,
-        buybox_profit_breakdown: `£${buyboxPrice.toFixed(2)} - £${buyboxAmazonFee.toFixed(2)} (Amazon) - £${totalOperatingCost.toFixed(2)} (Costs) = £${buyboxActualProfit.toFixed(2)}`,
+        buybox_profit_breakdown: buyboxActualProfit !== null ?
+          `£${buyboxPrice.toFixed(2)} - £${buyboxAmazonFee.toFixed(2)} (Amazon) - £${totalOperatingCost.toFixed(2)} (Costs) = £${buyboxActualProfit.toFixed(2)}` :
+          null,
 
         // Recommendations
         recommended_action: margins.recommendedAction,

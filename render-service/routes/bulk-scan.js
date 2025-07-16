@@ -367,17 +367,33 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
   const yourMargin = yourCurrentPrice - amazonFee - materialTotalCost - shippingCost;
   const yourMarginPercent = yourCurrentPrice > 0 ? (yourMargin / yourCurrentPrice) * 100 : 0;
 
-  const buyboxAmazonFee = buyBoxPrice * 0.15;
-  const buyboxMargin = buyBoxPrice - buyboxAmazonFee - materialTotalCost - shippingCost;
-  const buyboxMarginPercent = buyBoxPrice > 0 ? (buyboxMargin / buyBoxPrice) * 100 : 0;
+  // Calculate buy box margin only if there's actual competition
+  let buyboxAmazonFee, buyboxMargin, buyboxMarginPercent, marginDifference, profitOpportunity;
 
-  const marginDifference = buyboxMargin - yourMargin;
-  const profitOpportunity = Math.max(0, marginDifference);
+  if (buyBoxPrice && buyBoxPrice > 0) {
+    // There's actual competition - calculate buy box margins
+    buyboxAmazonFee = buyBoxPrice * 0.15;
+    buyboxMargin = buyBoxPrice - buyboxAmazonFee - materialTotalCost - shippingCost;
+    buyboxMarginPercent = (buyboxMargin / buyBoxPrice) * 100;
+    marginDifference = buyboxMargin - yourMargin;
+    profitOpportunity = Math.max(0, marginDifference);
+  } else {
+    // No competition - set null values
+    buyboxAmazonFee = null;
+    buyboxMargin = null;
+    buyboxMarginPercent = null;
+    marginDifference = null;
+    profitOpportunity = null;
+  }
+
   const breakEvenPrice = (materialTotalCost + shippingCost) / 0.85;
 
   // Determine recommended action
   let recommendedAction;
-  if (buyboxMarginPercent < 5) {
+  if (!buyBoxPrice || buyBoxPrice <= 0) {
+    // No competition - suggest investigation
+    recommendedAction = 'investigate';
+  } else if (buyboxMarginPercent < 5) {
     recommendedAction = 'not_profitable';
   } else if (buyboxMarginPercent < 10) {
     recommendedAction = 'investigate';
@@ -439,14 +455,14 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     your_margin_percent_at_current_price: parseFloat(yourMarginPercent.toFixed(2)),
 
     // Competitor analysis
-    margin_at_buybox_price: parseFloat(buyboxMargin.toFixed(2)),
-    margin_percent_at_buybox_price: parseFloat(buyboxMarginPercent.toFixed(2)),
-    margin_difference: parseFloat(marginDifference.toFixed(2)),
-    profit_opportunity: parseFloat(profitOpportunity.toFixed(2)),
+    margin_at_buybox_price: buyboxMargin !== null ? parseFloat(buyboxMargin.toFixed(2)) : null,
+    margin_percent_at_buybox_price: buyboxMarginPercent !== null ? parseFloat(buyboxMarginPercent.toFixed(2)) : null,
+    margin_difference: marginDifference !== null ? parseFloat(marginDifference.toFixed(2)) : null,
+    profit_opportunity: profitOpportunity !== null ? parseFloat(profitOpportunity.toFixed(2)) : null,
 
     // Recommendations
     recommended_action: recommendedAction,
-    price_adjustment_needed: parseFloat((buyBoxPrice - yourCurrentPrice).toFixed(2)),
+    price_adjustment_needed: buyBoxPrice && buyBoxPrice > 0 ? parseFloat((buyBoxPrice - yourCurrentPrice).toFixed(2)) : null,
     break_even_price: parseFloat(breakEvenPrice.toFixed(2)),
 
     // Metadata
