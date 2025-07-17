@@ -231,22 +231,19 @@
 		try {
 			console.log(`Starting new scan with optimized render service endpoint`);
 
-			// Use the optimized render service endpoint that has real Amazon SP-API integration
-			const response = await fetch(
-				'https://buy-box-render-service.onrender.com/api/bulk-scan/start',
-				{
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({
-						source: `ui_manual_scan_${new Date().toISOString().split('T')[0]}`,
-						filterType: 'active',
-						maxAsins: null, // Process all active ASINs
-						notes: `Manual scan started from UI at ${new Date().toLocaleString()}`
-					})
-				}
-			);
+			// Use the local render service endpoint for data extraction
+			const response = await fetch('http://localhost:3001/api/bulk-scan/start', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					source: `ui_manual_scan_${new Date().toISOString().split('T')[0]}`,
+					filterType: 'active',
+					maxAsins: null, // Process all active ASINs
+					notes: `Manual scan started from UI at ${new Date().toLocaleString()}`
+				})
+			});
 
 			const data = await response.json();
 
@@ -474,18 +471,18 @@
 			</p>
 		</div>
 
-		<!-- Optimized Scan Info -->
-		<div class="bg-green-50 border border-green-200 rounded shadow p-4">
-			<h2 class="font-semibold mb-3 text-green-800">✅ Optimized Scanning Active</h2>
-			<div class="text-sm text-green-700 space-y-1">
+		<!-- Local Development Info -->
+		<div class="bg-blue-50 border border-blue-200 rounded shadow p-4">
+			<h2 class="font-semibold mb-3 text-blue-800">🏠 Local Development Mode</h2>
+			<div class="text-sm text-blue-700 space-y-1">
 				<div>🚀 <strong>Real Amazon SP-API Integration</strong></div>
 				<div>⚡ <strong>32.5% Performance Improvement</strong></div>
 				<div>🔄 <strong>3-Attempt Intelligent Retry</strong></div>
 				<div>📊 <strong>Advanced Rate Limiting</strong></div>
-				<div>🛡️ <strong>Auto Keep-Alive Every 5 Minutes</strong></div>
+				<div>� <strong>No Time Limits - Full Data Export</strong></div>
 			</div>
-			<p class="text-xs text-green-600 mt-2">
-				Service stays awake automatically during scans - no page required open
+			<p class="text-xs text-blue-600 mt-2">
+				Running locally on localhost:3001 - unlimited scan duration
 			</p>
 		</div>
 	</div>
