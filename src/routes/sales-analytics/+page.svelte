@@ -446,7 +446,4 @@
 	.bg-gray-25 {
 		background-color: #fafafa;
 	}
-	.bg-red-25 {
-		background-color: #fef2f2;
-	}
 </style>

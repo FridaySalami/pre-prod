@@ -13,7 +13,7 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 // Configuration
-const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'http://localhost:3001';
+const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'https://buy-box-render-service.onrender.com';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 

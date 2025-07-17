@@ -232,18 +232,21 @@
 			console.log(`Starting new scan with optimized render service endpoint`);
 
 			// Use the optimized render service endpoint that has real Amazon SP-API integration
-			const response = await fetch('http://localhost:3001/api/bulk-scan/start', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					source: `ui_manual_scan_${new Date().toISOString().split('T')[0]}`,
-					filterType: 'active',
-					maxAsins: null, // Process all active ASINs
-					notes: `Manual scan started from UI at ${new Date().toLocaleString()}`
-				})
-			});
+			const response = await fetch(
+				'https://buy-box-render-service.onrender.com/api/bulk-scan/start',
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						source: `ui_manual_scan_${new Date().toISOString().split('T')[0]}`,
+						filterType: 'active',
+						maxAsins: null, // Process all active ASINs
+						notes: `Manual scan started from UI at ${new Date().toLocaleString()}`
+					})
+				}
+			);
 
 			const data = await response.json();
 
