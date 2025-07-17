@@ -21,6 +21,61 @@ const jobFailuresRoute = require('./routes/job-failures');
 const jobResultsRoute = require('./routes/job-results');
 const healthRoute = require('./routes/health');
 const debugRoute = require('./routes/debug');
+const { SupabaseService } = require('./services/supabase-client');
+
+// Keep-alive mechanism to prevent Render free tier sleep during active scans
+let keepAliveInterval = null;
+
+async function checkForActiveScans() {
+  try {
+    const { data: runningJobs } = await SupabaseService.client
+      .from('buybox_jobs')
+      .select('id, status')
+      .eq('status', 'running')
+      .limit(1);
+
+    return runningJobs && runningJobs.length > 0;
+  } catch (error) {
+    console.log('⚠️ Keep-alive check failed:', error.message);
+    return false;
+  }
+}
+
+async function startKeepAlive() {
+  if (keepAliveInterval) return; // Already running
+
+  console.log('🔄 Starting keep-alive ping during active scan');
+  keepAliveInterval = setInterval(async () => {
+    const hasActiveScans = await checkForActiveScans();
+
+    if (hasActiveScans) {
+      // Self-ping to prevent sleep
+      try {
+        const fetch = (await import('node-fetch')).default;
+        await fetch(`http://localhost:${PORT}/health`, { timeout: 5000 });
+        console.log('✅ Keep-alive ping successful');
+      } catch (error) {
+        console.log('⚠️ Keep-alive ping failed:', error.message);
+      }
+    } else {
+      // No active scans, stop keep-alive
+      console.log('⏹️ No active scans, stopping keep-alive');
+      stopKeepAlive();
+    }
+  }, 10 * 60 * 1000); // Every 10 minutes
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    console.log('🛑 Keep-alive stopped');
+  }
+}
+
+// Export functions for use in routes
+global.startKeepAlive = startKeepAlive;
+global.stopKeepAlive = stopKeepAlive;
 
 // Create Express app
 const app = express();

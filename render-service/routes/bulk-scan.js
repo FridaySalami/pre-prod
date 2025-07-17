@@ -110,6 +110,11 @@ router.post('/start', async (req, res) => {
 
     console.log(`Created job ${job.id} for ${asins.length} ASINs`);
 
+    // Start keep-alive to prevent service sleep during scan
+    if (global.startKeepAlive) {
+      global.startKeepAlive();
+    }
+
     // Start processing asynchronously (don't await)
     processBulkScan(job.id, asins).catch(error => {
       console.error(`Background processing error for job ${job.id}:`, error);
@@ -299,9 +304,45 @@ async function processBulkScan(jobId, asins) {
     await SupabaseService.completeJob(jobId, successCount, failCount);
     console.log(`Job ${jobId} completed: ${successCount} successful, ${failCount} failed`);
 
+    // Check if we should stop keep-alive now that job is complete
+    if (global.stopKeepAlive) {
+      try {
+        const { data: runningJobs } = await SupabaseService.client
+          .from('buybox_jobs')
+          .select('id, status')
+          .eq('status', 'running')
+          .limit(1);
+
+        const hasActiveScans = runningJobs && runningJobs.length > 0;
+        if (!hasActiveScans) {
+          global.stopKeepAlive();
+        }
+      } catch (error) {
+        console.log('⚠️ Keep-alive cleanup check failed:', error.message);
+      }
+    }
+
   } catch (error) {
     console.error(`Processing error for job ${jobId}:`, error);
     await SupabaseService.failJob(jobId, error.message);
+
+    // Check if we should stop keep-alive now that job failed
+    if (global.stopKeepAlive) {
+      try {
+        const { data: runningJobs } = await SupabaseService.client
+          .from('buybox_jobs')
+          .select('id, status')
+          .eq('status', 'running')
+          .limit(1);
+
+        const hasActiveScans = runningJobs && runningJobs.length > 0;
+        if (!hasActiveScans) {
+          global.stopKeepAlive();
+        }
+      } catch (cleanupError) {
+        console.log('⚠️ Keep-alive cleanup check failed after job failure:', cleanupError.message);
+      }
+    }
   }
 }
 
@@ -410,7 +451,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     asin: asinCode,
     sku: sku || `SKU-${asinCode}`,
     // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
-    
+
     // Essential pricing fields
     price: yourCurrentPrice, // Use YOUR current price for margin calculations
     is_winner: isWinner,
