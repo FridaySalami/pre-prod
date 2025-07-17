@@ -109,12 +109,21 @@ class CostCalculator {
         return null;
       }
 
-      // Fetch Amazon listings for shipping lookup
-      const { data: amazonListing } = await this.db
-        .from('amazon_listings')
+      // Fetch SKU-ASIN mapping for shipping lookup
+      console.log(`[CostCalculator] Looking up shipping group for SKU: ${sku}`);
+      const { data: skuMapping, error: skuError } = await this.db
+        .from('sku_asin_mapping')
         .select('merchant_shipping_group')
         .eq('seller_sku', sku)
         .single();
+
+      if (skuError) {
+        console.log(`[CostCalculator] Error fetching shipping group for SKU ${sku}: ${skuError.message}, Code: ${skuError.code}`);
+      } else {
+        console.log(`[CostCalculator] SKU mapping found for ${sku}`);
+      }
+
+      console.log(`[CostCalculator] SKU: ${sku}, Shipping Group from DB: '${skuMapping?.merchant_shipping_group || 'NULL'}'`);
 
       // Fetch Linnworks data for cost lookup
       const { data: linnworksData } = await this.db
@@ -124,8 +133,15 @@ class CostCalculator {
         .single();
 
       // Calculate all cost components
-      const shipping = amazonListing?.merchant_shipping_group || 'Off Amazon';
+      const shipping = skuMapping?.merchant_shipping_group || 'Off Amazon';
       const box = `${String(product.width ?? '')}x${String(product.height ?? '')}x${String(product.depth ?? '')}`;
+
+      // Determine shipping type for display
+      const shippingType = shipping === 'Nationwide Prime' ? 'Prime' :
+        shipping === 'UK Shipping' ? 'Standard' :
+          'Unknown';
+
+      console.log(`[CostCalculator] SKU: ${sku}, Final Shipping: ${shipping}, Shipping Type: ${shippingType}`);
 
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
@@ -167,6 +183,7 @@ class CostCalculator {
         shippingCost,
         materialTotalCost,
         shipping,
+        shippingType,
         box,
         vatCode,
         dataSource: linnworksData ? 'linnworks' : 'fallback'
@@ -315,6 +332,9 @@ class CostCalculator {
         your_box_cost: costs.boxCost,
         your_vat_amount: costs.vatAmount,
         your_fragile_charge: costs.fragileCharge,
+
+        // Shipping type information
+        merchant_shipping_group: costs.shipping,
 
         // Enhanced cost breakdown for UI clarity
         material_cost_only: costs.materialTotalCost,

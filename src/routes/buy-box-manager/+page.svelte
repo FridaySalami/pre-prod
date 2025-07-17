@@ -15,6 +15,7 @@
 		is_winner: boolean;
 		opportunity_flag: boolean;
 		captured_at: string;
+		merchant_shipping_group?: string; // Prime or Standard shipping type
 
 		// Essential cost fields (others removed to reduce response size)
 		your_cost: number | null;
@@ -1614,6 +1615,23 @@
 								<!-- Product Info -->
 								<td class="py-4 px-6">
 									<div class="text-sm">
+										<!-- Shipping Type Badge -->
+										{#if result.merchant_shipping_group}
+											<div class="mb-2">
+												<span
+													class={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+														result.merchant_shipping_group === 'Nationwide Prime'
+															? 'bg-blue-100 text-blue-800'
+															: 'bg-gray-100 text-gray-800'
+													}`}
+												>
+													{result.merchant_shipping_group === 'Nationwide Prime'
+														? '⚡ Prime'
+														: '📦 Standard'}
+												</span>
+											</div>
+										{/if}
+
 										{#if getProductTitle(result.sku)}
 											{@const cachedTitle = getProductTitle(result.sku)}
 											<div
