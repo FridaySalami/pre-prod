@@ -245,7 +245,7 @@ class AmazonSPAPI {
         run_id: runId,
         asin: asin,
         sku: sku,
-        product_title: productTitle,
+        // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
 
         // Use YOUR current price as the main price field for margin calculations
         price: yourCurrentPrice || buyBoxPrice, // Fallback to buy box price if your offer not found
