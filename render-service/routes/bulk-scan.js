@@ -405,33 +405,25 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
   }
 
   return {
-    // Required fields that match the database schema
+    // Essential core fields
     run_id: runId,
     asin: asinCode,
     sku: sku || `SKU-${asinCode}`,
     // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
+    
+    // Essential pricing fields
     price: yourCurrentPrice, // Use YOUR current price for margin calculations
-    currency: 'GBP',
     is_winner: isWinner,
     competitor_id: competitorId,
     competitor_name: `MockSeller${Math.floor(Math.random() * 1000)}`,
     competitor_price: buyBoxPrice, // This is the buy box price
-    marketplace: 'UK',
     opportunity_flag: !isWinner && (buyBoxPrice - yourCurrentPrice) > 5,
-    min_profitable_price: parseFloat((yourCurrentPrice * 0.8).toFixed(2)),
-    margin_at_buybox: parseFloat((yourCurrentPrice * 0.3).toFixed(2)),
-    margin_percent_at_buybox: parseFloat((0.3 + Math.random() * 0.2).toFixed(4)),
     total_offers: Math.floor(Math.random() * 10) + 1,
-    category: 'Electronics',
-    brand: 'MockBrand',
     captured_at: new Date().toISOString(),
-    fulfillment_channel: Math.random() > 0.5 ? 'AMAZON' : 'DEFAULT',
-    merchant_shipping_group: 'UK Shipping',
-    source: 'mock-api',
     merchant_token: yourSellerId,
     buybox_merchant_token: competitorId,
 
-    // Enhanced pricing clarity fields  
+    // Enhanced pricing clarity fields
     your_current_price: yourCurrentPrice,
     your_current_shipping: 0, // Mock free shipping
     your_current_total: yourCurrentPrice,
@@ -443,7 +435,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     pricing_status: pricingStatus,
     your_offer_found: true, // Mock that your offer was found
 
-    // New margin analysis fields
+    // New margin analysis fields (essential for frontend display)
     your_cost: parseFloat(baseCost.toFixed(2)),
     your_shipping_cost: parseFloat(shippingCost.toFixed(2)),
     your_material_total_cost: parseFloat(materialTotalCost.toFixed(2)),
@@ -466,9 +458,21 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     price_adjustment_needed: buyBoxPrice && buyBoxPrice > 0 ? parseFloat((buyBoxPrice - yourCurrentPrice).toFixed(2)) : null,
     break_even_price: parseFloat(breakEvenPrice.toFixed(2)),
 
-    // Metadata
+    // Essential metadata
     margin_calculation_version: 'v1.0',
     cost_data_source: 'mock'
+
+    // REMOVED to reduce payload size (not used by frontend):
+    // currency: 'GBP',
+    // marketplace: 'UK',
+    // min_profitable_price: parseFloat((yourCurrentPrice * 0.8).toFixed(2)),
+    // margin_at_buybox: parseFloat((yourCurrentPrice * 0.3).toFixed(2)),
+    // margin_percent_at_buybox: parseFloat((0.3 + Math.random() * 0.2).toFixed(4)),
+    // category: 'Electronics',
+    // brand: 'MockBrand',
+    // fulfillment_channel: Math.random() > 0.5 ? 'AMAZON' : 'DEFAULT',
+    // merchant_shipping_group: 'UK Shipping',
+    // source: 'mock-api'
   };
 }
 

@@ -247,25 +247,15 @@ class AmazonSPAPI {
         sku: sku,
         // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
 
-        // Use YOUR current price as the main price field for margin calculations
+        // Essential pricing fields
         price: yourCurrentPrice || buyBoxPrice, // Fallback to buy box price if your offer not found
-        currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
         is_winner: isWinner,
         competitor_id: buyBoxOffer?.SellerId || null,
         competitor_name: buyBoxOffer?.SellerName || 'Unknown',
         competitor_price: buyBoxPrice,
-        marketplace: 'UK',
         opportunity_flag: isOpportunity,
-        min_profitable_price: buyBoxPrice * 0.8,
-        margin_at_buybox: buyBoxPrice * 0.3,
-        margin_percent_at_buybox: 0.3,
         total_offers: offers.length,
-        category: 'Unknown',
-        brand: 'Unknown',
         captured_at: new Date().toISOString(),
-        fulfillment_channel: buyBoxOffer?.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
-        merchant_shipping_group: 'UK Shipping',
-        source: 'sp-api',
         merchant_token: yourSellerId,
         buybox_merchant_token: buyBoxOffer?.SellerId || null,
 
@@ -279,7 +269,19 @@ class AmazonSPAPI {
         price_gap: parseFloat(priceGap.toFixed(2)),
         price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
         pricing_status: isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox'),
-        your_offer_found: !!yourOffer
+        your_offer_found: !!yourOffer,
+
+        // REMOVED to reduce payload size (not used by frontend):
+        // currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
+        // marketplace: 'UK',
+        // min_profitable_price: buyBoxPrice * 0.8,
+        // margin_at_buybox: buyBoxPrice * 0.3,
+        // margin_percent_at_buybox: 0.3,
+        // category: 'Unknown',
+        // brand: 'Unknown',
+        // fulfillment_channel: buyBoxOffer?.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
+        // merchant_shipping_group: 'UK Shipping',
+        // source: 'sp-api'
       };
     } catch (error) {
       console.error('Error transforming pricing data:', error);
