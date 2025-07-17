@@ -62,7 +62,7 @@ async function startKeepAlive() {
       console.log('⏹️ No active scans, stopping keep-alive');
       stopKeepAlive();
     }
-  }, 10 * 60 * 1000); // Every 10 minutes
+  }, 5 * 60 * 1000); // Every 5 minutes - more frequent than Render's 15-min timeout
 }
 
 function stopKeepAlive() {
