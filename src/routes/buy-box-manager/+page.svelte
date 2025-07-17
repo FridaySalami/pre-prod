@@ -63,6 +63,7 @@
 	// Search and filters
 	let searchQuery = '';
 	let categoryFilter = 'all'; // all, winners, losers, opportunities, profitable, not_profitable, match_buybox, hold_price, investigate
+	let shippingFilter = 'all'; // all, prime, standard
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, sku_asc
 	let showOnlyWithMarginData = false;
 	let includeNoMarginData = false; // New option to include records without margin data
@@ -114,6 +115,16 @@
 			name: 'Winning Products',
 			emoji: '🏆',
 			filters: { categoryFilter: 'winners', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'Prime Shipping',
+			emoji: '⚡',
+			filters: { shippingFilter: 'prime', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'Standard Shipping',
+			emoji: '📦',
+			filters: { shippingFilter: 'standard', sortBy: 'profit_desc' }
 		}
 	];
 
@@ -360,6 +371,17 @@
 			case 'investigate':
 				filtered = filtered.filter((item) => item.recommended_action === 'investigate');
 				break;
+		}
+
+		// Shipping filter
+		switch (shippingFilter) {
+			case 'prime':
+				filtered = filtered.filter((item) => item.merchant_shipping_group === 'Nationwide Prime');
+				break;
+			case 'standard':
+				filtered = filtered.filter((item) => item.merchant_shipping_group === 'UK Shipping');
+				break;
+			// 'all' case - no filtering needed
 		}
 
 		// Margin data filter
@@ -675,6 +697,7 @@
 		// Reset all filter variables to defaults
 		searchQuery = '';
 		categoryFilter = 'all';
+		shippingFilter = 'all';
 		sortBy = 'captured_at';
 		minProfitFilter = 0;
 		minMarginFilter = 0;
@@ -698,6 +721,7 @@
 		hasActiveFilters =
 			searchQuery !== '' ||
 			categoryFilter !== 'all' ||
+			shippingFilter !== 'all' ||
 			minProfitFilter > 0 ||
 			minMarginFilter > 0 ||
 			showOnlyWithMarginData ||
@@ -711,7 +735,12 @@
 		activeCardFilter = '';
 
 		// Apply preset filters
-		categoryFilter = preset.filters.categoryFilter;
+		if (preset.filters.categoryFilter) {
+			categoryFilter = preset.filters.categoryFilter;
+		}
+		if (preset.filters.shippingFilter) {
+			shippingFilter = preset.filters.shippingFilter;
+		}
 		minProfitFilter = preset.filters.minProfitFilter || 0;
 		sortBy = preset.filters.sortBy;
 
@@ -1225,6 +1254,24 @@
 										}}
 										class="text-purple-600 hover:text-purple-800 ml-1"
 										title="Clear category filter"
+									>
+										×
+									</button>
+								</span>
+							{/if}
+							{#if shippingFilter !== 'all'}
+								<span
+									class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+								>
+									{shippingFilter === 'prime' ? '⚡' : '📦'}
+									{shippingFilter === 'prime' ? 'Prime' : 'Standard'} Shipping
+									<button
+										on:click={() => {
+											shippingFilter = 'all';
+											applyFilters();
+										}}
+										class="text-orange-600 hover:text-orange-800 ml-1"
+										title="Clear shipping filter"
 									>
 										×
 									</button>
