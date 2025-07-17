@@ -482,9 +482,10 @@
 				<div>⚡ <strong>32.5% Performance Improvement</strong></div>
 				<div>🔄 <strong>3-Attempt Intelligent Retry</strong></div>
 				<div>📊 <strong>Advanced Rate Limiting</strong></div>
+				<div>🛡️ <strong>Auto Keep-Alive During Scans</strong></div>
 			</div>
 			<p class="text-xs text-green-600 mt-2">
-				Using the optimized render service with real Amazon pricing data
+				Service stays awake automatically during scans - no page required open
 			</p>
 		</div>
 	</div>
