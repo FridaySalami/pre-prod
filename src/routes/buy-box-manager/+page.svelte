@@ -42,6 +42,12 @@
 		recommended_action: string | null;
 		break_even_price: number | null;
 
+		// Additional fields for completeness
+		product_title?: string | null;
+		run_id?: string | null;
+		job_id?: string | null;
+		is_skeleton?: boolean; // Flag to identify skeleton entries
+
 		// Removed fields to reduce response size:
 		// margin_at_buybox, margin_percent_at_buybox, material_cost_only,
 		// your_margin_at_current_price, margin_at_buybox_price,
@@ -70,6 +76,118 @@
 	let minProfitFilter = 0;
 	let minMarginFilter = 0;
 	let showLatestOnly = true; // New filter to show only latest data per SKU
+
+	// View modes
+	let viewMode = 'individual'; // 'individual', 'grouped', or 'bestsellers'
+	let groupedData: Map<string, BuyBoxData[]> = new Map();
+	let bestSellersData: BuyBoxData[] = [];
+	let bestSellersGrouped: Map<string, BuyBoxData[]> = new Map();
+
+	// Best sellers list (top 100 ASINs from business report)
+	const top100ASINs = [
+		'B09T3GDNGT',
+		'B076B1NF1Q',
+		'B004BTED72',
+		'B01B7GJX5I',
+		'B01DDG8LDK',
+		'B08TM1BDC6',
+		'B0DBQXVZ1T',
+		'B0D92T6K1P',
+		'B0D33TYL4R',
+		'B07QDB3FLX',
+		'B0B46GGBBP',
+		'B0D92Q4179',
+		'B0DVS6YBJW',
+		'B0CXTCGDDT',
+		'B0DQ1BG9JQ',
+		'B0D26J2KWX',
+		'B0CM9YYM7J',
+		'B08TRJRNWK',
+		'B0BDS1J64S',
+		'B00CS6K6AS',
+		'B0CD2QKD7V',
+		'B0CXR2TTDK',
+		'B0CV7Z6WJX',
+		'B005TG9OJI',
+		'B0DHSTJ7K2',
+		'B004BLBWXI',
+		'B077BJ882X',
+		'B0CFB5M7BH',
+		'B0DVHWT7NG',
+		'B0D1CND51R',
+		'B01B7GJWSQ',
+		'B078VB2BF7',
+		'B0DJ95JVD3',
+		'B0DNR97JSD',
+		'B08BPBPYTF',
+		'B0B99329X1',
+		'B0D7J2JD91',
+		'B0F7MNF5WY',
+		'B08J856MT8',
+		'B0CLM82JMF',
+		'B003QNVCEG',
+		'B01AAABOZE',
+		'B00BEVBS50',
+		'B00G6DMN82',
+		'B0CP9JP9NG',
+		'B0D8C3WGTL',
+		'B07M9WN9JH',
+		'B0104R0FRG',
+		'B08TQPBQLV',
+		'B0BQZ3GQTF',
+		'B0DNN38WRW',
+		'B008X6CR0O',
+		'B00FXMJ15U',
+		'B085PN6X4C',
+		'B01B7GJWHW',
+		'B0DPJ458LV',
+		'B0B8DLRH3X',
+		'B079GZW2B1',
+		'B008F66BK4',
+		'B073WRG21Q',
+		'B0027XXHSK',
+		'B0968DH592',
+		'B08WHKR88F',
+		'B01N9OZZBH',
+		'B0CWLM5T7R',
+		'B0CTTNW46W',
+		'B00CBJX6I6',
+		'B0CNXWKKDX',
+		'B00JRCZ6CY',
+		'B0B61D6XB1',
+		'B01H5GE1PG',
+		'B087BJQVYX',
+		'B0CYPZMDR4',
+		'B01EX17U5O',
+		'B0087OSN0A',
+		'B0CTQQZLW5',
+		'B0CV852337',
+		'B0CTMZ5B7C',
+		'B0CRL8N9X9',
+		'B01FR0OGNY',
+		'B0D45NPK7W',
+		'B01ITOKA6W',
+		'B016AH1U9G',
+		'B01G1WQB3U',
+		'B019U61K62',
+		'B006R5YH56',
+		'B0DVJ17T8C',
+		'B0DK253NT9',
+		'B0F254MHL3',
+		'B0CPJRP1FJ',
+		'B0BLZJZLW6',
+		'B0CJQJJT1X',
+		'B01DDG8Q7G',
+		'B094Y2WTTP',
+		'B005NN9TCY',
+		'B003ZG3G7U',
+		'B008JYGOPE',
+		'B0DHSTJ7K2',
+		'B0F7MNF5WY',
+		'B0D33TYL4R',
+		'B0D92T6K1P',
+		'B0DVS6YBJW'
+	];
 
 	// Pagination
 	let currentPage = 1;
@@ -449,7 +567,6 @@
 		}
 
 		filteredData = filtered;
-		totalResults = filtered.length;
 		currentPage = 1; // Reset to first page when filtering
 
 		// Update active filter state
@@ -468,6 +585,133 @@
 		(currentPage - 1) * itemsPerPage,
 		currentPage * itemsPerPage
 	);
+
+	// Group data by ASIN for grouped view
+	function groupDataByAsin(data: BuyBoxData[]): Map<string, BuyBoxData[]> {
+		const grouped = new Map<string, BuyBoxData[]>();
+
+		data.forEach((item) => {
+			if (!grouped.has(item.asin)) {
+				grouped.set(item.asin, []);
+			}
+			grouped.get(item.asin)!.push(item);
+		});
+
+		// Sort SKUs within each ASIN group by sales performance or profit
+		grouped.forEach((skus) => {
+			skus.sort((a, b) => {
+				// Sort by profit descending, then by shipping type (Prime first)
+				const profitDiff = (b.current_actual_profit || 0) - (a.current_actual_profit || 0);
+				if (profitDiff !== 0) return profitDiff;
+
+				// Prime shipping first
+				const aShipping = a.merchant_shipping_group === 'Nationwide Prime' ? 1 : 0;
+				const bShipping = b.merchant_shipping_group === 'Nationwide Prime' ? 1 : 0;
+				return bShipping - aShipping;
+			});
+		});
+
+		return grouped;
+	}
+
+	// Filter data for best sellers (top 100 ASINs)
+	function filterBestSellers(data: BuyBoxData[]): BuyBoxData[] {
+		return data.filter((item) => top100ASINs.includes(item.asin));
+	}
+
+	// Create skeleton entries for missing ASINs
+	function createSkeletonEntry(asin: string): BuyBoxData {
+		return {
+			id: `skeleton-${asin}`,
+			asin: asin,
+			sku: `skeleton-${asin}`,
+			captured_at: new Date().toISOString(),
+			is_winner: false,
+			opportunity_flag: false,
+			price: null,
+			your_current_price: null,
+			competitor_price: null,
+			break_even_price: null,
+			your_cost: null,
+			your_shipping_cost: null,
+			your_material_total_cost: null,
+			your_box_cost: null,
+			your_vat_amount: null,
+			your_fragile_charge: null,
+			total_operating_cost: null,
+			current_actual_profit: null,
+			buybox_actual_profit: null,
+			your_margin_percent_at_current_price: null,
+			margin_percent_at_buybox_price: null,
+			margin_difference: null,
+			profit_opportunity: null,
+			recommended_action: null,
+			merchant_shipping_group: undefined,
+			product_title: undefined,
+			run_id: undefined,
+			job_id: undefined,
+			is_skeleton: true
+		};
+	}
+
+	// Get best sellers data with skeletons for missing ASINs
+	function getBestSellersWithSkeletons(data: BuyBoxData[]): BuyBoxData[] {
+		const existingData = filterBestSellers(data);
+		const existingASINs = new Set(existingData.map((item) => item.asin));
+
+		// Create skeleton entries for missing ASINs
+		const skeletonEntries = top100ASINs
+			.filter((asin) => !existingASINs.has(asin))
+			.map((asin) => createSkeletonEntry(asin));
+
+		return [...existingData, ...skeletonEntries];
+	}
+
+	// Function to fetch single ASIN data
+	async function fetchSingleASIN(asin: string): Promise<void> {
+		console.log(`🔄 Fetching data for ASIN: ${asin}`);
+
+		try {
+			const response = await fetch(`http://localhost:3001/api/single-asin/${asin}`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					source: `ui_single_asin_${new Date().toISOString().split('T')[0]}`,
+					notes: `Single ASIN fetch from Best Sellers view at ${new Date().toLocaleString()}`
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const result = await response.json();
+			console.log(`✅ Successfully initiated fetch for ASIN: ${asin}`, result);
+
+			// Refresh the buy box data to show the new data
+			setTimeout(() => {
+				location.reload(); // Simple refresh for now
+			}, 2000);
+		} catch (error) {
+			console.error(`❌ Error fetching ASIN ${asin}:`, error);
+			alert(`Failed to fetch data for ASIN ${asin}. Please try again.`);
+		}
+	}
+
+	// Update grouped data when filtered data changes
+	$: groupedData = groupDataByAsin(filteredData);
+	$: bestSellersData = getBestSellersWithSkeletons(buyboxData);
+	$: bestSellersGrouped = groupDataByAsin(bestSellersData);
+
+	// Update total results based on view mode
+	$: totalResults =
+		viewMode === 'grouped'
+			? groupedData.size
+			: viewMode === 'bestsellers'
+				? bestSellersGrouped.size
+				: filteredData.length;
 
 	// Create a reactive map for product titles to force re-renders
 	$: reactiveProductTitles = new Map(productTitleCache);
@@ -595,13 +839,27 @@
 			return;
 		}
 
-		if (paginatedData.length === 0) {
-			console.log('🔍 No paginated data, skipping title loading');
+		let currentData: BuyBoxData[] = [];
+
+		// Get current data based on view mode
+		if (viewMode === 'bestsellers') {
+			// For best sellers, get all SKUs from the current page of grouped data
+			const currentGroups = Array.from(bestSellersGrouped.entries()).slice(
+				(currentPage - 1) * itemsPerPage,
+				currentPage * itemsPerPage
+			);
+			currentData = currentGroups.flatMap(([asin, skus]) => skus);
+		} else {
+			currentData = paginatedData;
+		}
+
+		if (currentData.length === 0) {
+			console.log('🔍 No current data, skipping title loading');
 			return;
 		}
 
 		// Get SKUs that don't have cached titles
-		const skusToLoad = paginatedData
+		const skusToLoad = currentData
 			.filter((item) => !productTitleCache.has(item.sku))
 			.map((item) => item.sku);
 
@@ -612,7 +870,7 @@
 
 		loadingProductTitles = true;
 		console.log(
-			`🔍 Loading product titles for ${skusToLoad.length} SKUs after filtering:`,
+			`🔍 Loading product titles for ${skusToLoad.length} SKUs (${viewMode} view):`,
 			skusToLoad
 		);
 
@@ -1484,14 +1742,60 @@
 	<div class="bg-white rounded-lg shadow">
 		<div class="px-6 py-4 border-b border-gray-200">
 			<div class="flex justify-between items-center">
-				<h2 class="font-semibold">
-					Buy Box Results ({totalResults} items)
-					{#if showLatestOnly}
-						<span class="text-sm font-normal text-blue-600"> - Latest data only </span>
-					{:else}
-						<span class="text-sm font-normal text-purple-600"> - All historical data </span>
-					{/if}
-				</h2>
+				<div class="flex items-center gap-4">
+					<h2 class="font-semibold">
+						Buy Box Results ({totalResults} items)
+						{#if showLatestOnly}
+							<span class="text-sm font-normal text-blue-600"> - Latest data only </span>
+						{:else}
+							<span class="text-sm font-normal text-purple-600"> - All historical data </span>
+						{/if}
+					</h2>
+
+					<!-- View Mode Toggle -->
+					<div class="flex bg-gray-100 rounded-lg p-1">
+						<button
+							on:click={() => {
+								viewMode = 'individual';
+								currentPage = 1;
+							}}
+							class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+								viewMode === 'individual'
+									? 'bg-white text-blue-600 shadow-sm'
+									: 'text-gray-600 hover:text-gray-800'
+							}`}
+						>
+							📋 Individual SKUs
+						</button>
+						<button
+							on:click={() => {
+								viewMode = 'grouped';
+								currentPage = 1;
+							}}
+							class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+								viewMode === 'grouped'
+									? 'bg-white text-blue-600 shadow-sm'
+									: 'text-gray-600 hover:text-gray-800'
+							}`}
+						>
+							📦 Grouped by ASIN
+						</button>
+						<button
+							on:click={() => {
+								viewMode = 'bestsellers';
+								currentPage = 1;
+								loadProductTitlesForPage();
+							}}
+							class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+								viewMode === 'bestsellers'
+									? 'bg-white text-orange-600 shadow-sm'
+									: 'text-gray-600 hover:text-gray-800'
+							}`}
+						>
+							🏆 Top 100 Best Sellers
+						</button>
+					</div>
+				</div>
 				<div class="flex items-center gap-3 text-sm text-gray-500">
 					{#if loadingProductTitles}
 						<span class="text-blue-600 flex items-center gap-1">
@@ -1552,95 +1856,96 @@
 				<p>No results found with current filters</p>
 			</div>
 		{:else}
-			<!-- Enhanced Data Table with Bulk Selection -->
-			<div class="overflow-x-auto">
-				<!-- Bulk Actions Bar -->
-				{#if selectedItems.size > 0}
-					<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-						<div class="flex items-center justify-between">
-							<div class="flex items-center gap-4">
-								<span class="text-sm font-medium text-blue-900">
-									{selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
-								</span>
-								<button
-									on:click={selectAllVisible}
-									class="text-blue-600 hover:text-blue-800 text-sm underline"
-								>
-									Select all visible ({paginatedData.length})
-								</button>
-								<button
-									on:click={clearSelection}
-									class="text-gray-600 hover:text-gray-800 text-sm underline"
-								>
-									Clear selection
-								</button>
-							</div>
-							<div class="flex gap-2">
-								<button
-									on:click={bulkMarkForUpdate}
-									class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm"
-								>
-									📝 Mark for Price Update
-								</button>
-								<button
-									on:click={bulkAddToWatchlist}
-									class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm"
-								>
-									👁️ Add to Watchlist
-								</button>
+			{#if viewMode === 'individual'}
+				<!-- Enhanced Data Table with Bulk Selection -->
+				<div class="overflow-x-auto">
+					<!-- Bulk Actions Bar -->
+					{#if selectedItems.size > 0}
+						<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+							<div class="flex items-center justify-between">
+								<div class="flex items-center gap-4">
+									<span class="text-sm font-medium text-blue-900">
+										{selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+									</span>
+									<button
+										on:click={selectAllVisible}
+										class="text-blue-600 hover:text-blue-800 text-sm underline"
+									>
+										Select all visible ({paginatedData.length})
+									</button>
+									<button
+										on:click={clearSelection}
+										class="text-gray-600 hover:text-gray-800 text-sm underline"
+									>
+										Clear selection
+									</button>
+								</div>
+								<div class="flex gap-2">
+									<button
+										on:click={bulkMarkForUpdate}
+										class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm"
+									>
+										📝 Mark for Price Update
+									</button>
+									<button
+										on:click={bulkAddToWatchlist}
+										class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm"
+									>
+										👁️ Add to Watchlist
+									</button>
+								</div>
 							</div>
 						</div>
-					</div>
-				{/if}
+					{/if}
 
-				<table class="min-w-full">
-					<thead class="bg-gray-50">
-						<tr>
-							<th class="py-3 px-3 text-left">
-								<input
-									type="checkbox"
-									checked={selectedItems.size > 0 && selectedItems.size === paginatedData.length}
-									on:change={(e) => {
-										const target = e.target as HTMLInputElement;
-										if (target?.checked) {
-											selectAllVisible();
-										} else {
-											clearSelection();
-										}
-									}}
-									class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-								/>
-							</th>
-							<th
-								class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-								>Product</th
-							>
-							<th
-								class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-								>Price Analysis</th
-							>
-							<th
-								class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-								>Cost Breakdown</th
-							>
-							<th
-								class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-								>Margin Analysis</th
-							>
-							<th
-								class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-								>Recommendation</th
-							>
-							<th
-								class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-								>Actions</th
-							>
-						</tr>
-					</thead>
-					<tbody class="divide-y divide-gray-200">
-						{#each paginatedData as result}
-							<tr
-								class={`
+					<table class="min-w-full">
+						<thead class="bg-gray-50">
+							<tr>
+								<th class="py-3 px-3 text-left">
+									<input
+										type="checkbox"
+										checked={selectedItems.size > 0 && selectedItems.size === paginatedData.length}
+										on:change={(e) => {
+											const target = e.target as HTMLInputElement;
+											if (target?.checked) {
+												selectAllVisible();
+											} else {
+												clearSelection();
+											}
+										}}
+										class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+									/>
+								</th>
+								<th
+									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									>Product</th
+								>
+								<th
+									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									>Price Analysis</th
+								>
+								<th
+									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									>Cost Breakdown</th
+								>
+								<th
+									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									>Margin Analysis</th
+								>
+								<th
+									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									>Recommendation</th
+								>
+								<th
+									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									>Actions</th
+								>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-gray-200">
+							{#each paginatedData as result}
+								<tr
+									class={`
 									hover:bg-gray-50 
 									${result.opportunity_flag ? 'bg-yellow-50' : ''} 
 									${result.is_winner ? 'bg-green-50' : ''}
@@ -1648,393 +1953,730 @@
 									${result.recommended_action === 'not_profitable' ? 'border-l-4 border-l-red-500' : ''}
 									${selectedItems.has(result.id) ? 'ring-2 ring-blue-300' : ''}
 								`}
-							>
-								<!-- Selection Checkbox -->
-								<td class="py-4 px-3">
-									<input
-										type="checkbox"
-										checked={selectedItems.has(result.id)}
-										on:change={() => toggleItemSelection(result.id)}
-										class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-									/>
-								</td>
-
-								<!-- Product Info -->
-								<td class="py-4 px-6">
-									<div class="text-sm">
-										<!-- Shipping Type Badge -->
-										{#if result.merchant_shipping_group}
-											<div class="mb-2">
-												<span
-													class={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-														result.merchant_shipping_group === 'Nationwide Prime'
-															? 'bg-blue-100 text-blue-800'
-															: 'bg-gray-100 text-gray-800'
-													}`}
-												>
-													{result.merchant_shipping_group === 'Nationwide Prime'
-														? '⚡ Prime'
-														: '📦 Standard'}
-												</span>
-											</div>
-										{/if}
-
-										{#if getProductTitle(result.sku)}
-											{@const cachedTitle = getProductTitle(result.sku)}
-											<div
-												class="font-medium text-gray-900 mb-1 leading-tight cursor-help"
-												title={cachedTitle || ''}
-											>
-												{truncateTitle(cachedTitle || '')}
-											</div>
-										{:else if loadingProductTitles}
-											<!-- Show loading state -->
-											<div class="text-xs text-gray-400 mb-1 italic">Loading product title...</div>
-										{:else}
-											<!-- Show when no product title is found -->
-											<div class="text-xs text-gray-400 mb-1 italic">No product title found</div>
-										{/if}
-										<div>
-											<a
-												href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
-													result.sku
-												)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
-												target="_blank"
-												rel="noopener noreferrer"
-												class="font-medium text-blue-600 hover:text-blue-800 underline"
-												title="Manage price in Amazon Seller Central"
-											>
-												{result.sku} 📝
-											</a>
-										</div>
-										<div>
-											<a
-												href="https://amazon.co.uk/dp/{result.asin}"
-												target="_blank"
-												rel="noopener noreferrer"
-												class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
-												title="View on Amazon UK"
-											>
-												{result.asin} →
-											</a>
-											{#if !showLatestOnly}
-												{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-												<div class="text-xs text-purple-600 font-medium mt-1">
-													📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
-													{new Date(result.captured_at).toLocaleTimeString([], {
-														hour: '2-digit',
-														minute: '2-digit'
-													})}
-													{#if totalEntries > 1}
-														<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
-															{totalEntries} entries
-														</span>
-													{/if}
-												</div>
-											{/if}
-											<div class="mt-1">
-												{#if result.is_winner}
-													<span
-														class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
-													>
-														🏆 Buy Box Winner
-													</span>
-												{:else if result.opportunity_flag}
-													<span
-														class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
-													>
-														⚡ Opportunity
-													</span>
-												{/if}
-											</div>
-											<div class="text-xs text-gray-400 mt-1">
-												Last checked: {formatDate(result.captured_at)}
-												{#if showLatestOnly}
-													{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-													{#if totalEntries > 1}
-														<span class="text-blue-600 ml-1">
-															(Latest of {totalEntries} scans)
-														</span>
-													{/if}
-												{/if}
-											</div>
-										</div>
-									</div></td
 								>
+									<!-- Selection Checkbox -->
+									<td class="py-4 px-3">
+										<input
+											type="checkbox"
+											checked={selectedItems.has(result.id)}
+											on:change={() => toggleItemSelection(result.id)}
+											class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+										/>
+									</td>
 
-								<!-- Price Analysis -->
-								<td class="py-4 px-6">
-									<div class="text-sm space-y-1">
-										<!-- Our Price -->
-										<div class="font-medium text-gray-900">
-											{#if result.your_current_price === 0}
-												<span class="text-red-600">Out of Stock</span>
-											{:else}
-												Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
+									<!-- Product Info -->
+									<td class="py-4 px-6">
+										<div class="text-sm">
+											<!-- Shipping Type Badge -->
+											{#if result.merchant_shipping_group}
+												<div class="mb-2">
+													<span
+														class={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+															result.merchant_shipping_group === 'Nationwide Prime'
+																? 'bg-blue-100 text-blue-800'
+																: 'bg-gray-100 text-gray-800'
+														}`}
+													>
+														{result.merchant_shipping_group === 'Nationwide Prime'
+															? '⚡ Prime'
+															: '📦 Standard'}
+													</span>
+												</div>
 											{/if}
-											{#if result.is_winner}
-												<span class="text-green-600 ml-1">🏆</span>
+
+											{#if getProductTitle(result.sku)}
+												{@const cachedTitle = getProductTitle(result.sku)}
+												<div
+													class="font-medium text-gray-900 mb-1 leading-tight cursor-help"
+													title={cachedTitle || ''}
+												>
+													{truncateTitle(cachedTitle || '')}
+												</div>
+											{:else if loadingProductTitles}
+												<!-- Show loading state -->
+												<div class="text-xs text-gray-400 mb-1 italic">
+													Loading product title...
+												</div>
+											{:else}
+												<!-- Show when no product title is found -->
+												<div class="text-xs text-gray-400 mb-1 italic">No product title found</div>
+											{/if}
+											<div>
+												<a
+													href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
+														result.sku
+													)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="font-medium text-blue-600 hover:text-blue-800 underline"
+													title="Manage price in Amazon Seller Central"
+												>
+													{result.sku} 📝
+												</a>
+											</div>
+											<div>
+												<a
+													href="https://amazon.co.uk/dp/{result.asin}"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
+													title="View on Amazon UK"
+												>
+													{result.asin} →
+												</a>
+												{#if !showLatestOnly}
+													{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+													<div class="text-xs text-purple-600 font-medium mt-1">
+														📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
+														{new Date(result.captured_at).toLocaleTimeString([], {
+															hour: '2-digit',
+															minute: '2-digit'
+														})}
+														{#if totalEntries > 1}
+															<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
+																{totalEntries} entries
+															</span>
+														{/if}
+													</div>
+												{/if}
+												<div class="mt-1">
+													{#if result.is_winner}
+														<span
+															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+														>
+															🏆 Buy Box Winner
+														</span>
+													{:else if result.opportunity_flag}
+														<span
+															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+														>
+															⚡ Opportunity
+														</span>
+													{/if}
+												</div>
+												<div class="text-xs text-gray-400 mt-1">
+													Last checked: {formatDate(result.captured_at)}
+													{#if showLatestOnly}
+														{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+														{#if totalEntries > 1}
+															<span class="text-blue-600 ml-1">
+																(Latest of {totalEntries} scans)
+															</span>
+														{/if}
+													{/if}
+												</div>
+											</div>
+										</div></td
+									>
+
+									<!-- Price Analysis -->
+									<td class="py-4 px-6">
+										<div class="text-sm space-y-1">
+											<!-- Our Price -->
+											<div class="font-medium text-gray-900">
+												{#if result.your_current_price === 0}
+													<span class="text-red-600">Out of Stock</span>
+												{:else}
+													Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
+												{/if}
+												{#if result.is_winner}
+													<span class="text-green-600 ml-1">🏆</span>
+												{/if}
+											</div>
+
+											<!-- Buy Box Price -->
+											{#if result.price && result.price !== result.your_current_price}
+												<div class="font-medium text-gray-700">
+													Buy Box Price: £{result.price.toFixed(2)}
+												</div>
+											{:else if result.competitor_price && result.competitor_price !== result.your_current_price}
+												<div class="font-medium text-gray-700">
+													Buy Box Price: £{result.competitor_price.toFixed(2)}
+												</div>
+											{:else if result.is_winner && result.your_current_price}
+												<div class="font-medium text-green-700">
+													Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
+												</div>
+											{:else}
+												<div class="font-medium text-gray-500">
+													Buy Box Price: N/A
+													<span class="text-xs block text-orange-600">No Buy Box detected</span>
+												</div>
+											{/if}
+
+											<!-- Break Even Price -->
+											{#if result.break_even_price}
+												<div class="font-medium text-gray-600">
+													Break Even Price: £{result.break_even_price.toFixed(2)}
+												</div>
+											{:else}
+												<div class="font-medium text-gray-500">Break Even Price: N/A</div>
+											{/if}
+
+											<!-- Data Freshness Warning -->
+											{#if Date.now() - new Date(result.captured_at).getTime() > 24 * 60 * 60 * 1000}
+												{@const dataAge = Math.floor(
+													(Date.now() - new Date(result.captured_at).getTime()) / (1000 * 60 * 60)
+												)}
+												<div class="bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
+													<div class="text-xs text-yellow-800 font-medium">
+														⚠️ Data may be outdated ({dataAge}h old)
+													</div>
+													<div class="text-xs text-yellow-600 mt-1">
+														<a
+															href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
+															class="underline hover:text-yellow-800"
+															target="_blank"
+														>
+															Check live pricing →
+														</a>
+													</div>
+												</div>
 											{/if}
 										</div>
+									</td>
 
-										<!-- Buy Box Price -->
-										{#if result.price && result.price !== result.your_current_price}
-											<div class="font-medium text-gray-700">
-												Buy Box Price: £{result.price.toFixed(2)}
-											</div>
-										{:else if result.competitor_price && result.competitor_price !== result.your_current_price}
-											<div class="font-medium text-gray-700">
-												Buy Box Price: £{result.competitor_price.toFixed(2)}
-											</div>
-										{:else if result.is_winner && result.your_current_price}
-											<div class="font-medium text-green-700">
-												Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
-											</div>
-										{:else}
-											<div class="font-medium text-gray-500">
-												Buy Box Price: N/A
-												<span class="text-xs block text-orange-600">No Buy Box detected</span>
-											</div>
-										{/if}
-
-										<!-- Break Even Price -->
-										{#if result.break_even_price}
-											<div class="font-medium text-gray-600">
-												Break Even Price: £{result.break_even_price.toFixed(2)}
-											</div>
-										{:else}
-											<div class="font-medium text-gray-500">Break Even Price: N/A</div>
-										{/if}
-
-										<!-- Data Freshness Warning -->
-										{#if Date.now() - new Date(result.captured_at).getTime() > 24 * 60 * 60 * 1000}
-											{@const dataAge = Math.floor(
-												(Date.now() - new Date(result.captured_at).getTime()) / (1000 * 60 * 60)
-											)}
-											<div class="bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
-												<div class="text-xs text-yellow-800 font-medium">
-													⚠️ Data may be outdated ({dataAge}h old)
+									<!-- Cost Breakdown -->
+									<td class="py-4 px-6">
+										<div class="text-xs space-y-1">
+											<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
+											{#if result.your_cost && result.your_cost > 0}
+												<div>Base: £{result.your_cost.toFixed(2)}</div>
+											{:else}
+												<div class="text-red-600 font-medium">⚠️ Base: Missing/£0.00</div>
+											{/if}
+											{#if result.your_vat_amount}
+												<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
+											{/if}
+											{#if result.your_box_cost}
+												<div>Box: £{result.your_box_cost.toFixed(2)}</div>
+											{/if}
+											<div>Material: £0.20</div>
+											{#if result.your_fragile_charge && result.your_fragile_charge > 0}
+												<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
+											{/if}
+											{#if result.your_shipping_cost}
+												<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
+											{/if}
+											{#if result.total_operating_cost}
+												<div class="font-medium border-t pt-1 text-blue-800">
+													Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
 												</div>
-												<div class="text-xs text-yellow-600 mt-1">
-													<a
-														href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
-														class="underline hover:text-yellow-800"
-														target="_blank"
-													>
-														Check live pricing →
-													</a>
+											{/if}
+
+											<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
+											{#if result.your_current_price}
+												<div class="text-red-600">
+													Amazon Fee (15% of £{result.your_current_price.toFixed(2)}): £{(
+														result.your_current_price * 0.15
+													).toFixed(2)}
 												</div>
-											</div>
-										{/if}
-									</div>
-								</td>
+											{/if}
 
-								<!-- Cost Breakdown -->
-								<td class="py-4 px-6">
-									<div class="text-xs space-y-1">
-										<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
-										{#if result.your_cost && result.your_cost > 0}
-											<div>Base: £{result.your_cost.toFixed(2)}</div>
-										{:else}
-											<div class="text-red-600 font-medium">⚠️ Base: Missing/£0.00</div>
-										{/if}
-										{#if result.your_vat_amount}
-											<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
-										{/if}
-										{#if result.your_box_cost}
-											<div>Box: £{result.your_box_cost.toFixed(2)}</div>
-										{/if}
-										<div>Material: £0.20</div>
-										{#if result.your_fragile_charge && result.your_fragile_charge > 0}
-											<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
-										{/if}
-										{#if result.your_shipping_cost}
-											<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
-										{/if}
-										{#if result.total_operating_cost}
-											<div class="font-medium border-t pt-1 text-blue-800">
-												Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
-											</div>
-										{/if}
-
-										<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
-										{#if result.your_current_price}
-											<div class="text-red-600">
-												Amazon Fee (15% of £{result.your_current_price.toFixed(2)}): £{(
-													result.your_current_price * 0.15
-												).toFixed(2)}
-											</div>
-										{/if}
-
-										{#if result.total_operating_cost && result.your_current_price}
-											<div class="font-bold border-t pt-2 text-orange-800">
-												Total Cost After Fees: £{(
-													result.total_operating_cost +
-													result.your_current_price * 0.15
-												).toFixed(2)}
-											</div>
-											<div class="text-xs text-gray-500">
-												(£{result.total_operating_cost.toFixed(2)} + £{(
-													result.your_current_price * 0.15
-												).toFixed(2)})
-											</div>
-										{/if}
-
-										{#if result.break_even_price}
-											<div class="font-bold border-t pt-2 text-red-800">
-												Break-even: £{result.break_even_price.toFixed(2)}
-											</div>
-											<div class="text-xs text-gray-500">
-												(£{result.total_operating_cost?.toFixed(2)} ÷ 0.85)
-											</div>
-										{/if}
-									</div>
-								</td>
-
-								<!-- Margin Analysis -->
-								<td class="py-4 px-6">
-									<div class="text-sm space-y-1">
-										{#if result.current_actual_profit !== null}
-											<div
-												class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
-											>
-												£{result.current_actual_profit.toFixed(2)} profit
-											</div>
-										{/if}
-										{#if result.your_margin_percent_at_current_price !== null}
-											<div
-												class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
-											>
-												📊 Current Price: {result.your_margin_percent_at_current_price.toFixed(1)}%
-												margin
-											</div>
-										{/if}
-
-										<!-- No competition detected message -->
-										{#if !result.is_winner && !result.price && !result.competitor_price}
-											<div class="border-t pt-1 mt-2">
-												<div class="text-xs font-medium text-green-700 mb-1">
-													🏆 No Competition Detected
+											{#if result.total_operating_cost && result.your_current_price}
+												<div class="font-bold border-t pt-2 text-orange-800">
+													Total Cost After Fees: £{(
+														result.total_operating_cost +
+														result.your_current_price * 0.15
+													).toFixed(2)}
 												</div>
-												<div class="text-xs text-green-600">
-													You may have the buy box by default - consider checking live pricing
+												<div class="text-xs text-gray-500">
+													(£{result.total_operating_cost.toFixed(2)} + £{(
+														result.your_current_price * 0.15
+													).toFixed(2)})
 												</div>
-											</div>
-										{/if}
+											{/if}
 
-										<!-- Match Buy Box Exactly (only when there's valid buy box data AND actual competition) -->
-										{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit && (result.price || result.competitor_price) && ((result.price && result.price > 0) || (result.competitor_price && result.competitor_price > 0))}
-											<div class="border-t pt-1 mt-1">
-												<div class="text-xs font-medium text-gray-700 mb-1">
-													🎯 Match Buy Box Exactly:
+											{#if result.break_even_price}
+												<div class="font-bold border-t pt-2 text-red-800">
+													Break-even: £{result.break_even_price.toFixed(2)}
 												</div>
+												<div class="text-xs text-gray-500">
+													(£{result.total_operating_cost?.toFixed(2)} ÷ 0.85)
+												</div>
+											{/if}
+										</div>
+									</td>
+
+									<!-- Margin Analysis -->
+									<td class="py-4 px-6">
+										<div class="text-sm space-y-1">
+											{#if result.current_actual_profit !== null}
 												<div
-													class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
+													class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
 												>
-													£{result.buybox_actual_profit.toFixed(2)} profit
+													£{result.current_actual_profit.toFixed(2)} profit
 												</div>
-												{#if result.margin_percent_at_buybox_price !== null}
-													<div
-														class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
-													>
-														({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
-													</div>
-												{/if}
-												{#if result.margin_difference}
-													<div
-														class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
-													>
-														Difference: {result.margin_difference > 0
-															? '+'
-															: ''}£{result.margin_difference.toFixed(2)}
-													</div>
-												{/if}
-											</div>
-										{/if}
+											{/if}
+											{#if result.your_margin_percent_at_current_price !== null}
+												<div
+													class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+												>
+													📊 Current Price: {result.your_margin_percent_at_current_price.toFixed(
+														1
+													)}% margin
+												</div>
+											{/if}
 
-										{#if result.profit_opportunity && result.profit_opportunity > 0}
-											<div
-												class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded mt-2"
+											<!-- No competition detected message -->
+											{#if !result.is_winner && !result.price && !result.competitor_price}
+												<div class="border-t pt-1 mt-2">
+													<div class="text-xs font-medium text-green-700 mb-1">
+														🏆 No Competition Detected
+													</div>
+													<div class="text-xs text-green-600">
+														You may have the buy box by default - consider checking live pricing
+													</div>
+												</div>
+											{/if}
+
+											<!-- Match Buy Box Exactly (only when there's valid buy box data AND actual competition) -->
+											{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit && (result.price || result.competitor_price) && ((result.price && result.price > 0) || (result.competitor_price && result.competitor_price > 0))}
+												<div class="border-t pt-1 mt-1">
+													<div class="text-xs font-medium text-gray-700 mb-1">
+														🎯 Match Buy Box Exactly:
+													</div>
+													<div
+														class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
+													>
+														£{result.buybox_actual_profit.toFixed(2)} profit
+													</div>
+													{#if result.margin_percent_at_buybox_price !== null}
+														<div
+															class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
+														</div>
+													{/if}
+													{#if result.margin_difference}
+														<div
+															class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															Difference: {result.margin_difference > 0
+																? '+'
+																: ''}£{result.margin_difference.toFixed(2)}
+														</div>
+													{/if}
+												</div>
+											{/if}
+
+											{#if result.profit_opportunity && result.profit_opportunity > 0}
+												<div
+													class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded mt-2"
+												>
+													+£{result.profit_opportunity.toFixed(2)} opportunity
+												</div>
+											{/if}
+										</div>
+									</td>
+
+									<!-- Recommendation -->
+									<td class="py-4 px-6">
+										{#if !result.price && !result.competitor_price}
+											<!-- No competition detected -->
+											<span
+												class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800"
 											>
-												+£{result.profit_opportunity.toFixed(2)} opportunity
-											</div>
-										{/if}
-									</div>
-								</td>
-
-								<!-- Recommendation -->
-								<td class="py-4 px-6">
-									{#if !result.price && !result.competitor_price}
-										<!-- No competition detected -->
-										<span
-											class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800"
-										>
-											🏆 No Competition
-										</span>
-									{:else if result.recommended_action === 'not_profitable' && !result.price && !result.competitor_price}
-										<!-- Not profitable but no competition - suggest investigation -->
-										<span
-											class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
-										>
-											🔍 Investigate
-										</span>
-									{:else if result.recommended_action}
-										<span
-											class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium
+												🏆 No Competition
+											</span>
+										{:else if result.recommended_action === 'not_profitable' && !result.price && !result.competitor_price}
+											<!-- Not profitable but no competition - suggest investigation -->
+											<span
+												class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+											>
+												🔍 Investigate
+											</span>
+										{:else if result.recommended_action}
+											<span
+												class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium
 											${result.recommended_action === 'match_buybox' ? 'bg-blue-100 text-blue-800' : ''}
 											${result.recommended_action === 'hold_price' ? 'bg-green-100 text-green-800' : ''}
 											${result.recommended_action === 'investigate' ? 'bg-yellow-100 text-yellow-800' : ''}
 											${result.recommended_action === 'not_profitable' ? 'bg-red-100 text-red-800' : ''}
 										`}
-										>
-											{#if result.recommended_action === 'match_buybox'}
-												📈 Match Buy Box
-											{:else if result.recommended_action === 'hold_price'}
-												✋ Hold Price
-											{:else if result.recommended_action === 'investigate'}
-												🔍 Investigate
-											{:else if result.recommended_action === 'not_profitable' && (result.price || result.competitor_price)}
-												❌ Not Profitable
-											{:else if result.recommended_action === 'not_profitable'}
-												🔍 Check Live Pricing
-											{:else}
-												{result.recommended_action}
-											{/if}
-										</span>
-									{:else}
-										<span class="text-gray-400 text-xs">No data</span>
-									{/if}
-								</td>
-
-								<!-- Actions -->
-								<td class="py-4 px-6">
-									<div class="flex flex-col gap-1">
-										<a
-											href="/buy-box-monitor?query={encodeURIComponent(result.sku || result.asin)}"
-											target="_blank"
-											rel="noopener noreferrer"
-											class="text-blue-600 hover:text-blue-800 underline text-xs"
-										>
-											View Details
-										</a>
-										{#if result.recommended_action === 'match_buybox'}
-											<button
-												class="text-green-600 hover:text-green-800 underline text-xs"
-												on:click={() => markForPriceUpdate(result)}
 											>
-												Mark for Update
+												{#if result.recommended_action === 'match_buybox'}
+													📈 Match Buy Box
+												{:else if result.recommended_action === 'hold_price'}
+													✋ Hold Price
+												{:else if result.recommended_action === 'investigate'}
+													🔍 Investigate
+												{:else if result.recommended_action === 'not_profitable' && (result.price || result.competitor_price)}
+													❌ Not Profitable
+												{:else if result.recommended_action === 'not_profitable'}
+													🔍 Check Live Pricing
+												{:else}
+													{result.recommended_action}
+												{/if}
+											</span>
+										{:else}
+											<span class="text-gray-400 text-xs">No data</span>
+										{/if}
+									</td>
+
+									<!-- Actions -->
+									<td class="py-4 px-6">
+										<div class="flex flex-col gap-1">
+											<a
+												href="/buy-box-monitor?query={encodeURIComponent(
+													result.sku || result.asin
+												)}"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="text-blue-600 hover:text-blue-800 underline text-xs"
+											>
+												View Details
+											</a>
+											{#if result.recommended_action === 'match_buybox'}
+												<button
+													class="text-green-600 hover:text-green-800 underline text-xs"
+													on:click={() => markForPriceUpdate(result)}
+												>
+													Mark for Update
+												</button>
+											{/if}
+											<span class="text-gray-400 text-xs cursor-not-allowed">
+												Add to Watchlist (Coming Soon)
+											</span>
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else if viewMode === 'bestsellers'}
+				<!-- Top 100 Best Sellers View -->
+				<div class="space-y-6 p-6">
+					<div
+						class="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-lg p-4 mb-6"
+					>
+						<div class="flex items-center gap-3">
+							<span class="text-2xl">🏆</span>
+							<div>
+								<h3 class="text-lg font-semibold text-orange-800">Top 100 Best Sellers</h3>
+								<p class="text-sm text-orange-600">
+									Based on sales data from July 16, 2025 business report. Showing {bestSellersGrouped.size}
+									ASINs with buy box data available.
+								</p>
+							</div>
+						</div>
+					</div>
+
+					{#each Array.from(bestSellersGrouped.entries()).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage) as [asin, skus]}
+						<div class="bg-white border border-gray-200 rounded-lg shadow-sm">
+							<!-- ASIN Header -->
+							<div
+								class={`px-6 py-4 border-b border-gray-200 ${
+									skus[0]?.is_skeleton
+										? 'bg-gradient-to-r from-gray-50 to-gray-100'
+										: 'bg-gradient-to-r from-orange-50 to-yellow-50'
+								}`}
+							>
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-4">
+										<h3 class="text-lg font-semibold text-gray-900">ASIN: {asin}</h3>
+										{#if skus[0]?.is_skeleton}
+											<span
+												class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-sm font-medium"
+											>
+												📊 No Data Available
+											</span>
+										{:else}
+											<span
+												class="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm font-medium"
+											>
+												🏆 Best Seller
+											</span>
+										{/if}
+										<span
+											class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
+										>
+											{skus[0]?.is_skeleton
+												? 'Data Missing'
+												: `${skus.length} SKU${skus.length !== 1 ? 's' : ''}`}
+										</span>
+										{#if skus[0]?.is_skeleton}
+											<button
+												on:click={() => fetchSingleASIN(asin)}
+												class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
+											>
+												🔄 Fetch Data
 											</button>
 										{/if}
-										<span class="text-gray-400 text-xs cursor-not-allowed">
-											Add to Watchlist (Coming Soon)
-										</span>
 									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+									<div class="flex items-center gap-2">
+										{#if !skus[0]?.is_skeleton}
+											{#if skus.some((s) => s.merchant_shipping_group === 'Nationwide Prime')}
+												<span
+													class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium"
+												>
+													⚡ Prime Available
+												</span>
+											{/if}
+											{#if skus.some((s) => s.merchant_shipping_group === 'UK Shipping')}
+												<span
+													class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium"
+												>
+													📦 Standard
+												</span>
+											{/if}
+										{:else}
+											<span
+												class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium"
+											>
+												⚠️ Click "Fetch Data" to analyze
+											</span>
+										{/if}
+									</div>
+								</div>
+
+								<!-- ASIN Summary Stats -->
+								{#if !skus[0]?.is_skeleton}
+									<div class="mt-3 grid grid-cols-4 gap-4 text-sm">
+										<div>
+											<span class="text-gray-500">Total Profit:</span>
+											<span class="font-medium">
+												£{skus
+													.reduce((sum, s) => sum + (s.current_actual_profit || 0), 0)
+													.toFixed(2)}
+											</span>
+										</div>
+										<div>
+											<span class="text-gray-500">Winners:</span>
+											<span class="font-medium text-green-600">
+												{skus.filter((s) => s.is_winner).length}/{skus.length}
+											</span>
+										</div>
+										<div>
+											<span class="text-gray-500">Opportunities:</span>
+											<span class="font-medium text-blue-600">
+												{skus.filter((s) => s.opportunity_flag).length}
+											</span>
+										</div>
+										<div>
+											<span class="text-gray-500">Last Updated:</span>
+											<span class="font-medium">
+												{new Date(
+													Math.max(...skus.map((s) => new Date(s.captured_at).getTime()))
+												).toLocaleDateString()}
+											</span>
+										</div>
+									</div>
+								{:else}
+									<div class="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+										<div class="flex items-center gap-2">
+											<span class="text-yellow-600">⚡</span>
+											<div>
+												<p class="text-sm font-medium text-yellow-800">
+													Buy Box Data Not Available
+												</p>
+												<p class="text-xs text-yellow-600">
+													This ASIN is in your top 100 best sellers but hasn't been analyzed yet.
+													Click "Fetch Data" to get current buy box information.
+												</p>
+											</div>
+										</div>
+									</div>
+								{/if}
+							</div>
+
+							<!-- SKUs Table or Skeleton -->
+							{#if !skus[0]?.is_skeleton}
+								<div class="overflow-x-auto">
+									<table class="min-w-full">
+										<thead class="bg-gray-50">
+											<tr
+												class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												<th class="py-3 px-6">SKU</th>
+												<th class="py-3 px-6">Shipping</th>
+												<th class="py-3 px-6">Our Price</th>
+												<th class="py-3 px-6">Buy Box</th>
+												<th class="py-3 px-6">Profit</th>
+												<th class="py-3 px-6">Margin</th>
+												<th class="py-3 px-6">Status</th>
+												<th class="py-3 px-6">Action</th>
+											</tr>
+										</thead>
+										<tbody class="bg-white divide-y divide-gray-200">
+											{#each skus as sku}
+												<tr class="hover:bg-gray-50">
+													<td class="py-4 px-6">
+														<div class="text-sm">
+															<a
+																href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
+																	sku.sku
+																)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
+																target="_blank"
+																rel="noopener noreferrer"
+																class="font-medium text-blue-600 hover:text-blue-800 underline"
+																title="Manage price in Amazon Seller Central"
+															>
+																{sku.sku} 📝
+															</a>
+														</div>
+														<div class="mt-1">
+															<a
+																href="https://amazon.co.uk/dp/{sku.asin}"
+																target="_blank"
+																rel="noopener noreferrer"
+																class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
+																title="View on Amazon UK"
+															>
+																{sku.asin} →
+															</a>
+														</div>
+														<div class="text-xs text-gray-500 mt-1">
+															{#if sku.product_title}
+																{sku.product_title}
+															{:else}
+																{getProductTitle(sku.sku) || 'Loading...'}
+															{/if}
+														</div>
+													</td>
+													<td class="py-4 px-6">
+														{#if sku.merchant_shipping_group === 'Nationwide Prime'}
+															<span
+																class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium"
+															>
+																⚡ Prime
+															</span>
+														{:else if sku.merchant_shipping_group === 'UK Shipping'}
+															<span
+																class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium"
+															>
+																📦 Standard
+															</span>
+														{:else}
+															<span class="text-gray-400 text-xs">Unknown</span>
+														{/if}
+													</td>
+													<td class="py-4 px-6">
+														<div class="text-sm">
+															{#if sku.your_current_price === 0}
+																<span class="text-red-600">Out of Stock</span>
+															{:else}
+																£{sku.your_current_price?.toFixed(2) || 'N/A'}
+															{/if}
+															{#if sku.is_winner}
+																<span class="text-green-600 ml-1">🏆</span>
+															{/if}
+														</div>
+													</td>
+													<td class="py-4 px-6">
+														<div class="text-sm">£{sku.price?.toFixed(2) || 'N/A'}</div>
+													</td>
+													<td class="py-4 px-6">
+														<div class="text-sm">
+															{#if sku.current_actual_profit !== null}
+																<span
+																	class={sku.current_actual_profit >= 0
+																		? 'text-green-600'
+																		: 'text-red-600'}
+																>
+																	£{sku.current_actual_profit.toFixed(2)}
+																</span>
+															{:else}
+																<span class="text-gray-400">N/A</span>
+															{/if}
+														</div>
+													</td>
+													<td class="py-4 px-6">
+														<div class="text-sm">
+															{#if sku.your_margin_percent_at_current_price !== null}
+																<span
+																	class={sku.your_margin_percent_at_current_price >= 20
+																		? 'text-green-600'
+																		: sku.your_margin_percent_at_current_price >= 10
+																			? 'text-yellow-600'
+																			: 'text-red-600'}
+																>
+																	{sku.your_margin_percent_at_current_price.toFixed(1)}%
+																</span>
+															{:else}
+																<span class="text-gray-400">N/A</span>
+															{/if}
+														</div>
+													</td>
+													<td class="py-4 px-6">
+														{#if sku.opportunity_flag}
+															<span
+																class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium"
+															>
+																💡 Opportunity
+															</span>
+														{:else if sku.is_winner}
+															<span
+																class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium"
+															>
+																🏆 Winner
+															</span>
+														{:else}
+															<span
+																class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium"
+															>
+																❌ Losing
+															</span>
+														{/if}
+													</td>
+													<td class="py-4 px-6">
+														<a
+															href="/buy-box-monitor?query={encodeURIComponent(sku.sku)}"
+															class="text-blue-600 hover:text-blue-800 text-sm underline"
+															target="_blank"
+														>
+															Check Live
+														</a>
+													</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{:else}
+								<!-- Skeleton view for missing ASIN data -->
+								<div class="p-6">
+									<div class="flex items-center justify-center py-8">
+										<div class="text-center">
+											<div
+												class="flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full"
+											>
+												<span class="text-2xl">📊</span>
+											</div>
+											<h3 class="text-lg font-medium text-gray-900 mb-2">
+												No Buy Box Data Available
+											</h3>
+											<p class="text-sm text-gray-500 mb-4">
+												This ASIN appears in your top 100 best sellers but hasn't been analyzed for
+												buy box opportunities yet.
+											</p>
+											<div class="flex items-center justify-center gap-3">
+												<a
+													href="https://amazon.co.uk/dp/{asin}"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="text-blue-600 hover:text-blue-800 underline text-sm"
+													title="View on Amazon UK"
+												>
+													{asin} → View Product
+												</a>
+												<span class="text-gray-300">|</span>
+												<button
+													on:click={() => fetchSingleASIN(asin)}
+													class="inline-flex items-center px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md transition-colors"
+												>
+													🔄 Analyze This ASIN
+												</button>
+											</div>
+										</div>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
 
 			<!-- Pagination -->
 			{#if totalResults > itemsPerPage}

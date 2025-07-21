@@ -16,6 +16,8 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Import routes
 const bulkScanRoute = require('./routes/bulk-scan');
+const singleAsinRoute = require('./routes/single-asin');
+const weeklyComparisonRoute = require('./routes/weekly-comparison');
 const jobStatusRoute = require('./routes/job-status');
 const jobFailuresRoute = require('./routes/job-failures');
 const jobResultsRoute = require('./routes/job-results');
@@ -41,6 +43,8 @@ app.use((req, res, next) => {
 // Routes
 app.use('/health', healthRoute);
 app.use('/api/bulk-scan', bulkScanRoute);
+app.use('/api/single-asin', singleAsinRoute);
+app.use('/api/weekly-comparison', weeklyComparisonRoute);
 app.use('/api/job-status', jobStatusRoute);
 app.use('/api/job-failures', jobFailuresRoute);
 app.use('/api/job-results', jobResultsRoute);
@@ -56,6 +60,10 @@ app.get('/', (req, res) => {
     endpoints: [
       'GET /health - Health check',
       'POST /api/bulk-scan/start - Start bulk scanning job',
+      'POST /api/single-asin/:asin - Scan a single ASIN',
+      'POST /api/weekly-comparison/run - Run weekly sales comparison',
+      'GET /api/weekly-comparison/report - Download comparison report',
+      'GET /api/weekly-comparison/status - Check comparison files status',
       'GET /api/job-status - List all jobs',
       'GET /api/job-status/:jobId - Get job status',
       'POST /api/job-status/:jobId/cancel - Cancel job',
