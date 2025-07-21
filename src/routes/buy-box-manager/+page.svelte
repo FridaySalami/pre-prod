@@ -544,13 +544,13 @@
 
 			let message = `🔍 PRICING COMPARISON FOR ${item.sku}\n\n`;
 			message += `📊 Scanned Data (from database):\n`;
-			message += `   Your Price: £${scannedPrice?.toFixed(2) || 'N/A'}\n`;
+			message += `   Your Price: ${scannedPrice === 0 ? 'Out of Stock' : `£${scannedPrice?.toFixed(2) || 'N/A'}`}\n`;
 			message += `   Competitor Price: £${item.competitor_price?.toFixed(2) || 'N/A'}\n`;
 			message += `   Captured: ${new Date(item.captured_at).toLocaleString()}\n\n`;
 
 			message += `🔴 Live Data (current Amazon):\n`;
 			if (yourActualPrice) {
-				message += `   Your Listed Price: £${yourActualPrice.toFixed(2)}\n`;
+				message += `   Your Listed Price: ${yourActualPrice === 0 ? 'Out of Stock' : `£${yourActualPrice.toFixed(2)}`}\n`;
 			}
 			message += `   Buy Box Price: £${liveBuyBoxPrice?.toFixed(2) || 'N/A'}\n`;
 			message += `   Buy Box Winner: ${liveData.buyBoxWinner || 'Unknown'}\n\n`;
@@ -1767,7 +1767,11 @@
 									<div class="text-sm space-y-1">
 										<!-- Our Price -->
 										<div class="font-medium text-gray-900">
-											Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
+											{#if result.your_current_price === 0}
+												<span class="text-red-600">Out of Stock</span>
+											{:else}
+												Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
+											{/if}
 											{#if result.is_winner}
 												<span class="text-green-600 ml-1">🏆</span>
 											{/if}
