@@ -189,7 +189,7 @@ class AmazonSPAPI {
   /**
    * Transform SP-API pricing response into our database format
    */
-  transformPricingData(pricingData, asin, sku, runId, productTitle = null) {
+  async transformPricingData(pricingData, asin, sku, runId, productTitle = null) {
     try {
       const offers = pricingData?.payload?.Offers || [];
 
@@ -203,8 +203,22 @@ class AmazonSPAPI {
       // Find Buy Box winner
       const buyBoxOffer = offers.find(offer => offer.IsBuyBoxWinner === true);
 
-      // Find YOUR current offer
-      const yourOffer = offers.find(offer => offer.SellerId === yourSellerId);
+      // Find YOUR current offer from competitive pricing
+      const yourOfferFromApi = offers.find(offer => offer.SellerId === yourSellerId);
+
+      // Get SKU-specific pricing from our listings data
+      const { SupabaseService } = require('./supabase-client');
+      const skuPricingData = await SupabaseService.getSkuPricing(sku);
+
+      // Use SKU-specific pricing if available, otherwise fall back to API data
+      let yourCurrentPrice;
+      if (skuPricingData && skuPricingData.price > 0) {
+        yourCurrentPrice = skuPricingData.price;
+        console.log(`Using SKU-specific pricing for ${sku}: £${yourCurrentPrice}`);
+      } else {
+        yourCurrentPrice = yourOfferFromApi?.ListingPrice?.Amount || 0;
+        console.log(`Using SP-API pricing for ${sku}: £${yourCurrentPrice}`);
+      }
 
       // Get all competitor prices for analysis
       const competitorPrices = offers
@@ -226,19 +240,20 @@ class AmazonSPAPI {
       const buyBoxShipping = buyBoxOffer?.Shipping?.Amount || 0;
       const buyBoxTotal = buyBoxPrice + buyBoxShipping;
 
-      // Your current pricing
-      const yourCurrentPrice = yourOffer?.ListingPrice?.Amount || 0;
-      const yourCurrentShipping = yourOffer?.Shipping?.Amount || 0;
+      // Your current shipping (use API data for shipping costs)
+      const yourCurrentShipping = yourOfferFromApi?.Shipping?.Amount || 0;
       const yourCurrentTotal = yourCurrentPrice + yourCurrentShipping;
 
       // Determine winner status and opportunity
+      // Winner is determined by Amazon's Buy Box algorithm, not price matching
       const isWinner = buyBoxOffer?.SellerId === yourSellerId;
       const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
 
-      // Calculate price gap
-      const priceGap = isWinner ? 0 : (yourCurrentPrice - buyBoxPrice);
+      // Calculate price gap (real gap between your SKU price and Buy Box price)
+      const priceGap = yourCurrentPrice - buyBoxPrice;
 
       console.log(`Buy Box analysis for ${asin}: Your ID: ${yourSellerId}, Buy Box Owner: ${buyBoxOffer?.SellerId}, Winner: ${isWinner}`);
+      console.log(`Price Gap Debug - Your: ${yourCurrentPrice} (${typeof yourCurrentPrice}), BuyBox: ${buyBoxPrice} (${typeof buyBoxPrice}), Gap: ${priceGap} (${typeof priceGap})`);
       console.log(`Pricing for ${asin}: Your Price: £${yourCurrentPrice}, Buy Box Price: £${buyBoxPrice}, Gap: £${priceGap.toFixed(2)}`);
 
       return {
@@ -269,7 +284,7 @@ class AmazonSPAPI {
         price_gap: parseFloat(priceGap.toFixed(2)),
         price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
         pricing_status: isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox'),
-        your_offer_found: !!yourOffer,
+        your_offer_found: !!yourOfferFromApi,
 
         // REMOVED to reduce payload size (not used by frontend):
         // currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
@@ -313,7 +328,7 @@ class AmazonSPAPI {
         }
 
         const pricingData = await this.getCompetitivePricing(asin);
-        const transformedData = this.transformPricingData(pricingData, asin, sku, runId, productTitle);
+        const transformedData = await this.transformPricingData(pricingData, asin, sku, runId, productTitle);
 
         // Enrich with cost calculator data for margin analysis
         const enrichedData = await this.costCalculator.enrichBuyBoxData(transformedData);

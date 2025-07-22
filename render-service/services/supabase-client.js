@@ -300,6 +300,28 @@ class SupabaseService {
   }
 
   /**
+   * Get ASIN to SKU mappings for specific ASINs
+   */
+  async getAsinSkuMappings(asins) {
+    if (!asins || asins.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('sku_asin_mapping')
+      .select('seller_sku, asin1, item_name, price, status')
+      .in('asin1', asins)
+      .eq('status', 'Active'); // Only get active products
+
+    if (error) {
+      throw new Error(`Failed to get ASIN/SKU mappings: ${error.message}`);
+    }
+
+    console.log(`✅ Found ${data.length} ASIN/SKU mappings for ${asins.length} requested ASINs`);
+    return data;
+  }
+
+  /**
    * Get total count of ASINs (including inactive ones)
    */
   async getAllAsinCount() {
@@ -490,32 +512,70 @@ class SupabaseService {
   }
 
   /**
-   * Get product title by SKU or ASIN
+   * Get product title for SKU and ASIN combination
    */
-  async getProductTitle(sku = null, asin = null) {
-    if (!sku && !asin) {
-      return null;
-    }
-
-    let query = supabase
+  async getProductTitle(sku, asin) {
+    const { data, error } = await supabase
       .from('sku_asin_mapping')
       .select('item_name')
-      .limit(1);
-
-    if (sku) {
-      query = query.eq('seller_sku', sku);
-    } else if (asin) {
-      query = query.eq('asin1', asin);
-    }
-
-    const { data, error } = await query;
+      .eq('seller_sku', sku)
+      .eq('asin1', asin)
+      .single();
 
     if (error) {
-      console.warn(`Failed to get product title for SKU: ${sku}, ASIN: ${asin}:`, error.message);
+      console.warn(`Failed to get product title for ${sku}/${asin}:`, error.message);
       return null;
     }
 
-    return data && data.length > 0 ? data[0].item_name : null;
+    return data?.item_name || null;
+  }
+
+  /**
+   * Get SKU-specific pricing from Amazon listings data
+   */
+  async getSkuPricing(sku) {
+    try {
+      // First try to get from amazon_listings table if it exists
+      const { data: listingData, error: listingError } = await supabase
+        .from('amazon_listings')
+        .select('price, merchant_shipping_group')
+        .eq('seller_sku', sku)
+        .single();
+
+      if (!listingError && listingData) {
+        console.log(`Found SKU pricing in database for ${sku}: £${listingData.price}`);
+        return {
+          price: parseFloat(listingData.price),
+          shippingGroup: listingData.merchant_shipping_group
+        };
+      }
+
+      // Fallback: try to get from sku_asin_mapping if it has pricing data
+      const { data: mappingData, error: mappingError } = await supabase
+        .from('sku_asin_mapping')
+        .select('*')
+        .eq('seller_sku', sku)
+        .single();
+
+      if (!mappingError && mappingData) {
+        // Check if there's a price field in the mapping data
+        const price = mappingData.price || mappingData.listing_price || mappingData.amazon_price;
+        if (price) {
+          console.log(`Found SKU pricing in mapping for ${sku}: £${price}`);
+          return {
+            price: parseFloat(price),
+            shippingGroup: mappingData.merchant_shipping_group || 'UK Shipping'
+          };
+        }
+      }
+
+      console.warn(`No pricing data found for SKU: ${sku}`);
+      return null;
+
+    } catch (error) {
+      console.error(`Error getting SKU pricing for ${sku}:`, error.message);
+      return null;
+    }
   }
 }
 

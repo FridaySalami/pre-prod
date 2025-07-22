@@ -9,7 +9,8 @@
 		asin: string;
 		sku: string;
 		// product_title removed - now loaded lazily from sku_asin_mapping
-		price: number | null; // This is the buybox price (competitor's price)
+		price: number | null; // This is the buybox price (competitor's price) - legacy field
+		buybox_price: number | null; // Preferred field for buy box price
 		your_current_price: number | null; // This is our current listed price
 		competitor_price: number | null;
 		is_winner: boolean;
@@ -629,6 +630,7 @@
 			is_winner: false,
 			opportunity_flag: false,
 			price: null,
+			buybox_price: null,
 			your_current_price: null,
 			competitor_price: null,
 			break_even_price: null,
@@ -690,14 +692,117 @@
 			const result = await response.json();
 			console.log(`✅ Successfully initiated fetch for ASIN: ${asin}`, result);
 
+			// Enable "include no margin data" since single ASIN fetches often don't have cost data
+			if (!includeNoMarginData) {
+				console.log(`🔧 Enabling 'include no margin data' to show single ASIN fetch results`);
+				includeNoMarginData = true;
+			}
+
 			// Refresh the buy box data to show the new data
-			setTimeout(() => {
-				location.reload(); // Simple refresh for now
+			// Instead of reloading the page, refresh just the data
+			setTimeout(async () => {
+				console.log(`🔄 Refreshing buy box data after fetching ASIN: ${asin}`);
+				await refreshData();
 			}, 2000);
 		} catch (error) {
 			console.error(`❌ Error fetching ASIN ${asin}:`, error);
 			alert(`Failed to fetch data for ASIN ${asin}. Please try again.`);
 		}
+	}
+
+	// Function to bulk scan top 100 ASINs
+	async function bulkScanTop100(): Promise<void> {
+		console.log(`🚀 Starting bulk scan for ${top100ASINs.length} top ASINs`);
+
+		try {
+			const response = await fetch(`http://localhost:3001/api/bulk-scan/start`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					source: `ui_bulk_top100_${new Date().toISOString().split('T')[0]}`,
+					filterType: 'custom',
+					customAsins: top100ASINs,
+					notes: `Bulk scan of top 100 ASINs from Best Sellers view at ${new Date().toLocaleString()}`
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const result = await response.json();
+			console.log(`✅ Successfully started bulk scan:`, result);
+
+			// Enable "include no margin data" to ensure we see all results
+			if (!includeNoMarginData) {
+				console.log(`🔧 Enabling 'include no margin data' for bulk scan results`);
+				includeNoMarginData = true;
+			}
+
+			// Show success message
+			alert(
+				`✅ Bulk scan started successfully!\n\nJob ID: ${result.job_id}\nASINs to process: ${result.total_asins}\n\nEstimated completion: ${result.estimated_completion_time || '30-45 minutes'}\n\nThe page will refresh automatically when complete.`
+			);
+
+			// Poll for completion (check every 30 seconds)
+			pollForBulkScanCompletion(result.job_id);
+		} catch (error) {
+			console.error(`❌ Error starting bulk scan:`, error);
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+			alert(`Failed to start bulk scan. Please try again.\n\nError: ${errorMessage}`);
+		}
+	}
+
+	// Function to poll for bulk scan completion
+	async function pollForBulkScanCompletion(jobId: string): Promise<void> {
+		const maxPolls = 120; // Poll for up to 1 hour (120 * 30s = 3600s)
+		let pollCount = 0;
+
+		const pollInterval = setInterval(async () => {
+			pollCount++;
+			console.log(`🔄 Polling bulk scan status (${pollCount}/${maxPolls})...`);
+
+			try {
+				const response = await fetch(`http://localhost:3001/api/bulk-scan/status/${jobId}`);
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
+
+				const status = await response.json();
+				console.log(`📊 Bulk scan status:`, status);
+
+				if (status.status === 'completed' || status.status === 'failed') {
+					clearInterval(pollInterval);
+
+					if (status.status === 'completed') {
+						console.log(`✅ Bulk scan completed! Refreshing data...`);
+						await refreshData();
+						alert(
+							`✅ Bulk scan completed successfully!\n\nProcessed: ${status.successful_asins || 0} ASINs\nFailed: ${status.failed_asins || 0} ASINs\n\nData has been refreshed.`
+						);
+					} else {
+						console.error(`❌ Bulk scan failed:`, status.error_message);
+						alert(`❌ Bulk scan failed: ${status.error_message || 'Unknown error'}`);
+					}
+				}
+			} catch (error) {
+				console.error(`❌ Error polling bulk scan status:`, error);
+				if (pollCount >= maxPolls) {
+					clearInterval(pollInterval);
+					alert(
+						`⚠️ Bulk scan status polling timed out. The scan may still be running in the background.`
+					);
+				}
+			}
+
+			// Stop polling after max attempts
+			if (pollCount >= maxPolls) {
+				clearInterval(pollInterval);
+				console.warn(`⚠️ Bulk scan polling timed out after ${maxPolls} attempts`);
+			}
+		}, 30000); // Poll every 30 seconds
 	}
 
 	// Update grouped data when filtered data changes
@@ -849,6 +954,11 @@
 				currentPage * itemsPerPage
 			);
 			currentData = currentGroups.flatMap(([asin, skus]) => skus);
+			console.log('🔍 Best sellers debug - Total groups:', bestSellersGrouped.size);
+			console.log(
+				'🔍 Best sellers debug - B0B61D6XB1 group:',
+				bestSellersGrouped.get('B0B61D6XB1')
+			);
 		} else {
 			currentData = paginatedData;
 		}
@@ -1106,6 +1216,12 @@
 				on:click={refreshData}
 			>
 				Refresh Data
+			</button>
+			<button
+				class="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded flex items-center gap-2"
+				on:click={bulkScanTop100}
+			>
+				🚀 Update Top 100
 			</button>
 			<a
 				href="/buy-box-monitor/jobs"
@@ -2085,19 +2201,28 @@
 											</div>
 
 											<!-- Buy Box Price -->
-											{#if result.price && result.price !== result.your_current_price}
-												<div class="font-medium text-gray-700">
-													Buy Box Price: £{result.price.toFixed(2)}
-												</div>
-											{:else if result.competitor_price && result.competitor_price !== result.your_current_price}
-												<div class="font-medium text-gray-700">
-													Buy Box Price: £{result.competitor_price.toFixed(2)}
-												</div>
-											{:else if result.is_winner && result.your_current_price}
+											{#if result.is_winner && result.your_current_price}
+												<!-- You're winning the buy box -->
 												<div class="font-medium text-green-700">
 													Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
 												</div>
+											{:else if !result.is_winner && result.buybox_price}
+												<!-- You're losing - show actual buy box price -->
+												<div class="font-medium text-red-700">
+													Buy Box Price: £{result.buybox_price.toFixed(2)} (Competitor)
+												</div>
+											{:else if !result.is_winner && result.competitor_price}
+												<!-- Fallback: use competitor_price if buybox_price not available -->
+												<div class="font-medium text-red-700">
+													Buy Box Price: £{result.competitor_price.toFixed(2)} (Competitor)
+												</div>
+											{:else if !result.is_winner && result.price}
+												<!-- Final fallback: use price field -->
+												<div class="font-medium text-red-700">
+													Buy Box Price: £{result.price.toFixed(2)} (Competitor)
+												</div>
 											{:else}
+												<!-- No buy box data available -->
 												<div class="font-medium text-gray-500">
 													Buy Box Price: N/A
 													<span class="text-xs block text-orange-600">No Buy Box detected</span>
@@ -2370,7 +2495,22 @@
 								class={`px-6 py-4 border-b border-gray-200 ${
 									skus[0]?.is_skeleton
 										? 'bg-gradient-to-r from-gray-50 to-gray-100'
-										: 'bg-gradient-to-r from-orange-50 to-yellow-50'
+										: (() => {
+												const winners = skus.filter((s) => s.is_winner).length;
+												const total = skus.length;
+												const winRate = total > 0 ? winners / total : 0;
+
+												if (winRate >= 0.5) {
+													// Winning: 50% or more of SKUs have buy box (includes 1/2, 2/2, etc.)
+													return 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200';
+												} else if (winRate > 0) {
+													// Partial: Some SKUs winning but less than half
+													return 'bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200';
+												} else {
+													// Losing: No SKUs have buy box
+													return 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200';
+												}
+											})()
 								}`}
 							>
 								<div class="flex items-center justify-between">
@@ -2384,9 +2524,36 @@
 											</span>
 										{:else}
 											<span
-												class="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm font-medium"
+												class={(() => {
+													const winners = skus.filter((s) => s.is_winner).length;
+													const total = skus.length;
+													const winRate = total > 0 ? winners / total : 0;
+
+													if (winRate >= 0.5) {
+														// Winning: Green badge
+														return 'bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium';
+													} else if (winRate > 0) {
+														// Partial: Yellow badge
+														return 'bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium';
+													} else {
+														// Losing: Red badge
+														return 'bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium';
+													}
+												})()}
 											>
-												🏆 Best Seller
+												{(() => {
+													const winners = skus.filter((s) => s.is_winner).length;
+													const total = skus.length;
+													const winRate = total > 0 ? winners / total : 0;
+
+													if (winRate >= 0.5) {
+														return '🏆 Buy Box Winner';
+													} else if (winRate > 0) {
+														return '⚠️ Partial Winner';
+													} else {
+														return '❌ Buy Box Loser';
+													}
+												})()}
 											</span>
 										{/if}
 										<span
@@ -2493,8 +2660,14 @@
 												<th class="py-3 px-6">Shipping</th>
 												<th class="py-3 px-6">Our Price</th>
 												<th class="py-3 px-6">Buy Box</th>
-												<th class="py-3 px-6">Profit</th>
-												<th class="py-3 px-6">Margin</th>
+												<th class="py-3 px-6">
+													<div>Buy Box Profit</div>
+													<div class="text-xs font-normal text-gray-400">If matched</div>
+												</th>
+												<th class="py-3 px-6">
+													<div>Buy Box Margin</div>
+													<div class="text-xs font-normal text-gray-400">If matched</div>
+												</th>
 												<th class="py-3 px-6">Status</th>
 												<th class="py-3 px-6">Action</th>
 											</tr>
@@ -2527,29 +2700,36 @@
 																{sku.asin} →
 															</a>
 														</div>
-														<div class="text-xs text-gray-500 mt-1">
+														<div class="text-xs text-gray-500 mt-1 max-w-xs">
 															{#if sku.product_title}
-																{sku.product_title}
+																<span class="block truncate" title={sku.product_title}>
+																	{sku.product_title}
+																</span>
 															{:else}
-																{getProductTitle(sku.sku) || 'Loading...'}
+																<span
+																	class="block truncate"
+																	title={getProductTitle(sku.sku) || 'Loading...'}
+																>
+																	{getProductTitle(sku.sku) || 'Loading...'}
+																</span>
 															{/if}
 														</div>
 													</td>
-													<td class="py-4 px-6">
+													<td class="py-4 px-6 whitespace-nowrap">
 														{#if sku.merchant_shipping_group === 'Nationwide Prime'}
 															<span
-																class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium"
+																class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
 															>
 																⚡ Prime
 															</span>
 														{:else if sku.merchant_shipping_group === 'UK Shipping'}
 															<span
-																class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium"
+																class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
 															>
 																📦 Standard
 															</span>
 														{:else}
-															<span class="text-gray-400 text-xs">Unknown</span>
+															<span class="text-gray-400 text-xs whitespace-nowrap">Unknown</span>
 														{/if}
 													</td>
 													<td class="py-4 px-6">
@@ -2565,62 +2745,143 @@
 														</div>
 													</td>
 													<td class="py-4 px-6">
-														<div class="text-sm">£{sku.price?.toFixed(2) || 'N/A'}</div>
-													</td>
-													<td class="py-4 px-6">
 														<div class="text-sm">
-															{#if sku.current_actual_profit !== null}
-																<span
-																	class={sku.current_actual_profit >= 0
-																		? 'text-green-600'
-																		: 'text-red-600'}
-																>
-																	£{sku.current_actual_profit.toFixed(2)}
-																</span>
+															{#if sku.buybox_price}
+																<!-- Always show actual Buy Box price -->
+																£{sku.buybox_price.toFixed(2)}
+																{#if sku.is_winner}
+																	<span class="text-green-600 ml-1" title="You have the Buy Box"
+																		>🏆</span
+																	>
+																{/if}
+															{:else if sku.competitor_price}
+																<!-- Fallback: use competitor_price if buybox_price not available -->
+																£{sku.competitor_price.toFixed(2)}
+																{#if sku.is_winner}
+																	<span class="text-green-600 ml-1" title="You have the Buy Box"
+																		>🏆</span
+																	>
+																{/if}
+															{:else if sku.price}
+																<!-- Final fallback: use price field -->
+																£{sku.price.toFixed(2)}
+																{#if sku.is_winner}
+																	<span class="text-green-600 ml-1" title="You have the Buy Box"
+																		>🏆</span
+																	>
+																{/if}
 															{:else}
-																<span class="text-gray-400">N/A</span>
+																<!-- No buy box data available -->
+																N/A
 															{/if}
 														</div>
 													</td>
 													<td class="py-4 px-6">
 														<div class="text-sm">
-															{#if sku.your_margin_percent_at_current_price !== null}
-																<span
-																	class={sku.your_margin_percent_at_current_price >= 20
-																		? 'text-green-600'
-																		: sku.your_margin_percent_at_current_price >= 10
-																			? 'text-yellow-600'
+															{#if sku.is_winner}
+																<!-- Winner: Show current profit since you already have buy box -->
+																{#if sku.current_actual_profit !== null}
+																	<span
+																		class={sku.current_actual_profit >= 0
+																			? 'text-green-600'
 																			: 'text-red-600'}
-																>
-																	{sku.your_margin_percent_at_current_price.toFixed(1)}%
-																</span>
+																		title="Current profit (you have the buy box)"
+																	>
+																		£{sku.current_actual_profit.toFixed(2)}
+																	</span>
+																{:else}
+																	<span class="text-gray-400">N/A</span>
+																{/if}
 															{:else}
-																<span class="text-gray-400">N/A</span>
+																<!-- Loser: Show what profit would be if you matched buy box -->
+																{#if sku.buybox_actual_profit !== null}
+																	<span
+																		class={sku.buybox_actual_profit >= 0
+																			? 'text-green-600'
+																			: 'text-red-600'}
+																		title="Profit if you matched buy box price"
+																	>
+																		£{sku.buybox_actual_profit.toFixed(2)}
+																	</span>
+																{:else if sku.current_actual_profit !== null}
+																	<span
+																		class="text-gray-500"
+																		title="Current profit (not competitive)"
+																	>
+																		£{sku.current_actual_profit.toFixed(2)}
+																	</span>
+																{:else}
+																	<span class="text-gray-400">N/A</span>
+																{/if}
 															{/if}
 														</div>
 													</td>
 													<td class="py-4 px-6">
+														<div class="text-sm">
+															{#if sku.is_winner}
+																<!-- Winner: Show current margin since you already have buy box -->
+																{#if sku.your_margin_percent_at_current_price !== null}
+																	<span
+																		class={sku.your_margin_percent_at_current_price >= 20
+																			? 'text-green-600'
+																			: sku.your_margin_percent_at_current_price >= 10
+																				? 'text-yellow-600'
+																				: 'text-red-600'}
+																		title="Current margin (you have the buy box)"
+																	>
+																		{sku.your_margin_percent_at_current_price.toFixed(1)}%
+																	</span>
+																{:else}
+																	<span class="text-gray-400">N/A</span>
+																{/if}
+															{:else}
+																<!-- Loser: Show what margin would be if you matched buy box -->
+																{#if sku.margin_percent_at_buybox_price !== null}
+																	<span
+																		class={sku.margin_percent_at_buybox_price >= 20
+																			? 'text-green-600'
+																			: sku.margin_percent_at_buybox_price >= 10
+																				? 'text-yellow-600'
+																				: 'text-red-600'}
+																		title="Margin if you matched buy box price"
+																	>
+																		{sku.margin_percent_at_buybox_price.toFixed(1)}%
+																	</span>
+																{:else if sku.your_margin_percent_at_current_price !== null}
+																	<span
+																		class="text-gray-500"
+																		title="Current margin (not competitive)"
+																	>
+																		{sku.your_margin_percent_at_current_price.toFixed(1)}%
+																	</span>
+																{:else}
+																	<span class="text-gray-400">N/A</span>
+																{/if}
+															{/if}
+														</div>
+													</td>
+													<td class="py-4 px-6 whitespace-nowrap">
 														{#if sku.opportunity_flag}
 															<span
-																class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium"
+																class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
 															>
 																💡 Opportunity
 															</span>
 														{:else if sku.is_winner}
 															<span
-																class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium"
+																class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
 															>
 																🏆 Winner
 															</span>
 														{:else}
 															<span
-																class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium"
+																class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
 															>
 																❌ Losing
 															</span>
 														{/if}
 													</td>
-													<td class="py-4 px-6">
+													<td class="py-4 px-6 whitespace-nowrap">
 														<a
 															href="/buy-box-monitor?query={encodeURIComponent(sku.sku)}"
 															class="text-blue-600 hover:text-blue-800 text-sm underline"

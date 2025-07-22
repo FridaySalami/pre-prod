@@ -296,13 +296,13 @@ class CostCalculator {
 
       const margins = this.calculateMargins(
         costs,
-        buyboxData.price,
-        buyboxData.competitor_price
+        buyboxData.your_current_price || buyboxData.price,    // Use your_current_price preferably
+        buyboxData.buybox_price || buyboxData.competitor_price // Use buybox_price preferably
       );
 
       // Calculate detailed profit breakdown
-      const currentPrice = buyboxData.price;
-      const buyboxPrice = buyboxData.competitor_price;
+      const currentPrice = buyboxData.your_current_price || buyboxData.price;
+      const buyboxPrice = buyboxData.buybox_price || buyboxData.competitor_price;
       const amazonFeeRate = 0.15;
 
       // Current price profit calculation
@@ -361,7 +361,7 @@ class CostCalculator {
 
         // Recommendations
         recommended_action: margins.recommendedAction,
-        price_adjustment_needed: buyboxData.competitor_price - buyboxData.price,
+        price_adjustment_needed: (buyboxData.buybox_price || buyboxData.competitor_price) - (buyboxData.your_current_price || buyboxData.price),
         break_even_price: margins.breakEvenPrice,
 
         // Metadata

@@ -61,16 +61,12 @@ router.post('/:asin', async (req, res) => {
     // Create a job record
     const jobData = {
       source: 'single-asin-fetch',
-      status: 'in_progress',
+      status: 'running',
       total_asins: 1,
-      processed_asins: 0,
+      successful_asins: 0,
       failed_asins: 0,
-      start_time: new Date().toISOString(),
-      metadata: {
-        asin: asin,
-        request_ip: req.ip,
-        user_agent: req.get('User-Agent')
-      }
+      started_at: new Date().toISOString(),
+      notes: `Single ASIN fetch for ${asin} from ${req.ip}`
     };
 
     const { data: job, error: jobError } = await SupabaseService.client
@@ -98,13 +94,10 @@ router.post('/:asin', async (req, res) => {
       .from('buybox_jobs')
       .update({
         status: result.success ? 'completed' : 'failed',
-        processed_asins: result.success ? 1 : 0,
+        successful_asins: result.success ? 1 : 0,
         failed_asins: result.success ? 0 : 1,
-        end_time: endTime,
-        metadata: {
-          ...jobData.metadata,
-          result: result
-        }
+        completed_at: endTime,
+        notes: `${jobData.notes} - ${result.success ? 'Success' : `Failed: ${result.error}`}`
       })
       .eq('id', job.id);
 
@@ -150,8 +143,28 @@ async function processSingleASIN(asin, jobId) {
     if (USE_REAL_API && amazonAPI) {
       // Use real Amazon SP-API
       console.log(`🔍 Fetching real data for ${asin}`);
-      await rateLimiter.waitForToken();
-      buyBoxData = await amazonAPI.getBuyBoxPricing([asin]);
+      await rateLimiter.waitForNextRequest();
+
+      // Generate a temporary SKU since we don't have one
+      const tempSku = `TEMP-${asin}`;
+
+      try {
+        buyBoxData = await amazonAPI.getBuyBoxData(asin, tempSku, jobId, rateLimiter);
+
+        // If we got data, wrap it in an array for consistency
+        if (buyBoxData) {
+          buyBoxData = [buyBoxData];
+        } else {
+          buyBoxData = [];
+        }
+      } catch (apiError) {
+        console.error(`Amazon SP-API error for ASIN ${asin}:`, apiError.message);
+
+        return {
+          success: false,
+          error: `Amazon SP-API error: ${apiError.message}`
+        };
+      }
     } else {
       // Use mock data
       console.log(`🎭 Generating mock data for ${asin}`);
@@ -173,36 +186,45 @@ async function processSingleASIN(asin, jobId) {
         prime_information: Math.random() > 0.5 ? 'eligible' : null,
         merchant_shipping_group: Math.random() > 0.5 ? 'Nationwide Prime' : 'UK Shipping'
       }];
+
+      // Enrich mock data with cost calculator if available
+      if (costCalculator) {
+        try {
+          console.log(`💰 Enriching mock data with cost calculations for ${asin}`);
+          buyBoxData = await costCalculator.enrichBuyBoxData(buyBoxData);
+        } catch (enrichError) {
+          console.warn(`Failed to enrich mock data for ASIN ${asin}:`, enrichError.message);
+        }
+      }
     }
 
-    if (!buyBoxData || buyBoxData.length === 0) {
+    // Check if we have data (for both real and mock)
+    if (!buyBoxData) {
       return {
         success: false,
         error: `No pricing data found for ASIN ${asin}`
       };
     }
 
-    // Enrich with cost calculator if available
-    if (costCalculator) {
-      console.log(`💰 Enriching data with cost calculations for ${asin}`);
-      buyBoxData = await costCalculator.enrichBuyBoxData(buyBoxData);
+    // For real API data, buyBoxData is a single object, so wrap it in an array for consistency
+    if (!Array.isArray(buyBoxData)) {
+      buyBoxData = [buyBoxData];
+    }
+
+    if (buyBoxData.length === 0) {
+      return {
+        success: false,
+        error: `No pricing data found for ASIN ${asin}`
+      };
     }
 
     // Save to database
     console.log(`💾 Saving ${buyBoxData.length} records for ${asin}`);
 
-    const dataToInsert = buyBoxData.map(item => ({
-      ...item,
-      job_id: jobId,
-      run_id: `single-${Date.now()}`,
-      created_at: new Date().toISOString()
-    }));
-
-    const { error: insertError } = await SupabaseService.client
-      .from('buybox_data')
-      .insert(dataToInsert);
-
-    if (insertError) {
+    try {
+      await SupabaseService.insertBuyBoxData(buyBoxData);
+      console.log(`✅ Successfully saved data for ASIN ${asin}`);
+    } catch (insertError) {
       console.error('❌ Database insert error:', insertError);
       return {
         success: false,
@@ -210,14 +232,12 @@ async function processSingleASIN(asin, jobId) {
       };
     }
 
-    console.log(`✅ Successfully saved data for ASIN ${asin}`);
-
     return {
       success: true,
       data: {
         asin: asin,
-        records_inserted: dataToInsert.length,
-        sample_data: dataToInsert[0]
+        records_inserted: buyBoxData.length,
+        sample_data: buyBoxData[0]
       }
     };
 

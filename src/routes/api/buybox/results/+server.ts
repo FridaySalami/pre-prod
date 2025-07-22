@@ -69,7 +69,7 @@ export async function GET({ url }) {
       // Status flags
       'is_winner', 'opportunity_flag',
       // Pricing fields
-      'price', 'your_current_price', 'competitor_price', 'break_even_price',
+      'price', 'your_current_price', 'competitor_price', 'break_even_price', 'buybox_price',
       // Cost breakdown fields
       'your_cost', 'your_shipping_cost', 'your_material_total_cost', 'your_box_cost',
       'your_vat_amount', 'your_fragile_charge', 'total_operating_cost',

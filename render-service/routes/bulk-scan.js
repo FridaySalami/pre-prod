@@ -50,10 +50,11 @@ router.post('/start', async (req, res) => {
       source = 'api-request',
       filterType = 'active',
       maxAsins = null,
-      notes = null
+      notes = null,
+      customAsins = null // New parameter for custom ASIN list
     } = req.body;
 
-    console.log('Starting bulk scan with parameters:', { source, filterType, maxAsins, notes });
+    console.log('Starting bulk scan with parameters:', { source, filterType, maxAsins, notes, customAsins: customAsins?.length });
 
     // Get ASINs to process
     let asins;
@@ -62,9 +63,31 @@ router.post('/start', async (req, res) => {
         asins = await SupabaseService.getActiveAsins();
       } else if (filterType === 'all') {
         asins = await SupabaseService.getAllAsins();
+      } else if (filterType === 'custom') {
+        if (!customAsins || !Array.isArray(customAsins) || customAsins.length === 0) {
+          return res.status(400).json({
+            error: 'customAsins array is required when filterType is "custom"',
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        // For custom ASINs, we need to get the corresponding SKUs from the database
+        // First, get all ASIN/SKU mappings
+        const asinSkuMap = await SupabaseService.getAsinSkuMappings(customAsins);
+
+        // Filter to only include ASINs that exist in our inventory
+        asins = customAsins
+          .flatMap(asin => {
+            // Get ALL SKUs for this ASIN, not just the first one
+            const mappings = asinSkuMap.filter(m => m.asin1 === asin);
+            return mappings.map(mapping => ({ asin1: asin, seller_sku: mapping.seller_sku }));
+          })
+          .filter(Boolean);
+
+        console.log(`Custom ASIN scan: ${customAsins.length} requested, ${asins.length} found in inventory`);
       } else {
         return res.status(400).json({
-          error: 'Invalid filterType. Must be "active" or "all"',
+          error: 'Invalid filterType. Must be "active", "all", or "custom"',
           timestamp: new Date().toISOString()
         });
       }
@@ -475,6 +498,69 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     // source: 'mock-api'
   };
 }
+
+/**
+ * GET /status/:jobId - Get bulk scan job status
+ */
+router.get('/status/:jobId', async (req, res) => {
+  try {
+    const jobId = req.params.jobId;
+
+    if (!jobId) {
+      return res.status(400).json({
+        error: 'Job ID is required',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Get job status from database
+    const { data: job, error } = await SupabaseService.client
+      .from('buybox_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching job status:', error);
+      return res.status(500).json({
+        error: 'Failed to fetch job status',
+        message: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (!job) {
+      return res.status(404).json({
+        error: 'Job not found',
+        job_id: jobId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      job_id: job.id,
+      status: job.status,
+      total_asins: job.total_asins,
+      successful_asins: job.successful_asins,
+      failed_asins: job.failed_asins,
+      started_at: job.started_at,
+      completed_at: job.completed_at,
+      source: job.source,
+      notes: job.notes,
+      error_message: job.error_message,
+      progress_percentage: job.total_asins ? Math.round(((job.successful_asins + job.failed_asins) / job.total_asins) * 100) : 0,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Bulk scan status error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 /**
  * GET /test - Test endpoint for development
