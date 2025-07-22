@@ -7,6 +7,46 @@ import crypto from 'crypto';
 // Your seller ID
 export const YOUR_SELLER_ID = 'A2D8NG39VURSL3';
 
+/**
+ * Map merchant tokens to read  // Format competitor offers
+  const competitorInfo: OfferInfo[] = offers
+    .filter((offer: any) => offer.SellerId !== YOUR_SELLER_ID)
+    .map((offer: any) => ({
+      sellerId: offer.SellerId,
+      sellerName: mapMerchantToken(offer.SellerId || 'unknown', offer.SellerName),
+      price: offer.ListingPrice?.Amount || 0,
+      shipping: offer.Shipping?.Amount || 0,
+      totalPrice: (offer.ListingPrice?.Amount || 0) + (offer.Shipping?.Amount || 0),
+      condition: offer.SubCondition || 'new',
+      fulfillmentType: offer.IsFulfilledByAmazon ? 'FBA' : 'FBM',
+      hasBuyBox: offer.IsBuyBoxWinner === true,
+      isPrime: offer.IsFulfilledByAmazon || false
+    }));mes
+ */
+function mapMerchantToken(sellerId: string, sellerName?: string): string {
+  // Known merchant token mappings
+  const merchantMappings: Record<string, string> = {
+    'A3P5ROKL5A1OLE': 'Amazon',
+    'ATVPDKIKX0DER': 'Amazon US',
+    'A1F83G8C2ARO7P': 'Amazon UK',
+    'A13V1IB3VIYZZH': 'Amazon DE',
+    'A1PA6795UKMFR9': 'Amazon DE',
+    'APJ6JRA9NG5V4': 'Amazon IT',
+    'A1RKKUPIHCS9HS': 'Amazon ES',
+    'A13BZ9L5JJXF5C': 'Amazon ES',
+    'A1C3SOZRARQ6R3': 'Amazon PL',
+    'A2ZDKKDTBET090': 'Universal Product Solutions'
+  };
+
+  // If we have a mapping for this seller ID, use it
+  if (merchantMappings[sellerId]) {
+    return merchantMappings[sellerId];
+  }
+
+  // Otherwise fall back to provided seller name (if it's meaningful) or use ID
+  return (sellerName && sellerName !== 'Unknown') ? sellerName : sellerId;
+}
+
 interface Config {
   marketplace: string;
   region: string;
@@ -235,8 +275,8 @@ function transformPricingData(pricingData: any, asin: string): BuyBoxResult {
   return {
     success: true,
     asin: asin,
-    buyBoxOwner: buyBoxOffer?.SellerName || buyBoxOffer?.SellerId || 'Unknown',
-    buyBoxSellerName: buyBoxOffer?.SellerName || 'Unknown',
+    buyBoxOwner: buyBoxOffer ? mapMerchantToken(buyBoxOffer.SellerId || 'unknown', buyBoxOffer.SellerName) : 'Unknown',
+    buyBoxSellerName: buyBoxOffer ? mapMerchantToken(buyBoxOffer.SellerId || 'unknown', buyBoxOffer.SellerName) : 'Unknown',
     hasBuyBox: hasBuyBox,
     buyBoxPrice: buyBoxOffer?.ListingPrice?.Amount || null,
     buyBoxCurrency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',

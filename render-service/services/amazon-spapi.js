@@ -564,6 +564,74 @@ class AmazonSPAPI {
       throw new Error(`Failed to get sales data: ${error.message}`);
     }
   }
+
+  /**
+   * Get product details including title from Amazon Catalog Items API
+   */
+  async getCatalogItem(asin) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'GET';
+    const path = `/catalog/v0/items/${asin}`;
+    const queryParams = {
+      MarketplaceId: this.config.marketplace
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update('').digest('hex')
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, queryParams, headers, '');
+
+    const url = `${this.config.endpoint}${path}?${Object.keys(queryParams)
+      .map(key => `${key}=${encodeURIComponent(queryParams[key])}`)
+      .join('&')}`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+
+      // Extract title from response
+      const catalogData = response.data;
+      let title = null;
+
+      // The structure varies, but title is usually in AttributeSets
+      if (catalogData?.AttributeSets?.[0]?.Title) {
+        title = catalogData.AttributeSets[0].Title;
+      } else if (catalogData?.payload?.AttributeSets?.[0]?.Title) {
+        title = catalogData.payload.AttributeSets[0].Title;
+      } else if (catalogData?.Identifiers?.MarketplaceASIN?.Title) {
+        title = catalogData.Identifiers.MarketplaceASIN.Title;
+      }
+
+      return {
+        asin: asin,
+        title: title,
+        fullResponse: catalogData
+      };
+
+    } catch (error) {
+      console.error(`Catalog API error for ASIN ${asin}:`, error.response?.data || error.message);
+
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ASIN_NOT_FOUND');
+      } else {
+        throw new Error(`CATALOG_API_ERROR: ${error.message}`);
+      }
+    }
+  }
 }
 
 module.exports = { AmazonSPAPI };

@@ -4,7 +4,12 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import type { SkuAsinMapping, BuyBoxResponse } from '$lib/types/buybox';
+	import type {
+		SkuAsinMapping,
+		BuyBoxResponse,
+		CompetitiveAsin,
+		CompetitorBuyBoxInfo
+	} from '$lib/types/buybox';
 
 	// Search and results state
 	let searchQuery = '';
@@ -16,6 +21,20 @@
 	let buyBoxInfo: BuyBoxResponse | null = null;
 	let isBuyBoxLoading = false;
 	let buyBoxError = '';
+
+	// Competitive analysis state
+	let competitors: CompetitiveAsin[] = [];
+	let competitorBuyBoxData: CompetitorBuyBoxInfo[] = [];
+	let isLoadingCompetitors = false;
+	let competitorError = '';
+	let showAddCompetitorForm = false;
+	let showCompetitorsList = false; // Collapsed by default
+	let isRefreshingPricing = false; // For refresh pricing functionality
+	let lastPricingUpdate: Date | null = null; // Track when pricing was last updated
+	let newCompetitorAsin = '';
+	let newCompetitorType = 'direct_competitor';
+	let newCompetitorNotes = '';
+	let isAddingCompetitor = false;
 
 	// Pagination
 	let currentPage = 1;
@@ -92,11 +111,161 @@
 			}
 
 			buyBoxInfo = data as BuyBoxResponse;
+
+			// After getting buy box info, load competitors
+			await loadCompetitors(product.asin1 || '');
 		} catch (error: unknown) {
 			console.error('Buy Box check error:', error);
 			buyBoxError = error instanceof Error ? error.message : 'Failed to check Buy Box ownership';
 		} finally {
 			isBuyBoxLoading = false;
+		}
+	}
+
+	// Load competitors for the selected ASIN
+	async function loadCompetitors(asin: string): Promise<void> {
+		if (!asin) return;
+
+		isLoadingCompetitors = true;
+		competitorError = '';
+
+		try {
+			const response = await fetch(
+				`/api/buy-box-monitor/competitors?asin=${encodeURIComponent(asin)}`
+			);
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to load competitors');
+			}
+
+			competitors = data.competitors || [];
+
+			// Check buy box for all competitors
+			await checkCompetitorBuyBoxes(asin);
+		} catch (error: unknown) {
+			console.error('Error loading competitors:', error);
+			competitorError = error instanceof Error ? error.message : 'Failed to load competitors';
+		} finally {
+			isLoadingCompetitors = false;
+		}
+	}
+
+	// Check buy box status for all competitor ASINs
+	async function checkCompetitorBuyBoxes(primaryAsin: string): Promise<void> {
+		if (competitors.length === 0) return;
+
+		const competitorChecks = competitors.map(async (competitor) => {
+			try {
+				const response = await fetch(
+					`/api/buy-box-monitor/check?asin=${encodeURIComponent(competitor.competitive_asin)}`
+				);
+				const data = await response.json();
+
+				if (response.ok) {
+					console.log(`Buy box data for ${competitor.competitive_asin}:`, data);
+					return {
+						...data,
+						asin: competitor.competitive_asin,
+						competitiveRelationship: competitor
+					} as CompetitorBuyBoxInfo;
+				}
+			} catch (error) {
+				console.error(`Error checking competitor ${competitor.competitive_asin}:`, error);
+			}
+			return null;
+		});
+
+		const results = await Promise.all(competitorChecks);
+		competitorBuyBoxData = results.filter((result) => result !== null) as CompetitorBuyBoxInfo[];
+		lastPricingUpdate = new Date(); // Track when pricing was updated
+		console.log('Final competitive buy box data:', competitorBuyBoxData);
+	}
+
+	// Add a new competitor
+	async function addCompetitor(): Promise<void> {
+		if (!selectedProduct?.asin1 || !newCompetitorAsin.trim()) return;
+
+		isAddingCompetitor = true;
+
+		try {
+			const response = await fetch('/api/buy-box-monitor/competitors', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					primaryAsin: selectedProduct.asin1,
+					competitiveAsin: newCompetitorAsin.trim(),
+					relationshipType: newCompetitorType,
+					notes: newCompetitorNotes.trim() || null
+				})
+			});
+
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to add competitor');
+			}
+
+			// Reset form
+			newCompetitorAsin = '';
+			newCompetitorNotes = '';
+			newCompetitorType = 'direct_competitor';
+			showAddCompetitorForm = false;
+
+			// Reload competitors
+			await loadCompetitors(selectedProduct.asin1);
+		} catch (error: unknown) {
+			console.error('Error adding competitor:', error);
+			competitorError = error instanceof Error ? error.message : 'Failed to add competitor';
+		} finally {
+			isAddingCompetitor = false;
+		}
+	}
+
+	// Remove a competitor
+	async function removeCompetitor(competitorId: string): Promise<void> {
+		if (!selectedProduct?.asin1) return;
+
+		try {
+			const response = await fetch(
+				`/api/buy-box-monitor/competitors?id=${encodeURIComponent(competitorId)}`,
+				{
+					method: 'DELETE'
+				}
+			);
+
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to remove competitor');
+			}
+
+			// Reload competitors
+			await loadCompetitors(selectedProduct.asin1);
+		} catch (error: unknown) {
+			console.error('Error removing competitor:', error);
+			competitorError = error instanceof Error ? error.message : 'Failed to remove competitor';
+		}
+	}
+
+	// Refresh competitive pricing data
+	async function refreshCompetitivePricing(): Promise<void> {
+		if (!selectedProduct?.asin1 || competitors.length === 0) return;
+
+		isRefreshingPricing = true;
+		competitorError = '';
+
+		try {
+			// Re-fetch current buy box data for all competitors
+			await checkCompetitorBuyBoxes(selectedProduct.asin1);
+		} catch (error: unknown) {
+			console.error('Error refreshing pricing:', error);
+			competitorError =
+				error instanceof Error ? error.message : 'Failed to refresh competitive pricing';
+		} finally {
+			isRefreshingPricing = false;
 		}
 	}
 
@@ -471,6 +640,383 @@
 									{/each}
 								</ul>
 							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Competitive Analysis Section -->
+			<div class="mt-8 bg-white rounded-lg shadow-md overflow-hidden" transition:fade>
+				<div class="px-6 py-4 border-b border-gray-200 bg-purple-50">
+					<div class="flex justify-between items-center">
+						<div>
+							<h2 class="text-xl font-semibold">Competitive Analysis</h2>
+							<p class="text-sm text-gray-600">
+								Monitor competitor ASINs for: {selectedProduct.item_name}
+							</p>
+						</div>
+						<div class="flex gap-2">
+							{#if competitors.length > 0}
+								<button
+									on:click={refreshCompetitivePricing}
+									disabled={isRefreshingPricing || isLoadingCompetitors}
+									class="bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 disabled:opacity-50 text-xs flex items-center gap-1"
+									title="Refresh live pricing data"
+								>
+									{#if isRefreshingPricing}
+										<span class="inline-block animate-spin">⟳</span>
+									{:else}
+										<span>🔄</span>
+									{/if}
+									Refresh
+								</button>
+							{/if}
+							<button
+								on:click={() => (showAddCompetitorForm = !showAddCompetitorForm)}
+								class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 text-sm"
+								disabled={isLoadingCompetitors}
+							>
+								{showAddCompetitorForm ? 'Cancel' : '+ Add Competitor'}
+							</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="p-6">
+					<!-- Add Competitor Form -->
+					{#if showAddCompetitorForm}
+						<div class="mb-6 p-4 border border-purple-200 rounded-lg bg-purple-50" transition:fade>
+							<h4 class="font-medium mb-3">Add Competitive ASIN</h4>
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div>
+									<label
+										for="competitor-asin-input"
+										class="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Competitor ASIN
+									</label>
+									<input
+										id="competitor-asin-input"
+										type="text"
+										bind:value={newCompetitorAsin}
+										placeholder="B0123456789"
+										class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+									/>
+								</div>
+								<div>
+									<label
+										for="relationship-type-select"
+										class="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Relationship Type
+									</label>
+									<select
+										id="relationship-type-select"
+										bind:value={newCompetitorType}
+										class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+									>
+										<option value="direct_competitor">Direct Competitor</option>
+										<option value="alternative">Alternative Product</option>
+										<option value="substitute">Substitute Product</option>
+										<option value="related">Related Product</option>
+									</select>
+								</div>
+							</div>
+							<div class="mt-3">
+								<label
+									for="competitor-notes-textarea"
+									class="block text-sm font-medium text-gray-700 mb-1"
+								>
+									Notes (Optional)
+								</label>
+								<textarea
+									id="competitor-notes-textarea"
+									bind:value={newCompetitorNotes}
+									placeholder="Why is this a competitor? Any specific notes..."
+									rows="2"
+									class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+								></textarea>
+							</div>
+							<div class="mt-4 flex gap-3">
+								<button
+									on:click={addCompetitor}
+									disabled={!newCompetitorAsin.trim() || isAddingCompetitor}
+									class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 text-sm"
+								>
+									{#if isAddingCompetitor}
+										<span class="inline-block animate-spin mr-2">⟳</span>Adding...
+									{:else}
+										Add Competitor
+									{/if}
+								</button>
+								<button
+									on:click={() => {
+										showAddCompetitorForm = false;
+										newCompetitorAsin = '';
+										newCompetitorNotes = '';
+									}}
+									class="border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 text-sm"
+								>
+									Cancel
+								</button>
+							</div>
+						</div>
+					{/if}
+
+					<!-- Competitor Error -->
+					{#if competitorError}
+						<div class="mb-6 bg-red-100 border-l-4 border-red-500 text-red-700 p-4" transition:fade>
+							<p>{competitorError}</p>
+						</div>
+					{/if}
+
+					<!-- Loading State -->
+					{#if isLoadingCompetitors}
+						<div class="text-center py-8">
+							<div
+								class="animate-spin inline-block w-6 h-6 border-4 border-purple-600 border-t-transparent rounded-full mb-4"
+							></div>
+							<p class="text-purple-600">Loading competitive analysis...</p>
+						</div>
+					{/if}
+
+					<!-- Competitors List -->
+					{#if competitors.length > 0 && !isLoadingCompetitors}
+						<div class="mb-6">
+							<button
+								on:click={() => (showCompetitorsList = !showCompetitorsList)}
+								class="flex items-center justify-between w-full text-left font-medium mb-3 hover:text-purple-600 transition-colors"
+							>
+								<span>Tracked Competitors ({competitors.length})</span>
+								<svg
+									class="w-5 h-5 transform transition-transform {showCompetitorsList
+										? 'rotate-180'
+										: ''}"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M19 9l-7 7-7-7"
+									></path>
+								</svg>
+							</button>
+
+							{#if showCompetitorsList}
+								<div class="space-y-3" transition:fade>
+									{#each competitors as competitor}
+										<div
+											class="border border-gray-200 rounded-lg p-3 flex justify-between items-center"
+										>
+											<div class="flex-1">
+												<div class="flex items-center gap-3">
+													<a
+														href={`https://www.amazon.co.uk/dp/${competitor.competitive_asin}`}
+														target="_blank"
+														rel="noopener noreferrer"
+														class="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+													>
+														{competitor.competitive_asin}
+													</a>
+													<span class="px-2 py-1 bg-gray-100 text-gray-800 text-xs rounded-full">
+														{competitor.relationship_type.replace('_', ' ')}
+													</span>
+												</div>
+
+												<!-- Product Title Display -->
+												{#if competitor.competitive_product_title && !competitor.competitive_product_title.startsWith('Product ')}
+													<p
+														class="text-sm text-gray-700 mt-1 font-medium break-words leading-tight"
+													>
+														{competitor.competitive_product_title}
+													</p>
+												{:else}
+													<div class="flex items-center gap-2 mt-1">
+														<p class="text-sm text-gray-500 italic">Product title not available</p>
+														<button
+															class="text-xs text-blue-600 hover:text-blue-800 underline"
+															on:click={() =>
+																window.open(
+																	`https://www.amazon.co.uk/dp/${competitor.competitive_asin}`,
+																	'_blank'
+																)}
+														>
+															View on Amazon
+														</button>
+													</div>
+												{/if}
+
+												{#if competitor.notes}
+													<p class="text-sm text-gray-600 mt-1">{competitor.notes}</p>
+												{/if}
+												<p class="text-xs text-gray-500 mt-1">
+													Added {new Date(competitor.created_at).toLocaleDateString()}
+												</p>
+											</div>
+											<button
+												on:click={() => removeCompetitor(competitor.id)}
+												class="text-red-600 hover:text-red-800 text-sm ml-4"
+												title="Remove competitor"
+											>
+												✕
+											</button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
+
+					<!-- Competitive Buy Box Analysis -->
+					{#if competitorBuyBoxData.length > 0}
+						<div>
+							<div class="flex justify-between items-center mb-3">
+								<div>
+									<h4 class="font-medium">Competitive Buy Box Analysis</h4>
+									{#if lastPricingUpdate}
+										<p class="text-xs text-gray-500 mt-1">
+											Last updated: {lastPricingUpdate.toLocaleTimeString()} on {lastPricingUpdate.toLocaleDateString()}
+										</p>
+									{/if}
+								</div>
+								<button
+									on:click={refreshCompetitivePricing}
+									disabled={isRefreshingPricing}
+									class="bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 disabled:opacity-50 text-sm flex items-center gap-2"
+									title="Refresh live pricing data for all competitors"
+								>
+									{#if isRefreshingPricing}
+										<span class="inline-block animate-spin">⟳</span>Refreshing...
+									{:else}
+										<span>🔄</span>Refresh Pricing
+									{/if}
+								</button>
+							</div>
+							<div class="overflow-x-auto">
+								<table class="min-w-full divide-y divide-gray-200">
+									<thead class="bg-gray-50">
+										<tr>
+											<th
+												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												ASIN
+											</th>
+											<th
+												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												Product Title
+											</th>
+											<th
+												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												Relationship
+											</th>
+											<th
+												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												Buy Box Price
+											</th>
+											<th
+												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												Buy Box Owner
+											</th>
+											<th
+												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												Price vs. Yours
+											</th>
+											<th
+												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+											>
+												Status
+											</th>
+										</tr>
+									</thead>
+									<tbody class="bg-white divide-y divide-gray-200">
+										{#each competitorBuyBoxData as competitorData}
+											{@const title =
+												competitorData.competitiveRelationship.competitive_product_title}
+											<tr>
+												<td class="px-6 py-4 whitespace-nowrap text-sm">
+													<a
+														href={`https://www.amazon.co.uk/dp/${competitorData.asin}`}
+														target="_blank"
+														rel="noopener noreferrer"
+														class="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+													>
+														{competitorData.asin}
+													</a>
+												</td>
+												<td class="px-6 py-4 text-sm text-gray-900 max-w-xs">
+													{#if title && !title.startsWith('Product ')}
+														<div class="break-words leading-tight" {title}>
+															{title}
+														</div>
+													{:else}
+														<div class="text-gray-500 italic" title="Product title not available">
+															Title not available
+														</div>
+													{/if}
+												</td>
+												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+													{competitorData.competitiveRelationship.relationship_type.replace(
+														'_',
+														' '
+													)}
+												</td>
+												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+													{competitorData.buyBoxPrice
+														? `£${competitorData.buyBoxPrice.toFixed(2)}`
+														: 'No Buy Box'}
+												</td>
+												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+													{competitorData.buyBoxOwner || 'Unknown'}
+												</td>
+												<td class="px-6 py-4 whitespace-nowrap text-sm">
+													{#if competitorData.buyBoxPrice && selectedProduct?.price}
+														{@const priceDiff = competitorData.buyBoxPrice - selectedProduct.price}
+														<span
+															class={priceDiff > 0
+																? 'text-green-600'
+																: priceDiff < 0
+																	? 'text-red-600'
+																	: 'text-gray-600'}
+														>
+															{priceDiff > 0 ? '+' : ''}{priceDiff.toFixed(2)}
+														</span>
+													{:else}
+														N/A
+													{/if}
+												</td>
+												<td class="px-6 py-4 whitespace-nowrap">
+													<span
+														class={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
+														${competitorData.hasBuyBox ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
+													>
+														{competitorData.hasBuyBox ? 'Has Buy Box' : 'No Buy Box'}
+													</span>
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					{/if}
+
+					{#if competitors.length === 0 && !isLoadingCompetitors}
+						<div class="text-center py-8">
+							<p class="text-gray-500 mb-4">No competitors tracked for this ASIN yet.</p>
+							<button
+								on:click={() => (showAddCompetitorForm = true)}
+								class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
+							>
+								Add Your First Competitor
+							</button>
 						</div>
 					{/if}
 				</div>

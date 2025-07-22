@@ -2,10 +2,40 @@
 import { json } from '@sveltejs/kit';
 import { supabaseAdmin } from '$lib/supabaseAdmin';
 import { checkBuyBoxStatus } from '$lib/buyBoxChecker';
+import { loadEnvVariables } from '$lib/loadEnv';
 import type { TransformedBuyBoxData, OfferDetails } from '$lib/types/buybox';
 import path from 'path';
 import fs from 'fs';
 import { spawn } from 'child_process';
+
+// Load environment variables for development
+loadEnvVariables();
+
+/**
+ * Map merchant tokens to readable seller names
+ */
+function mapMerchantToken(sellerId: string, sellerName?: string): string {
+  // Known merchant token mappings
+  const merchantMappings: Record<string, string> = {
+    'A3P5ROKL5A1OLE': 'Amazon',
+    'ATVPDKIKX0DER': 'Amazon US',
+    'A1F83G8C2ARO7P': 'Amazon UK',
+    'A13V1IB3VIYZZH': 'Amazon DE',
+    'A1PA6795UKMFR9': 'Amazon DE',
+    'APJ6JRA9NG5V4': 'Amazon IT',
+    'A1RKKUPIHCS9HS': 'Amazon ES',
+    'A13BZ9L5JJXF5C': 'Amazon ES',
+    'A1C3SOZRARQ6R3': 'Amazon PL'
+  };
+
+  // If we have a mapping for this seller ID, use it
+  if (merchantMappings[sellerId]) {
+    return merchantMappings[sellerId];
+  }
+
+  // Otherwise fall back to provided seller name (if it's meaningful) or use ID
+  return (sellerName && sellerName !== 'Unknown') ? sellerName : sellerId;
+}
 
 /**
  * Buy Box check endpoint for Buy Box Monitor
@@ -216,7 +246,9 @@ function transformBuyBoxData(buyBoxData: any, asin: string): TransformedBuyBoxDa
   if (!buyBoxData) return defaultResponse;
 
   // Get buy box winner details
-  const buyBoxWinner = buyBoxData.buyBoxWinner || null;
+  const buyBoxWinner = buyBoxData.buyBoxWinner ||
+    buyBoxData.competitorOffers?.find((offer: any) => offer.isBuyBox === true) ||
+    null;
 
   // Parse your seller ID from environment variable or hardcode if known
   const yourSellerId = process.env.YOUR_SELLER_ID || 'A2D8NG39VURSL3'; // Fallback to hardcoded ID
@@ -228,7 +260,7 @@ function transformBuyBoxData(buyBoxData: any, asin: string): TransformedBuyBoxDa
   const competitorInfo = Array.isArray(buyBoxData.competitorOffers)
     ? buyBoxData.competitorOffers.map((offer: any) => ({
       sellerId: offer.sellerId || 'unknown',
-      sellerName: offer.sellerName || 'Unknown Seller',
+      sellerName: mapMerchantToken(offer.sellerId || 'unknown', offer.sellerName),
       price: typeof offer.price === 'number' ? offer.price : 0,
       shipping: typeof offer.shippingPrice === 'number' ? offer.shippingPrice : 0,
       totalPrice: typeof offer.totalPrice === 'number' ? offer.totalPrice : 0,
@@ -267,9 +299,9 @@ function transformBuyBoxData(buyBoxData: any, asin: string): TransformedBuyBoxDa
     ? buyBoxData.recommendations
     : [];
 
-  return {
-    buyBoxOwner: hasBuyBox ? 'Your Store' : (buyBoxWinner?.sellerName || 'Competitor'),
-    buyBoxSellerName: buyBoxWinner?.sellerName,
+  const result = {
+    buyBoxOwner: hasBuyBox ? 'Your Store' : (buyBoxWinner ? mapMerchantToken(buyBoxWinner.sellerId || 'unknown', buyBoxWinner.sellerName) : 'Competitor'),
+    buyBoxSellerName: buyBoxWinner ? mapMerchantToken(buyBoxWinner.sellerId || 'unknown', buyBoxWinner.sellerName) : undefined,
     hasBuyBox,
     buyBoxPrice: buyBoxWinner?.price || null,
     buyBoxCurrency: buyBoxWinner?.currency || 'GBP',
@@ -278,4 +310,14 @@ function transformBuyBoxData(buyBoxData: any, asin: string): TransformedBuyBoxDa
     yourOffers,
     recommendations
   };
+
+  // Debug logging
+  console.log(`🔍 Debug for ASIN ${asin}:`);
+  console.log('- Buy Box Winner:', buyBoxWinner);
+  console.log('- Mapped Buy Box Owner:', result.buyBoxOwner);
+  console.log('- Raw Seller ID:', buyBoxWinner?.sellerId);
+  console.log('- Raw Seller Name:', buyBoxWinner?.sellerName);
+  console.log('- Mapping result:', mapMerchantToken(buyBoxWinner?.sellerId || 'unknown', buyBoxWinner?.sellerName));
+
+  return result;
 }

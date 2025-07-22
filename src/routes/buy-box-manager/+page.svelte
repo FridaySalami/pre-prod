@@ -84,6 +84,10 @@
 	let bestSellersData: BuyBoxData[] = [];
 	let bestSellersGrouped: Map<string, BuyBoxData[]> = new Map();
 
+	// Custom price simulation
+	let customPrices = new Map<string, number>(); // SKU -> custom price
+	let showCustomPriceInputs = new Map<string, boolean>(); // SKU -> show input state
+
 	// Best sellers list (top 100 ASINs from business report)
 	const top100ASINs = [
 		'B09T3GDNGT',
@@ -441,6 +445,147 @@
 		totalPotentialProfit = buyboxData
 			.filter((item) => item.profit_opportunity && item.profit_opportunity > 0)
 			.reduce((sum, item) => sum + (item.profit_opportunity || 0), 0);
+	}
+
+	// Custom price calculation functions
+	function calculateCustomMargin(sku: BuyBoxData, customPrice: number): number | null {
+		if (!sku.total_operating_cost || customPrice <= 0) return null;
+
+		// Calculate margin: (Revenue - Costs) / Revenue * 100
+		const revenue = customPrice;
+		const margin = ((revenue - sku.total_operating_cost) / revenue) * 100;
+		return margin;
+	}
+
+	function calculateCustomProfit(sku: BuyBoxData, customPrice: number): number | null {
+		if (!sku.total_operating_cost || customPrice <= 0) return null;
+
+		// Calculate profit: Revenue - Costs
+		const profit = customPrice - sku.total_operating_cost;
+		return profit;
+	}
+
+	function getEffectivePrice(sku: BuyBoxData): number {
+		// Return custom price if set, otherwise current price
+		const customPrice = customPrices.get(sku.sku);
+		if (customPrice !== undefined && customPrice > 0) {
+			return customPrice;
+		}
+		return sku.your_current_price || 0;
+	}
+
+	function getEffectiveMargin(sku: BuyBoxData): number | null {
+		const customPrice = customPrices.get(sku.sku);
+		if (customPrice !== undefined && customPrice > 0) {
+			return calculateCustomMargin(sku, customPrice);
+		}
+		return sku.your_margin_percent_at_current_price;
+	}
+
+	function getEffectiveProfit(sku: BuyBoxData): number | null {
+		const customPrice = customPrices.get(sku.sku);
+		if (customPrice !== undefined && customPrice > 0) {
+			return calculateCustomProfit(sku, customPrice);
+		}
+		return sku.current_actual_profit;
+	}
+
+	function toggleCustomPriceInput(sku: string): void {
+		const current = showCustomPriceInputs.get(sku) || false;
+		showCustomPriceInputs.set(sku, !current);
+		showCustomPriceInputs = new Map(showCustomPriceInputs); // Trigger reactivity
+
+		// If hiding the input, clear the custom price
+		if (current) {
+			customPrices.delete(sku);
+			customPrices = new Map(customPrices); // Trigger reactivity
+		}
+	}
+
+	function updateCustomPrice(sku: string, priceStr: string): void {
+		const price = parseFloat(priceStr);
+		if (!isNaN(price) && price > 0) {
+			customPrices.set(sku, price);
+		} else {
+			customPrices.delete(sku);
+		}
+		customPrices = new Map(customPrices); // Trigger reactivity
+	}
+
+	function resetCustomPrice(sku: string): void {
+		customPrices.delete(sku);
+		customPrices = new Map(customPrices); // Trigger reactivity
+		showCustomPriceInputs.set(sku, false);
+		showCustomPriceInputs = new Map(showCustomPriceInputs); // Trigger reactivity
+	}
+
+	function clearAllCustomPrices(): void {
+		customPrices.clear();
+		customPrices = new Map(customPrices); // Trigger reactivity
+		showCustomPriceInputs.clear();
+		showCustomPriceInputs = new Map(showCustomPriceInputs); // Trigger reactivity
+	}
+
+	// Detect if we're matching buy box price but not winning (competitor took it)
+	function isPriceMatchedButLostBuyBox(sku: BuyBoxData): boolean {
+		if (sku.is_winner) return false; // Already winning
+		if (!sku.your_current_price || sku.your_current_price === 0) return false; // Out of stock
+
+		// Check if there's actually a buy box available (not 0 or null)
+		const buyboxPrice = sku.buybox_price || sku.competitor_price || sku.price;
+		if (!buyboxPrice || buyboxPrice === 0) return false; // No buy box available
+
+		const tolerance = 0.005; // 0.5p tolerance for price matching
+		const priceMatch = Math.abs(sku.your_current_price - buyboxPrice) <= tolerance;
+
+		return priceMatch && !sku.is_winner;
+	}
+
+	// Get status information for a SKU
+	function getSkuStatus(sku: BuyBoxData): {
+		type: string;
+		label: string;
+		description: string;
+		bgClass: string;
+		textClass: string;
+	} {
+		if (sku.is_winner) {
+			return {
+				type: 'winner',
+				label: '🏆 Winner',
+				description: 'You have the buy box',
+				bgClass: 'bg-green-100',
+				textClass: 'text-green-800'
+			};
+		}
+
+		if (isPriceMatchedButLostBuyBox(sku)) {
+			return {
+				type: 'price_matched_lost',
+				label: '⚠️ Price Matched',
+				description: 'Same price as buy box but competitor won. Lower by £0.01 to regain.',
+				bgClass: 'bg-orange-100',
+				textClass: 'text-orange-800'
+			};
+		}
+
+		if (sku.opportunity_flag) {
+			return {
+				type: 'opportunity',
+				label: '💡 Opportunity',
+				description: 'Profitable opportunity to match buy box price',
+				bgClass: 'bg-yellow-100',
+				textClass: 'text-yellow-800'
+			};
+		}
+
+		return {
+			type: 'losing',
+			label: '❌ Losing',
+			description: 'Not competitive with current pricing',
+			bgClass: 'bg-red-100',
+			textClass: 'text-red-800'
+		};
 	}
 
 	// Apply filters and sorting
@@ -1223,6 +1368,15 @@
 			>
 				🚀 Update Top 100
 			</button>
+			{#if customPrices.size > 0}
+				<button
+					class="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded flex items-center gap-2"
+					on:click={clearAllCustomPrices}
+					title="Clear all custom prices"
+				>
+					🗑️ Clear Custom Prices ({customPrices.size})
+				</button>
+			{/if}
 			<a
 				href="/buy-box-monitor/jobs"
 				class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded"
@@ -2563,6 +2717,15 @@
 												? 'Data Missing'
 												: `${skus.length} SKU${skus.length !== 1 ? 's' : ''}`}
 										</span>
+										<a
+											href="/buy-box-monitor?query={asin}"
+											target="_blank"
+											rel="noopener noreferrer"
+											class="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium hover:bg-purple-200 transition-colors"
+											title="Monitor buy box for this ASIN"
+										>
+											📈 Monitor
+										</a>
 										{#if skus[0]?.is_skeleton}
 											<button
 												on:click={() => fetchSingleASIN(asin)}
@@ -2600,7 +2763,7 @@
 
 								<!-- ASIN Summary Stats -->
 								{#if !skus[0]?.is_skeleton}
-									<div class="mt-3 grid grid-cols-4 gap-4 text-sm">
+									<div class="mt-3 grid grid-cols-5 gap-4 text-sm">
 										<div>
 											<span class="text-gray-500">Total Profit:</span>
 											<span class="font-medium">
@@ -2613,6 +2776,12 @@
 											<span class="text-gray-500">Winners:</span>
 											<span class="font-medium text-green-600">
 												{skus.filter((s) => s.is_winner).length}/{skus.length}
+											</span>
+										</div>
+										<div>
+											<span class="text-gray-500">Price Matched:</span>
+											<span class="font-medium text-orange-600">
+												{skus.filter((s) => isPriceMatchedButLostBuyBox(s)).length}
 											</span>
 										</div>
 										<div>
@@ -2737,16 +2906,77 @@
 															{#if sku.your_current_price === 0}
 																<span class="text-red-600">Out of Stock</span>
 															{:else}
-																£{sku.your_current_price?.toFixed(2) || 'N/A'}
-															{/if}
-															{#if sku.is_winner}
-																<span class="text-green-600 ml-1">🏆</span>
+																<div class="flex items-center gap-2">
+																	<div class="flex flex-col">
+																		{#if showCustomPriceInputs.get(sku.sku)}
+																			<!-- Custom price input -->
+																			<div class="flex items-center gap-1 mb-1">
+																				<input
+																					type="number"
+																					step="0.01"
+																					min="0"
+																					placeholder={sku.your_current_price?.toFixed(2) || '0.00'}
+																					value={customPrices.get(sku.sku) || ''}
+																					on:input={(e) =>
+																						updateCustomPrice(
+																							sku.sku,
+																							(e.target as HTMLInputElement)?.value || ''
+																						)}
+																					class="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:border-blue-500 focus:outline-none"
+																				/>
+																				<span class="text-xs text-gray-500">£</span>
+																			</div>
+																			<div class="flex items-center gap-1">
+																				<button
+																					on:click={() => resetCustomPrice(sku.sku)}
+																					class="text-xs text-gray-500 hover:text-gray-700 underline"
+																					title="Reset to current price"
+																				>
+																					Reset
+																				</button>
+																				<button
+																					on:click={() => toggleCustomPriceInput(sku.sku)}
+																					class="text-xs text-gray-500 hover:text-gray-700"
+																					title="Hide custom price input"
+																				>
+																					✕
+																				</button>
+																			</div>
+																		{:else}
+																			<!-- Current price display -->
+																			<div class="flex items-center gap-1">
+																				<span
+																					class={customPrices.has(sku.sku)
+																						? 'line-through text-gray-400'
+																						: ''}
+																				>
+																					£{sku.your_current_price?.toFixed(2) || 'N/A'}
+																				</span>
+																				{#if customPrices.has(sku.sku)}
+																					<span class="text-blue-600 font-medium">
+																						→ £{customPrices.get(sku.sku)?.toFixed(2)}
+																					</span>
+																				{/if}
+																			</div>
+																			<button
+																				on:click={() => toggleCustomPriceInput(sku.sku)}
+																				class="text-xs text-blue-600 hover:text-blue-800 underline mt-0.5"
+																				title="Test custom price"
+																			>
+																				{customPrices.has(sku.sku) ? 'Edit' : 'Test Price'}
+																			</button>
+																		{/if}
+																	</div>
+																	{#if sku.is_winner}
+																		<span class="text-green-600 ml-1">🏆</span>
+																	{/if}
+																</div>
 															{/if}
 														</div>
 													</td>
 													<td class="py-4 px-6">
 														<div class="text-sm">
-															{#if sku.buybox_price}
+															{#if sku.buybox_price && sku.buybox_price > 0}
 																<!-- Always show actual Buy Box price -->
 																£{sku.buybox_price.toFixed(2)}
 																{#if sku.is_winner}
@@ -2754,7 +2984,7 @@
 																		>🏆</span
 																	>
 																{/if}
-															{:else if sku.competitor_price}
+															{:else if sku.competitor_price && sku.competitor_price > 0}
 																<!-- Fallback: use competitor_price if buybox_price not available -->
 																£{sku.competitor_price.toFixed(2)}
 																{#if sku.is_winner}
@@ -2762,23 +2992,35 @@
 																		>🏆</span
 																	>
 																{/if}
-															{:else if sku.price}
-																<!-- Final fallback: use price field -->
-																£{sku.price.toFixed(2)}
-																{#if sku.is_winner}
-																	<span class="text-green-600 ml-1" title="You have the Buy Box"
-																		>🏆</span
-																	>
-																{/if}
 															{:else}
-																<!-- No buy box data available -->
-																N/A
+																<!-- No buy box data available - don't show your price here -->
+																<span class="text-gray-500 italic">No Buy Box</span>
 															{/if}
 														</div>
 													</td>
 													<td class="py-4 px-6">
 														<div class="text-sm">
-															{#if sku.is_winner}
+															{#if customPrices.has(sku.sku)}
+																<!-- Custom price profit -->
+																{@const customProfit = getEffectiveProfit(sku)}
+																{#if customProfit !== null}
+																	<div class="flex flex-col gap-1">
+																		<span
+																			class={customProfit >= 0
+																				? 'text-blue-600 font-medium'
+																				: 'text-red-600 font-medium'}
+																			title="Profit at custom price"
+																		>
+																			£{customProfit.toFixed(2)}
+																		</span>
+																		<span class="text-xs text-gray-500">
+																			(Custom: £{customPrices.get(sku.sku)?.toFixed(2)})
+																		</span>
+																	</div>
+																{:else}
+																	<span class="text-gray-400">N/A</span>
+																{/if}
+															{:else if sku.is_winner}
 																<!-- Winner: Show current profit since you already have buy box -->
 																{#if sku.current_actual_profit !== null}
 																	<span
@@ -2818,7 +3060,27 @@
 													</td>
 													<td class="py-4 px-6">
 														<div class="text-sm">
-															{#if sku.is_winner}
+															{#if customPrices.has(sku.sku)}
+																<!-- Custom price margin -->
+																{@const customMargin = getEffectiveMargin(sku)}
+																{#if customMargin !== null}
+																	<div class="flex flex-col gap-1">
+																		<span
+																			class={customMargin >= 20
+																				? 'text-blue-600 font-medium'
+																				: customMargin >= 10
+																					? 'text-yellow-600 font-medium'
+																					: 'text-red-600 font-medium'}
+																			title="Margin at custom price"
+																		>
+																			{customMargin.toFixed(1)}%
+																		</span>
+																		<span class="text-xs text-gray-500"> (Custom) </span>
+																	</div>
+																{:else}
+																	<span class="text-gray-400">N/A</span>
+																{/if}
+															{:else if sku.is_winner}
 																<!-- Winner: Show current margin since you already have buy box -->
 																{#if sku.your_margin_percent_at_current_price !== null}
 																	<span
@@ -2861,23 +3123,13 @@
 														</div>
 													</td>
 													<td class="py-4 px-6 whitespace-nowrap">
-														{#if sku.opportunity_flag}
+														{#if true}
+															{@const status = getSkuStatus(sku)}
 															<span
-																class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
+																class="{status.bgClass} {status.textClass} px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
+																title={status.description}
 															>
-																💡 Opportunity
-															</span>
-														{:else if sku.is_winner}
-															<span
-																class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
-															>
-																🏆 Winner
-															</span>
-														{:else}
-															<span
-																class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
-															>
-																❌ Losing
+																{status.label}
 															</span>
 														{/if}
 													</td>

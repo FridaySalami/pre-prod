@@ -47,6 +47,30 @@ export interface TransformedBuyBoxData {
   recommendations?: string[];
 }
 
+// Competitive Analysis Types
+export interface CompetitiveAsin {
+  id: string;
+  primary_asin: string;
+  competitive_asin: string;
+  relationship_type: string;
+  notes?: string;
+  added_by: string;
+  primary_product_title?: string;
+  competitive_product_title?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompetitorBuyBoxInfo extends TransformedBuyBoxData {
+  asin: string;
+  competitiveRelationship: CompetitiveAsin;
+  productInfo?: {
+    title?: string;
+    brand?: string;
+    category?: string;
+  };
+}
+
 export interface BuyBoxQuickStatus {
   hasBuyBox: boolean;
   buyBoxOwner: string;
