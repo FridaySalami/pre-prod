@@ -1836,14 +1836,14 @@
 								<span
 									class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
 								>
-									📊 Min Margin: {minMarginFilter}%
+									📊 Min ROI Margin: {minMarginFilter}%
 									<button
 										on:click={() => {
 											minMarginFilter = 0;
 											applyFilters();
 										}}
 										class="text-orange-600 hover:text-orange-800 ml-1"
-										title="Clear margin filter"
+										title="Clear ROI margin filter"
 									>
 										×
 									</button>
@@ -1911,8 +1911,8 @@
 				>
 					<option value="profit_desc">💰 Profit (High to Low)</option>
 					<option value="profit_asc">💰 Profit (Low to High)</option>
-					<option value="margin_desc">📊 Margin % (High to Low)</option>
-					<option value="margin_asc">📊 Margin % (Low to High)</option>
+					<option value="margin_desc">📊 ROI Margin % (High to Low)</option>
+					<option value="margin_asc">📊 ROI Margin % (Low to High)</option>
 					<option value="sku_asc">📝 SKU (A to Z)</option>
 				</select>
 			</div>
@@ -2001,7 +2001,7 @@
 			<!-- Min Margin Filter -->
 			<div>
 				<label for="minMargin" class="block text-sm font-medium text-gray-700 mb-1"
-					>Min Margin %</label
+					>Min ROI Margin %</label
 				>
 				<input
 					id="minMargin"
@@ -2576,7 +2576,7 @@
 														</div>
 													{/if}
 													<div class="text-xs text-gray-500 italic mt-1">
-														Margin % = Profit ÷ Total Investment (Costs + Fees)
+														ROI Margin % = Profit ÷ Total Investment (Costs + Fees)
 													</div>
 												</div>
 											{/if}
@@ -2868,8 +2868,8 @@
 													<div class="text-xs font-normal text-gray-400">If matched</div>
 												</th>
 												<th class="py-3 px-6">
-													<div>Buy Box Margin</div>
-													<div class="text-xs font-normal text-gray-400">If matched</div>
+													<div>ROI Margin %</div>
+													<div class="text-xs font-normal text-gray-400">If matched buy box</div>
 												</th>
 												<th class="py-3 px-6">Status</th>
 												<th class="py-3 px-6">Action</th>
@@ -3123,7 +3123,7 @@
 																			: sku.your_margin_percent_at_current_price >= 10
 																				? 'text-yellow-600'
 																				: 'text-red-600'}
-																		title="Current margin (you have the buy box)"
+																		title="Current ROI margin % (you have the buy box)"
 																	>
 																		{sku.your_margin_percent_at_current_price.toFixed(1)}%
 																	</span>
@@ -3139,14 +3139,14 @@
 																			: sku.margin_percent_at_buybox_price >= 10
 																				? 'text-yellow-600'
 																				: 'text-red-600'}
-																		title="Margin if you matched buy box price"
+																		title="ROI margin % if you matched buy box price"
 																	>
 																		{sku.margin_percent_at_buybox_price.toFixed(1)}%
 																	</span>
 																{:else if sku.your_margin_percent_at_current_price !== null}
 																	<span
 																		class="text-gray-500"
-																		title="Current margin (not competitive)"
+																		title="Current ROI margin % (not competitive for buy box)"
 																	>
 																		{sku.your_margin_percent_at_current_price.toFixed(1)}%
 																	</span>

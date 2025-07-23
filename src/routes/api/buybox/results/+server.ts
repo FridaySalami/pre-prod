@@ -77,6 +77,9 @@ export async function GET({ url }) {
       'current_actual_profit', 'buybox_actual_profit',
       'your_margin_percent_at_current_price', 'margin_percent_at_buybox_price',
       'margin_difference', 'profit_opportunity',
+      // ROI margin calculation breakdown (new fields)
+      'current_margin_calculation', 'buybox_margin_calculation',
+      'total_investment_current', 'total_investment_buybox',
       // Recommendations
       'recommended_action',
       // Shipping information
@@ -86,7 +89,7 @@ export async function GET({ url }) {
       // cost_data_source, and other metadata fields not displayed in UI
     ];
 
-    console.log(`🔵 [REQ-${requestId}] Selecting ${selectedColumns.length} columns (optimized from SELECT *):`);
+    console.log(`🔵 [REQ-${requestId}] Selecting ${selectedColumns.length} columns (optimized from SELECT *, includes ROI calculation fields):`);
     console.log(`🔵 [REQ-${requestId}] ${selectedColumns.join(', ')}`);
 
     let query = supabaseAdmin
