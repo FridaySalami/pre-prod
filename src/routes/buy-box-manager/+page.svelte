@@ -43,6 +43,12 @@
 		recommended_action: string | null;
 		break_even_price: number | null;
 
+		// Margin calculation breakdowns (new ROI-based method)
+		current_margin_calculation: string | null;
+		buybox_margin_calculation: string | null;
+		total_investment_current: number | null;
+		total_investment_buybox: number | null;
+
 		// Additional fields for completeness
 		product_title?: string | null;
 		run_id?: string | null;
@@ -793,6 +799,10 @@
 			margin_difference: null,
 			profit_opportunity: null,
 			recommended_action: null,
+			current_margin_calculation: null,
+			buybox_margin_calculation: null,
+			total_investment_current: null,
+			total_investment_buybox: null,
 			merchant_shipping_group: undefined,
 			product_title: undefined,
 			run_id: undefined,
@@ -2544,6 +2554,30 @@
 													class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded mt-2"
 												>
 													+£{result.profit_opportunity.toFixed(2)} opportunity
+												</div>
+											{/if}
+
+											<!-- Margin Calculation Breakdown -->
+											{#if result.current_margin_calculation || result.buybox_margin_calculation}
+												<div class="border-t pt-2 mt-2">
+													<div class="text-xs font-medium text-gray-700 mb-2">
+														📈 ROI Margin Calculation:
+													</div>
+													{#if result.current_margin_calculation}
+														<div class="text-xs text-gray-600 mb-1">
+															<span class="font-medium">Current:</span>
+															{result.current_margin_calculation}
+														</div>
+													{/if}
+													{#if result.buybox_margin_calculation}
+														<div class="text-xs text-gray-600 mb-1">
+															<span class="font-medium">Buy Box:</span>
+															{result.buybox_margin_calculation}
+														</div>
+													{/if}
+													<div class="text-xs text-gray-500 italic mt-1">
+														Margin % = Profit ÷ Total Investment (Costs + Fees)
+													</div>
 												</div>
 											{/if}
 										</div>

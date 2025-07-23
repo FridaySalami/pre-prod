@@ -435,8 +435,10 @@ async function calculateProfitability(
     const amazonFeeAtBuyBox = buyBoxPrice * amazonFeeRate;
     const marginAtBuyBox = buyBoxPrice - amazonFeeAtBuyBox - totalCost;
 
-    // Calculate margin percent
-    const marginPercentAtBuyBox = totalCost > 0 ? (marginAtBuyBox / totalCost) * 100 : 0;
+    // Calculate margin percent using ROI method (Profit / Total Investment)
+    // Total investment = product costs + Amazon fees
+    const totalInvestment = totalCost + amazonFeeAtBuyBox;
+    const marginPercentAtBuyBox = totalInvestment > 0 ? (marginAtBuyBox / totalInvestment) * 100 : 0;
 
     // Calculate minimum profitable price (with 10% margin)
     const minMarginRequired = 0.10; // 10% margin

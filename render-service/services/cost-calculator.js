@@ -234,13 +234,17 @@ class CostCalculator {
     const yourAmazonFee = yourPrice * amazonFeeRate;
     const yourNetRevenue = yourPrice - yourAmazonFee;
     const yourMargin = yourNetRevenue - costs.materialTotalCost - costs.shippingCost;
-    const yourMarginPercent = yourPrice > 0 ? (yourMargin / yourPrice) * 100 : 0;
+    // ROI-based margin: profit / total investment (costs + fees)
+    const yourTotalInvestment = costs.materialTotalCost + costs.shippingCost + yourAmazonFee;
+    const yourMarginPercent = yourTotalInvestment > 0 ? (yourMargin / yourTotalInvestment) * 100 : 0;
 
     // Calculate margin if matching buy box price
     const buyboxAmazonFee = buyboxPrice * amazonFeeRate;
     const buyboxNetRevenue = buyboxPrice - buyboxAmazonFee;
     const buyboxMargin = buyboxNetRevenue - costs.materialTotalCost - costs.shippingCost;
-    const buyboxMarginPercent = buyboxPrice > 0 ? (buyboxMargin / buyboxPrice) * 100 : 0;
+    // ROI-based margin: profit / total investment (costs + fees)
+    const buyboxTotalInvestment = costs.materialTotalCost + costs.shippingCost + buyboxAmazonFee;
+    const buyboxMarginPercent = buyboxTotalInvestment > 0 ? (buyboxMargin / buyboxTotalInvestment) * 100 : 0;
 
     // Calculate opportunity and recommendations
     const marginDifference = buyboxMargin - yourMargin;
@@ -342,6 +346,16 @@ class CostCalculator {
         material_cost_breakdown: `Base: £${costs.baseCost.toFixed(2)} + Box: £${costs.boxCost.toFixed(2)} + Material: £0.20 + VAT: £${costs.vatAmount.toFixed(2)} + Fragile: £${costs.fragileCharge.toFixed(2)} = £${costs.materialTotalCost.toFixed(2)}`,
         operating_cost_breakdown: `Material: £${costs.materialTotalCost.toFixed(2)} + Shipping: £${costs.shippingCost.toFixed(2)} = £${totalOperatingCost.toFixed(2)}`,
         breakeven_calculation: `(£${costs.materialTotalCost.toFixed(2)} + £${costs.shippingCost.toFixed(2)}) ÷ (1 - 0.15) = £${totalOperatingCost.toFixed(2)} ÷ 0.85 = £${margins.breakEvenPrice.toFixed(2)}`,
+
+        // ROI-based margin calculation breakdown
+        current_margin_calculation: `(£${currentActualProfit.toFixed(2)} profit) ÷ (£${(costs.materialTotalCost + costs.shippingCost + currentAmazonFee).toFixed(2)} total investment) × 100 = ${margins.yourMarginPercent.toFixed(2)}%`,
+        buybox_margin_calculation: buyboxActualProfit !== null ?
+          `(£${buyboxActualProfit.toFixed(2)} profit) ÷ (£${(costs.materialTotalCost + costs.shippingCost + buyboxAmazonFee).toFixed(2)} total investment) × 100 = ${margins.buyboxMarginPercent.toFixed(2)}%` :
+          null,
+        total_investment_current: parseFloat((costs.materialTotalCost + costs.shippingCost + currentAmazonFee).toFixed(2)),
+        total_investment_buybox: buyboxActualProfit !== null ?
+          parseFloat((costs.materialTotalCost + costs.shippingCost + buyboxAmazonFee).toFixed(2)) :
+          null,
 
         // Margin analysis
         your_margin_at_current_price: margins.yourMargin,
