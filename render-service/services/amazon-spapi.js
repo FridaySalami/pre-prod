@@ -235,10 +235,10 @@ class AmazonSPAPI {
         ? Math.min(...competitorPrices.map(p => p.total))
         : null;
 
-      // Buy Box pricing
-      const buyBoxPrice = buyBoxOffer?.ListingPrice?.Amount || 0;
+      // Buy Box pricing - handle no competition scenario
+      const buyBoxPrice = buyBoxOffer?.ListingPrice?.Amount || null;
       const buyBoxShipping = buyBoxOffer?.Shipping?.Amount || 0;
-      const buyBoxTotal = buyBoxPrice + buyBoxShipping;
+      const buyBoxTotal = buyBoxPrice ? buyBoxPrice + buyBoxShipping : null;
 
       // Your current shipping (use API data for shipping costs)
       const yourCurrentShipping = yourOfferFromApi?.Shipping?.Amount || 0;
@@ -250,11 +250,11 @@ class AmazonSPAPI {
       const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
 
       // Calculate price gap (real gap between your SKU price and Buy Box price)
-      const priceGap = yourCurrentPrice - buyBoxPrice;
+      const priceGap = buyBoxPrice ? yourCurrentPrice - buyBoxPrice : 0;
 
       console.log(`Buy Box analysis for ${asin}: Your ID: ${yourSellerId}, Buy Box Owner: ${buyBoxOffer?.SellerId}, Winner: ${isWinner}`);
       console.log(`Price Gap Debug - Your: ${yourCurrentPrice} (${typeof yourCurrentPrice}), BuyBox: ${buyBoxPrice} (${typeof buyBoxPrice}), Gap: ${priceGap} (${typeof priceGap})`);
-      console.log(`Pricing for ${asin}: Your Price: £${yourCurrentPrice}, Buy Box Price: £${buyBoxPrice}, Gap: £${priceGap.toFixed(2)}`);
+      console.log(`Pricing for ${asin}: Your Price: £${yourCurrentPrice}, Buy Box Price: £${buyBoxPrice || 'No Buy Box'}, Gap: £${priceGap.toFixed(2)}`);
 
       return {
         run_id: runId,
@@ -263,11 +263,11 @@ class AmazonSPAPI {
         // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
 
         // Essential pricing fields
-        price: yourCurrentPrice || buyBoxPrice, // Fallback to buy box price if your offer not found
+        price: yourCurrentPrice || 0, // Always use your current price, don't fallback to buyBoxPrice
         is_winner: isWinner,
         competitor_id: buyBoxOffer?.SellerId || null,
         competitor_name: buyBoxOffer?.SellerName || 'Unknown',
-        competitor_price: buyBoxPrice,
+        competitor_price: buyBoxPrice, // This will be null when no competition
         opportunity_flag: isOpportunity,
         total_offers: offers.length,
         captured_at: new Date().toISOString(),
@@ -278,9 +278,9 @@ class AmazonSPAPI {
         your_current_price: yourCurrentPrice,
         your_current_shipping: yourCurrentShipping,
         your_current_total: yourCurrentTotal,
-        buybox_price: buyBoxPrice,
+        buybox_price: buyBoxPrice, // This will be null when no competition
         buybox_shipping: buyBoxShipping,
-        buybox_total: buyBoxTotal,
+        buybox_total: buyBoxTotal, // This will be null when no competition
         price_gap: parseFloat(priceGap.toFixed(2)),
         price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
         pricing_status: isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox'),

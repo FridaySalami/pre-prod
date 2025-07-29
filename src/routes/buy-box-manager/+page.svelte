@@ -537,9 +537,9 @@
 		if (sku.is_winner) return false; // Already winning
 		if (!sku.your_current_price || sku.your_current_price === 0) return false; // Out of stock
 
-		// Check if there's actually a buy box available (not 0 or null)
-		const buyboxPrice = sku.buybox_price || sku.competitor_price || sku.price;
-		if (!buyboxPrice || buyboxPrice === 0) return false; // No buy box available
+		// Check if there's actually a buy box available (not null or 0)
+		const buyboxPrice = sku.buybox_price;
+		if (!buyboxPrice || buyboxPrice === null || buyboxPrice === 0) return false; // No competition found
 
 		const tolerance = 0.005; // 0.5p tolerance for price matching
 		const priceMatch = Math.abs(sku.your_current_price - buyboxPrice) <= tolerance;
@@ -2370,26 +2370,23 @@
 												<div class="font-medium text-green-700">
 													Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
 												</div>
-											{:else if !result.is_winner && result.buybox_price}
+											{:else if !result.is_winner && result.buybox_price && result.buybox_price > 0}
 												<!-- You're losing - show actual buy box price -->
 												<div class="font-medium text-red-700">
 													Buy Box Price: £{result.buybox_price.toFixed(2)} (Competitor)
 												</div>
-											{:else if !result.is_winner && result.competitor_price}
+											{:else if !result.is_winner && result.competitor_price && result.competitor_price > 0}
 												<!-- Fallback: use competitor_price if buybox_price not available -->
 												<div class="font-medium text-red-700">
 													Buy Box Price: £{result.competitor_price.toFixed(2)} (Competitor)
 												</div>
-											{:else if !result.is_winner && result.price}
-												<!-- Final fallback: use price field -->
-												<div class="font-medium text-red-700">
-													Buy Box Price: £{result.price.toFixed(2)} (Competitor)
-												</div>
 											{:else}
-												<!-- No buy box data available -->
-												<div class="font-medium text-gray-500">
-													Buy Box Price: N/A
-													<span class="text-xs block text-orange-600">No Buy Box detected</span>
+												<!-- No Buy Box available -->
+												<div class="font-medium text-orange-600">
+													Buy Box Price: No Buy Box Available
+													<span class="text-xs block text-orange-500"
+														>May be due to listing quality, pricing, or sales history</span
+													>
 												</div>
 											{/if}
 

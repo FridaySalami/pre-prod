@@ -389,8 +389,8 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
 
   // Determine recommended action
   let recommendedAction;
-  if (!buyBoxPrice || buyBoxPrice <= 0) {
-    // No competition - suggest investigation
+  if (!buyBoxPrice || buyBoxPrice === null) {
+    // No Buy Box available - suggest investigation
     recommendedAction = 'investigate';
   } else if (buyboxMarginPercent === null || buyboxMarginPercent < 5) {
     // Low or invalid margin at buy box price - not profitable

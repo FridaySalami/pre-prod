@@ -238,6 +238,22 @@ class CostCalculator {
     const yourTotalInvestment = costs.materialTotalCost + costs.shippingCost + yourAmazonFee;
     const yourMarginPercent = yourTotalInvestment > 0 ? (yourMargin / yourTotalInvestment) * 100 : 0;
 
+    // Handle no Buy Box scenario (buyboxPrice is null)
+    if (!buyboxPrice || buyboxPrice === null) {
+      const breakEvenPrice = (costs.materialTotalCost + costs.shippingCost) / (1 - amazonFeeRate);
+
+      return {
+        yourMargin: parseFloat(yourMargin.toFixed(2)),
+        yourMarginPercent: parseFloat(yourMarginPercent.toFixed(2)),
+        buyboxMargin: null,
+        buyboxMarginPercent: null,
+        marginDifference: 0,
+        profitOpportunity: 0,
+        breakEvenPrice: parseFloat(breakEvenPrice.toFixed(2)),
+        recommendedAction: 'investigate' // No Buy Box = investigate pricing/listing
+      };
+    }
+
     // Calculate margin if matching buy box price
     const buyboxAmazonFee = buyboxPrice * amazonFeeRate;
     const buyboxNetRevenue = buyboxPrice - buyboxAmazonFee;
