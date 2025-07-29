@@ -532,12 +532,17 @@
 
 								<dt class="font-medium text-gray-500">Buy Box Price:</dt>
 								<dd class="col-span-2">
-									{buyBoxInfo.buyBoxPrice ? `£${buyBoxInfo.buyBoxPrice.toFixed(2)}` : 'N/A'}
+									{#if buyBoxInfo.buyBoxPrice && buyBoxInfo.buyBoxPrice > 0}
+										<span class="font-medium">£{buyBoxInfo.buyBoxPrice.toFixed(2)}</span>
+										<span class="text-sm text-gray-500 ml-2">(Competitor)</span>
+									{:else}
+										<span class="text-orange-600 font-medium">No Competition Found</span>
+									{/if}
 								</dd>
 
 								<dt class="font-medium text-gray-500">Price Difference:</dt>
 								<dd class="col-span-2">
-									{#if buyBoxInfo.buyBoxPrice && selectedProduct.price}
+									{#if buyBoxInfo.buyBoxPrice && buyBoxInfo.buyBoxPrice > 0 && selectedProduct.price}
 										<span
 											class={(buyBoxInfo.priceDifference || 0) > 0
 												? 'text-red-600'
@@ -545,11 +550,13 @@
 													? 'text-green-600'
 													: 'text-gray-600'}
 										>
-											{(buyBoxInfo.priceDifference || 0) > 0 ? '+' : ''}{(
+											{(buyBoxInfo.priceDifference || 0) > 0 ? '+' : ''}£{(
 												buyBoxInfo.priceDifference || 0
 											).toFixed(2)}
 											({Math.abs(buyBoxInfo.priceDifferencePercent || 0).toFixed(2)}%)
 										</span>
+									{:else if !buyBoxInfo.buyBoxPrice || buyBoxInfo.buyBoxPrice <= 0}
+										<span class="text-orange-600">No competitor to compare</span>
 									{:else}
 										N/A
 									{/if}
