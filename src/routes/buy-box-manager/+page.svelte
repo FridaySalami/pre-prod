@@ -71,7 +71,7 @@
 	let searchQuery = '';
 	let categoryFilter = 'all'; // all, winners, losers, opportunities, profitable, not_profitable, match_buybox, hold_price, investigate
 	let shippingFilter = 'all'; // all, prime, standard
-	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, sku_asc
+	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, sku_asc
 	let showOnlyWithMarginData = false;
 	let includeNoMarginData = false; // New option to include records without margin data
 	let minProfitFilter = 0;
@@ -255,6 +255,11 @@
 	onMount(async () => {
 		await refreshData();
 	});
+
+	// Apply filters whenever the data changes
+	$: if (buyboxData.length > 0) {
+		applyFilters();
+	}
 
 	// Deduplicate data to show only the latest entry per SKU
 	function deduplicateLatestData(data: BuyBoxData[]): BuyBoxData[] {
@@ -703,6 +708,90 @@
 						(b.your_margin_percent_at_current_price || 0)
 				);
 				break;
+			case 'profit_difference_desc':
+				// Filter for items where we're losing by being priced HIGHER than buy box
+				filtered = filtered.filter((item) => {
+					// Must have valid current price (not out of stock)
+					if (!item.your_current_price || item.your_current_price <= 0) return false;
+
+					// Must have valid buy box price to compare against
+					if (!item.buybox_price || item.buybox_price <= 0) return false;
+
+					// Skip if already winning the buy box
+					if (item.is_winner) return false;
+
+					// Only show items where WE are priced HIGHER than the buy box (losing)
+					const priceDiff = item.your_current_price - item.buybox_price;
+					console.log(
+						`Debug ${item.sku}: our_price=${item.your_current_price}, buybox_price=${item.buybox_price}, diff=${priceDiff}`
+					);
+					return priceDiff > 0; // Positive means we're priced higher (losing)
+				});
+
+				// Sort by biggest price difference first (largest losses)
+				filtered.sort((a, b) => {
+					const aDiff = (a.your_current_price || 0) - (a.buybox_price || 0);
+					const bDiff = (b.your_current_price || 0) - (b.buybox_price || 0);
+					return bDiff - aDiff; // Biggest difference first
+				});
+				break;
+			case 'profit_difference_asc':
+				// Filter for items where we're losing by being priced HIGHER than buy box
+				filtered = filtered.filter((item) => {
+					if (!item.your_current_price || item.your_current_price <= 0) return false;
+					if (!item.buybox_price || item.buybox_price <= 0) return false;
+					if (item.is_winner) return false;
+
+					// Only show items where WE are priced HIGHER than the buy box (losing)
+					const priceDiff = item.your_current_price - item.buybox_price;
+					return priceDiff > 0; // Positive means we're priced higher (losing)
+				});
+
+				// Sort by smallest price difference first (easy wins - 1p, 2p losses)
+				filtered.sort((a, b) => {
+					const aDiff = (a.your_current_price || 0) - (a.buybox_price || 0);
+					const bDiff = (b.your_current_price || 0) - (b.buybox_price || 0);
+					return aDiff - bDiff; // Smallest difference first (easy wins)
+				});
+				break;
+			case 'margin_difference_desc':
+				// Filter for items where we're losing by being priced HIGHER than buy box
+				filtered = filtered.filter((item) => {
+					if (!item.your_current_price || item.your_current_price <= 0) return false;
+					if (!item.buybox_price || item.buybox_price <= 0) return false;
+					if (item.is_winner) return false;
+
+					// Only show items where WE are priced HIGHER than the buy box (losing)
+					const priceDiff = item.your_current_price - item.buybox_price;
+					return priceDiff > 0; // Positive means we're priced higher (losing)
+				});
+
+				// Sort by biggest price difference first (largest losses)
+				filtered.sort((a, b) => {
+					const aDiff = (a.your_current_price || 0) - (a.buybox_price || 0);
+					const bDiff = (b.your_current_price || 0) - (b.buybox_price || 0);
+					return bDiff - aDiff; // Biggest difference first
+				});
+				break;
+			case 'margin_difference_asc':
+				// Filter for items where we're losing by being priced HIGHER than buy box
+				filtered = filtered.filter((item) => {
+					if (!item.your_current_price || item.your_current_price <= 0) return false;
+					if (!item.buybox_price || item.buybox_price <= 0) return false;
+					if (item.is_winner) return false;
+
+					// Only show items where WE are priced HIGHER than the buy box (losing)
+					const priceDiff = item.your_current_price - item.buybox_price;
+					return priceDiff > 0; // Positive means we're priced higher (losing)
+				});
+
+				// Sort by smallest price difference first (easy wins - 1p, 2p losses)
+				filtered.sort((a, b) => {
+					const aDiff = (a.your_current_price || 0) - (a.buybox_price || 0);
+					const bDiff = (b.your_current_price || 0) - (b.buybox_price || 0);
+					return aDiff - bDiff; // Smallest difference first (easy wins)
+				});
+				break;
 			case 'sku_asc':
 				filtered.sort((a, b) => a.sku.localeCompare(b.sku));
 				break;
@@ -1057,11 +1146,18 @@
 		searchQuery = '';
 		categoryFilter = 'all';
 		shippingFilter = 'all';
-		sortBy = 'captured_at';
+		sortBy = 'profit_desc'; // Reset to default sort
+		minProfitFilter = 0;
+		minMarginFilter = 0;
+		showOnlyWithMarginData = false;
 		currentPage = 1; // Reset to first page
 
-		// Trigger reactive updates
-		filteredData = buyboxData;
+		// Clear active filter tracking
+		activeCardFilter = '';
+		activePresetFilter = '';
+
+		// Apply filters to refresh the display
+		applyFilters();
 
 		console.log('🔄 All filters reset to defaults');
 	}
@@ -1077,6 +1173,18 @@
 			showOnlyWithMarginData ||
 			activeCardFilter !== '' ||
 			activePresetFilter !== '';
+
+		console.log('🔍 Active filters check:', {
+			searchQuery,
+			categoryFilter,
+			shippingFilter,
+			minProfitFilter,
+			minMarginFilter,
+			showOnlyWithMarginData,
+			activeCardFilter,
+			activePresetFilter,
+			hasActiveFilters
+		});
 	}
 
 	// Apply filter preset
@@ -1740,6 +1848,10 @@
 					<option value="profit_asc">💰 Profit (Low to High)</option>
 					<option value="margin_desc">📊 ROI Margin % (High to Low)</option>
 					<option value="margin_asc">📊 ROI Margin % (Low to High)</option>
+					<option value="profit_difference_desc">💸 Losing by Most (Biggest Price Gap)</option>
+					<option value="profit_difference_asc">🎯 Quick Wins (Smallest Price Gap)</option>
+					<option value="margin_difference_desc">📊 Margin Opportunities (Biggest First)</option>
+					<option value="margin_difference_asc">📊 Margin Opportunities (Smallest First)</option>
 					<option value="sku_asc">📝 SKU (A to Z)</option>
 				</select>
 			</div>
@@ -2278,7 +2390,7 @@
 											{/if}
 
 											{#if result.break_even_price}
-												{@const feeRate = result.your_current_price < 10 ? 0.08 : 0.15}
+												{@const feeRate = (result.your_current_price ?? 0) < 10 ? 0.08 : 0.15}
 												{@const netRate = (1 - feeRate).toFixed(2)}
 												<div class="font-bold border-t pt-2 text-red-800">
 													Break-even: £{result.break_even_price.toFixed(2)}
