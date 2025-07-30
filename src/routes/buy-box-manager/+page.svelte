@@ -2278,11 +2278,13 @@
 											{/if}
 
 											{#if result.break_even_price}
+												{@const feeRate = result.your_current_price < 10 ? 0.08 : 0.15}
+												{@const netRate = (1 - feeRate).toFixed(2)}
 												<div class="font-bold border-t pt-2 text-red-800">
 													Break-even: £{result.break_even_price.toFixed(2)}
 												</div>
 												<div class="text-xs text-gray-500">
-													(£{result.total_operating_cost?.toFixed(2)} ÷ 0.85)
+													(£{result.total_operating_cost?.toFixed(2)} ÷ {netRate})
 												</div>
 											{/if}
 										</div>
