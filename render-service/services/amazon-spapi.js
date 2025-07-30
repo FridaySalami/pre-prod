@@ -260,7 +260,7 @@ class AmazonSPAPI {
         run_id: runId,
         asin: asin,
         sku: sku,
-        // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
+        item_name: productTitle, // Re-added for better UX - product titles shown immediately
 
         // Essential pricing fields
         price: yourCurrentPrice || 0, // Always use your current price, don't fallback to buyBoxPrice

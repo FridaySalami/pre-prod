@@ -8,7 +8,7 @@
 		id: string;
 		asin: string;
 		sku: string;
-		// product_title removed - now loaded lazily from sku_asin_mapping
+		item_name?: string; // Product title from buy box data
 		price: number | null; // This is the buybox price (competitor's price) - legacy field
 		buybox_price: number | null; // Preferred field for buy box price
 		your_current_price: number | null; // This is our current listed price
@@ -50,7 +50,6 @@
 		total_investment_buybox: number | null;
 
 		// Additional fields for completeness
-		product_title?: string | null;
 		run_id?: string | null;
 		job_id?: string | null;
 		is_skeleton?: boolean; // Flag to identify skeleton entries
@@ -67,11 +66,6 @@
 	let filteredData: BuyBoxData[] = [];
 	let isLoading = true;
 	let errorMessage = '';
-
-	// Product title cache and loading state
-	let productTitleCache = new Map<string, string>(); // SKU -> product title
-	let loadingProductTitles = false;
-	let cacheVersion = 0; // Used to trigger reactivity when cache changes
 
 	// Search and filters
 	let searchQuery = '';
@@ -605,11 +599,7 @@
 				const matchesSku = item.sku.toLowerCase().includes(query);
 				const matchesAsin = item.asin.toLowerCase().includes(query);
 
-				// Check cached product title (loaded from sku_asin_mapping)
-				const cachedTitle = getProductTitle(item.sku);
-				const matchesTitle = cachedTitle?.toLowerCase().includes(query) ?? false;
-
-				return matchesSku || matchesAsin || matchesTitle;
+				return matchesSku || matchesAsin;
 			});
 		}
 
@@ -723,13 +713,6 @@
 
 		// Update active filter state
 		checkActiveFilters();
-
-		// Force product title loading for new filtered results
-		setTimeout(() => {
-			if (filteredData.length > 0) {
-				loadProductTitlesForPage();
-			}
-		}, 100);
 	}
 
 	// Get paginated data
@@ -804,7 +787,6 @@
 			total_investment_current: null,
 			total_investment_buybox: null,
 			merchant_shipping_group: undefined,
-			product_title: undefined,
 			run_id: undefined,
 			job_id: undefined,
 			is_skeleton: true
@@ -973,28 +955,6 @@
 				? bestSellersGrouped.size
 				: filteredData.length;
 
-	// Create a reactive map for product titles to force re-renders
-	$: reactiveProductTitles = new Map(productTitleCache);
-
-	// Load product titles when paginated data changes or when filtering
-	$: if (paginatedData.length > 0) {
-		// Use a small delay to ensure the DOM has updated
-		setTimeout(() => {
-			loadProductTitlesForPage();
-		}, 50);
-	}
-
-	// Also trigger on filteredData changes to handle filtering
-	$: if (filteredData.length > 0 && paginatedData.length > 0) {
-		// Check if any items in current page are missing titles
-		const missingTitles = paginatedData.some((item) => !productTitleCache.has(item.sku));
-		if (missingTitles) {
-			setTimeout(() => {
-				loadProductTitlesForPage();
-			}, 50);
-		}
-	}
-
 	// Handle pagination
 	function changePage(newPage: number): void {
 		if (newPage >= 1 && newPage <= Math.ceil(totalResults / itemsPerPage)) {
@@ -1091,130 +1051,6 @@
 		return title.substring(0, maxLength) + '...';
 	}
 
-	// Load product titles for currently visible items from sku_asin_mapping
-	async function loadProductTitlesForPage(): Promise<void> {
-		// Prevent concurrent loading
-		if (loadingProductTitles) {
-			console.log('🔍 Already loading product titles, skipping...');
-			return;
-		}
-
-		let currentData: BuyBoxData[] = [];
-
-		// Get current data based on view mode
-		if (viewMode === 'bestsellers') {
-			// For best sellers, get all SKUs from the current page of grouped data
-			const currentGroups = Array.from(bestSellersGrouped.entries()).slice(
-				(currentPage - 1) * itemsPerPage,
-				currentPage * itemsPerPage
-			);
-			currentData = currentGroups.flatMap(([asin, skus]) => skus);
-			console.log('🔍 Best sellers debug - Total groups:', bestSellersGrouped.size);
-			console.log(
-				'🔍 Best sellers debug - B0B61D6XB1 group:',
-				bestSellersGrouped.get('B0B61D6XB1')
-			);
-		} else {
-			currentData = paginatedData;
-		}
-
-		if (currentData.length === 0) {
-			console.log('🔍 No current data, skipping title loading');
-			return;
-		}
-
-		// Get SKUs that don't have cached titles
-		const skusToLoad = currentData
-			.filter((item) => !productTitleCache.has(item.sku))
-			.map((item) => item.sku);
-
-		if (skusToLoad.length === 0) {
-			console.log('🔍 No SKUs need titles - all are cached');
-			return;
-		}
-
-		loadingProductTitles = true;
-		console.log(
-			`🔍 Loading product titles for ${skusToLoad.length} SKUs (${viewMode} view):`,
-			skusToLoad
-		);
-
-		try {
-			// For now, skip batch API and go straight to individual requests since /api/sku-mapping/batch doesn't exist yet
-			console.log('🔄 Using individual requests for product titles');
-			await loadProductTitlesIndividually(skusToLoad);
-
-			// Force a reactivity update
-			productTitleCache = new Map(productTitleCache);
-			console.log('✅ Product titles loaded and cache updated');
-		} catch (error) {
-			console.error('❌ Error loading product titles:', error);
-			// Fallback to individual requests if not already using them
-			try {
-				await loadProductTitlesIndividually(skusToLoad);
-				productTitleCache = new Map(productTitleCache);
-			} catch (fallbackError) {
-				console.error('❌ Fallback title loading also failed:', fallbackError);
-			}
-		} finally {
-			loadingProductTitles = false;
-		}
-	}
-
-	// Fallback function to load titles individually
-	async function loadProductTitlesIndividually(skus: string[]): Promise<void> {
-		const maxConcurrent = 3; // Reduced from 5 to limit API load
-		const chunks = [];
-
-		for (let i = 0; i < skus.length; i += maxConcurrent) {
-			chunks.push(skus.slice(i, i + maxConcurrent));
-		}
-
-		for (const chunk of chunks) {
-			const promises = chunk.map(async (sku) => {
-				try {
-					console.log(`🔍 Fetching title for SKU: ${sku}`);
-					const response = await fetch(
-						`/api/buy-box-monitor/search?query=${encodeURIComponent(sku)}&limit=1`
-					);
-					const data = await response.json();
-
-					console.log(`📄 Response for ${sku}:`, {
-						success: data.success,
-						resultsCount: data.results?.length || 0,
-						firstResult: data.results?.[0],
-						itemName: data.results?.[0]?.item_name
-					});
-
-					if (data.success && data.results?.[0]?.item_name) {
-						productTitleCache.set(sku, data.results[0].item_name);
-						cacheVersion++; // Trigger reactivity
-						productTitleCache = productTitleCache; // Force Svelte reactivity
-						console.log(`✅ Cached title for ${sku}: ${data.results[0].item_name}`);
-					} else {
-						console.warn(`⚠️ No title found for SKU ${sku}:`, data);
-					}
-				} catch (error) {
-					console.warn(`❌ Failed to load title for SKU ${sku}:`, error);
-				}
-			});
-
-			await Promise.all(promises);
-			// Small delay between chunks to avoid overwhelming the API
-			await new Promise((resolve) => setTimeout(resolve, 100));
-		}
-		console.log(`✅ Loaded product titles individually for ${skus.length} SKUs`);
-	}
-
-	// Get product title from cache or return fallback
-	function getProductTitle(sku: string): string | null {
-		// Reference both cacheVersion and reactiveProductTitles to ensure reactivity
-		cacheVersion; // This makes Svelte track when the cache changes
-		const cached = reactiveProductTitles.get(sku) || productTitleCache.get(sku);
-		console.log(`🔍 getProductTitle(${sku}): ${cached || 'null'} (cache v${cacheVersion})`);
-		return cached || null;
-	}
-
 	// Comprehensive filter reset function
 	function resetAllFilters(): void {
 		// Reset all filter variables to defaults
@@ -1222,21 +1058,12 @@
 		categoryFilter = 'all';
 		shippingFilter = 'all';
 		sortBy = 'captured_at';
-		minProfitFilter = 0;
-		minMarginFilter = 0;
-		showOnlyWithMarginData = false;
+		currentPage = 1; // Reset to first page
 
-		// Reset filter state tracking
-		activeCardFilter = '';
-		activePresetFilter = '';
-		hasActiveFilters = false;
+		// Trigger reactive updates
+		filteredData = buyboxData;
 
-		// Clear selections
-		selectedItems.clear();
-		selectedItems = selectedItems;
-
-		// Apply the reset filters
-		applyFilters();
+		console.log('🔄 All filters reset to defaults');
 	}
 
 	// Check if any filters are currently active
@@ -2064,7 +1891,6 @@
 							on:click={() => {
 								viewMode = 'bestsellers';
 								currentPage = 1;
-								loadProductTitlesForPage();
 							}}
 							class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
 								viewMode === 'bestsellers'
@@ -2077,27 +1903,6 @@
 					</div>
 				</div>
 				<div class="flex items-center gap-3 text-sm text-gray-500">
-					{#if loadingProductTitles}
-						<span class="text-blue-600 flex items-center gap-1">
-							<div
-								class="animate-spin rounded-full h-3 w-3 border border-blue-600 border-t-transparent"
-							></div>
-							Loading titles...
-						</span>
-					{:else}
-						<button
-							on:click={() => {
-								// Force reload product titles for current page
-								const skusToReload = paginatedData.map((item) => item.sku);
-								skusToReload.forEach((sku) => productTitleCache.delete(sku));
-								loadProductTitlesForPage();
-							}}
-							class="text-blue-600 hover:text-blue-800 underline"
-							title="Reload product titles for current page"
-						>
-							🔄 Refresh Titles
-						</button>
-					{/if}
 					{#if showLatestOnly}
 						<button
 							on:click={() => {
@@ -2264,22 +2069,19 @@
 												</div>
 											{/if}
 
-											{#if getProductTitle(result.sku)}
-												{@const cachedTitle = getProductTitle(result.sku)}
-												<div
-													class="font-medium text-gray-900 mb-1 leading-tight cursor-help"
-													title={cachedTitle || ''}
-												>
-													{truncateTitle(cachedTitle || '')}
-												</div>
-											{:else if loadingProductTitles}
-												<!-- Show loading state -->
-												<div class="text-xs text-gray-400 mb-1 italic">
-													Loading product title...
+											<div class="font-medium text-gray-900 mb-1 leading-tight">
+												SKU: {result.sku}
+											</div>
+											{#if result.item_name}
+												<!-- Show item name from buybox data -->
+												<div class="text-xs text-gray-600 mb-1">
+													{result.item_name}
 												</div>
 											{:else}
-												<!-- Show when no product title is found -->
-												<div class="text-xs text-gray-400 mb-1 italic">No product title found</div>
+												<!-- Show when no item name is available -->
+												<div class="text-xs text-gray-400 mb-1 italic">
+													No product title available
+												</div>
 											{/if}
 											<div>
 												<a
@@ -2901,18 +2703,9 @@
 															</a>
 														</div>
 														<div class="text-xs text-gray-500 mt-1 max-w-xs">
-															{#if sku.product_title}
-																<span class="block truncate" title={sku.product_title}>
-																	{sku.product_title}
-																</span>
-															{:else}
-																<span
-																	class="block truncate"
-																	title={getProductTitle(sku.sku) || 'Loading...'}
-																>
-																	{getProductTitle(sku.sku) || 'Loading...'}
-																</span>
-															{/if}
+															<span class="block truncate">
+																SKU: {sku.sku}
+															</span>
 														</div>
 													</td>
 													<td class="py-4 px-6 whitespace-nowrap">

@@ -10,6 +10,15 @@ class CostCalculator {
     this.initializeLookupTables();
   }
 
+  /**
+   * Calculate Amazon fee rate based on final selling price
+   * @param {number} price - The final selling price
+   * @returns {number} - The Amazon fee rate (0.08 for under £10, 0.15 for £10+)
+   */
+  getAmazonFeeRate(price) {
+    return price < 10 ? 0.08 : 0.15;
+  }
+
   initializeLookupTables() {
     // Box size cost lookup (exact copy from inventory-profit-calculator)
     this.boxSizeCosts = new Map([
@@ -109,11 +118,11 @@ class CostCalculator {
         return null;
       }
 
-      // Fetch SKU-ASIN mapping for shipping lookup
-      console.log(`[CostCalculator] Looking up shipping group for SKU: ${sku}`);
+      // Fetch SKU-ASIN mapping for shipping lookup and item name
+      console.log(`[CostCalculator] Looking up shipping group and item name for SKU: ${sku}`);
       const { data: skuMapping, error: skuError } = await this.db
         .from('sku_asin_mapping')
-        .select('merchant_shipping_group')
+        .select('merchant_shipping_group, item_name')
         .eq('seller_sku', sku)
         .single();
 
@@ -186,7 +195,7 @@ class CostCalculator {
         shippingType,
         box,
         vatCode,
-        dataSource: linnworksData ? 'linnworks' : 'fallback'
+        itemName: skuMapping?.item_name || null
       };
 
     } catch (error) {
@@ -216,7 +225,7 @@ class CostCalculator {
     return 0; // No match found
   }
 
-  calculateMargins(costs, yourPrice, buyboxPrice, amazonFeeRate = 0.15) {
+  calculateMargins(costs, yourPrice, buyboxPrice, amazonFeeRate = null) {
     if (!costs) {
       return {
         yourMargin: 0,
@@ -230,8 +239,11 @@ class CostCalculator {
       };
     }
 
+    // Use dynamic Amazon fee rate based on price if not provided
+    const yourFeeRate = amazonFeeRate !== null ? amazonFeeRate : this.getAmazonFeeRate(yourPrice);
+
     // Calculate margin at your current price
-    const yourAmazonFee = yourPrice * amazonFeeRate;
+    const yourAmazonFee = yourPrice * yourFeeRate;
     const yourNetRevenue = yourPrice - yourAmazonFee;
     const yourMargin = yourNetRevenue - costs.materialTotalCost - costs.shippingCost;
     // ROI-based margin: profit / total investment (costs + fees)
@@ -240,7 +252,7 @@ class CostCalculator {
 
     // Handle no Buy Box scenario (buyboxPrice is null)
     if (!buyboxPrice || buyboxPrice === null) {
-      const breakEvenPrice = (costs.materialTotalCost + costs.shippingCost) / (1 - amazonFeeRate);
+      const breakEvenPrice = (costs.materialTotalCost + costs.shippingCost) / (1 - yourFeeRate);
 
       return {
         yourMargin: parseFloat(yourMargin.toFixed(2)),
@@ -255,7 +267,8 @@ class CostCalculator {
     }
 
     // Calculate margin if matching buy box price
-    const buyboxAmazonFee = buyboxPrice * amazonFeeRate;
+    const buyboxFeeRate = amazonFeeRate !== null ? amazonFeeRate : this.getAmazonFeeRate(buyboxPrice);
+    const buyboxAmazonFee = buyboxPrice * buyboxFeeRate;
     const buyboxNetRevenue = buyboxPrice - buyboxAmazonFee;
     const buyboxMargin = buyboxNetRevenue - costs.materialTotalCost - costs.shippingCost;
     // ROI-based margin: profit / total investment (costs + fees)
@@ -265,7 +278,7 @@ class CostCalculator {
     // Calculate opportunity and recommendations
     const marginDifference = buyboxMargin - yourMargin;
     const profitOpportunity = Math.max(0, marginDifference);
-    const breakEvenPrice = (costs.materialTotalCost + costs.shippingCost) / (1 - amazonFeeRate);
+    const breakEvenPrice = (costs.materialTotalCost + costs.shippingCost) / (1 - yourFeeRate);
 
     // Determine recommended action
     let recommendedAction;
@@ -298,7 +311,6 @@ class CostCalculator {
         console.log(`[CostCalculator] Invalid buybox data provided`);
         return {
           ...buyboxData,
-          cost_data_source: 'error',
           recommended_action: 'data_unavailable'
         };
       }
@@ -309,7 +321,6 @@ class CostCalculator {
         console.log(`[CostCalculator] No cost data available for SKU: ${buyboxData.sku}`);
         return {
           ...buyboxData,
-          cost_data_source: 'unavailable',
           recommended_action: 'data_unavailable'
         };
       }
@@ -323,10 +334,10 @@ class CostCalculator {
       // Calculate detailed profit breakdown
       const currentPrice = buyboxData.your_current_price || buyboxData.price;
       const buyboxPrice = buyboxData.buybox_price || buyboxData.competitor_price;
-      const amazonFeeRate = 0.15;
 
       // Current price profit calculation
-      const currentAmazonFee = currentPrice * amazonFeeRate;
+      const currentFeeRate = this.getAmazonFeeRate(currentPrice);
+      const currentAmazonFee = currentPrice * currentFeeRate;
       const currentNetRevenue = currentPrice - currentAmazonFee;
       const totalOperatingCost = costs.materialTotalCost + costs.shippingCost;
       const currentActualProfit = currentNetRevenue - totalOperatingCost;
@@ -334,7 +345,8 @@ class CostCalculator {
       // Buybox price profit calculation (only if valid buy box price exists)
       let buyboxAmazonFee, buyboxNetRevenue, buyboxActualProfit;
       if (buyboxPrice && buyboxPrice > 0) {
-        buyboxAmazonFee = buyboxPrice * amazonFeeRate;
+        const buyboxFeeRate = this.getAmazonFeeRate(buyboxPrice);
+        buyboxAmazonFee = buyboxPrice * buyboxFeeRate;
         buyboxNetRevenue = buyboxPrice - buyboxAmazonFee;
         buyboxActualProfit = buyboxNetRevenue - totalOperatingCost;
       } else {
@@ -353,6 +365,9 @@ class CostCalculator {
         your_vat_amount: costs.vatAmount,
         your_fragile_charge: costs.fragileCharge,
 
+        // Product information
+        item_name: costs.itemName,
+
         // Shipping type information
         merchant_shipping_group: costs.shipping,
 
@@ -361,7 +376,7 @@ class CostCalculator {
         total_operating_cost: totalOperatingCost,
         material_cost_breakdown: `Base: £${costs.baseCost.toFixed(2)} + Box: £${costs.boxCost.toFixed(2)} + Material: £0.20 + VAT: £${costs.vatAmount.toFixed(2)} + Fragile: £${costs.fragileCharge.toFixed(2)} = £${costs.materialTotalCost.toFixed(2)}`,
         operating_cost_breakdown: `Material: £${costs.materialTotalCost.toFixed(2)} + Shipping: £${costs.shippingCost.toFixed(2)} = £${totalOperatingCost.toFixed(2)}`,
-        breakeven_calculation: `(£${costs.materialTotalCost.toFixed(2)} + £${costs.shippingCost.toFixed(2)}) ÷ (1 - 0.15) = £${totalOperatingCost.toFixed(2)} ÷ 0.85 = £${margins.breakEvenPrice.toFixed(2)}`,
+        breakeven_calculation: `(£${costs.materialTotalCost.toFixed(2)} + £${costs.shippingCost.toFixed(2)}) ÷ (1 - ${currentFeeRate.toFixed(2)}) = £${totalOperatingCost.toFixed(2)} ÷ ${(1 - currentFeeRate).toFixed(2)} = £${margins.breakEvenPrice.toFixed(2)}`,
 
         // ROI-based margin calculation breakdown
         current_margin_calculation: `(£${currentActualProfit.toFixed(2)} profit) ÷ (£${(costs.materialTotalCost + costs.shippingCost + currentAmazonFee).toFixed(2)} total investment) × 100 = ${margins.yourMarginPercent.toFixed(2)}%`,
@@ -392,18 +407,13 @@ class CostCalculator {
         // Recommendations
         recommended_action: margins.recommendedAction,
         price_adjustment_needed: (buyboxData.buybox_price || buyboxData.competitor_price) - (buyboxData.your_current_price || buyboxData.price),
-        break_even_price: margins.breakEvenPrice,
-
-        // Metadata
-        margin_calculation_version: 'v1.0',
-        cost_data_source: costs.dataSource
+        break_even_price: margins.breakEvenPrice
       };
 
     } catch (error) {
       console.error(`[CostCalculator] Error enriching buy box data for ${buyboxData.sku}:`, error);
       return {
         ...buyboxData,
-        cost_data_source: 'error',
         recommended_action: 'data_unavailable'
       };
     }

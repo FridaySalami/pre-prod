@@ -411,7 +411,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     run_id: runId,
     asin: asinCode,
     sku: sku || `SKU-${asinCode}`,
-    // product_title: productTitle, // REMOVED - no longer saving to buybox_data to reduce response size
+    item_name: productTitle, // Re-added for better UX - product titles shown immediately
 
     // Essential pricing fields
     price: yourCurrentPrice, // Use YOUR current price for margin calculations
@@ -458,11 +458,7 @@ async function mockAmazonApiCall(asinCode, sku, runId) {
     // Recommendations
     recommended_action: recommendedAction,
     price_adjustment_needed: buyBoxPrice && buyBoxPrice > 0 ? parseFloat((buyBoxPrice - yourCurrentPrice).toFixed(2)) : null,
-    break_even_price: parseFloat(breakEvenPrice.toFixed(2)),
-
-    // Essential metadata
-    margin_calculation_version: 'v1.0',
-    cost_data_source: 'mock'
+    break_even_price: parseFloat(breakEvenPrice.toFixed(2))
 
     // REMOVED to reduce payload size (not used by frontend):
     // currency: 'GBP',
