@@ -2254,9 +2254,11 @@
 
 											<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
 											{#if result.your_current_price}
+												{@const feeRate = result.your_current_price < 10 ? 0.08 : 0.15}
+												{@const feePercent = result.your_current_price < 10 ? 8 : 15}
 												<div class="text-red-600">
-													Amazon Fee (15% of £{result.your_current_price.toFixed(2)}): £{(
-														result.your_current_price * 0.15
+													Amazon Fee ({feePercent}% of £{result.your_current_price.toFixed(2)}): £{(
+														result.your_current_price * feeRate
 													).toFixed(2)}
 												</div>
 											{/if}
