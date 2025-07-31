@@ -23,6 +23,8 @@ const jobFailuresRoute = require('./routes/job-failures');
 const jobResultsRoute = require('./routes/job-results');
 const healthRoute = require('./routes/health');
 const debugRoute = require('./routes/debug');
+const livePricingRoute = require('./routes/live-pricing');
+const buyboxRecordRoute = require('./routes/buybox-record');
 const { SupabaseService } = require('./services/supabase-client');
 
 // Create Express app
@@ -48,6 +50,8 @@ app.use('/api/weekly-comparison', weeklyComparisonRoute);
 app.use('/api/job-status', jobStatusRoute);
 app.use('/api/job-failures', jobFailuresRoute);
 app.use('/api/job-results', jobResultsRoute);
+app.use('/api/live-pricing', livePricingRoute);
+app.use('/api', buyboxRecordRoute);
 app.use('/api/debug', debugRoute);
 
 // Root endpoint
@@ -68,7 +72,10 @@ app.get('/', (req, res) => {
       'GET /api/job-status/:jobId - Get job status',
       'POST /api/job-status/:jobId/cancel - Cancel job',
       'GET /api/job-failures?job_id=:jobId - Get job failures',
-      'GET /api/job-results?job_id=:jobId - Get job results'
+      'GET /api/job-results?job_id=:jobId - Get job results',
+      'POST /api/live-pricing/update - Update live pricing for single SKU',
+      'GET /api/live-pricing/status/:recordId - Check update eligibility',
+      'GET /api/live-pricing/health - Live pricing service health'
     ]
   });
 });

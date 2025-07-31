@@ -88,6 +88,24 @@
 	let customPrices = new Map<string, number>(); // SKU -> custom price
 	let showCustomPriceInputs = new Map<string, boolean>(); // SKU -> show input state
 
+	// Recently updated items that should bypass filters temporarily
+	let recentlyUpdatedItems = new Set<string>(); // Set of record IDs that were recently updated
+	let recentUpdateTimeout = new Map<string, ReturnType<typeof setTimeout>>(); // record ID -> timeout ID for cleanup
+	let isPerformingLiveUpdate = false; // Flag to prevent reactive applyFilters during live updates
+	let isPaginating = false; // Flag to prevent reactive applyFilters during pagination
+
+	// Live pricing update functionality
+	let livePricingUpdates = new Map<
+		string,
+		{
+			isUpdating: boolean;
+			lastUpdated: Date | null;
+			error: string | null;
+			success: boolean;
+		}
+	>(); // recordId -> update status
+	let updatedRows = new Set<string>(); // recordId set for animation tracking
+
 	// Best sellers list (top 100 ASINs from business report)
 	const top100ASINs = [
 		'B09T3GDNGT',
@@ -251,15 +269,338 @@
 		}
 	];
 
+	// Live Pricing Update Functions (Phase 2)
+	/**
+	 * Get data freshness indicator for a record
+	 */
+	function getDataFreshness(capturedAt: string): {
+		badge: string;
+		class: string;
+		description: string;
+	} {
+		const now = new Date();
+		const captured = new Date(capturedAt);
+		const hoursAgo = (now.getTime() - captured.getTime()) / (1000 * 60 * 60);
+
+		if (hoursAgo <= 2) {
+			return {
+				badge: '⚡ Live',
+				class: 'bg-green-100 text-green-800',
+				description: 'Fresh data (0-2 hours)'
+			};
+		} else if (hoursAgo <= 8) {
+			return {
+				badge: '🕐 Recent',
+				class: 'bg-yellow-100 text-yellow-800',
+				description: 'Recent data (2-8 hours)'
+			};
+		} else {
+			return {
+				badge: '📅 Stale',
+				class: 'bg-red-100 text-red-800',
+				description: 'Stale data (>8 hours)'
+			};
+		}
+	}
+
+	/**
+	 * Update live price for a single item
+	 */
+	async function updateLivePrice(item: BuyBoxData): Promise<void> {
+		const recordId = item.id;
+
+		// Set flag to prevent reactive applyFilters from resetting page
+		isPerformingLiveUpdate = true;
+
+		// Initialize update state
+		livePricingUpdates.set(recordId, {
+			isUpdating: true,
+			lastUpdated: null,
+			error: null,
+			success: false
+		});
+		livePricingUpdates = livePricingUpdates; // Trigger reactivity
+
+		try {
+			console.log(`🔄 Updating live price for SKU: ${item.sku}, Record: ${recordId}`);
+
+			const response = await fetch('http://localhost:3001/api/live-pricing/update', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					sku: item.sku,
+					recordId: recordId,
+					userId: 'user-123' // TODO: Get from auth context
+				})
+			});
+
+			const result = await response.json();
+
+			if (!response.ok) {
+				throw new Error(result.error || 'Update failed');
+			}
+
+			console.log(`✅ Live pricing update successful for SKU: ${item.sku}, fetching fresh data...`);
+
+			// Wait a moment for Supabase to commit the transaction
+			await new Promise((resolve) => setTimeout(resolve, 500));
+
+			// Fetch the updated record from database with retry mechanism
+			let freshRecord = null;
+			let retryCount = 0;
+			const maxRetries = 3;
+
+			while (!freshRecord && retryCount < maxRetries) {
+				try {
+					console.log(
+						`🔄 Fetching fresh data for SKU: ${item.sku} (attempt ${retryCount + 1}/${maxRetries})`
+					);
+					const freshDataResponse = await fetch(
+						`http://localhost:3001/api/buybox-record/${recordId}`
+					);
+
+					if (freshDataResponse.ok) {
+						const responseData = await freshDataResponse.json();
+						const fetchedRecord = responseData.data;
+
+						// Verify the record has actually been updated by checking if captured_at is recent
+						const capturedAt = new Date(fetchedRecord.captured_at);
+						const now = new Date();
+						const timeDiff = now.getTime() - capturedAt.getTime();
+
+						// If the record was updated within the last 5 minutes, consider it fresh
+						if (timeDiff < 5 * 60 * 1000) {
+							freshRecord = fetchedRecord;
+							console.log(
+								`✅ Fresh data retrieved for SKU: ${item.sku} (updated ${Math.round(timeDiff / 1000)}s ago)`
+							);
+						} else {
+							console.log(
+								`⏰ Record not fresh enough for SKU: ${item.sku} (${Math.round(timeDiff / 1000)}s old), retrying...`
+							);
+						}
+					} else {
+						console.log(
+							`❌ Failed to fetch fresh data for SKU: ${item.sku}, status: ${freshDataResponse.status}`
+						);
+					}
+				} catch (fetchError) {
+					console.error(`❌ Error fetching fresh data for SKU: ${item.sku}:`, fetchError);
+				}
+
+				retryCount++;
+				if (!freshRecord && retryCount < maxRetries) {
+					// Wait longer between retries
+					await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount));
+				}
+			}
+
+			if (freshRecord) {
+				// Update the item in our local array with fresh data from database
+				const itemIndex = buyboxData.findIndex((d) => d.id === recordId);
+				if (itemIndex !== -1) {
+					console.log(`🔄 Before update - old data:`, buyboxData[itemIndex]);
+
+					// Create a completely new array with the updated record to ensure reactivity
+					buyboxData = [
+						...buyboxData.slice(0, itemIndex),
+						freshRecord,
+						...buyboxData.slice(itemIndex + 1)
+					];
+
+					console.log(`🔄 After update - new data:`, buyboxData[itemIndex]);
+					console.log(`🔄 Updated local record for SKU: ${item.sku} with fresh database data`);
+					console.log(`🔄 Fresh record captured_at:`, freshRecord.captured_at);
+					console.log(`🔄 Fresh record price:`, freshRecord.your_current_price);
+
+					// Force re-apply filters to update the UI
+					console.log(
+						`🔄 About to apply filters with page preservation. Current page: ${currentPage}`
+					);
+					applyFilters(true); // Preserve page position for live updates
+					console.log(`🔄 Applied filters after live pricing update. Current page: ${currentPage}`);
+					console.log(`🔄 Filtered data length:`, filteredData.length);
+					console.log(
+						`🔄 Updated item in filtered data:`,
+						filteredData.find((d) => d.id === recordId)
+					);
+
+					// Force reactive updates by reassigning reactive variables
+					filteredData = [...filteredData];
+					console.log(`🔄 Forced filteredData reactivity`);
+				}
+			} else {
+				// Fallback: use the updatedData from live pricing API response
+				console.log(
+					`⚠️ Could not fetch fresh data after ${maxRetries} attempts, using API response data for SKU: ${item.sku}`
+				);
+				const itemIndex = buyboxData.findIndex((d) => d.id === recordId);
+				if (itemIndex !== -1) {
+					console.log(`🔄 Before fallback update - old data:`, buyboxData[itemIndex]);
+
+					// Create a completely new record object to ensure reactivity
+					const updatedRecord = { ...buyboxData[itemIndex], ...result.updatedData };
+
+					// Create a completely new array with the updated record
+					buyboxData = [
+						...buyboxData.slice(0, itemIndex),
+						updatedRecord,
+						...buyboxData.slice(itemIndex + 1)
+					];
+
+					console.log(`🔄 After fallback update - new data:`, buyboxData[itemIndex]);
+
+					// Force re-apply filters to update the UI
+					applyFilters(true); // Preserve page position for live updates
+					console.log(`🔄 Applied filters after fallback live pricing update`);
+				}
+			}
+
+			// Update state
+			livePricingUpdates.set(recordId, {
+				isUpdating: false,
+				lastUpdated: new Date(),
+				error: null,
+				success: true
+			});
+
+			// Mark this item as recently updated to bypass filters temporarily
+			recentlyUpdatedItems.add(recordId);
+			console.log(
+				`🔄 Added item ${recordId} (SKU: ${item.sku}) to recently updated bypass list. Current list:`,
+				[...recentlyUpdatedItems]
+			);
+
+			// Clear any existing timeout for this item
+			if (recentUpdateTimeout.has(recordId)) {
+				clearTimeout(recentUpdateTimeout.get(recordId));
+			}
+
+			// Set up automatic cleanup after 30 seconds
+			const timeoutId = setTimeout(() => {
+				recentlyUpdatedItems.delete(recordId);
+				recentUpdateTimeout.delete(recordId);
+				// Reapply filters to potentially hide the item if it no longer matches
+				applyFilters(true); // Preserve page position even during cleanup
+				console.log(`🔄 Removed recently updated bypass for SKU: ${item.sku} after 30 seconds`);
+			}, 30000); // 30 seconds
+
+			recentUpdateTimeout.set(recordId, timeoutId);
+
+			// Add to animation tracking
+			updatedRows.add(recordId);
+			setTimeout(() => {
+				updatedRows.delete(recordId);
+				updatedRows = updatedRows;
+			}, 3000); // Remove animation after 3 seconds
+
+			console.log(
+				`✅ Successfully updated live price for SKU: ${item.sku} (will bypass filters for 30s)`
+			);
+		} catch (error: unknown) {
+			console.error(`❌ Failed to update live price for SKU: ${item.sku}:`, error);
+
+			// Handle specific error types
+			let errorMessage = (error as Error).message || 'Unknown error';
+			if ((error as Error).message?.includes('RECENTLY_UPDATED')) {
+				errorMessage = (error as Error).message.replace('RECENTLY_UPDATED: ', '');
+			} else if ((error as Error).message?.includes('RATE_LIMITED')) {
+				errorMessage = 'Too many requests. Please wait a moment.';
+			} else if ((error as Error).message?.includes('ACCESS_DENIED')) {
+				errorMessage = 'API access denied. Check credentials.';
+			}
+
+			livePricingUpdates.set(recordId, {
+				isUpdating: false,
+				lastUpdated: null,
+				error: errorMessage,
+				success: false
+			});
+
+			// Clear error after 10 seconds
+			setTimeout(() => {
+				const current = livePricingUpdates.get(recordId);
+				if (current && current.error) {
+					livePricingUpdates.set(recordId, { ...current, error: null });
+					livePricingUpdates = livePricingUpdates;
+				}
+			}, 10000);
+		}
+
+		// Clear the live update flag to re-enable reactive filtering
+		isPerformingLiveUpdate = false;
+
+		livePricingUpdates = livePricingUpdates; // Trigger reactivity
+	}
+
+	/**
+	 * Get update button state for a record
+	 */
+	function getUpdateButtonState(recordId: string): {
+		isUpdating: boolean;
+		text: string;
+		class: string;
+		disabled: boolean;
+		error: string | null;
+	} {
+		const updateState = livePricingUpdates.get(recordId);
+
+		if (!updateState) {
+			return {
+				isUpdating: false,
+				text: '🔄 Update Live Price',
+				class: 'bg-blue-500 hover:bg-blue-600 text-white',
+				disabled: false,
+				error: null
+			};
+		}
+
+		if (updateState.isUpdating) {
+			return {
+				isUpdating: true,
+				text: '⏳ Fetching...',
+				class: 'bg-gray-400 text-white cursor-not-allowed',
+				disabled: true,
+				error: null
+			};
+		}
+
+		if (updateState.success && updateState.lastUpdated) {
+			const secondsAgo = Math.floor((Date.now() - updateState.lastUpdated.getTime()) / 1000);
+			return {
+				isUpdating: false,
+				text: `✅ Updated ${secondsAgo}s ago`,
+				class: 'bg-green-500 hover:bg-green-600 text-white',
+				disabled: false,
+				error: null
+			};
+		}
+
+		if (updateState.error) {
+			return {
+				isUpdating: false,
+				text: '❌ Failed - Retry',
+				class: 'bg-red-500 hover:bg-red-600 text-white',
+				disabled: false,
+				error: updateState.error
+			};
+		}
+
+		return {
+			isUpdating: false,
+			text: '🔄 Update Live Price',
+			class: 'bg-blue-500 hover:bg-blue-600 text-white',
+			disabled: false,
+			error: null
+		};
+	}
+
 	// Initialize and load data
 	onMount(async () => {
 		await refreshData();
 	});
-
-	// Apply filters whenever the data changes
-	$: if (buyboxData.length > 0) {
-		applyFilters();
-	}
 
 	// Deduplicate data to show only the latest entry per SKU
 	function deduplicateLatestData(data: BuyBoxData[]): BuyBoxData[] {
@@ -594,10 +935,8 @@
 	}
 
 	// Apply filters and sorting
-	function applyFilters(): void {
-		let filtered = [...buyboxData];
-
-		// Search filter
+	function applyFilters(preservePage = false): void {
+		let filtered = [...buyboxData]; // Search filter
 		if (searchQuery.trim()) {
 			const query = searchQuery.toLowerCase();
 			filtered = filtered.filter((item) => {
@@ -797,11 +1136,52 @@
 				break;
 		}
 
+		// Add recently updated items even if they don't match current filters
+		// This prevents updated items from "disappearing" when their status changes
+		if (recentlyUpdatedItems.size > 0) {
+			console.log(`🔄 Checking recently updated items. Count: ${recentlyUpdatedItems.size}`, [
+				...recentlyUpdatedItems
+			]);
+			console.log(`🔄 Current filtered results count: ${filtered.length}`);
+
+			const recentlyUpdatedRecords = buyboxData.filter(
+				(item) =>
+					recentlyUpdatedItems.has(item.id) &&
+					!filtered.some((filteredItem) => filteredItem.id === item.id)
+			);
+
+			console.log(
+				`🔄 Recently updated records to add: ${recentlyUpdatedRecords.length}`,
+				recentlyUpdatedRecords.map((r) => ({ sku: r.sku, id: r.id, is_winner: r.is_winner }))
+			);
+
+			if (recentlyUpdatedRecords.length > 0) {
+				console.log(
+					`🔄 Adding ${recentlyUpdatedRecords.length} recently updated items that don't match current filters:`,
+					recentlyUpdatedRecords.map((r) => r.sku)
+				);
+
+				// Add them at the top of the filtered results so they're visible
+				filtered = [...recentlyUpdatedRecords, ...filtered];
+			}
+		} else {
+			console.log(`🔄 No recently updated items to check`);
+		}
+
 		filteredData = filtered;
-		currentPage = 1; // Reset to first page when filtering
+
+		// Only reset to page 1 if not preserving page position
+		if (!preservePage) {
+			currentPage = 1; // Reset to first page when filtering
+		}
 
 		// Update active filter state
 		checkActiveFilters();
+	}
+
+	// Wrapper function for event handlers that need to call applyFilters without parameters
+	function applyFiltersFromEvent() {
+		applyFilters(); // Don't preserve page for user-initiated filter changes
 	}
 
 	// Get paginated data
@@ -1036,6 +1416,52 @@
 	$: bestSellersData = getBestSellersWithSkeletons(buyboxData);
 	$: bestSellersGrouped = groupDataByAsin(bestSellersData);
 
+	// Track the previous filter state to detect actual changes
+	let previousFilterState = {
+		searchQuery: '',
+		categoryFilter: 'all',
+		shippingFilter: 'all',
+		showOnlyWithMarginData: false,
+		minProfitFilter: 0,
+		minMarginFilter: 0,
+		showLatestOnly: false
+	};
+
+	// Update filter state when individual filters change
+	$: filterState = {
+		searchQuery,
+		categoryFilter,
+		shippingFilter,
+		showOnlyWithMarginData,
+		minProfitFilter,
+		minMarginFilter,
+		showLatestOnly
+	};
+
+	// Apply filters when filter values actually change
+	$: if (
+		buyboxData &&
+		!isPerformingLiveUpdate &&
+		!isPaginating &&
+		(filterState.searchQuery !== previousFilterState.searchQuery ||
+			filterState.categoryFilter !== previousFilterState.categoryFilter ||
+			filterState.shippingFilter !== previousFilterState.shippingFilter ||
+			filterState.showOnlyWithMarginData !== previousFilterState.showOnlyWithMarginData ||
+			filterState.minProfitFilter !== previousFilterState.minProfitFilter ||
+			filterState.minMarginFilter !== previousFilterState.minMarginFilter ||
+			filterState.showLatestOnly !== previousFilterState.showLatestOnly)
+	) {
+		console.log(
+			`🔄 Filter values changed, applying filters. isPaginating: ${isPaginating}, isPerformingLiveUpdate: ${isPerformingLiveUpdate}`
+		);
+
+		// Update previous state first
+		previousFilterState = { ...filterState };
+
+		// Then apply filters
+		applyFilters(); // Reset to page 1 when user changes filters
+	}
+
 	// Update total results based on view mode
 	$: totalResults =
 		viewMode === 'grouped'
@@ -1045,13 +1471,36 @@
 				: filteredData.length;
 
 	// Handle pagination
-	function changePage(newPage: number): void {
+	function changePage(newPage: number, scrollToTop: boolean = true): void {
+		console.log(
+			`🔄 changePage called: ${currentPage} → ${newPage}. isPaginating before: ${isPaginating}`
+		);
 		if (newPage >= 1 && newPage <= Math.ceil(totalResults / itemsPerPage)) {
-			currentPage = newPage;
-		}
-	}
+			isPaginating = true; // Prevent reactive filtering during pagination
+			console.log(`🔄 isPaginating set to true`);
 
-	// Navigate to product details
+			// Update the page
+			currentPage = newPage;
+			console.log(`🔄 currentPage updated to: ${currentPage}`);
+
+			// Scroll to top of records table if requested
+			if (scrollToTop) {
+				// Find the results section and scroll to it
+				setTimeout(() => {
+					const resultsSection = document.querySelector('[data-results-section]');
+					if (resultsSection) {
+						resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+					}
+				}, 50);
+			}
+
+			// Clear the flag after all reactive statements have processed
+			setTimeout(() => {
+				isPaginating = false;
+				console.log(`🔄 Pagination flag cleared`);
+			}, 50);
+		}
+	} // Navigate to product details
 	function viewProductDetails(asin: string, sku: string): void {
 		goto(`/buy-box-monitor?query=${encodeURIComponent(sku || asin)}`);
 	}
@@ -1808,7 +2257,7 @@
 					placeholder="Enter SKU, ASIN, or Product Title"
 					class="w-full border rounded px-3 py-2"
 					bind:value={searchQuery}
-					on:input={applyFilters}
+					on:input={applyFiltersFromEvent}
 				/>
 			</div>
 
@@ -1819,7 +2268,7 @@
 					id="category"
 					class="w-full border rounded px-3 py-2"
 					bind:value={categoryFilter}
-					on:change={applyFilters}
+					on:change={applyFiltersFromEvent}
 				>
 					<option value="all">All Products</option>
 					<option value="winners">🏆 Buy Box Winners</option>
@@ -1842,7 +2291,7 @@
 					id="sort"
 					class="w-full border rounded px-3 py-2"
 					bind:value={sortBy}
-					on:change={applyFilters}
+					on:change={applyFiltersFromEvent}
 				>
 					<option value="profit_desc">💰 Profit (High to Low)</option>
 					<option value="profit_asc">💰 Profit (Low to High)</option>
@@ -1865,7 +2314,7 @@
 					id="perPage"
 					class="w-full border rounded px-3 py-2"
 					bind:value={itemsPerPage}
-					on:change={applyFilters}
+					on:change={applyFiltersFromEvent}
 				>
 					<option value={25}>25</option>
 					<option value={50}>50</option>
@@ -1898,7 +2347,7 @@
 					id="marginData"
 					class="mr-2"
 					bind:checked={showOnlyWithMarginData}
-					on:change={applyFilters}
+					on:change={applyFiltersFromEvent}
 				/>
 				<label for="marginData" class="text-sm">Only show items with margin data</label>
 			</div>
@@ -1931,7 +2380,7 @@
 					placeholder="0.00"
 					class="w-full border rounded px-3 py-2"
 					bind:value={minProfitFilter}
-					on:input={applyFilters}
+					on:input={applyFiltersFromEvent}
 				/>
 			</div>
 		</div>
@@ -1951,14 +2400,14 @@
 					placeholder="0"
 					class="w-full border rounded px-3 py-2"
 					bind:value={minMarginFilter}
-					on:input={applyFilters}
+					on:input={applyFiltersFromEvent}
 				/>
 			</div>
 		</div>
 	</div>
 
 	<!-- Results -->
-	<div class="bg-white rounded-lg shadow">
+	<div class="bg-white rounded-lg shadow" data-results-section>
 		<div class="px-6 py-4 border-b border-gray-200">
 			<div class="flex justify-between items-center">
 				<div class="flex items-center gap-4">
@@ -2039,6 +2488,49 @@
 				</div>
 			</div>
 		</div>
+
+		<!-- Top Pagination -->
+		{#if totalResults > itemsPerPage}
+			<div class="px-6 py-3 border-b border-gray-200 bg-gray-50">
+				<div class="flex justify-between items-center">
+					<div class="text-sm text-gray-500">
+						Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
+							currentPage * itemsPerPage,
+							totalResults
+						)} of {totalResults} results
+					</div>
+					<div class="flex space-x-1">
+						<button
+							class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
+							disabled={currentPage === 1}
+							on:click={() => changePage(currentPage - 1, false)}
+						>
+							Previous
+						</button>
+
+						{#each Array(Math.min(5, Math.ceil(totalResults / itemsPerPage))) as _, i}
+							{@const pageNumber = Math.max(1, currentPage - 2) + i}
+							{#if pageNumber <= Math.ceil(totalResults / itemsPerPage)}
+								<button
+									class={`px-3 py-1 rounded border ${currentPage === pageNumber ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-50'}`}
+									on:click={() => changePage(pageNumber, false)}
+								>
+									{pageNumber}
+								</button>
+							{/if}
+						{/each}
+
+						<button
+							class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
+							disabled={currentPage === Math.ceil(totalResults / itemsPerPage)}
+							on:click={() => changePage(currentPage + 1, false)}
+						>
+							Next
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		{#if isLoading}
 			<div class="p-8 text-center">
@@ -2135,6 +2627,10 @@
 								>
 								<th
 									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									>Live Update</th
+								>
+								<th
+									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
 									>Actions</th
 								>
 							</tr>
@@ -2149,6 +2645,8 @@
 									${result.recommended_action === 'match_buybox' ? 'border-l-4 border-l-blue-500' : ''}
 									${result.recommended_action === 'not_profitable' ? 'border-l-4 border-l-red-500' : ''}
 									${selectedItems.has(result.id) ? 'ring-2 ring-blue-300' : ''}
+									${updatedRows.has(result.id) ? 'updated-row' : ''}
+									${recentlyUpdatedItems.has(result.id) ? 'recently-updated-bypass' : ''}
 								`}
 								>
 									<!-- Selection Checkbox -->
@@ -2183,6 +2681,14 @@
 
 											<div class="font-medium text-gray-900 mb-1 leading-tight">
 												SKU: {result.sku}
+												{#if recentlyUpdatedItems.has(result.id)}
+													<span
+														class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
+														title="Recently updated - visible despite current filters"
+													>
+														🔄 Recently Updated
+													</span>
+												{/if}
 											</div>
 											{#if result.item_name}
 												<!-- Show item name from buybox data -->
@@ -2542,6 +3048,45 @@
 										{/if}
 									</td>
 
+									<!-- Live Update Column -->
+									<td class="py-4 px-6">
+										<div class="flex flex-col gap-2">
+											<!-- Data Freshness Badge -->
+											{#if result.captured_at}
+												{@const freshness = getDataFreshness(result.captured_at)}
+												<span
+													class="inline-flex items-center px-2 py-1 rounded text-xs font-medium {freshness.class}"
+													title={freshness.description}
+												>
+													{freshness.badge}
+												</span>
+											{/if}
+
+											<!-- Update Button -->
+											{#if result.id}
+												{@const buttonState = getUpdateButtonState(result.id)}
+												<button
+													class="px-3 py-2 rounded text-xs font-medium transition-colors {buttonState.class}"
+													disabled={buttonState.disabled}
+													on:click={() => updateLivePrice(result)}
+													title={buttonState.error ||
+														'Update pricing data with latest Amazon SP-API data'}
+												>
+													{buttonState.text}
+												</button>
+
+												<!-- Error Message -->
+												{#if buttonState.error}
+													<div class="text-xs text-red-600 mt-1" title={buttonState.error}>
+														⚠️ {buttonState.error.length > 20
+															? buttonState.error.substring(0, 20) + '...'
+															: buttonState.error}
+													</div>
+												{/if}
+											{/if}
+										</div>
+									</td>
+
 									<!-- Actions -->
 									<td class="py-4 px-6">
 										<div class="flex flex-col gap-1">
@@ -2787,12 +3332,19 @@
 													<div class="text-xs font-normal text-gray-400">If matched buy box</div>
 												</th>
 												<th class="py-3 px-6">Status</th>
+												<th class="py-3 px-6">Live Update</th>
 												<th class="py-3 px-6">Action</th>
 											</tr>
 										</thead>
 										<tbody class="bg-white divide-y divide-gray-200">
 											{#each skus as sku}
-												<tr class="hover:bg-gray-50">
+												<tr
+													class="hover:bg-gray-50 {updatedRows.has(sku.id)
+														? 'updated-row'
+														: ''} {recentlyUpdatedItems.has(sku.id)
+														? 'recently-updated-bypass'
+														: ''}"
+												>
 													<td class="py-4 px-6">
 														<div class="text-sm">
 															<a
@@ -2821,6 +3373,14 @@
 														<div class="text-xs text-gray-500 mt-1 max-w-xs">
 															<span class="block truncate">
 																SKU: {sku.sku}
+																{#if recentlyUpdatedItems.has(sku.id)}
+																	<span
+																		class="ml-1 inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
+																		title="Recently updated - visible despite current filters"
+																	>
+																		🔄
+																	</span>
+																{/if}
 															</span>
 														</div>
 													</td>
@@ -3074,6 +3634,43 @@
 														{/if}
 													</td>
 													<td class="py-4 px-6 whitespace-nowrap">
+														<div class="flex flex-col gap-2">
+															<!-- Data Freshness Badge -->
+															{#if sku.captured_at}
+																{@const freshness = getDataFreshness(sku.captured_at)}
+																<span
+																	class="inline-flex items-center px-2 py-1 rounded text-xs font-medium {freshness.class}"
+																	title={freshness.description}
+																>
+																	{freshness.badge}
+																</span>
+															{/if}
+
+															<!-- Update Button -->
+															{#if sku.id}
+																{@const buttonState = getUpdateButtonState(sku.id)}
+																<button
+																	class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class}"
+																	disabled={buttonState.disabled}
+																	on:click={() => updateLivePrice(sku)}
+																	title={buttonState.error ||
+																		'Update pricing data with latest Amazon SP-API data'}
+																>
+																	{buttonState.text}
+																</button>
+
+																<!-- Error Message -->
+																{#if buttonState.error}
+																	<div class="text-xs text-red-600 mt-1" title={buttonState.error}>
+																		⚠️ {buttonState.error.length > 15
+																			? buttonState.error.substring(0, 15) + '...'
+																			: buttonState.error}
+																	</div>
+																{/if}
+															{/if}
+														</div>
+													</td>
+													<td class="py-4 px-6 whitespace-nowrap">
 														<a
 															href="/buy-box-monitor?query={encodeURIComponent(sku.sku)}"
 															class="text-blue-600 hover:text-blue-800 text-sm underline"
@@ -3131,9 +3728,9 @@
 				</div>
 			{/if}
 
-			<!-- Pagination -->
+			<!-- Bottom Pagination -->
 			{#if totalResults > itemsPerPage}
-				<div class="px-6 py-4 border-t border-gray-200">
+				<div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
 					<div class="flex justify-between items-center">
 						<div class="text-sm text-gray-500">
 							Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
@@ -3143,7 +3740,7 @@
 						</div>
 						<div class="flex space-x-1">
 							<button
-								class="px-3 py-1 rounded border disabled:opacity-50"
+								class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
 								disabled={currentPage === 1}
 								on:click={() => changePage(currentPage - 1)}
 							>
@@ -3154,7 +3751,7 @@
 								{@const pageNumber = Math.max(1, currentPage - 2) + i}
 								{#if pageNumber <= Math.ceil(totalResults / itemsPerPage)}
 									<button
-										class={`px-3 py-1 rounded border ${currentPage === pageNumber ? 'bg-blue-600 text-white' : ''}`}
+										class={`px-3 py-1 rounded border ${currentPage === pageNumber ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-50'}`}
 										on:click={() => changePage(pageNumber)}
 									>
 										{pageNumber}
@@ -3163,7 +3760,7 @@
 							{/each}
 
 							<button
-								class="px-3 py-1 rounded border disabled:opacity-50"
+								class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
 								disabled={currentPage === Math.ceil(totalResults / itemsPerPage)}
 								on:click={() => changePage(currentPage + 1)}
 							>
@@ -3176,3 +3773,50 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	/* Row animation for successful updates */
+	:global(.updated-row) {
+		animation: flash-green 2s ease-in-out;
+	}
+
+	/* Recently updated items that bypass filters */
+	:global(.recently-updated-bypass) {
+		border-left: 3px solid #a855f7 !important;
+		background-color: #faf5ff !important;
+	}
+
+	@keyframes flash-green {
+		0% {
+			background-color: transparent;
+		}
+		20% {
+			background-color: #dcfce7;
+			border-left: 4px solid #22c55e;
+		}
+		100% {
+			background-color: transparent;
+			border-left: none;
+		}
+	}
+
+	/* Smooth transitions for button states */
+	:global(.live-update-button) {
+		transition: all 0.2s ease-in-out;
+	}
+
+	/* Data freshness badge animations */
+	:global(.freshness-badge) {
+		animation: pulse-subtle 3s ease-in-out infinite;
+	}
+
+	@keyframes pulse-subtle {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.8;
+		}
+	}
+</style>
