@@ -936,14 +936,24 @@
 
 	// Apply filters and sorting
 	function applyFilters(preservePage = false): void {
-		let filtered = [...buyboxData]; // Search filter
+		let filtered = [...buyboxData]; 
+		
+		// Enhanced search filter - searches across multiple fields
 		if (searchQuery.trim()) {
-			const query = searchQuery.toLowerCase();
+			const query = searchQuery.toLowerCase().trim();
 			filtered = filtered.filter((item) => {
-				const matchesSku = item.sku.toLowerCase().includes(query);
-				const matchesAsin = item.asin.toLowerCase().includes(query);
+				// Helper function to safely check if a field contains the query
+				const contains = (field: string | null | undefined): boolean => {
+					if (!field) return false;
+					return field.toLowerCase().includes(query);
+				};
 
-				return matchesSku || matchesAsin;
+				// Search across multiple product fields using correct database column names
+				const matchesSku = contains(item.sku);
+				const matchesAsin = contains(item.asin);
+				const matchesItemName = contains(item.item_name); // This is the product title
+				
+				return matchesSku || matchesAsin || matchesItemName;
 			});
 		}
 

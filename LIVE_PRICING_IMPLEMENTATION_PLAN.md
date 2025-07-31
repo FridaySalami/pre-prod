@@ -159,12 +159,65 @@ Implement a "🔄 Update Live Price" button for each SKU in the Buy Box Manager 
 - **Error Recovery**: Revert on failure with clear error indication and retry option ✅
 - **Context Preservation**: Maintain scroll position and user filters during updates ✅
 - **Real-time Refresh**: No page refresh required to see updated pricing data ✅
+- **Filter Bypass System**: Recently updated items remain visible even when filters change ✅
+- **Visual Indicators**: Purple highlighting for recently updated items with 30-second timeout ✅
 
-**PHASE 3 STATUS**: ✅ **COMPLETED & DEPLOYED**
+### 3.5 Advanced UX Enhancements ✅ IMPLEMENTED & DEPLOYED
+- **Smart Pagination**: Fixed reactive statement conflicts preventing proper page navigation ✅
+- **Dual Pagination Controls**: Added pagination at both top and bottom of results table ✅
+- **Smart Scrolling**: Top pagination has no scroll, bottom pagination scrolls to results section ✅
+- **Page Preservation**: Live updates maintain current page position ✅
+- **Filter State Management**: Separated filter changes from pagination to prevent conflicts ✅
+
+**PHASE 3 STATUS**: ✅ **COMPLETED & DEPLOYED - FULLY FUNCTIONAL**
 - Frontend: http://localhost:3000/buy-box-manager (Live Update buttons working)
 - Backend: http://localhost:3001/api/live-pricing/update (API responding with fresh data)
-- Single Record API: `/api/buybox-data/[id]` (Fresh data fetching endpoint ready)
+- Single Record API: `/api/buybox-record/[id]` (Fresh data fetching endpoint ready)
 - **End-to-End Complete**: Live updates working with immediate UI refresh and complete data consistency
+- **UX Polish Complete**: Pagination, filtering, and live updates working seamlessly together
+
+---
+
+## Phase 3.6: Critical UX Fixes ✅ COMPLETED July 31, 2025
+**Timeline: 1 day** → **COMPLETED same day as Phase 3**
+
+### 3.6.1 Live Update UI Refresh Issues ✅ RESOLVED
+- **Problem**: Live pricing updates required full page refresh to be visible
+- **Root Cause**: Frontend calling wrong API port (3000 vs 3001) and missing data refresh
+- **Solution**: ✅
+  - Fixed API endpoint to call backend on port 3001
+  - Implemented fresh data fetching from `/api/buybox-record/[id]` endpoint
+  - Added proper error handling and retry mechanisms
+
+### 3.6.2 Filter Bypass System ✅ IMPLEMENTED
+- **Problem**: Updated items disappeared when they no longer matched current filters
+- **Solution**: ✅
+  - Recently updated items bypass filters for 30 seconds
+  - Purple visual indicators show which items are "filter-protected"
+  - Automatic timeout system removes protection after 30 seconds
+  - Items remain visible regardless of filter state during protection period
+
+### 3.6.3 Pagination System Overhaul ✅ COMPLETED
+- **Problem**: Page navigation completely broken due to reactive statement conflicts
+- **Root Cause**: Multiple reactive statements interfering with pagination state
+- **Solution**: ✅
+  - Implemented filter change detection vs pagination navigation
+  - Added `isPaginating` flag system with proper timing
+  - Separated filter reactive statements from pagination logic
+  - Fixed Svelte cyclical dependency issues
+
+### 3.6.4 Dual Pagination & Smart Scrolling ✅ IMPLEMENTED
+- **Enhancement**: Added pagination controls at both top and bottom of table
+- **Smart Scrolling Logic**: ✅
+  - Top pagination: No scrolling (user already at top)
+  - Bottom pagination: Smooth scroll to results section (not page top)
+  - Proper scroll targeting with `data-results-section` attribute
+
+**CRITICAL UX FIXES STATUS**: ✅ **ALL RESOLVED - PRODUCTION READY**
+- Live updates work immediately without page refresh
+- Filter bypass keeps updated items visible  
+- Pagination works correctly on all pages
+- Smart scrolling provides optimal user experience
 
 ---
 
