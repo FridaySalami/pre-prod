@@ -936,8 +936,8 @@
 
 	// Apply filters and sorting
 	function applyFilters(preservePage = false): void {
-		let filtered = [...buyboxData]; 
-		
+		let filtered = [...buyboxData];
+
 		// Enhanced search filter - searches across multiple fields
 		if (searchQuery.trim()) {
 			const query = searchQuery.toLowerCase().trim();
@@ -952,7 +952,7 @@
 				const matchesSku = contains(item.sku);
 				const matchesAsin = contains(item.asin);
 				const matchesItemName = contains(item.item_name); // This is the product title
-				
+
 				return matchesSku || matchesAsin || matchesItemName;
 			});
 		}
