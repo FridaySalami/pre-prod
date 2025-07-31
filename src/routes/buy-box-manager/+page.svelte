@@ -106,6 +106,10 @@
 	>(); // recordId -> update status
 	let updatedRows = new Set<string>(); // recordId set for animation tracking
 
+	// Computed property to check if any live updates are in progress
+	$: activeUpdates = Array.from(livePricingUpdates.values()).filter(state => state.isUpdating);
+	$: hasActiveUpdates = activeUpdates.length > 0;
+
 	// Best sellers list (top 100 ASINs from business report)
 	const top100ASINs = [
 		'B09T3GDNGT',
@@ -547,8 +551,8 @@
 		if (!updateState) {
 			return {
 				isUpdating: false,
-				text: '🔄 Update Live Price',
-				class: 'bg-blue-500 hover:bg-blue-600 text-white',
+				text: 'Update Live Price',
+				class: 'bg-blue-500 hover:bg-blue-600 text-white min-w-[120px]',
 				disabled: false,
 				error: null
 			};
@@ -557,8 +561,8 @@
 		if (updateState.isUpdating) {
 			return {
 				isUpdating: true,
-				text: '⏳ Fetching...',
-				class: 'bg-gray-400 text-white cursor-not-allowed',
+				text: 'Updating...',
+				class: 'bg-blue-400 text-white cursor-not-allowed min-w-[120px]',
 				disabled: true,
 				error: null
 			};
@@ -568,8 +572,8 @@
 			const secondsAgo = Math.floor((Date.now() - updateState.lastUpdated.getTime()) / 1000);
 			return {
 				isUpdating: false,
-				text: `✅ Updated ${secondsAgo}s ago`,
-				class: 'bg-green-500 hover:bg-green-600 text-white',
+				text: `Updated ${secondsAgo}s ago`,
+				class: 'bg-green-500 hover:bg-green-600 text-white min-w-[120px]',
 				disabled: false,
 				error: null
 			};
@@ -578,8 +582,8 @@
 		if (updateState.error) {
 			return {
 				isUpdating: false,
-				text: '❌ Failed - Retry',
-				class: 'bg-red-500 hover:bg-red-600 text-white',
+				text: 'Failed - Retry',
+				class: 'bg-red-500 hover:bg-red-600 text-white min-w-[120px]',
 				disabled: false,
 				error: updateState.error
 			};
@@ -587,8 +591,8 @@
 
 		return {
 			isUpdating: false,
-			text: '🔄 Update Live Price',
-			class: 'bg-blue-500 hover:bg-blue-600 text-white',
+			text: 'Update Live Price',
+			class: 'bg-blue-500 hover:bg-blue-600 text-white min-w-[120px]',
 			disabled: false,
 			error: null
 		};
@@ -1755,6 +1759,19 @@
 		<div>
 			<h1 class="text-3xl font-bold mb-2">Buy Box Manager</h1>
 			<p class="text-gray-600">Analyze and manage your Buy Box performance</p>
+			
+			<!-- Live Update Status Indicator -->
+			{#if hasActiveUpdates}
+				<div class="mt-2 flex items-center gap-2 text-blue-600 text-sm" in:fade>
+					<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					</svg>
+					<span class="font-medium">
+						{activeUpdates.length === 1 ? '1 live update' : `${activeUpdates.length} live updates`} in progress...
+					</span>
+				</div>
+			{/if}
 		</div>
 		<div class="flex gap-3">
 			<button
@@ -2654,6 +2671,7 @@
 									${selectedItems.has(result.id) ? 'ring-2 ring-blue-300' : ''}
 									${updatedRows.has(result.id) ? 'updated-row' : ''}
 									${recentlyUpdatedItems.has(result.id) ? 'recently-updated-bypass' : ''}
+									${livePricingUpdates.get(result.id)?.isUpdating ? 'updating-row' : ''}
 								`}
 								>
 									<!-- Selection Checkbox -->
@@ -3073,13 +3091,20 @@
 											{#if result.id}
 												{@const buttonState = getUpdateButtonState(result.id)}
 												<button
-													class="px-3 py-2 rounded text-xs font-medium transition-colors {buttonState.class}"
+													class="px-3 py-2 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center justify-center gap-1"
 													disabled={buttonState.disabled}
 													on:click={() => updateLivePrice(result)}
 													title={buttonState.error ||
 														'Update pricing data with latest Amazon SP-API data'}
 												>
-													{buttonState.text}
+													{#if buttonState.isUpdating}
+														<!-- Spinning loader -->
+														<svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+															<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+															<path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+														</svg>
+													{/if}
+													<span class="whitespace-nowrap">{buttonState.text}</span>
 												</button>
 
 												<!-- Error Message -->
@@ -3350,7 +3375,7 @@
 														? 'updated-row'
 														: ''} {recentlyUpdatedItems.has(sku.id)
 														? 'recently-updated-bypass'
-														: ''}"
+														: ''} {livePricingUpdates.get(sku.id)?.isUpdating ? 'updating-row' : ''}"
 												>
 													<td class="py-4 px-6">
 														<div class="text-sm">
@@ -3657,13 +3682,20 @@
 															{#if sku.id}
 																{@const buttonState = getUpdateButtonState(sku.id)}
 																<button
-																	class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class}"
+																	class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center justify-center gap-1"
 																	disabled={buttonState.disabled}
 																	on:click={() => updateLivePrice(sku)}
 																	title={buttonState.error ||
 																		'Update pricing data with latest Amazon SP-API data'}
 																>
-																	{buttonState.text}
+																	{#if buttonState.isUpdating}
+																		<!-- Spinning loader -->
+																		<svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+																			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+																			<path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+																		</svg>
+																	{/if}
+																	<span class="whitespace-nowrap">{buttonState.text}</span>
 																</button>
 
 																<!-- Error Message -->
@@ -3791,6 +3823,22 @@
 	:global(.recently-updated-bypass) {
 		border-left: 3px solid #a855f7 !important;
 		background-color: #faf5ff !important;
+	}
+
+	/* Row being updated - pulse effect */
+	:global(.updating-row) {
+		background-color: #dbeafe;
+		border-left: 4px solid #3b82f6;
+		animation: pulse-update 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-update {
+		0%, 100% {
+			background-color: #dbeafe;
+		}
+		50% {
+			background-color: #bfdbfe;
+		}
 	}
 
 	@keyframes flash-green {
