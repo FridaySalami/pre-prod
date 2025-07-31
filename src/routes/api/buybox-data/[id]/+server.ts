@@ -16,20 +16,10 @@ export const GET: RequestHandler = async ({ params }) => {
 
     console.log(`📊 Fetching single buybox record: ${id}`);
 
-    // Use the same query structure as the main buybox API to ensure consistent data
+    // Select all columns to avoid schema mismatch issues
     const { data, error } = await supabaseAdmin
       .from('buybox_data')
-      .select(`
-        id, sku, asin, item_name, captured_at, 
-        price, your_current_price, competitor_price, break_even_price, buybox_price,
-        shipping_cost, total_cost, amazon_fees, total_fees,
-        profit, current_actual_profit, buybox_actual_profit,
-        your_margin_percent_at_current_price, margin_percent_at_buybox_price,
-        recommendation, winner, price_gap,
-        current_margin_calculation, buybox_margin_calculation,
-        total_investment_current, total_investment_buybox,
-        run_id, job_id, created_at, updated_at
-      `)
+      .select('*')
       .eq('id', id)
       .single();
 

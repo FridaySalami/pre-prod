@@ -324,7 +324,7 @@
 		try {
 			console.log(`🔄 Updating live price for SKU: ${item.sku}, Record: ${recordId}`);
 
-			const response = await fetch('http://localhost:3001/api/live-pricing/update', {
+			const response = await fetch('/api/live-pricing/update', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
@@ -357,13 +357,10 @@
 					console.log(
 						`🔄 Fetching fresh data for SKU: ${item.sku} (attempt ${retryCount + 1}/${maxRetries})`
 					);
-					const freshDataResponse = await fetch(
-						`http://localhost:3001/api/buybox-record/${recordId}`
-					);
+					const freshDataResponse = await fetch(`/api/buybox-data/${recordId}`);
 
 					if (freshDataResponse.ok) {
-						const responseData = await freshDataResponse.json();
-						const fetchedRecord = responseData.data;
+						const fetchedRecord = await freshDataResponse.json();
 
 						// Verify the record has actually been updated by checking if captured_at is recent
 						const capturedAt = new Date(fetchedRecord.captured_at);
