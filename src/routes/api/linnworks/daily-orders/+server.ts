@@ -1,8 +1,15 @@
 import { json } from '@sveltejs/kit';
 import { getDailyOrders } from '$lib/server/processedOrdersService.server';
+import type { RequestHandler } from './$types';
 
-export async function GET({ url }) {
+export const GET: RequestHandler = async ({ url, locals }) => {
   try {
+    // Check authentication
+    const session = await locals.getSession();
+    if (!session) {
+      return json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     // Get required date parameters
     const startDateStr = url.searchParams.get('startDate');
     const endDateStr = url.searchParams.get('endDate');

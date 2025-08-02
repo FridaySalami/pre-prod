@@ -780,9 +780,12 @@
 					);
 					const [linnworksResponse, financialResponse] = await Promise.all([
 						fetch(
-							`/api/linnworks/weeklyOrderCounts?startDate=${startDateStr}&endDate=${endDateStr}`
+							`/api/linnworks/weeklyOrderCounts?startDate=${startDateStr}&endDate=${endDateStr}`,
+							{ credentials: 'include' }
 						),
-						fetch(`/api/linnworks/financialData?startDate=${startDateStr}&endDate=${endDateStr}`)
+						fetch(`/api/linnworks/financialData?startDate=${startDateStr}&endDate=${endDateStr}`, {
+							credentials: 'include'
+						})
 					]);
 
 					if (!linnworksResponse.ok) {

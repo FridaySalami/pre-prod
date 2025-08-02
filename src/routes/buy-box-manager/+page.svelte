@@ -107,7 +107,7 @@
 	let updatedRows = new Set<string>(); // recordId set for animation tracking
 
 	// Computed property to check if any live updates are in progress
-	$: activeUpdates = Array.from(livePricingUpdates.values()).filter(state => state.isUpdating);
+	$: activeUpdates = Array.from(livePricingUpdates.values()).filter((state) => state.isUpdating);
 	$: hasActiveUpdates = activeUpdates.length > 0;
 
 	// Best sellers list (top 100 ASINs from business report)
@@ -1759,16 +1759,27 @@
 		<div>
 			<h1 class="text-3xl font-bold mb-2">Buy Box Manager</h1>
 			<p class="text-gray-600">Analyze and manage your Buy Box performance</p>
-			
+
 			<!-- Live Update Status Indicator -->
 			{#if hasActiveUpdates}
 				<div class="mt-2 flex items-center gap-2 text-blue-600 text-sm" in:fade>
-					<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-						<path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					<svg
+						class="animate-spin h-4 w-4"
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+					>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
+						<path
+							class="opacity-75"
+							fill="currentColor"
+							d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+						></path>
 					</svg>
 					<span class="font-medium">
-						{activeUpdates.length === 1 ? '1 live update' : `${activeUpdates.length} live updates`} in progress...
+						{activeUpdates.length === 1 ? '1 live update' : `${activeUpdates.length} live updates`} in
+						progress...
 					</span>
 				</div>
 			{/if}
@@ -3099,9 +3110,25 @@
 												>
 													{#if buttonState.isUpdating}
 														<!-- Spinning loader -->
-														<svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-															<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-															<path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+														<svg
+															class="animate-spin h-3 w-3 text-white"
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+														>
+															<circle
+																class="opacity-25"
+																cx="12"
+																cy="12"
+																r="10"
+																stroke="currentColor"
+																stroke-width="4"
+															></circle>
+															<path
+																class="opacity-75"
+																fill="currentColor"
+																d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+															></path>
 														</svg>
 													{/if}
 													<span class="whitespace-nowrap">{buttonState.text}</span>
@@ -3375,7 +3402,9 @@
 														? 'updated-row'
 														: ''} {recentlyUpdatedItems.has(sku.id)
 														? 'recently-updated-bypass'
-														: ''} {livePricingUpdates.get(sku.id)?.isUpdating ? 'updating-row' : ''}"
+														: ''} {livePricingUpdates.get(sku.id)?.isUpdating
+														? 'updating-row'
+														: ''}"
 												>
 													<td class="py-4 px-6">
 														<div class="text-sm">
@@ -3690,9 +3719,25 @@
 																>
 																	{#if buttonState.isUpdating}
 																		<!-- Spinning loader -->
-																		<svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-																			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-																			<path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+																		<svg
+																			class="animate-spin h-3 w-3 text-white"
+																			xmlns="http://www.w3.org/2000/svg"
+																			fill="none"
+																			viewBox="0 0 24 24"
+																		>
+																			<circle
+																				class="opacity-25"
+																				cx="12"
+																				cy="12"
+																				r="10"
+																				stroke="currentColor"
+																				stroke-width="4"
+																			></circle>
+																			<path
+																				class="opacity-75"
+																				fill="currentColor"
+																				d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																			></path>
 																		</svg>
 																	{/if}
 																	<span class="whitespace-nowrap">{buttonState.text}</span>
@@ -3833,7 +3878,8 @@
 	}
 
 	@keyframes pulse-update {
-		0%, 100% {
+		0%,
+		100% {
 			background-color: #dbeafe;
 		}
 		50% {

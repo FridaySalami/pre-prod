@@ -1,8 +1,15 @@
 import { json } from '@sveltejs/kit';
 import { getDailyFinancialData } from '$lib/server/financialService.server';
+import type { RequestHandler } from './$types';
 
-export async function GET({ url }) {
+export const GET: RequestHandler = async ({ url, locals }) => {
   try {
+    // Check authentication
+    const session = await locals.getSession();
+    if (!session) {
+      return json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     // Get date parameters or use current week as default
     let startDate = url.searchParams.get('startDate');
     let endDate = url.searchParams.get('endDate');

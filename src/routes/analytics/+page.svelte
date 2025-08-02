@@ -64,7 +64,9 @@
 				params.append('sku', sku);
 			}
 
-			const response = await fetch(`/api/linnworks/daily-orders?${params}`);
+			const response = await fetch(`/api/linnworks/daily-orders?${params}`, {
+				credentials: 'include'
+			});
 			if (!response.ok) {
 				throw new Error(`API Error ${response.status}: ${await response.text()}`);
 			}
@@ -94,7 +96,9 @@
 				endDate: endOfMonth.toISOString().split('T')[0]
 			});
 
-			const response = await fetch(`/api/linnworks/financialData?${params}`);
+			const response = await fetch(`/api/linnworks/financialData?${params}`, {
+				credentials: 'include'
+			});
 			if (!response.ok) {
 				throw new Error(`API Error ${response.status}: ${await response.text()}`);
 			}
@@ -121,11 +125,12 @@
 		let currentSession;
 		try {
 			const unsubscribePromise = new Promise<any>((resolve) => {
-				const unsub = userSession.subscribe((s) => {
+				let unsub: (() => void) | undefined;
+				unsub = userSession.subscribe((s) => {
 					if (s !== undefined) {
 						currentSession = s;
 						resolve(s);
-						unsub();
+						if (unsub) unsub();
 					}
 				});
 			});

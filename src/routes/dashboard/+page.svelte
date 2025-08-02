@@ -563,7 +563,9 @@
 			// Fetch data with individual error handling for partial success
 			const dataFetches = [
 				// Current week data
-				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`)
+				fetch(`/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`, {
+					credentials: 'include'
+				})
 					.then(async (response) => {
 						if (response.ok) {
 							const data = await response.json();
@@ -590,7 +592,9 @@
 						return null;
 					}),
 
-				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`)
+				fetch(`/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`, {
+					credentials: 'include'
+				})
 					.then(async (response) => {
 						if (response.ok) {
 							const data = await response.json();

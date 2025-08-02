@@ -12,26 +12,66 @@
 	import CommandMenu from '$lib/CommandMenu.svelte';
 	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
 	import AppSidebar from '$lib/AppSidebar.svelte';
+	import { checkRouteAccess } from '$lib/routeGuard';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
 		children: Snippet;
+		data: any; // Server-side data from +layout.server.ts
 	}
 
-	// Get children prop for Svelte 5 layout
-	let { children }: Props = $props();
+	// Get props for Svelte 5 layout including server data
+	let { children, data }: Props = $props();
 
 	let currentPath = '';
 
+	// Use server-side session data as the source of truth
+	let session = $state<Session | null>(data?.session || null);
+	let user = $state(data?.user || null);
+
 	// Subscribe to the page store to get the current path
-	page.subscribe((value) => {
+	let unsubscribePage = page.subscribe((value) => {
 		currentPath = value.url.pathname;
+
+		// Check route access on client-side navigation
+		if (browser) {
+			checkRouteAccess(currentPath, user);
+		}
 	});
 
-	// Initialize session as undefined
-	let session = $state<Session | null | undefined>(undefined);
+	// Cleanup subscription on destroy
+	onDestroy(() => {
+		if (unsubscribePage) {
+			unsubscribePage();
+		}
+		if (unsubscribeToast) {
+			unsubscribeToast();
+		}
+	});
+
 	let loggingOut = $state(false);
 	let commandMenuOpen = $state(false);
+
+	// Reactive logging that properly tracks state changes (only log when values actually change)
+	let previousSessionId = $state<string | null>(null);
+	let previousUserId = $state<string | null>(null);
+
+	$effect(() => {
+		// Use IDs for comparison instead of object references to avoid proxy equality issues
+		const currentSessionId = session?.user?.id || null;
+		const currentUserId = user?.id || null;
+
+		// Only log if session or user actually changed
+		if (currentSessionId !== previousSessionId || currentUserId !== previousUserId) {
+			console.log('🔐 Layout state changed:', {
+				hasSession: !!session,
+				hasUser: !!user,
+				userRole: user?.profile?.role
+			});
+			previousSessionId = currentSessionId;
+			previousUserId = currentUserId;
+		}
+	});
 
 	// Toast notification system
 	let toastVisible = $state(false);
@@ -56,37 +96,44 @@
 	}
 
 	// Subscribe to the toast store
-	toastStore.subscribe((toast) => {
+	let unsubscribeToast = toastStore.subscribe((toast) => {
 		toastVisible = toast.show;
 		toastMessage = toast.message;
 		toastType = toast.type;
 	});
 
-	const unsubscribe = userSession.subscribe((s) => {
-		console.log('🟢 Layout session subscription triggered with:', s);
+	// Update session and user when server data changes (page navigation)
+	// Use props to track data changes instead of reactive effect
+	$effect(() => {
+		// Only update if the data actually changed - use deep comparison for objects
+		const newSession = data?.session || null;
+		const newUser = data?.user || null;
 
-		// Update the session state
-		session = s;
-		console.log(
-			'🟢 Layout session updated:',
-			session ? 'session exists' : session === null ? 'no session' : 'undefined'
-		);
+		// Compare using serialization to avoid proxy equality issues
+		const sessionChanged = JSON.stringify(newSession) !== JSON.stringify(session);
+		const userChanged = JSON.stringify(newUser) !== JSON.stringify(user);
 
-		// Only redirect to login if we have a definitive null session (logged out)
-		// and we're not in the process of logging out and not already on login page
-		if (
-			browser &&
-			session === null &&
-			!loggingOut &&
-			!window.location.pathname.includes('/login')
-		) {
-			console.log('🟢 Session is null, redirecting to login page');
-			window.location.href = '/login';
+		if (sessionChanged || userChanged) {
+			session = newSession;
+			user = newUser;
+
+			console.log('🔐 Layout data updated from server:', {
+				hasSession: !!session,
+				hasUser: !!user,
+				userRole: user?.profile?.role,
+				currentPath
+			});
+
+			// Only sync session store if we have server session data
+			// Don't override existing client session with null from server
+			if (session) {
+				userSession.set(session);
+			} else if (data?.session === null) {
+				// Only set to null if server explicitly says no session
+				userSession.set(null);
+			}
+			// If data.session is undefined, don't modify the store
 		}
-	});
-
-	onDestroy(() => {
-		unsubscribe();
 	});
 
 	async function handleLogout(event: MouseEvent) {
@@ -99,7 +146,22 @@
 		console.log('🟢 loggingOut state set to true');
 
 		try {
-			// Clear localStorage items related to Supabase first
+			// First, call the server-side logout endpoint for proper session cleanup
+			console.log('🟢 Calling server-side logout endpoint');
+			const response = await fetch('/api/auth/logout', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			if (response.ok) {
+				console.log('🟢 Server-side logout successful');
+			} else {
+				console.warn('🟢 Server-side logout returned non-OK status:', response.status);
+			}
+
+			// Clear localStorage items related to Supabase
 			console.log('🟢 Clearing localStorage items...');
 			if (browser) {
 				Object.keys(localStorage).forEach((key) => {
@@ -110,19 +172,43 @@
 				});
 			}
 
-			// Sign out from Supabase - this should automatically update the session store
-			console.log('🟢 Calling Supabase signOut...');
-			await supabase.auth.signOut();
-			console.log('🟢 Supabase signOut completed');
+			// Clear client-side state immediately
+			session = null;
+			user = null;
+			userSession.set(null);
 
-			// Navigate to login page
-			console.log('🟢 Redirecting to login...');
-			window.location.href = '/login';
+			// Clear client-side Supabase session as backup
+			console.log('🟢 Calling client-side Supabase signOut...');
+			await supabase.auth.signOut();
+			console.log('🟢 Client-side Supabase signOut completed');
+
+			// Force a hard navigation to ensure server-side session is completely cleared
+			console.log('🟢 Forcing page reload and redirect to login...');
+			window.location.href = '/login?message=logged-out';
 		} catch (err) {
-			console.error('🟢 Unexpected error during logout:', err);
+			console.error('🟢 Error during logout process:', err);
+
+			// Fallback: Even if server logout fails, clear client side and redirect
+			try {
+				session = null;
+				user = null;
+				userSession.set(null);
+
+				if (browser) {
+					Object.keys(localStorage).forEach((key) => {
+						if (key.includes('supabase') || key.includes('sb-')) {
+							localStorage.removeItem(key);
+						}
+					});
+				}
+				await supabase.auth.signOut();
+			} catch (fallbackError) {
+				console.error('🟢 Fallback logout also failed:', fallbackError);
+			}
+
 			// Ensure we always redirect even if there's an error
 			loggingOut = false;
-			window.location.href = '/login';
+			window.location.href = '/login?message=logout-error';
 		}
 	}
 
@@ -250,7 +336,7 @@
 
 <div class="app-container" class:has-banner={showPasswordBanner}>
 	<Sidebar.Provider class="" style="">
-		<AppSidebar />
+		<AppSidebar {user} />
 		<main class="sidebar-main">
 			<header class="site-header">
 				<div class="header-left">

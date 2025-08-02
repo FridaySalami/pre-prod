@@ -5,8 +5,29 @@
 	import { userSession } from '$lib/sessionStore';
 	import { supabase } from '$lib/supabaseClient';
 
+	// Accept user data as prop from layout
+	interface Props {
+		user?: {
+			id: string;
+			email: string;
+			profile?: {
+				role?: string;
+			} | null;
+		} | null;
+	}
+
+	let { user = null }: Props = $props();
+
 	let currentPath = $state('');
 	let isMobile = $state(false);
+
+	// Get user role for menu filtering
+	const userRole = $derived(user?.profile?.role || 'user');
+
+	// Reactive logging for user role changes
+	$effect(() => {
+		console.log('🔐 AppSidebar user role:', userRole);
+	});
 
 	// Subscribe to the page store to get the current path
 	page.subscribe((value) => {
@@ -84,6 +105,7 @@
 		title: string;
 		url: string;
 		icon: string;
+		requiredRole?: 'user' | 'manager' | 'admin'; // Add role requirement
 	};
 
 	type SeparatorItem = {
@@ -96,12 +118,13 @@
 	const isSeparator = (item: MenuItem): item is SeparatorItem => 'type' in item;
 	const isNavigationItem = (item: MenuItem): item is NavigationItem => !('type' in item);
 
-	// Navigation items
-	const items: MenuItem[] = [
+	// Navigation items with role requirements
+	const allItems: MenuItem[] = [
 		{
 			title: 'Home',
 			url: '/landing',
-			icon: 'home'
+			icon: 'home',
+			requiredRole: 'user'
 		},
 		{
 			type: 'separator'
@@ -109,22 +132,26 @@
 		{
 			title: 'Employee Hours',
 			url: '/employee-hours',
-			icon: 'schedule'
+			icon: 'schedule',
+			requiredRole: 'user'
 		},
 		{
 			title: 'Dashboard',
 			url: '/dashboard',
-			icon: 'dashboard'
+			icon: 'dashboard',
+			requiredRole: 'user'
 		},
 		{
 			title: 'Buy Box Monitor',
 			url: '/buy-box-monitor',
-			icon: 'visibility'
+			icon: 'visibility',
+			requiredRole: 'user' // Changed from manager to user
 		},
 		{
 			title: 'Buy Box Manager',
 			url: '/buy-box-manager',
-			icon: 'manage_search'
+			icon: 'manage_search',
+			requiredRole: 'user' // Changed from admin to user
 		},
 		{
 			type: 'separator'
@@ -132,12 +159,14 @@
 		{
 			title: 'Analytics',
 			url: '/analytics',
-			icon: 'analytics'
+			icon: 'analytics',
+			requiredRole: 'user'
 		},
 		{
 			title: 'Monthly Analytics',
 			url: '/analytics/monthly',
-			icon: 'trending_up'
+			icon: 'trending_up',
+			requiredRole: 'user'
 		},
 		{
 			type: 'separator'
@@ -145,22 +174,20 @@
 		{
 			title: 'Kaizen Projects',
 			url: '/kaizen-projects',
-			icon: 'assignment'
-		},
-		{
-			title: 'Process Map',
-			url: '/process-map',
-			icon: 'account_tree'
+			icon: 'assignment',
+			requiredRole: 'user'
 		},
 		{
 			title: 'Schedules',
 			url: '/schedules',
-			icon: 'calendar_today'
+			icon: 'calendar_today',
+			requiredRole: 'user'
 		},
 		{
 			title: 'Pricer Tool',
 			url: '/pricer',
-			icon: 'calculate'
+			icon: 'calculate',
+			requiredRole: 'user'
 		},
 		{
 			type: 'separator'
@@ -168,18 +195,74 @@
 		{
 			title: 'Documentation',
 			url: '/documentation',
-			icon: 'description'
+			icon: 'description',
+			requiredRole: 'user'
 		}
 	];
+
+	// Function to check if user has required role
+	function hasRole(requiredRole: string, userRole: string): boolean {
+		const roleHierarchy = {
+			admin: ['admin', 'manager', 'user'],
+			manager: ['manager', 'user'],
+			user: ['user']
+		};
+
+		const allowedRoles = roleHierarchy[requiredRole as keyof typeof roleHierarchy] || [];
+		return allowedRoles.includes(userRole);
+	}
+
+	// Filter items based on user role
+	const items = $derived(() => {
+		const filteredItems: MenuItem[] = [];
+		let lastWasSeparator = false;
+
+		for (const item of allItems) {
+			if (isSeparator(item)) {
+				// Only add separator if the last item wasn't a separator
+				if (!lastWasSeparator && filteredItems.length > 0) {
+					filteredItems.push(item);
+					lastWasSeparator = true;
+				}
+			} else {
+				// Check if user has required role
+				if (!item.requiredRole || hasRole(item.requiredRole, userRole)) {
+					filteredItems.push(item);
+					lastWasSeparator = false;
+				}
+			}
+		}
+
+		// Remove trailing separator if present
+		if (filteredItems.length > 0 && isSeparator(filteredItems[filteredItems.length - 1])) {
+			filteredItems.pop();
+		}
+
+		return filteredItems;
+	});
 
 	async function handleLogout() {
 		console.log('🔴 AppSidebar handleLogout called');
 
-		// Try direct logout first
 		try {
-			// Clear session immediately
+			// First, call the server-side logout endpoint for proper session cleanup
+			console.log('🔴 Calling server-side logout endpoint');
+			const response = await fetch('/api/auth/logout', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			if (response.ok) {
+				console.log('🔴 Server-side logout successful');
+			} else {
+				console.warn('🔴 Server-side logout returned non-OK status:', response.status);
+			}
+
+			// Clear client-side session immediately
 			userSession.set(null);
-			console.log('🔴 Session cleared in AppSidebar');
+			console.log('🔴 Client session cleared in AppSidebar');
 
 			// Clear localStorage
 			if (typeof localStorage !== 'undefined') {
@@ -191,18 +274,33 @@
 				});
 			}
 
-			// Sign out from Supabase
-			console.log('🔴 Calling Supabase signOut');
+			// Clear client-side Supabase session as backup
+			console.log('🔴 Calling client-side Supabase signOut');
 			await supabase.auth.signOut();
 
-			// Navigate immediately
+			// Navigate to login page
 			console.log('🔴 Navigating to login');
-			window.location.href = '/login';
+			window.location.href = '/login?message=logged-out';
 		} catch (error) {
-			console.error('🔴 Error in direct logout:', error);
-			// Fallback to event-based logout
-			const event = new MouseEvent('click');
-			window.dispatchEvent(new CustomEvent('app-logout', { detail: event }));
+			console.error('🔴 Error in logout process:', error);
+
+			// Fallback: Even if server logout fails, clear client side and redirect
+			try {
+				userSession.set(null);
+				await supabase.auth.signOut();
+				if (typeof localStorage !== 'undefined') {
+					Object.keys(localStorage).forEach((key) => {
+						if (key.includes('supabase') || key.includes('sb-')) {
+							localStorage.removeItem(key);
+						}
+					});
+				}
+			} catch (fallbackError) {
+				console.error('🔴 Fallback logout also failed:', fallbackError);
+			}
+
+			// Always redirect even if everything fails
+			window.location.href = '/login?message=logout-error';
 		}
 
 		// Close sidebar on mobile after logout
@@ -236,7 +334,7 @@
 		<Sidebar.Group class="">
 			<Sidebar.GroupContent class="">
 				<Sidebar.Menu class="">
-					{#each items as item, index (isSeparator(item) ? `sep-${index}` : item.title)}
+					{#each items() as item, index (isSeparator(item) ? `sep-${index}` : item.title)}
 						{#if isSeparator(item)}
 							<div class="separator-container px-3 py-1 group-data-[collapsible=icon]:px-2">
 								<div class="separator-line"></div>
@@ -266,6 +364,18 @@
 												class="group-data-[collapsible=icon]:sr-only transition-all duration-200"
 												>{item.title}</span
 											>
+											<!-- Add role indicator for admin/manager items -->
+											{#if item.requiredRole === 'admin'}
+												<span
+													class="ml-auto text-xs opacity-60 group-data-[collapsible=icon]:sr-only"
+													>👑</span
+												>
+											{:else if item.requiredRole === 'manager'}
+												<span
+													class="ml-auto text-xs opacity-60 group-data-[collapsible=icon]:sr-only"
+													>👔</span
+												>
+											{/if}
 										</a>
 									{/snippet}
 								</Sidebar.MenuButton>

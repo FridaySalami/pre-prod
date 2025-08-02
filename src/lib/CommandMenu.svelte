@@ -37,8 +37,7 @@
 		{
 			group: 'Projects & Processes',
 			items: [
-				{ name: 'Kaizen Projects', href: '/kaizen-projects', shortcut: '⌘K', icon: 'assignment' },
-				{ name: 'Process Map', href: '/process-map', shortcut: '⌘P', icon: 'account_tree' }
+				{ name: 'Kaizen Projects', href: '/kaizen-projects', shortcut: '⌘K', icon: 'assignment' }
 			]
 		},
 		{

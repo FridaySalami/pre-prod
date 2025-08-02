@@ -39,7 +39,9 @@
 			}
 
 			// TODO: Update this API endpoint if needed for the duplicated functionality
-			const response = await fetch(`/api/linnworks/daily-orders?${params}`);
+			const response = await fetch(`/api/linnworks/daily-orders?${params}`, {
+				credentials: 'include'
+			});
 			if (!response.ok) {
 				throw new Error(`API Error ${response.status}: ${await response.text()}`);
 			}

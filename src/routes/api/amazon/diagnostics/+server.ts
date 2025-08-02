@@ -294,7 +294,13 @@ async function testSpApiEndpoint(endpoint: string, accessToken: string): Promise
   }
 }
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
+  // Check authentication
+  const session = await locals.getSession();
+  if (!session) {
+    return json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   const report: DiagnosticReport = {
     timestamp: new Date().toISOString(),
     overallStatus: 'healthy',

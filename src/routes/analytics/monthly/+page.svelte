@@ -122,11 +122,12 @@
 		let currentSession;
 		try {
 			const unsubscribePromise = new Promise<any>((resolve) => {
-				const unsub = userSession.subscribe((s) => {
+				let unsub: (() => void) | undefined;
+				unsub = userSession.subscribe((s) => {
 					if (s !== undefined) {
 						currentSession = s;
 						resolve(s);
-						unsub();
+						if (unsub) unsub();
 					}
 				});
 			});
