@@ -172,6 +172,14 @@
 			errorMessage = '';
 		}
 	}
+
+	// Handle Enter key press
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !loading) {
+			event.preventDefault();
+			handleLogin();
+		}
+	}
 </script>
 
 {#if loading}
@@ -190,53 +198,53 @@
 			</div>
 		{/if}
 
-		<div class="form-group">
-			<label for="email">Email Address</label>
-			<input
-				id="email"
-				type="email"
-				bind:value={email}
-				oninput={() => {
-					errorMessage = '';
-				}}
-				placeholder="Enter your email"
-				required
-				autocomplete="email"
-				disabled={loading}
-			/>
-		</div>
+		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
+			<div class="form-group">
+				<label for="email">Email Address</label>
+				<input
+					id="email"
+					type="email"
+					bind:value={email}
+					oninput={() => {
+						errorMessage = '';
+					}}
+					onkeydown={handleKeydown}
+					placeholder="Enter your email"
+					required
+					autocomplete="email"
+					disabled={loading}
+				/>
+			</div>
 
-		<div class="form-group">
-			<label for="password">Password</label>
-			<input
-				id="password"
-				type="password"
-				bind:value={password}
-				oninput={() => {
-					errorMessage = '';
-				}}
-				placeholder="Enter your password"
-				required
-				autocomplete="current-password"
-				disabled={loading}
-			/>
-		</div>
+			<div class="form-group">
+				<label for="password">Password</label>
+				<input
+					id="password"
+					type="password"
+					bind:value={password}
+					oninput={() => {
+						errorMessage = '';
+					}}
+					onkeydown={handleKeydown}
+					placeholder="Enter your password"
+					required
+					autocomplete="current-password"
+					disabled={loading}
+				/>
+			</div>
 
-		<button
-			type="button"
-			disabled={loading}
-			onclick={(e) => {
-				e.preventDefault();
-				handleLogin();
-			}}
-		>
-			{#if loading}
-				<span class="button-spinner"></span>
-				Signing In...
-			{:else}
-				Sign In
-			{/if}
-		</button>
+			<button
+				type="submit"
+				disabled={loading}
+			>
+				{#if loading}
+					<span class="button-spinner"></span>
+					Signing In...
+				{:else}
+					Sign In
+				{/if}
+			</button>
+		</form>
 
 		<div class="form-footer">
 			<p class="help-text">Need help? Contact your system administrator.</p>
