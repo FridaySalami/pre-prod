@@ -2,6 +2,8 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
+import { getDailyOrderCounts } from '$lib/server/processedOrdersService.server';
+import { getDailyFinancialData } from '$lib/server/financialService.server';
 
 if (!PUBLIC_SUPABASE_URL || !PRIVATE_SUPABASE_SERVICE_KEY) {
   throw new Error('Missing Supabase configuration in environment variables');
@@ -47,41 +49,39 @@ export const POST: RequestHandler = async ({ request }) => {
     console.log('📊 Step 1: Fetching Linnworks data...');
     const linnworksStartTime = Date.now();
 
-    const linnworksResponse = await fetch(`https://jackweston.netlify.app/api/linnworks/weeklyOrderCounts?startDate=${mondayStr}&endDate=${sundayStr}`);
+    // Use direct service call instead of HTTP request
+    const linnworksData = await getDailyOrderCounts(
+      weekDates[0], // start date
+      weekDates[6]  // end date
+    );
 
-    if (!linnworksResponse.ok) {
-      throw new Error(`Linnworks API failed: ${linnworksResponse.status}`);
-    }
-
-    const linnworksData = await linnworksResponse.json();
     linnworksTime = Date.now() - linnworksStartTime;
 
     console.log(`✅ Linnworks data fetched in ${linnworksTime}ms`);
     console.log('📋 Linnworks Response Structure:');
-    console.log('   - Start Date:', linnworksData.startDate);
-    console.log('   - End Date:', linnworksData.endDate);
-    console.log('   - Daily Orders Count:', linnworksData.dailyOrders?.length || 0);
-    console.log('   - Total Orders (summary):', linnworksData.summary?.totalOrders || 0);
+    console.log('   - Start Date:', mondayStr);
+    console.log('   - End Date:', sundayStr);
+    console.log('   - Daily Orders Count:', linnworksData?.data?.length || 0);
+    console.log('   - Is Cached:', linnworksData?.isCached || false);
 
     // Step 2: Get financial data
     console.log('📊 Step 2: Fetching financial data...');
     const financialStartTime = Date.now();
 
-    const financialResponse = await fetch(`https://jackweston.netlify.app/api/linnworks/financialData?startDate=${mondayStr}&endDate=${sundayStr}`);
+    // Use direct service call instead of HTTP request
+    const financialData = await getDailyFinancialData(
+      weekDates[0], // start date
+      weekDates[6]  // end date
+    );
 
-    if (!financialResponse.ok) {
-      throw new Error(`Financial API failed: ${financialResponse.status}`);
-    }
-
-    const financialData = await financialResponse.json();
     financialTime = Date.now() - financialStartTime;
 
     console.log(`✅ Financial data fetched in ${financialTime}ms`);
     console.log('💰 Financial Response Structure:');
-    console.log('   - Start Date:', financialData.startDate);
-    console.log('   - End Date:', financialData.endDate);
-    console.log('   - Daily Data Count:', financialData.dailyData?.length || 0);
-    console.log('   - Total Sales (summary):', financialData.summary?.totalSales || 0);
+    console.log('   - Start Date:', mondayStr);
+    console.log('   - End Date:', sundayStr);
+    console.log('   - Daily Data Count:', financialData?.data?.length || 0);
+    console.log('   - Is Cached:', financialData?.isCached || false);
 
     // Step 3: Get scheduled hours (simplified)
     console.log('📊 Step 3: Fetching scheduled hours...');
@@ -173,8 +173,8 @@ export const POST: RequestHandler = async ({ request }) => {
     console.log('📊 Step 5: Preparing upload data...');
     const uploadData = weekDates.map(date => {
       const dateStr = date.toISOString().split('T')[0];
-      const dayData = linnworksData.dailyOrders?.find((d: any) => d.date === dateStr);
-      const financialDayData = financialData.dailyData?.find((d: any) => d.date === dateStr);
+      const dayData = linnworksData.data?.find((d: any) => d.date === dateStr);
+      const financialDayData = financialData.data?.find((d: any) => d.date === dateStr);
       const scheduledHours = scheduledHoursData.find((h: any) => h.date === dateStr);
       const roleBreakdown = employeeRoleBreakdowns[dateStr] || { management: 0, packing: 0, picking: 0 };
 
@@ -271,8 +271,8 @@ export const POST: RequestHandler = async ({ request }) => {
     console.log(`   - Total Processing: ${totalTime}ms`);
 
     console.log('📊 Data Quality Summary:');
-    console.log(`   - Linnworks days with data: ${linnworksData.dailyOrders?.length || 0}/7`);
-    console.log(`   - Financial days with data: ${financialData.dailyData?.length || 0}/7`);
+    console.log(`   - Linnworks days with data: ${linnworksData.data?.length || 0}/7`);
+    console.log(`   - Financial days with data: ${financialData.data?.length || 0}/7`);
     console.log(`   - Employee hours days: ${Object.keys(employeeHoursData).length}/7`);
     console.log(`   - Role breakdown days: ${Object.keys(employeeRoleBreakdowns).length}/7`);
     console.log(`   - Scheduled hours days: ${scheduledHoursData.length}/7`);
