@@ -6,7 +6,7 @@ export default defineConfig({
 	ssr: {
 		noExternal: ['openai'],
 		// Include Prisma client for proper ESM handling
-		external: ['@prisma/client']
+		external: ['@prisma/client', 'crypto', 'aws4']
 	},
 	optimizeDeps: {
 		exclude: ['@prisma/client']

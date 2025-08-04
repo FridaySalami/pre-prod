@@ -1,8 +1,8 @@
+// @ts-nocheck
 // lib/buyBoxChecker.js
 // Buy Box checking logic extracted for use in API routes
 
 import axios from 'axios';
-import crypto from 'crypto';
 
 // Your seller ID
 export const YOUR_SELLER_ID = 'A2D8NG39VURSL3';
@@ -118,7 +118,7 @@ async function getCompetitivePricing(asin, config, accessToken) {
   };
 
   // Create AWS signature
-  const signedHeaders = createSignature(method, path, queryParams, headers, '', config);
+  const signedHeaders = await createSignature(method, path, queryParams, headers, '', config);
 
   const url = `${config.endpoint}${path}?${Object.keys(queryParams)
     .map(key => `${key}=${encodeURIComponent(queryParams[key])}`)
@@ -136,7 +136,8 @@ async function getCompetitivePricing(asin, config, accessToken) {
 /**
  * AWS Signature V4 implementation
  */
-function createSignature(method, path, queryParams, headers, body, config) {
+async function createSignature(method, path, queryParams, headers, body, config) {
+  const crypto = await import('crypto');
   const { region, accessKeyId, secretAccessKey } = config;
   const service = 'execute-api';
 
@@ -161,21 +162,21 @@ function createSignature(method, path, queryParams, headers, body, config) {
     .map(key => key.toLowerCase())
     .join(';');
 
-  const payloadHash = crypto.createHash('sha256').update(body || '').digest('hex');
+  const payloadHash = crypto.default.createHash('sha256').update(body || '').digest('hex');
 
   const canonicalRequest = `${method}\n${canonicalUri}\n${canonicalQuerystring}\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
 
   // Create string to sign
   const algorithm = 'AWS4-HMAC-SHA256';
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = `${algorithm}\n${timeStamp}\n${credentialScope}\n${crypto.createHash('sha256').update(canonicalRequest).digest('hex')}`;
+  const stringToSign = `${algorithm}\n${timeStamp}\n${credentialScope}\n${crypto.default.createHash('sha256').update(canonicalRequest).digest('hex')}`;
 
   // Calculate signature
-  const kDate = crypto.createHmac('sha256', `AWS4${secretAccessKey}`).update(dateStamp).digest();
-  const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
-  const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
-  const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
-  const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+  const kDate = crypto.default.createHmac('sha256', `AWS4${secretAccessKey}`).update(dateStamp).digest();
+  const kRegion = crypto.default.createHmac('sha256', kDate).update(region).digest();
+  const kService = crypto.default.createHmac('sha256', kRegion).update(service).digest();
+  const kSigning = crypto.default.createHmac('sha256', kService).update('aws4_request').digest();
+  const signature = crypto.default.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
 
   // Add authorization header
   const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;

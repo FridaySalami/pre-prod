@@ -7,6 +7,17 @@ import {
 } from '$env/static/public';
 import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
 
+// Validate API key for external services
+function isValidApiKey(apiKey: string): boolean {
+  // You can define multiple API keys for different services
+  const validApiKeys = [
+    process.env.MAKE_COM_API_KEY || 'make-key-12345', // Default key for development
+    process.env.EXTERNAL_API_KEY || 'external-key-67890'
+  ];
+
+  return validApiKeys.includes(apiKey);
+}
+
 // Define your protected routes and their requirements
 const ROUTE_PROTECTION = {
   // Public routes (no authentication required)
@@ -20,8 +31,17 @@ const ROUTE_PROTECTION = {
     '/api/auth/login',
     '/api/auth/logout',
     '/api/amazon/oauth/callback',
-    '/api/invites/validate'
+    '/api/invites/validate',
+    '/api/test-match-buybox',
+    '/api/test-amazon-connection',
+    '/api/upload-metric-review-working'
     // Note: '/' is NOT public - it should redirect to login if not authenticated
+  ],
+
+  // Routes that support API key authentication (for external services like Make.com)
+  apiKeySupported: [
+    '/api/linnworks',
+    '/api/upload'
   ],
 
   // Routes requiring basic authentication
@@ -46,8 +66,7 @@ const ROUTE_PROTECTION = {
     '/buy-box-monitor', // Moved from manager to authenticated
     '/buy-box-manager', // Moved from admin to authenticated
     '/api/live-pricing',
-    '/api/upload',
-    '/api/linnworks'
+    '/api/match-buybox'
   ],
 
   // Routes requiring manager privileges (can read pricing data but not modify)
@@ -172,6 +191,42 @@ export const handle: Handle = async ({ event, resolve }) => {
   });
 
   if (routeType !== 'public') {
+    // Check for API key authentication for supported routes
+    if (ROUTE_PROTECTION.apiKeySupported.some(route =>
+      pathname === route || pathname.startsWith(route + '/')
+    )) {
+      const apiKey = event.request.headers.get('x-api-key') || event.request.headers.get('authorization')?.replace('Bearer ', '');
+
+      if (apiKey && isValidApiKey(apiKey)) {
+        console.log(`🔑 API key authentication successful for: ${pathname}`);
+
+        // Set a system user for API key requests
+        event.locals.user = {
+          id: 'api-key-user',
+          email: 'api@system.com',
+          app_metadata: {},
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: new Date().toISOString()
+        };
+        event.locals.session = {
+          access_token: '',
+          refresh_token: '',
+          expires_in: 3600,
+          token_type: 'bearer',
+          user: event.locals.user
+        };
+
+        // Continue to route handler
+        const response = await resolve(event, {
+          filterSerializedResponseHeaders(name) {
+            return name === 'content-range';
+          },
+        });
+        return response;
+      }
+    }
+
     const session = await event.locals.getSession();
 
     console.log(`🔐 Session check for protected route:`, {

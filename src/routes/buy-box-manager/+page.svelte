@@ -234,6 +234,16 @@
 	let selectedItems = new Set<string>(); // Track selected item IDs for bulk actions
 	let filtersExpanded = false;
 
+	// Test Environment State
+	let testMode = false; // Toggle between production data and sandbox testing
+	let testResults = new Map<string, any>(); // Store test results for each ASIN
+	let testInProgress = new Set<string>(); // Track which tests are running
+
+	// Production Match Buy Box State
+	let matchBuyBoxInProgress = new Set<string>(); // Track which Match Buy Box operations are running
+	let matchBuyBoxResults = new Map<string, any>(); // Store Match Buy Box results for each ASIN
+	let safetyMarginPercent = 10; // Default 10% safety margin
+
 	// Track active filters for better UX
 	let activeCardFilter = ''; // Track which summary card filter is active
 	let activePresetFilter = ''; // Track which preset filter is active
@@ -596,6 +606,322 @@
 			disabled: false,
 			error: null
 		};
+	}
+
+	// Test Environment Functions (Sandbox Amazon API Testing)
+	/**
+	 * Test Match Buy Box functionality in sandbox environment
+	 */
+	async function testMatchBuyBox(asin: string, targetPrice: number): Promise<void> {
+		console.log(`🧪 Testing Match Buy Box for ASIN: ${asin} at price: £${targetPrice}`);
+
+		testInProgress.add(asin);
+		testInProgress = testInProgress; // Trigger reactivity
+
+		try {
+			const response = await fetch('/api/test-match-buybox', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					asin: asin,
+					targetPrice: targetPrice,
+					environment: 'sandbox', // Always use sandbox for testing
+					userId: 'test-user' // Test user ID
+				})
+			});
+
+			const result = await response.json();
+
+			testResults.set(asin, {
+				success: response.ok,
+				timestamp: new Date(),
+				targetPrice: targetPrice,
+				result: result,
+				status: response.status
+			});
+
+			testResults = testResults; // Trigger reactivity
+
+			if (response.ok) {
+				console.log(`✅ Test successful for ASIN: ${asin}`, result);
+			} else {
+				console.error(`❌ Test failed for ASIN: ${asin}`, result);
+			}
+		} catch (error) {
+			console.error(`🚨 Test error for ASIN: ${asin}:`, error);
+
+			testResults.set(asin, {
+				success: false,
+				timestamp: new Date(),
+				targetPrice: targetPrice,
+				error: error instanceof Error ? error.message : 'Unknown error',
+				status: 0
+			});
+
+			testResults = testResults; // Trigger reactivity
+		} finally {
+			testInProgress.delete(asin);
+			testInProgress = testInProgress; // Trigger reactivity
+		}
+	}
+
+	/**
+	 * Test Amazon API connectivity in sandbox
+	 */
+	async function testAmazonAPIConnectivity(): Promise<void> {
+		console.log('🧪 Testing Amazon API connectivity in sandbox...');
+
+		try {
+			const response = await fetch('/api/test-amazon-connection', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					environment: 'sandbox'
+				})
+			});
+
+			const result = await response.json();
+
+			if (response.ok) {
+				console.log('✅ Amazon API connectivity test successful:', result);
+				alert(
+					`✅ Amazon API Test Successful!\n\nEnvironment: ${result.environment}\nStatus: ${result.status}\nListings API: ${result.listingsApi ? 'Working' : 'Not Available'}`
+				);
+			} else {
+				console.error('❌ Amazon API connectivity test failed:', result);
+				alert(
+					`❌ Amazon API Test Failed!\n\nError: ${result.error || 'Unknown error'}\nStatus: ${result.status || 'No status'}`
+				);
+			}
+		} catch (error) {
+			console.error('🚨 Amazon API test error:', error);
+			alert(
+				`🚨 Amazon API Test Error!\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`
+			);
+		}
+	}
+
+	/**
+	 * Create test scenario with sample data
+	 */
+	function createTestScenario(): BuyBoxData[] {
+		const testASINs = [
+			'B09T3GDNGT', // Your top ASIN
+			'B076B1NF1Q',
+			'B004BTED72'
+		];
+
+		return testASINs.map((asin, index) => ({
+			id: `test-${asin}`,
+			asin: asin,
+			sku: `TEST-SKU-${index + 1}`,
+			item_name: `Test Product ${index + 1} (${asin})`,
+			price: null,
+			buybox_price: 19.99 + index, // Simulated buy box price
+			your_current_price: 22.99 + index, // Your current price (higher than buy box)
+			competitor_price: 19.99 + index,
+			is_winner: false, // You're not winning
+			opportunity_flag: true, // This is an opportunity
+			captured_at: new Date().toISOString(),
+			merchant_shipping_group: index % 2 === 0 ? 'Nationwide Prime' : 'UK Shipping',
+
+			// Cost data for testing
+			your_cost: 10.0 + index,
+			your_shipping_cost: 2.5,
+			your_material_total_cost: 0.2,
+			your_box_cost: 0.5,
+			your_vat_amount: 2.0 + index * 0.2,
+			your_fragile_charge: 0,
+			total_operating_cost: 15.2 + index * 1.2,
+
+			// Margin data
+			your_margin_percent_at_current_price: 25.5 + index,
+			margin_percent_at_buybox_price: 15.2 + index,
+			margin_difference: -10.3,
+			profit_opportunity: 2.5 + index,
+
+			// Profit data
+			current_actual_profit: 6.5 + index,
+			buybox_actual_profit: 4.0 + index,
+
+			// Recommendations
+			recommended_action: 'match_buybox',
+			break_even_price: 16.5 + index,
+
+			// Additional fields
+			current_margin_calculation: `Test calculation for ${asin}`,
+			buybox_margin_calculation: `Buy box calculation for ${asin}`,
+			total_investment_current: 18.5 + index,
+			total_investment_buybox: 16.2 + index,
+
+			run_id: 'test-run-001',
+			job_id: 'test-job-001',
+			is_skeleton: false
+		}));
+	}
+
+	/**
+	 * Production Match Buy Box - Execute real price update with safety checks
+	 */
+	async function matchBuyBox(asin: string, targetPrice: number): Promise<void> {
+		console.log(`🎯 Executing Match Buy Box for ASIN: ${asin} at price: £${targetPrice}`);
+
+		// Find the record to get margin data
+		const record = filteredData.find((item) => item.asin === asin);
+		if (!record) {
+			alert(`❌ Error: Could not find record for ASIN: ${asin}`);
+			return;
+		}
+
+		// Safety Check: Validate 10% minimum margin
+		const projectedMargin = record.margin_percent_at_buybox_price;
+		if (projectedMargin !== null && projectedMargin < 10) {
+			console.log(
+				`⚠️ Safety check failed: Margin would be ${projectedMargin?.toFixed(2)}% (below 10% minimum)`
+			);
+
+			// Store safety rejection result
+			matchBuyBoxResults.set(asin, {
+				success: false,
+				safetyRejected: true,
+				timestamp: new Date(),
+				targetPrice: targetPrice,
+				projectedMargin: projectedMargin,
+				error: `Margin safety check failed: ${projectedMargin?.toFixed(2)}% is below 10% minimum`,
+				sellerCentralUrl: `https://sellercentral.amazon.co.uk/inventory/ref=xx_invmgr_dnav_xx?tbla_myitable=sort:%7B%22sortOrder%22%3A%22DESCENDING%22%2C%22sortedColumnId%22%3A%22date%22%7D;search:${asin};pagination:1;`
+			});
+
+			matchBuyBoxResults = matchBuyBoxResults; // Trigger reactivity
+
+			// Show safety warning with guidance
+			const message =
+				`⚠️ Safety Check Failed!\n\n` +
+				`ASIN: ${asin}\n` +
+				`Target Price: £${targetPrice}\n` +
+				`Projected Margin: ${projectedMargin?.toFixed(2)}%\n\n` +
+				`🛡️ This price would result in a margin below the 10% safety threshold.\n\n` +
+				`✋ Action Required:\n` +
+				`Please review and update this price manually in Amazon Seller Central if you wish to proceed.\n\n` +
+				`📋 This protects you from accidentally setting unprofitable prices.`;
+
+			if (confirm(message + `\n\n🔗 Would you like to open Amazon Seller Central now?`)) {
+				// Open Seller Central for manual update
+				window.open(
+					`https://sellercentral.amazon.co.uk/inventory/ref=xx_invmgr_dnav_xx?tbla_myitable=sort:%7B%22sortOrder%22%3A%22DESCENDING%22%2C%22sortedColumnId%22%3A%22date%22%7D;search:${asin};pagination:1;`,
+					'_blank'
+				);
+			}
+			return;
+		}
+
+		// Add to in-progress tracking
+		matchBuyBoxInProgress.add(asin);
+		matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
+
+		try {
+			const response = await fetch('/api/match-buybox', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					asin,
+					targetPrice,
+					marginPercent: safetyMarginPercent,
+					userId: 'current-user', // This will be set by the server from session
+					projectedMargin: projectedMargin // Send margin data for server-side validation
+				})
+			});
+
+			const result = await response.json();
+
+			// Store result
+			matchBuyBoxResults.set(asin, {
+				...result,
+				timestamp: new Date(),
+				targetPrice: targetPrice,
+				safetyMargin: safetyMarginPercent,
+				projectedMargin: projectedMargin
+			});
+
+			matchBuyBoxResults = matchBuyBoxResults; // Trigger reactivity
+
+			if (result.success) {
+				console.log(`✅ Match Buy Box successful for ASIN: ${asin}`, result);
+
+				// Show success notification
+				alert(
+					`🎯 Match Buy Box Successful!\n\n` +
+						`ASIN: ${asin}\n` +
+						`Target: £${targetPrice}\n` +
+						`Final Price: £${result.finalPrice}\n` +
+						`Safety Margin: ${safetyMarginPercent}%\n` +
+						`Projected Margin: ${projectedMargin?.toFixed(2) || 'Unknown'}%\n\n` +
+						`Submission ID: ${result.amazonResponse?.data?.submissionId || 'N/A'}`
+				);
+			} else {
+				console.error(`❌ Match Buy Box failed for ASIN: ${asin}`, result);
+
+				// Show error notification
+				alert(
+					`❌ Match Buy Box Failed!\n\n` +
+						`ASIN: ${asin}\n` +
+						`Error: ${result.error || 'Unknown error'}\n\n` +
+						`Please check the details and try again.`
+				);
+			}
+		} catch (error) {
+			console.error(`🚨 Match Buy Box error for ASIN: ${asin}:`, error);
+
+			matchBuyBoxResults.set(asin, {
+				success: false,
+				timestamp: new Date(),
+				targetPrice: targetPrice,
+				safetyMargin: safetyMarginPercent,
+				error: error instanceof Error ? error.message : 'Unknown error',
+				status: 0
+			});
+
+			matchBuyBoxResults = matchBuyBoxResults; // Trigger reactivity
+
+			// Show error notification
+			alert(
+				`🚨 Match Buy Box Error!\n\nASIN: ${asin}\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`
+			);
+		} finally {
+			matchBuyBoxInProgress.delete(asin);
+			matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
+		}
+	}
+
+	/**
+	 * Toggle test mode and load appropriate data
+	 */
+	async function toggleTestMode(): Promise<void> {
+		testMode = !testMode;
+
+		if (testMode) {
+			console.log('🧪 Switching to test mode - loading test scenarios');
+
+			// Load test scenario data
+			const testData = createTestScenario();
+			buyboxData = testData;
+			allRawData = [...testData];
+
+			calculateSummaryStats();
+			applyFilters();
+
+			console.log('✅ Test mode activated with sample data');
+		} else {
+			console.log('📊 Switching back to production data');
+
+			// Reload production data
+			await refreshData();
+		}
 	}
 
 	// Initialize and load data
@@ -1757,8 +2083,19 @@
 <div class="container mx-auto px-4 py-8">
 	<div class="flex justify-between items-center mb-6">
 		<div>
-			<h1 class="text-3xl font-bold mb-2">Buy Box Manager</h1>
-			<p class="text-gray-600">Analyze and manage your Buy Box performance</p>
+			<div class="flex items-center gap-3">
+				<h1 class="text-3xl font-bold mb-2">Buy Box Manager</h1>
+				{#if testMode}
+					<span class="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium">
+						🧪 SANDBOX TEST MODE
+					</span>
+				{/if}
+			</div>
+			<p class="text-gray-600">
+				{testMode
+					? 'Testing Match Buy Box functionality in Amazon sandbox environment'
+					: 'Analyze and manage your Buy Box performance'}
+			</p>
 
 			<!-- Live Update Status Indicator -->
 			{#if hasActiveUpdates}
@@ -1785,18 +2122,73 @@
 			{/if}
 		</div>
 		<div class="flex gap-3">
+			<!-- Test Mode Toggle -->
+			<button
+				class="{testMode
+					? 'bg-purple-600 hover:bg-purple-700'
+					: 'bg-gray-600 hover:bg-gray-700'} text-white py-2 px-4 rounded flex items-center gap-2"
+				on:click={toggleTestMode}
+				title={testMode ? 'Switch back to production data' : 'Switch to sandbox test environment'}
+			>
+				{#if testMode}
+					🧪 Test Mode ON
+				{:else}
+					🧪 Test Mode
+				{/if}
+			</button>
+
+			<!-- Safety Margin Control (only show in production mode) -->
+			{#if !testMode}
+				<div class="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-2">
+					<label for="safety-margin" class="text-sm font-medium text-green-800">
+						🛡️ Price Safety Margin:
+					</label>
+					<select
+						id="safety-margin"
+						bind:value={safetyMarginPercent}
+						class="bg-white border border-green-300 rounded px-2 py-1 text-sm text-green-800 focus:outline-none focus:ring-2 focus:ring-green-500"
+					>
+						<option value={5}>5%</option>
+						<option value={10}>10%</option>
+						<option value={15}>15%</option>
+						<option value={20}>20%</option>
+					</select>
+					<span
+						class="text-xs text-green-600"
+						title="Additional buffer added to target price; separate 10% margin safety check still applies"
+					>
+						Price buffer (margin safety is 10% minimum)
+					</span>
+				</div>
+			{/if}
+
+			<!-- Test API Connectivity (only show in test mode) -->
+			{#if testMode}
+				<button
+					class="bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded flex items-center gap-2"
+					on:click={testAmazonAPIConnectivity}
+					title="Test Amazon SP-API connectivity in sandbox"
+				>
+					🔗 Test API
+				</button>
+			{/if}
+
 			<button
 				class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
 				on:click={refreshData}
 			>
-				Refresh Data
+				{testMode ? 'Reload Test Data' : 'Refresh Data'}
 			</button>
-			<button
-				class="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded flex items-center gap-2"
-				on:click={bulkScanTop100}
-			>
-				🚀 Update Top 100
-			</button>
+
+			{#if !testMode}
+				<button
+					class="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded flex items-center gap-2"
+					on:click={bulkScanTop100}
+				>
+					🚀 Update Top 100
+				</button>
+			{/if}
+
 			{#if customPrices.size > 0}
 				<button
 					class="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded flex items-center gap-2"
@@ -1806,12 +2198,15 @@
 					🗑️ Clear Custom Prices ({customPrices.size})
 				</button>
 			{/if}
-			<a
-				href="/buy-box-monitor/jobs"
-				class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded"
-			>
-				Go to Jobs
-			</a>
+
+			{#if !testMode}
+				<a
+					href="/buy-box-monitor/jobs"
+					class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded"
+				>
+					Go to Jobs
+				</a>
+			{/if}
 		</div>
 	</div>
 
@@ -3149,27 +3544,121 @@
 									<!-- Actions -->
 									<td class="py-4 px-6">
 										<div class="flex flex-col gap-1">
-											<a
-												href="/buy-box-monitor?query={encodeURIComponent(
-													result.sku || result.asin
-												)}"
-												target="_blank"
-												rel="noopener noreferrer"
-												class="text-blue-600 hover:text-blue-800 underline text-xs"
-											>
-												View Details
-											</a>
-											{#if result.recommended_action === 'match_buybox'}
-												<button
-													class="text-green-600 hover:text-green-800 underline text-xs"
-													on:click={() => markForPriceUpdate(result)}
+											{#if testMode}
+												<!-- Test Mode Actions -->
+												{#if result.recommended_action === 'match_buybox' && result.buybox_price && result.buybox_price > 0}
+													{@const isTestInProgress = testInProgress.has(result.asin)}
+													{@const testResult = testResults.get(result.asin)}
+
+													<button
+														class="{isTestInProgress
+															? 'bg-purple-400 cursor-not-allowed'
+															: 'bg-purple-600 hover:bg-purple-700'} text-white px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+														disabled={isTestInProgress}
+														on:click={() => testMatchBuyBox(result.asin, result.buybox_price!)}
+														title="Test Match Buy Box in sandbox environment"
+													>
+														{#if isTestInProgress}
+															<svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+																<circle
+																	class="opacity-25"
+																	cx="12"
+																	cy="12"
+																	r="10"
+																	stroke="currentColor"
+																	stroke-width="4"
+																></circle>
+																<path
+																	class="opacity-75"
+																	fill="currentColor"
+																	d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																></path>
+															</svg>
+															Testing...
+														{:else}
+															🧪 Test Match Buy Box
+														{/if}
+													</button>
+
+													<!-- Test Result Display -->
+													{#if testResult}
+														<div class="text-xs mt-1">
+															{#if testResult.success}
+																<span class="text-green-600">✅ Test Passed</span>
+															{:else}
+																<span class="text-red-600">❌ Test Failed</span>
+															{/if}
+															<div class="text-gray-500">
+																{testResult.timestamp.toLocaleTimeString()}
+															</div>
+														</div>
+													{/if}
+												{:else}
+													<span class="text-gray-400 text-xs">No test action available</span>
+												{/if}
+											{:else}
+												<!-- Production Mode Actions -->
+												<a
+													href="/buy-box-monitor?query={encodeURIComponent(
+														result.sku || result.asin
+													)}"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="text-blue-600 hover:text-blue-800 underline text-xs"
 												>
-													Mark for Update
+													View Details
+												</a>
+
+												<!-- Match Buy Box Button - Available on ALL records -->
+												{@const targetPrice = result.buybox_price || result.price || 0}
+												{@const isInProgress = matchBuyBoxInProgress.has(result.asin)}
+												{@const hasResult = matchBuyBoxResults.has(result.asin)}
+												{@const matchResult = matchBuyBoxResults.get(result.asin)}
+
+												<button
+													class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-3 py-1 rounded text-xs font-medium transition-colors duration-200 flex items-center gap-1"
+													disabled={isInProgress || targetPrice <= 0}
+													on:click={() => matchBuyBox(result.asin, targetPrice)}
+													title="Execute Match Buy Box - will validate 10% minimum margin before updating"
+												>
+													{#if isInProgress}
+														<div
+															class="animate-spin w-3 h-3 border border-white border-t-transparent rounded-full"
+														></div>
+														Processing...
+													{:else}
+														🎯 Match Buy Box
+													{/if}
 												</button>
+
+												{#if hasResult}
+													<div class="text-xs mt-1">
+														{#if matchResult?.success}
+															<div class="text-green-600 font-medium">
+																✅ Updated to £{matchResult.finalPrice}
+															</div>
+															<div class="text-gray-500 text-xs">
+																{matchResult.timestamp?.toLocaleTimeString() || 'Recently'}
+															</div>
+														{:else if matchResult?.safetyRejected}
+															<div class="text-yellow-600 font-medium">
+																⚠️ Safety Check: Margin too low
+															</div>
+															<div class="text-xs text-yellow-600">
+																Update manually in Seller Central
+															</div>
+														{:else}
+															<div class="text-red-600 font-medium">
+																❌ Failed: {matchResult?.error || 'Unknown error'}
+															</div>
+														{/if}
+													</div>
+												{/if}
+
+												<span class="text-gray-400 text-xs cursor-not-allowed">
+													Add to Watchlist (Coming Soon)
+												</span>
 											{/if}
-											<span class="text-gray-400 text-xs cursor-not-allowed">
-												Add to Watchlist (Coming Soon)
-											</span>
 										</div>
 									</td>
 								</tr>

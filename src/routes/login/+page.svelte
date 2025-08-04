@@ -198,7 +198,12 @@
 			</div>
 		{/if}
 
-		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				handleLogin();
+			}}
+		>
 			<div class="form-group">
 				<label for="email">Email Address</label>
 				<input
@@ -233,10 +238,7 @@
 				/>
 			</div>
 
-			<button
-				type="submit"
-				disabled={loading}
-			>
+			<button type="submit" disabled={loading}>
 				{#if loading}
 					<span class="button-spinner"></span>
 					Signing In...
