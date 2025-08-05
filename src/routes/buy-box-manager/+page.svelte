@@ -242,6 +242,7 @@
 	// Production Match Buy Box State
 	let matchBuyBoxInProgress = new Set<string>(); // Track which Match Buy Box operations are running
 	let matchBuyBoxResults = new Map<string, any>(); // Store Match Buy Box results for each ASIN
+	let pendingMatchBuyBoxRequests = new Map<string, Promise<any>>(); // Prevent duplicate requests
 	let safetyMarginPercent = 10; // Default 10% safety margin
 
 	// Track active filters for better UX
@@ -769,6 +770,25 @@
 	 */
 	async function matchBuyBox(asin: string, targetPrice: number): Promise<void> {
 		console.log(`🎯 Executing Match Buy Box for ASIN: ${asin} at price: £${targetPrice}`);
+		console.log(`🔍 Target price analysis:`, {
+			originalTargetPrice: targetPrice,
+			type: typeof targetPrice,
+			toFixed2: targetPrice.toFixed(2),
+			rounded: Math.round(targetPrice * 100) / 100
+		});
+
+		// Check for duplicate requests
+		if (pendingMatchBuyBoxRequests.has(asin)) {
+			console.log(
+				`⚠️ Match Buy Box already in progress for ASIN: ${asin}, waiting for completion...`
+			);
+			try {
+				await pendingMatchBuyBoxRequests.get(asin);
+				return;
+			} catch (error) {
+				console.log(`Previous request failed, proceeding with new request for ASIN: ${asin}`);
+			}
+		}
 
 		// Find the record to get margin data
 		const record = filteredData.find((item) => item.asin === asin);
@@ -776,6 +796,14 @@
 			alert(`❌ Error: Could not find record for ASIN: ${asin}`);
 			return;
 		}
+
+		console.log(`📊 Record data for ${asin}:`, {
+			buybox_price: record.buybox_price,
+			competitor_price: record.competitor_price,
+			your_current_price: record.your_current_price,
+			is_winner: record.is_winner,
+			margin_percent_at_buybox_price: record.margin_percent_at_buybox_price
+		});
 
 		// Safety Check: Validate 10% minimum margin
 		const projectedMargin = record.margin_percent_at_buybox_price;
@@ -818,6 +846,32 @@
 			return;
 		}
 
+		// Create the request promise and store it for deduplication
+		const requestPromise = performMatchBuyBoxRequest(
+			asin,
+			targetPrice,
+			projectedMargin,
+			record.your_current_price
+		);
+		pendingMatchBuyBoxRequests.set(asin, requestPromise);
+
+		try {
+			await requestPromise;
+		} finally {
+			// Clean up the pending request
+			pendingMatchBuyBoxRequests.delete(asin);
+		}
+	}
+
+	/**
+	 * Perform the actual Match Buy Box API request
+	 */
+	async function performMatchBuyBoxRequest(
+		asin: string,
+		targetPrice: number,
+		projectedMargin: number | null,
+		currentPrice: number | null = null
+	): Promise<void> {
 		// Add to in-progress tracking
 		matchBuyBoxInProgress.add(asin);
 		matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
@@ -831,11 +885,17 @@
 				body: JSON.stringify({
 					asin,
 					targetPrice,
+					currentPrice,
 					marginPercent: safetyMarginPercent,
 					userId: 'current-user', // This will be set by the server from session
 					projectedMargin: projectedMargin // Send margin data for server-side validation
 				})
 			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`HTTP ${response.status}: ${errorText}`);
+			}
 
 			const result = await response.json();
 
@@ -853,45 +913,88 @@
 			if (result.success) {
 				console.log(`✅ Match Buy Box successful for ASIN: ${asin}`, result);
 
-				// Show success notification
-				alert(
-					`🎯 Match Buy Box Successful!\n\n` +
+				// Show success notification with feed-specific information
+				const successMessage = result.feedId
+					? `🎯 Match Buy Box Feed Submitted!\n\n` +
 						`ASIN: ${asin}\n` +
+						`SKU: ${result.sku || 'N/A'}\n` +
 						`Target: £${targetPrice}\n` +
-						`Final Price: £${result.finalPrice}\n` +
+						`Final Price: £${result.newPrice}\n` +
 						`Safety Margin: ${safetyMarginPercent}%\n` +
 						`Projected Margin: ${projectedMargin?.toFixed(2) || 'Unknown'}%\n\n` +
-						`Submission ID: ${result.amazonResponse?.data?.submissionId || 'N/A'}`
-				);
+						`Feed ID: ${result.feedId}\n` +
+						`Status: ${result.feedStatus || 'SUBMITTED'}\n\n` +
+						`✅ Feed submitted to Amazon for processing.\n` +
+						`Check feed status in a few minutes.`
+					: `🎯 Match Buy Box Successful!\n\n` +
+						`ASIN: ${asin}\n` +
+						`Target: £${targetPrice}\n` +
+						`Final Price: £${result.newPrice}\n` +
+						`Safety Margin: ${safetyMarginPercent}%\n` +
+						`Projected Margin: ${projectedMargin?.toFixed(2) || 'Unknown'}%\n\n` +
+						`Response: ${result.message || 'Success'}`;
+
+				alert(successMessage);
 			} else {
 				console.error(`❌ Match Buy Box failed for ASIN: ${asin}`, result);
 
-				// Show error notification
-				alert(
-					`❌ Match Buy Box Failed!\n\n` +
-						`ASIN: ${asin}\n` +
-						`Error: ${result.error || 'Unknown error'}\n\n` +
-						`Please check the details and try again.`
-				);
+				// Show specific error based on type
+				let errorMessage = `❌ Match Buy Box Failed!\n\nASIN: ${asin}\n`;
+
+				if (result.error?.includes('Missing required Amazon API credentials')) {
+					errorMessage +=
+						`Error: Amazon API credentials not configured\n\n` +
+						`Please contact your administrator to configure:\n` +
+						`- AMAZON_CLIENT_ID\n` +
+						`- AMAZON_CLIENT_SECRET\n` +
+						`- AMAZON_REFRESH_TOKEN\n\n` +
+						`For now, please update prices manually in Amazon Seller Central.`;
+				} else if (result.safetyRejected) {
+					errorMessage +=
+						`Error: Safety check failed - margin too low\n\n` +
+						`Please update this price manually in Amazon Seller Central if needed.`;
+				} else {
+					errorMessage += `Error: ${result.error || 'Unknown error'}\n\nPlease check the details and try again.`;
+				}
+
+				alert(errorMessage);
 			}
 		} catch (error) {
 			console.error(`🚨 Match Buy Box error for ASIN: ${asin}:`, error);
+
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
 			matchBuyBoxResults.set(asin, {
 				success: false,
 				timestamp: new Date(),
 				targetPrice: targetPrice,
 				safetyMargin: safetyMarginPercent,
-				error: error instanceof Error ? error.message : 'Unknown error',
+				error: errorMessage,
 				status: 0
 			});
 
 			matchBuyBoxResults = matchBuyBoxResults; // Trigger reactivity
 
-			// Show error notification
-			alert(
-				`🚨 Match Buy Box Error!\n\nASIN: ${asin}\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`
-			);
+			// Show specific error based on type
+			let alertMessage = `🚨 Match Buy Box Error!\n\nASIN: ${asin}\n`;
+
+			if (errorMessage.includes('Missing required Amazon API credentials')) {
+				alertMessage +=
+					`Error: Amazon API not properly configured\n\n` +
+					`Please contact your administrator to set up Amazon API credentials.\n` +
+					`For now, update prices manually in Amazon Seller Central.`;
+			} else if (errorMessage.includes('HTTP 401') || errorMessage.includes('Authentication')) {
+				alertMessage +=
+					`Error: Amazon API authentication failed\n\n` +
+					`Please check your Amazon API credentials or try again later.`;
+			} else if (errorMessage.includes('HTTP 429') || errorMessage.includes('rate limit')) {
+				alertMessage +=
+					`Error: Too many requests\n\n` + `Please wait a few minutes before trying again.`;
+			} else {
+				alertMessage += `Error: ${errorMessage}\n\nPlease try again or contact support.`;
+			}
+
+			alert(alertMessage);
 		} finally {
 			matchBuyBoxInProgress.delete(asin);
 			matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
@@ -2057,12 +2160,102 @@
 
 	function bulkMarkForUpdate(): void {
 		const selectedProducts = paginatedData.filter((item) => selectedItems.has(item.id));
-		console.log(
-			'Bulk mark for update:',
-			selectedProducts.map((p) => p.sku)
-		);
-		// TODO: Implement bulk price update functionality
-		alert(`Marked ${selectedProducts.length} products for price updates`);
+
+		if (selectedProducts.length === 0) {
+			alert('No products selected for bulk update.');
+			return;
+		}
+
+		// Filter for products that have buy box recommendations
+		const eligibleProducts = selectedProducts.filter((product) => {
+			const targetPrice =
+				product.buybox_price && product.buybox_price > 0
+					? product.buybox_price
+					: product.competitor_price && product.competitor_price > 0
+						? product.competitor_price
+						: 0;
+			return targetPrice > 0 && product.recommended_action === 'match_buybox';
+		});
+
+		if (eligibleProducts.length === 0) {
+			alert(
+				`None of the ${selectedProducts.length} selected products are eligible for automatic price matching.\n\nProducts must have:\n- Valid buy box price data\n- "Match Buy Box" recommendation`
+			);
+			return;
+		}
+
+		const message =
+			`🎯 Bulk Match Buy Box\n\n` +
+			`Selected: ${selectedProducts.length} products\n` +
+			`Eligible: ${eligibleProducts.length} products\n\n` +
+			`This will attempt to match buy box prices for all eligible products.\n` +
+			`Each product will be validated for the 10% minimum margin requirement.\n\n` +
+			`Continue with bulk price updates?`;
+
+		if (!confirm(message)) {
+			return;
+		}
+
+		// Execute bulk match buy box
+		bulkMatchBuyBox(eligibleProducts);
+	}
+
+	/**
+	 * Execute bulk match buy box operations with proper sequencing
+	 */
+	async function bulkMatchBuyBox(products: BuyBoxData[]): Promise<void> {
+		console.log(`🎯 Starting bulk match buy box for ${products.length} products`);
+
+		let successCount = 0;
+		let failureCount = 0;
+		let skippedCount = 0;
+
+		// Process products sequentially to avoid overwhelming the API
+		for (let i = 0; i < products.length; i++) {
+			const product = products[i];
+			const targetPrice =
+				product.buybox_price && product.buybox_price > 0
+					? product.buybox_price
+					: product.competitor_price || 0;
+
+			console.log(`🎯 Processing ${i + 1}/${products.length}: ${product.sku} -> £${targetPrice}`);
+
+			try {
+				await matchBuyBox(product.asin, targetPrice);
+
+				// Check if it was successful
+				const result = matchBuyBoxResults.get(product.asin);
+				if (result?.success) {
+					successCount++;
+				} else if (result?.safetyRejected) {
+					skippedCount++;
+				} else {
+					failureCount++;
+				}
+
+				// Add delay between requests to respect rate limits
+				if (i < products.length - 1) {
+					await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
+				}
+			} catch (error) {
+				console.error(`Failed to process ${product.sku}:`, error);
+				failureCount++;
+			}
+		}
+
+		// Show summary
+		const summary =
+			`🎯 Bulk Match Buy Box Complete\n\n` +
+			`Total Processed: ${products.length}\n` +
+			`✅ Successful: ${successCount}\n` +
+			`⚠️ Skipped (Safety): ${skippedCount}\n` +
+			`❌ Failed: ${failureCount}\n\n` +
+			`Check individual results below for details.`;
+
+		alert(summary);
+
+		// Clear selection after bulk operation
+		clearSelection();
 	}
 
 	function bulkAddToWatchlist(): void {
@@ -3004,7 +3197,7 @@
 										on:click={bulkMarkForUpdate}
 										class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm"
 									>
-										📝 Mark for Price Update
+										🎯 Bulk Match Buy Box
 									</button>
 									<button
 										on:click={bulkAddToWatchlist}
@@ -3610,7 +3803,16 @@
 												</a>
 
 												<!-- Match Buy Box Button - Available on ALL records -->
-												{@const targetPrice = result.buybox_price || result.price || 0}
+												{@const targetPrice = (() => {
+													let price = 0;
+													if (result.buybox_price && result.buybox_price > 0) {
+														price = result.buybox_price;
+													} else if (result.competitor_price && result.competitor_price > 0) {
+														price = result.competitor_price;
+													}
+													// Round to 2 decimal places to avoid precision issues
+													return Math.round(price * 100) / 100;
+												})()}
 												{@const isInProgress = matchBuyBoxInProgress.has(result.asin)}
 												{@const hasResult = matchBuyBoxResults.has(result.asin)}
 												{@const matchResult = matchBuyBoxResults.get(result.asin)}

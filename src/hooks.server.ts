@@ -20,13 +20,13 @@ function isValidApiKey(apiKey: string): boolean {
 
 // Define your protected routes and their requirements
 const ROUTE_PROTECTION = {
-  // Public routes (no authentication required)
+  // Public routes that don't require authentication
   public: [
     '/login',
-    '/signup',
-    '/set-password',
-    '/auth/callback',
-    '/auth/auth-code-error',
+    '/forgot-password',
+    '/api/auth/callback',
+    '/api/auth/complete',
+    '/api/supabase-health',
     '/api/health',
     '/api/auth/login',
     '/api/auth/logout',
@@ -34,7 +34,11 @@ const ROUTE_PROTECTION = {
     '/api/invites/validate',
     '/api/test-match-buybox',
     '/api/test-amazon-connection',
-    '/api/upload-metric-review-working'
+    '/api/upload-metric-review-working',
+    '/api/audit-log', // Temporarily public for debugging
+    '/api/feed-status', // Temporarily public for debugging
+    '/api/quick-price-check', // Temporarily public for debugging
+    '/api/daily-report' // Public for Make.com integration
     // Note: '/' is NOT public - it should redirect to login if not authenticated
   ],
 

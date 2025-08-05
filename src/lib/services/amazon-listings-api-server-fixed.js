@@ -136,25 +136,14 @@ class AmazonListingsAPI {
       const response = await this.makePatchRequest(asin, requestBody, token);
       const result = await response.json();
 
-      console.log(`📥 Method 1 Response: ${response.status} ${response.statusText}`);
-      console.log(`📥 Method 1 Full Response:`, JSON.stringify(result, null, 2));
+      console.log(`📥 Method 1 Response: ${response.status}`, result);
 
       if (response.ok) {
         return this.createSuccessResult(asin, formattedPrice, result, response.status);
       }
-
-      // Log specific failure details
-      console.log(`⚠️ Method 1 failed with status ${response.status}:`, {
-        errors: result.errors || [],
-        sku: result.sku || 'N/A',
-        status: result.status || 'N/A',
-        issues: result.issues || []
-      });
-
       return null;
     } catch (error) {
       console.log(`❌ Method 1 failed:`, error.message);
-      console.log(`❌ Method 1 error details:`, error);
       return null;
     }
   }
@@ -188,80 +177,81 @@ class AmazonListingsAPI {
       const response = await this.makePatchRequest(asin, requestBody, token);
       const result = await response.json();
 
-      console.log(`📥 Method 2 Response: ${response.status} ${response.statusText}`);
-      console.log(`📥 Method 2 Full Response:`, JSON.stringify(result, null, 2));
+      console.log(`📥 Method 2 Response: ${response.status}`, result);
 
       if (response.ok) {
         return this.createSuccessResult(asin, formattedPrice, result, response.status);
       }
-
-      // Log specific failure details
-      console.log(`⚠️ Method 2 failed with status ${response.status}:`, {
-        errors: result.errors || [],
-        sku: result.sku || 'N/A',
-        status: result.status || 'N/A',
-        issues: result.issues || []
-      });
-
       return null;
     } catch (error) {
       console.log(`❌ Method 2 failed:`, error.message);
-      console.log(`❌ Method 2 error details:`, error);
       return null;
     }
   }
 
   async tryWithProductTypeDiscovery(asin, formattedPrice, token) {
     try {
-      // First get the product type for this ASIN
-      const productType = await this.getProductTypeForAsin(asin, token);
-      console.log(`� Discovered product type for ${asin}: ${productType}`);
+      // First get the listing to understand its structure
+      console.log(`🔍 Getting existing listing for ${asin}...`);
 
-      const requestBody = {
-        productType: productType,
-        patches: [
-          {
-            op: "replace",
-            path: "/attributes/purchasable_offer",
-            value: [
-              {
-                marketplace_id: this.config.marketplaceId,
-                currency: "GBP",
-                our_price: [
-                  {
-                    schedule: [{ value_with_tax: formattedPrice }]
-                  }
-                ]
-              }
-            ]
+      const getResponse = await fetch(
+        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-amz-access-token': token,
+            'Accept': 'application/json'
           }
-        ]
-      };
+        }
+      );
 
-      console.log(`📤 Method 3 (Discovery) Request:`, JSON.stringify(requestBody, null, 2));
+      if (getResponse.ok) {
+        const listingData = await getResponse.json();
+        console.log(`📥 Existing listing data:`, JSON.stringify(listingData, null, 2));
 
-      const response = await this.makePatchRequest(asin, requestBody, token);
-      const result = await response.json();
+        // Extract the actual product type if available
+        const productType = listingData.productType || "PRODUCT";
+        console.log(`🏷️ Using product type: ${productType}`);
 
-      console.log(`📥 Method 3 Response: ${response.status} ${response.statusText}`);
-      console.log(`📥 Method 3 Full Response:`, JSON.stringify(result, null, 2));
+        const requestBody = {
+          productType: productType,
+          patches: [
+            {
+              op: "replace",
+              path: "/attributes/purchasable_offer",
+              value: [
+                {
+                  marketplace_id: this.config.marketplaceId,
+                  currency: "GBP",
+                  our_price: [
+                    {
+                      schedule: [{ value_with_tax: formattedPrice }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        };
 
-      if (response.ok) {
-        return this.createSuccessResult(asin, formattedPrice, result, response.status);
+        console.log(`📤 Method 3 (Discovery) Request:`, JSON.stringify(requestBody, null, 2));
+
+        const response = await this.makePatchRequest(asin, requestBody, token);
+        const result = await response.json();
+
+        console.log(`📥 Method 3 Response: ${response.status}`, result);
+
+        if (response.ok) {
+          return this.createSuccessResult(asin, formattedPrice, result, response.status);
+        }
+      } else {
+        console.log(`❌ Could not retrieve listing data: ${getResponse.status}`);
       }
-
-      // Log specific failure details
-      console.log(`⚠️ Method 3 failed with status ${response.status}:`, {
-        errors: result.errors || [],
-        sku: result.sku || 'N/A',
-        status: result.status || 'N/A',
-        issues: result.issues || []
-      });
 
       return null;
     } catch (error) {
       console.log(`❌ Method 3 failed:`, error.message);
-      console.log(`❌ Method 3 error details:`, error);
       return null;
     }
   }

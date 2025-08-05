@@ -1,5 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
   try {
@@ -11,11 +13,25 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       );
     }
 
-    const { asin, targetPrice, marginPercent, userId, projectedMargin } = await request.json();
+    let requestData;
+    try {
+      requestData = await request.json();
+    } catch (parseError) {
+      console.error('❌ Failed to parse request body:', parseError);
+      return json(
+        { success: false, error: 'Invalid JSON in request body' },
+        { status: 400 }
+      );
+    }
+
+    console.log('📊 Raw request data received:', JSON.stringify(requestData, null, 2));
+
+    const { asin, targetPrice, currentPrice, marginPercent, userId, projectedMargin } = requestData;
 
     console.log(`🎯 Production Match Buy Box request:`, {
       asin,
       targetPrice,
+      currentPrice,
       marginPercent,
       projectedMargin,
       userId: locals.session.user.id
@@ -32,12 +48,37 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       );
     }
 
-    // Validate target price
-    if (typeof targetPrice !== 'number' || targetPrice <= 0) {
+    // Validate ASIN format (should be 10 characters, alphanumeric)
+    if (typeof asin !== 'string' || !/^[A-Z0-9]{10}$/.test(asin)) {
       return json(
         {
           success: false,
-          error: 'Target price must be a positive number'
+          error: 'Invalid ASIN format. ASIN must be 10 alphanumeric characters.'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate target price
+    if (typeof targetPrice !== 'number' || targetPrice <= 0 || targetPrice > 10000) {
+      return json(
+        {
+          success: false,
+          error: 'Target price must be a positive number between £0.01 and £10,000'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate target price precision (max 2 decimal places)
+    // Use string-based validation to avoid floating-point precision issues
+    const priceString = targetPrice.toString();
+    const decimalIndex = priceString.indexOf('.');
+    if (decimalIndex !== -1 && priceString.length - decimalIndex - 1 > 2) {
+      return json(
+        {
+          success: false,
+          error: 'Target price must have at most 2 decimal places'
         },
         { status: 400 }
       );
@@ -71,65 +112,109 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       finalPriceToSet: finalPrice.toFixed(2)
     });
 
-    // Import Amazon API service dynamically with fallback
+    // Import Amazon Feeds API service (correct approach for price updates)
     let amazonAPI;
     try {
-      console.log('🔧 Attempting to import Amazon API service...');
+      console.log('🔧 Attempting to import Amazon Feeds API service...');
 
-      // Try server-optimized JavaScript version first (most reliable)
-      // Import the server-optimized ES module version
-      const module = await import('$lib/services/amazon-listings-api-server.js');
-      console.log('📦 Server module imported successfully');
-      const AmazonListingsAPI = module.default;
+      // Import the new Feeds API service
+      const module = await import('$lib/services/amazon-feeds-api.js');
+      console.log('📦 Feeds API module imported successfully');
+      const AmazonFeedsAPI = module.default;
 
-      console.log('🔍 Final AmazonListingsAPI validation:', {
-        type: typeof AmazonListingsAPI,
-        isFunction: typeof AmazonListingsAPI === 'function',
-        hasPrototype: AmazonListingsAPI && 'prototype' in AmazonListingsAPI,
-        constructorName: AmazonListingsAPI?.name,
+      console.log('🔍 Final AmazonFeedsAPI validation:', {
+        type: typeof AmazonFeedsAPI,
+        isFunction: typeof AmazonFeedsAPI === 'function',
+        hasPrototype: AmazonFeedsAPI && 'prototype' in AmazonFeedsAPI,
+        constructorName: AmazonFeedsAPI?.name,
         canConstruct: true
       });
 
-      if (!AmazonListingsAPI || typeof AmazonListingsAPI !== 'function') {
-        throw new Error(`AmazonListingsAPI is not a constructor. Type: ${typeof AmazonListingsAPI}, Value: ${AmazonListingsAPI}`);
+      if (!AmazonFeedsAPI || typeof AmazonFeedsAPI !== 'function') {
+        throw new Error(`AmazonFeedsAPI is not a constructor. Type: ${typeof AmazonFeedsAPI}, Value: ${AmazonFeedsAPI}`);
       }
 
-      amazonAPI = new AmazonListingsAPI({
+      amazonAPI = new AmazonFeedsAPI({
         environment: 'production' // Production environment
       });
-      console.log('✅ Amazon API instance created successfully');
+      console.log('✅ Amazon Feeds API instance created successfully');
     } catch (importError) {
       console.error('❌ Failed to import Amazon API service:', importError);
       console.error('❌ Error details:', (importError as Error).stack);
+
+      // Provide more specific error message
+      const errorMessage = (importError as Error).message;
+      let userFriendlyError = 'Amazon Feeds API service initialization failed';
+
+      if (errorMessage.includes('Missing required Amazon API credentials')) {
+        userFriendlyError = 'Amazon API credentials not configured. Please contact your administrator.';
+      } else if (errorMessage.includes('MODULE_NOT_FOUND')) {
+        userFriendlyError = 'Amazon Feeds API service module not found. Please contact support.';
+      }
+
       return json(
         {
           success: false,
-          error: 'Service initialization failed',
-          details: `Amazon API service could not be loaded: ${(importError as Error).message}`
+          error: userFriendlyError,
+          details: `Amazon Feeds API service could not be loaded: ${errorMessage}`,
+          requiresManualUpdate: true,
+          sellerCentralUrl: `https://sellercentral.amazon.co.uk/inventory/ref=xx_invmgr_dnav_xx?tbla_myitable=sort:%7B%22sortOrder%22%3A%22DESCENDING%22%2C%22sortedColumnId%22%3A%22date%22%7D;search:${asin};pagination:1;`
         },
         { status: 500 }
       );
     }
 
-    console.log('🔧 Initialized Amazon API in production mode');
+    console.log('🔧 Initialized Amazon Feeds API in production mode');
 
-    // Execute the price update
-    console.log(`🎯 Starting Match Buy Box operation:`);
+    // Look up the correct SKU for this ASIN
+    let actualSku = null;
+    try {
+      console.log(`🔍 Looking up SKU for ASIN: ${asin}`);
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        PUBLIC_SUPABASE_URL,
+        PRIVATE_SUPABASE_SERVICE_KEY
+      );
+
+      const { data: skuData, error: skuError } = await supabase
+        .from('sku_asin_mapping')
+        .select('seller_sku')
+        .eq('asin1', asin)
+        .limit(1)
+        .single();
+
+      if (skuError) {
+        console.log(`⚠️ Could not find SKU for ASIN ${asin}:`, skuError.message);
+        console.log(`🔄 Will use ASIN as SKU fallback`);
+      } else {
+        actualSku = skuData.seller_sku;
+        console.log(`✅ Found SKU for ASIN ${asin}: ${actualSku}`);
+      }
+    } catch (skuLookupError) {
+      console.log(`⚠️ SKU lookup failed for ASIN ${asin}:`, skuLookupError);
+      console.log(`🔄 Will use ASIN as SKU fallback`);
+    }
+
+    // Execute the price update using Feeds API with correct SKU
+    console.log(`🎯 Starting Feeds API Match Buy Box operation:`);
     console.log(`   📊 ASIN: ${asin}`);
+    console.log(`   📊 SKU: ${actualSku || asin} (${actualSku ? 'from database' : 'ASIN fallback'})`);
+    console.log(`   💰 Current Price: ${currentPrice !== null && currentPrice !== undefined ? `£${currentPrice.toFixed(2)}` : 'Unknown'}`);
     console.log(`   💰 Target Buy Box Price: £${targetPrice.toFixed(2)}`);
+    console.log(`   📈 Price Change: ${currentPrice !== null && currentPrice !== undefined ? `£${(targetPrice - currentPrice).toFixed(2)} (${targetPrice > currentPrice ? '+' : ''}${(((targetPrice - currentPrice) / currentPrice) * 100).toFixed(1)}%)` : 'N/A'}`);
     console.log(`   📈 Projected Margin: ${projectedMargin ? `${projectedMargin.toFixed(2)}%` : 'Unknown'}`);
     console.log(`   ✅ Margin Check: ${projectedMargin >= 10 ? 'PASSED (≥10%)' : 'FAILED (<10%)'}`);
 
-    const updateResult = await amazonAPI.updatePrice(asin, finalPrice) as any;
+    const updateResult = await amazonAPI.updatePrice(asin, finalPrice, currentPrice, actualSku) as any;
 
-    console.log('📊 Amazon API update result:', updateResult);
+    console.log('📊 Amazon Feeds API update result:', updateResult);
 
     // Log to audit trail (using Supabase)
     try {
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(
-        process.env.PUBLIC_SUPABASE_URL!,
-        process.env.PRIVATE_SUPABASE_SERVICE_KEY!
+        PUBLIC_SUPABASE_URL,
+        PRIVATE_SUPABASE_SERVICE_KEY
       );
 
       await supabase
@@ -168,15 +253,38 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         timestamp: new Date().toISOString()
       });
     } else {
+      // Price update failed - categorize the error
+      let errorCategory = 'AMAZON_API_ERROR';
+      let userFriendlyMessage = 'Price update failed';
+      let requiresManualUpdate = true;
+
+      if (updateResult.error?.includes('Missing required Amazon API credentials')) {
+        errorCategory = 'MISSING_CREDENTIALS';
+        userFriendlyMessage = 'Amazon API credentials not configured';
+      } else if (updateResult.error?.includes('access token')) {
+        errorCategory = 'AUTHENTICATION_ERROR';
+        userFriendlyMessage = 'Amazon API authentication failed';
+      } else if (updateResult.error?.includes('rate limit') || updateResult.status === 429) {
+        errorCategory = 'RATE_LIMITED';
+        userFriendlyMessage = 'Too many requests - please try again later';
+        requiresManualUpdate = false;
+      } else if (updateResult.status === 400) {
+        errorCategory = 'INVALID_REQUEST';
+        userFriendlyMessage = 'Invalid price update request';
+      }
+
       // Price update failed
       return json({
         success: false,
-        message: 'Match Buy Box failed - Amazon API error',
+        message: userFriendlyMessage,
+        errorCategory,
         asin,
         originalTarget: targetPrice,
         finalPrice,
         error: updateResult.error || 'Amazon API returned unsuccessful response',
         amazonResponse: updateResult,
+        requiresManualUpdate,
+        sellerCentralUrl: requiresManualUpdate ? `https://sellercentral.amazon.co.uk/inventory/ref=xx_invmgr_dnav_xx?tbla_myitable=sort:%7B%22sortOrder%22%3A%22DESCENDING%22%2C%22sortedColumnId%22%3A%22date%22%7D;search:${asin};pagination:1;` : undefined,
         timestamp: new Date().toISOString()
       }, { status: 400 });
     }
