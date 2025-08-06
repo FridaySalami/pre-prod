@@ -397,6 +397,101 @@ Add to the actions column in the buy box manager:
 - **Inventory synchronization**: Stock level considerations
 - **Repricing rules**: Advanced automation options
 
+## 🎯 **CURRENT TESTING STATUS & IMPLEMENTATION PROGRESS**
+
+### ✅ **SUCCESSFUL TESTING COMPLETED** - Amazon Feeds API Working
+
+**Test Environment Locations & Results:**
+- **Primary Test Script**: `/Users/jackweston/Projects/pre-prod/test-correct-seller-id.js`
+  - ✅ **Status**: Successfully tested price update for ASIN B08BPBWV1C (SKU: COL01A)
+  - ✅ **Feed ID**: 288283020305 processed successfully with 0 errors
+  - ✅ **Seller ID**: A2D8NG39VURSL3 confirmed working
+  - ✅ **Product Type**: CONDIMENT for SKU COL01A verified
+
+- **Product Type Discovery Script**: `/Users/jackweston/Projects/pre-prod/get-product-type.js`
+  - ✅ **Status**: Successfully fetches product types via Amazon Listings API
+  - ✅ **Functionality**: Returns correct product types for existing SKUs
+  - ✅ **Integration**: Used by main Feeds API service
+
+- **Production Service**: `/Users/jackweston/Projects/pre-prod/src/lib/services/amazon-feeds-api.js`
+  - ✅ **Status**: Full JSON_LISTINGS_FEED implementation with product type discovery
+  - ✅ **Features**: Dynamic product type fetching with fallbacks
+  - ✅ **Result**: Successfully updated Amazon Seller Central pricing
+
+- **Buy Box Manager UI**: `/Users/jackweston/Projects/pre-prod/src/routes/buy-box-manager/+page.svelte`
+  - 🟡 **Status**: UI components for Match Buy Box exist but incomplete
+  - ✅ **Functions**: `matchBuyBox()` and `testMatchBuyBox()` implemented
+  - ❌ **Missing**: Backend API route `/api/match-buy-box` not created
+
+## 🚨 **CRITICAL PRODUCT TYPE ALIGNMENT PROBLEM**
+
+### **The Core Issue**: SKU → Product Type Mapping Gap
+
+**Problem Analysis:**
+Every Amazon price update via JSON_LISTINGS_FEED **requires** the correct `productType` for each SKU. Currently:
+
+❌ **Database Gap**: No `product_type` column in `buybox_data` table
+❌ **Performance Issue**: Each price update requires live API call to fetch product type
+❌ **Scaling Problem**: 1000+ SKUs = 1000+ additional API calls before any price update
+❌ **Rate Limiting Risk**: Product type lookups consume Amazon API quota
+❌ **Reliability Risk**: Failed product type lookup = failed price update
+
+**Current Workaround in Code:**
+```javascript
+// From amazon-feeds-api.js - Current fallback approach
+async getProductType(token, sku) {
+  try {
+    // API call to Amazon Listings API
+    const response = await fetch(`listings/2021-08-01/items/${sellerId}/${sku}...`);
+    return data.summaries[0].productType;
+  } catch (error) {
+    // Hardcoded fallbacks - NOT SCALABLE
+    if (sku === 'COL01A') {
+      return 'CONDIMENT'; // Known working example
+    }
+    return 'PRODUCT'; // Generic fallback - may fail
+  }
+}
+```
+
+### **Required Solution: Database Schema Enhancement**
+
+**Immediate Database Changes Needed:**
+```sql
+-- Add product_type column to buybox_data table
+ALTER TABLE buybox_data ADD COLUMN product_type TEXT;
+
+-- Add index for performance
+CREATE INDEX idx_buybox_data_product_type ON buybox_data(product_type);
+
+-- Create product type mapping table for reference
+CREATE TABLE sku_product_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku TEXT UNIQUE NOT NULL,
+  asin TEXT,
+  product_type TEXT NOT NULL,
+  verified_at TIMESTAMP DEFAULT NOW(),
+  source TEXT DEFAULT 'amazon_api', -- 'amazon_api', 'manual', 'import'
+  marketplace_id TEXT DEFAULT 'A1F83G8C2ARO7P',
+  
+  INDEX idx_sku_product_types_sku (sku),
+  INDEX idx_sku_product_types_asin (asin)
+);
+```
+
+**Backfill Strategy for Existing SKUs:**
+```javascript
+// New script needed: backfill-product-types.js
+class ProductTypeBackfill {
+  async backfillAllProductTypes() {
+    // 1. Get all unique SKUs from buybox_data
+    // 2. Batch fetch product types from Amazon (respecting rate limits)
+    // 3. Update database with discovered product types
+    // 4. Create fallback mapping for failed lookups
+  }
+}
+```
+
 ## ⚠️ CRITICAL SECURITY ASSESSMENT - STATUS UPDATE
 
 ### 🚨 HIGH PRIORITY SECURITY GAPS - **PROGRESS UPDATE**
@@ -654,29 +749,505 @@ export class SecureCredentialManager {
 - **CSRF protection**: Cross-site request forgery prevention
 - **Rate limiting**: Enhanced abuse prevention with user tracking
 
+## 🚀 **SOLUTION: BRINGING MATCH BUY BOX TO LIVE UI**
+
+### **Phase 1: Critical Infrastructure Setup** (2-3 Days)
+
+#### **1.1 Database Schema Implementation** (1 Day)
+**Priority**: CRITICAL - Must complete before any UI work
+
+**Required Actions:**
+```sql
+-- Execute in production database
+ALTER TABLE buybox_data ADD COLUMN product_type TEXT;
+CREATE INDEX idx_buybox_data_product_type ON buybox_data(product_type);
+
+-- Create reference table
+CREATE TABLE sku_product_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku TEXT UNIQUE NOT NULL,
+  asin TEXT,
+  product_type TEXT NOT NULL,
+  verified_at TIMESTAMP DEFAULT NOW(),
+  source TEXT DEFAULT 'amazon_api',
+  marketplace_id TEXT DEFAULT 'A1F83G8C2ARO7P'
+);
+```
+
+#### **1.2 Product Type Backfill Service** (1 Day)
+**File**: `scripts/backfill-product-types.js`
+
+```javascript
+import { createClient } from '@supabase/supabase-js';
+import AmazonFeedsAPI from '../src/lib/services/amazon-feeds-api.js';
+
+class ProductTypeBackfill {
+  constructor() {
+    this.supabase = createClient(process.env.PUBLIC_SUPABASE_URL, process.env.PRIVATE_SUPABASE_SERVICE_KEY);
+    this.amazonAPI = new AmazonFeedsAPI();
+    this.rateLimiter = new RateLimiter(0.2); // 1 request per 5 seconds
+  }
+
+  async backfillAllProductTypes() {
+    console.log('🔄 Starting product type backfill...');
+    
+    // Get all unique SKUs without product types
+    const { data: skusToProcess } = await this.supabase
+      .from('buybox_data')
+      .select('DISTINCT sku, asin')
+      .is('product_type', null);
+
+    console.log(`📊 Found ${skusToProcess.length} SKUs to process`);
+
+    const results = { success: 0, failed: 0, errors: [] };
+
+    for (const { sku, asin } of skusToProcess) {
+      try {
+        await this.rateLimiter.wait();
+        
+        const productType = await this.fetchProductType(sku);
+        
+        if (productType) {
+          await this.updateProductType(sku, productType);
+          results.success++;
+          console.log(`✅ ${sku}: ${productType}`);
+        } else {
+          results.failed++;
+          console.log(`❌ ${sku}: Failed to fetch product type`);
+        }
+        
+      } catch (error) {
+        results.failed++;
+        results.errors.push({ sku, error: error.message });
+        console.error(`❌ ${sku}: ${error.message}`);
+      }
+    }
+
+    console.log('📋 Backfill complete:', results);
+    return results;
+  }
+
+  async fetchProductType(sku) {
+    const token = await this.amazonAPI.getAccessToken();
+    return await this.amazonAPI.getProductType(token, sku);
+  }
+
+  async updateProductType(sku, productType) {
+    // Update buybox_data table
+    await this.supabase
+      .from('buybox_data')
+      .update({ product_type: productType })
+      .eq('sku', sku);
+
+    // Insert into reference table
+    await this.supabase
+      .from('sku_product_types')
+      .upsert({
+        sku,
+        product_type: productType,
+        source: 'amazon_api',
+        verified_at: new Date().toISOString()
+      });
+  }
+}
+
+// Execute backfill
+const backfill = new ProductTypeBackfill();
+backfill.backfillAllProductTypes();
+```
+
+#### **1.3 Backend API Route Creation** (1 Day)
+**File**: `src/routes/api/match-buy-box/+server.ts`
+
+```typescript
+import { json, error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { createClient } from '@supabase/supabase-js';
+import AmazonFeedsAPI from '$lib/services/amazon-feeds-api.js';
+import {
+  PUBLIC_SUPABASE_URL,
+  PRIVATE_SUPABASE_SERVICE_KEY
+} from '$env/static/private';
+
+const supabase = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
+
+export const POST: RequestHandler = async ({ request, locals }) => {
+  try {
+    // Get user session (authentication handled by hooks.server.ts)
+    const user = locals.user;
+    if (!user) {
+      throw error(401, 'Authentication required');
+    }
+
+    const { asin, sku, newPrice, recordId } = await request.json();
+
+    // Validate inputs
+    if (!asin || !sku || !newPrice || !recordId) {
+      throw error(400, 'Missing required fields: asin, sku, newPrice, recordId');
+    }
+
+    console.log(`🎯 Match Buy Box request: ${sku} (${asin}) → £${newPrice}`);
+
+    // Get product type from database first
+    let productType = await getProductTypeFromDB(sku);
+    
+    if (!productType) {
+      console.log(`⚠️ Product type not found in DB for ${sku}, fetching from Amazon...`);
+      productType = await fetchAndStoreProductType(sku, asin);
+    }
+
+    if (!productType) {
+      throw error(400, `Could not determine product type for SKU: ${sku}`);
+    }
+
+    // Get current price for validation
+    const { data: currentData } = await supabase
+      .from('buybox_data')
+      .select('your_current_price, buybox_price, your_margin_percent_at_current_price')
+      .eq('id', recordId)
+      .single();
+
+    // Safety validation: Ensure 10% minimum margin
+    const marginValidation = await validateMarginSafety(sku, newPrice, recordId);
+    if (!marginValidation.safe) {
+      return json({
+        success: false,
+        error: 'MARGIN_TOO_LOW',
+        message: marginValidation.message,
+        currentMargin: marginValidation.currentMargin,
+        newMargin: marginValidation.newMargin,
+        requiresConfirmation: true
+      });
+    }
+
+    // Execute price update via Amazon Feeds API
+    const amazonAPI = new AmazonFeedsAPI();
+    const result = await amazonAPI.updatePrice(
+      asin, 
+      newPrice, 
+      currentData?.your_current_price, 
+      sku,
+      productType
+    );
+
+    if (result.success) {
+      // Log successful price update
+      await logPriceUpdate({
+        recordId,
+        sku,
+        asin,
+        oldPrice: currentData?.your_current_price,
+        newPrice,
+        productType,
+        feedId: result.feedId,
+        userId: user.id,
+        success: true
+      });
+
+      return json({
+        success: true,
+        feedId: result.feedId,
+        message: `Price updated successfully for ${sku}`,
+        newPrice,
+        productType
+      });
+    } else {
+      throw error(500, result.error || 'Price update failed');
+    }
+
+  } catch (err) {
+    console.error('❌ Match Buy Box API error:', err);
+    
+    if (err.status) {
+      throw err; // Re-throw SvelteKit errors
+    }
+    
+    throw error(500, err.message || 'Internal server error');
+  }
+};
+
+async function getProductTypeFromDB(sku: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('buybox_data')
+    .select('product_type')
+    .eq('sku', sku)
+    .not('product_type', 'is', null)
+    .limit(1)
+    .single();
+
+  return data?.product_type || null;
+}
+
+async function fetchAndStoreProductType(sku: string, asin: string): Promise<string | null> {
+  try {
+    const amazonAPI = new AmazonFeedsAPI();
+    const token = await amazonAPI.getAccessToken();
+    const productType = await amazonAPI.getProductType(token, sku);
+
+    if (productType) {
+      // Store in database for future use
+      await supabase
+        .from('buybox_data')
+        .update({ product_type: productType })
+        .eq('sku', sku);
+
+      await supabase
+        .from('sku_product_types')
+        .upsert({
+          sku,
+          asin,
+          product_type: productType,
+          source: 'amazon_api',
+          verified_at: new Date().toISOString()
+        });
+    }
+
+    return productType;
+  } catch (error) {
+    console.error(`Failed to fetch product type for ${sku}:`, error);
+    return null;
+  }
+}
+
+async function validateMarginSafety(sku: string, newPrice: number, recordId: string) {
+  // Get cost data for margin calculation
+  const { data: costData } = await supabase
+    .from('buybox_data')
+    .select('your_cost, total_operating_cost')
+    .eq('id', recordId)
+    .single();
+
+  if (!costData?.your_cost) {
+    return { safe: true, message: 'No cost data available for validation' };
+  }
+
+  const totalCost = costData.your_cost + (costData.total_operating_cost || 0);
+  const newMargin = ((newPrice - totalCost) / newPrice) * 100;
+
+  if (newMargin < 10) {
+    return {
+      safe: false,
+      message: `Price update would result in ${newMargin.toFixed(1)}% margin, below 10% minimum`,
+      currentMargin: costData.your_margin_percent_at_current_price,
+      newMargin: newMargin
+    };
+  }
+
+  return { safe: true, newMargin };
+}
+
+async function logPriceUpdate(data: any) {
+  return await supabase
+    .from('price_history')
+    .insert({
+      record_id: data.recordId,
+      sku: data.sku,
+      asin: data.asin,
+      old_price: data.oldPrice,
+      new_price: data.newPrice,
+      change_reason: 'match_buy_box',
+      updated_by: data.userId,
+      success: data.success,
+      feed_id: data.feedId,
+      product_type: data.productType
+    });
+}
+```
+
+### **Phase 2: Enhanced UI Integration** (1-2 Days)
+
+#### **2.1 Update Buy Box Manager Frontend** 
+**File**: `src/routes/buy-box-manager/+page.svelte` (enhance existing `matchBuyBox` function)
+
+```javascript
+// Update existing matchBuyBox function to use real API
+async function matchBuyBox(asin: string, targetPrice: number): Promise<void> {
+  console.log(`🎯 Executing Match Buy Box for ASIN: ${asin} at price: £${targetPrice}`);
+
+  // Find record for this ASIN
+  const record = filteredData.find(r => r.asin === asin);
+  if (!record) {
+    showNotification('error', `Record not found for ASIN: ${asin}`);
+    return;
+  }
+
+  // Prevent duplicate requests
+  if (pendingMatchBuyBoxRequests.has(asin)) {
+    console.log(`⚠️ Match Buy Box already in progress for ASIN: ${asin}`);
+    await pendingMatchBuyBoxRequests.get(asin);
+    return;
+  }
+
+  // Add to progress tracking
+  matchBuyBoxInProgress.add(asin);
+  matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
+
+  try {
+    // Make API request to new backend endpoint
+    const response = await fetch('/api/match-buy-box', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        asin: asin,
+        sku: record.sku,
+        newPrice: targetPrice,
+        recordId: record.id
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      // Update UI immediately
+      record.your_current_price = targetPrice;
+      filteredData = filteredData; // Trigger reactivity
+
+      // Store result for status display
+      matchBuyBoxResults.set(asin, {
+        success: true,
+        newPrice: targetPrice,
+        feedId: result.feedId,
+        timestamp: new Date(),
+        message: `✅ Price updated to £${targetPrice.toFixed(2)}`
+      });
+
+      showNotification('success', `Price updated to £${targetPrice.toFixed(2)} for ${record.sku}`);
+
+      // Refresh data to get latest state
+      setTimeout(() => loadBuyBoxData(), 2000);
+
+    } else if (result.error === 'MARGIN_TOO_LOW' && result.requiresConfirmation) {
+      // Show confirmation modal for low margin
+      showMarginConfirmationModal(asin, targetPrice, result);
+    } else {
+      throw new Error(result.message || 'Price update failed');
+    }
+
+  } catch (error) {
+    console.error('❌ Match Buy Box failed:', error);
+    
+    matchBuyBoxResults.set(asin, {
+      success: false,
+      error: error.message,
+      timestamp: new Date(),
+      message: `❌ Failed: ${error.message}`
+    });
+
+    showNotification('error', `Failed to update price: ${error.message}`);
+  } finally {
+    matchBuyBoxInProgress.delete(asin);
+    matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
+  }
+}
+
+// Add margin confirmation modal
+function showMarginConfirmationModal(asin: string, targetPrice: number, validationResult: any) {
+  const modalData = {
+    asin,
+    targetPrice,
+    currentMargin: validationResult.currentMargin,
+    newMargin: validationResult.newMargin,
+    message: validationResult.message
+  };
+
+  // Show modal (implement UI component)
+  marginConfirmationModal = { show: true, data: modalData };
+}
+```
+
+#### **2.2 Add Margin Confirmation Modal Component**
+
+```svelte
+<!-- Add to buy-box-manager/+page.svelte -->
+{#if marginConfirmationModal.show}
+  <div class="modal modal-open">
+    <div class="modal-box max-w-lg">
+      <h3 class="font-bold text-lg text-warning">⚠️ Low Margin Warning</h3>
+      
+      <div class="py-4">
+        <p class="mb-4">{marginConfirmationModal.data.message}</p>
+        
+        <div class="stats stats-vertical lg:stats-horizontal shadow mb-4">
+          <div class="stat">
+            <div class="stat-title">Current Margin</div>
+            <div class="stat-value text-sm">{marginConfirmationModal.data.currentMargin?.toFixed(1)}%</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title">New Margin</div>
+            <div class="stat-value text-sm text-warning">{marginConfirmationModal.data.newMargin?.toFixed(1)}%</div>
+          </div>
+        </div>
+        
+        <div class="alert alert-warning">
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.996-.833-2.732 0L3.732 19c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <span>This price update will result in a margin below 10%</span>
+        </div>
+      </div>
+
+      <div class="modal-action">
+        <button class="btn btn-outline" on:click={closeMarginModal}>Cancel</button>
+        <button class="btn btn-warning" on:click={confirmLowMarginUpdate}>
+          Proceed Anyway
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+```
+
+### **Phase 3: Testing & Validation** (1 Day)
+
+#### **3.1 End-to-End Testing Checklist**
+- [ ] Database schema applied and backfill completed
+- [ ] Product types loaded for all active SKUs
+- [ ] API route returns correct responses
+- [ ] UI shows match buy box buttons for viable items
+- [ ] Margin validation prevents dangerous updates
+- [ ] Confirmation modal works for low margins
+- [ ] Success feedback updates UI immediately
+- [ ] Error handling shows appropriate messages
+
+#### **3.2 Production Deployment Checklist**
+- [ ] Environment variables configured
+- [ ] Database migrations applied
+- [ ] API rate limiting implemented
+- [ ] Security headers configured
+- [ ] Logging and monitoring enabled
+- [ ] Rollback plan prepared
+
 ## Implementation Phases Summary - **UPDATED STATUS**
 
 | Phase | Duration | Key Deliverables | Status | Dependencies |
 |-------|----------|------------------|--------|--------------|
 | **0 (SECURITY)** | **3-4 days** | **Enhanced Supabase security middleware, authentication, role-based access** | **✅ 85% COMPLETE** | **Core auth system operational** |
-| 1 | 3-4 days | Amazon Listings API integration | ❌ **PENDING** | **Phase 0 completion**, SP-API credentials, marketplace permissions |
-| 2 | 2-3 days | Match Buy Box button & UI | ❌ **PENDING** | Phase 1 completion |
-| 3 | 2 days | Safety validations & confirmations | ❌ **PENDING** | Cost data integration |
-| 4 | 3-4 days | Advanced features & monitoring | ❌ **PENDING** | All previous phases |
+| **0.5 (TESTING)** | **COMPLETED** | **Amazon Feeds API testing, seller ID validation, product type discovery** | **✅ COMPLETE** | **Price updates confirmed working on Amazon** |
+| **1 (INFRASTRUCTURE)** | **2-3 days** | **Database schema, product type backfill, API route creation** | **❌ PENDING** | **Critical foundation for UI implementation** |
+| **2 (UI INTEGRATION)** | **1-2 days** | **Live Match Buy Box button, margin validation, confirmation modals** | **🟡 PARTIAL** | **Phase 1 completion, UI components exist but disconnected** |
+| **3 (VALIDATION)** | **1 day** | **End-to-end testing, safety checks, production deployment** | **❌ PENDING** | **All previous phases** |
+| **4 (ADVANCED)** | **3-4 days** | **Advanced features, monitoring, analytics** | **❌ PENDING** | **All previous phases** |
 
-**Current Status Summary**:
+**Current Status Summary:**
+- ✅ **Testing Phase**: Amazon Feeds API fully validated with successful price updates
 - ✅ **Authentication System**: Operational with role-based access
-- ✅ **Route Protection**: All routes properly secured
-- ✅ **Buy Box Access**: Routes accessible to authenticated users
-- ✅ **Session Management**: Enhanced SSR patterns implemented
-- ✅ **UI Improvements**: Login form enhancements, state management fixes
-- 🟡 **Security Hardening**: 85% complete, some advanced features pending
-- ❌ **Amazon API Integration**: Not started (requires Listings API setup)
-- ❌ **Price Update Feature**: Not started (depends on API integration)
+- ✅ **Core API Service**: `/src/lib/services/amazon-feeds-api.js` working with product type discovery
+- ✅ **UI Components**: Match Buy Box functions exist in buy-box-manager page
+- ❌ **Critical Gap**: Database schema missing product_type column
+- ❌ **Missing Link**: No `/api/match-buy-box` backend route to connect UI to service
+- ❌ **Scaling Issue**: Product type fetching needs database storage for performance
 
-**Total Estimated Timeline: 13-17 days** *(Updated: Phase 0 mostly complete)*
+**Updated Timeline: 8-12 days** *(Previously 13-17 days, reduced due to completed testing)*
 
-**Critical Path**: Complete remaining 15% of security features → Amazon Listings API integration → Match Buy Box implementation
+**Critical Path**: 
+1. **Database schema + product type backfill** (2-3 days) 
+2. **API route creation** (1 day)
+3. **UI connection** (1 day)
+4. **Testing & deployment** (1 day)
+
+**Minimum Viable Product (MVP)**: 5-6 days to have working Match Buy Box in production
 
 ## Risk Mitigation
 
@@ -739,6 +1310,185 @@ export class SecureCredentialManager {
 - **Business intelligence**: Advanced analytics platforms
 
 ---
+
+---
+
+## 🚀 **IMMEDIATE ACTION PLAN** - Ready for Implementation
+
+### **Step 1: Database Schema Setup** (Today - 2 hours)
+**Priority**: CRITICAL - Must complete first
+
+```bash
+# Execute database schema setup (safe with error handling)
+```
+
+**Option 1: Use the safe SQL script**
+```bash
+# Created: database-schema-setup.sql (safe execution)
+node setup-database-schema.js
+```
+
+**Option 2: Manual SQL with IF NOT EXISTS (safe)**
+```sql
+-- Safe version with IF NOT EXISTS checks
+
+-- 1. Add product_type column (safe)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'buybox_data' AND column_name = 'product_type'
+    ) THEN
+        ALTER TABLE buybox_data ADD COLUMN product_type TEXT;
+    END IF;
+END $$;
+
+-- 2. Create index (safe)
+CREATE INDEX IF NOT EXISTS idx_buybox_data_product_type ON buybox_data(product_type);
+
+-- 3. Create sku_product_types table (safe)
+CREATE TABLE IF NOT EXISTS sku_product_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku TEXT UNIQUE NOT NULL,
+  asin TEXT,
+  product_type TEXT NOT NULL,
+  verified_at TIMESTAMP DEFAULT NOW(),
+  source TEXT DEFAULT 'amazon_api',
+  marketplace_id TEXT DEFAULT 'A1F83G8C2ARO7P'
+);
+
+-- 4. Create indexes (safe)
+CREATE INDEX IF NOT EXISTS idx_sku_product_types_sku ON sku_product_types(sku);
+CREATE INDEX IF NOT EXISTS idx_sku_product_types_asin ON sku_product_types(asin);
+
+-- 5. Create price_history table (safe)
+CREATE TABLE IF NOT EXISTS price_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  record_id UUID REFERENCES buybox_data(id),
+  sku TEXT NOT NULL,
+  asin TEXT,
+  old_price NUMERIC(10,2),
+  new_price NUMERIC(10,2),
+  change_reason TEXT DEFAULT 'match_buy_box',
+  product_type TEXT,
+  feed_id TEXT,
+  updated_by UUID REFERENCES auth.users(id),
+  success BOOLEAN DEFAULT false,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 6. Create indexes (safe)
+CREATE INDEX IF NOT EXISTS idx_price_history_sku ON price_history(sku);
+CREATE INDEX IF NOT EXISTS idx_price_history_date ON price_history(created_at);
+```
+
+**Option 3: Alternative for Supabase Dashboard**
+If using Supabase Dashboard SQL Editor, run these one at a time:
+
+```sql
+-- Step 1: Add product_type column
+ALTER TABLE buybox_data ADD COLUMN IF NOT EXISTS product_type TEXT;
+
+-- Step 2: Create tables
+CREATE TABLE IF NOT EXISTS sku_product_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku TEXT UNIQUE NOT NULL,
+  asin TEXT,
+  product_type TEXT NOT NULL,
+  verified_at TIMESTAMP DEFAULT NOW(),
+  source TEXT DEFAULT 'amazon_api',
+  marketplace_id TEXT DEFAULT 'A1F83G8C2ARO7P'
+);
+
+CREATE TABLE IF NOT EXISTS price_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  record_id UUID REFERENCES buybox_data(id),
+  sku TEXT NOT NULL,
+  asin TEXT,
+  old_price NUMERIC(10,2),
+  new_price NUMERIC(10,2),
+  change_reason TEXT DEFAULT 'match_buy_box',
+  product_type TEXT,
+  feed_id TEXT,
+  updated_by UUID REFERENCES auth.users(id),
+  success BOOLEAN DEFAULT false,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### **Step 2: Create Backend API Route** (Today - 3 hours)
+**File**: `src/routes/api/match-buy-box/+server.ts`
+
+*[Implementation provided in Phase 2 above]*
+
+### **Step 3: Product Type Backfill** (Tomorrow - 4 hours)
+**File**: `scripts/backfill-product-types.js`
+
+*[Implementation provided in Phase 1 above]*
+
+**Execute backfill:**
+```bash
+cd /Users/jackweston/Projects/pre-prod
+node scripts/backfill-product-types.js
+```
+
+### **Step 4: Connect UI to Backend** (Tomorrow - 2 hours)
+**File**: `src/routes/buy-box-manager/+page.svelte`
+
+*[Update matchBuyBox function as shown in Phase 2 above]*
+
+### **Step 5: Testing & Validation** (Day 3 - 2 hours)
+1. Test with known working SKU (COL01A)
+2. Verify margin validation works
+3. Confirm price updates reflect in Amazon Seller Central
+4. Test error handling and edge cases
+
+---
+
+## 📋 **QUICK REFERENCE: Key Testing Locations**
+
+**Working Test Files** (Reference for implementation):
+- **`test-correct-seller-id.js`** - Successful price update example
+- **`get-product-type.js`** - Product type discovery example  
+- **`src/lib/services/amazon-feeds-api.js`** - Production service with full implementation
+- **`src/routes/buy-box-manager/+page.svelte`** - UI with partial Match Buy Box implementation
+
+**Key Configuration Values**:
+- **Seller ID**: `A2D8NG39VURSL3` (confirmed working)
+- **Marketplace ID**: `A1F83G8C2ARO7P` (UK)
+- **Feed Type**: `JSON_LISTINGS_FEED` (modern format)
+- **Test SKU**: `COL01A` with product type `CONDIMENT`
+
+---
+
+## 🎯 **SUCCESS CRITERIA**
+
+**Phase 1 Complete When**:
+- [ ] Database schema applied successfully
+- [ ] Product types backfilled for 80%+ of active SKUs
+- [ ] API route returns successful responses in testing
+
+**Phase 2 Complete When**:
+- [ ] Match Buy Box button appears for viable products
+- [ ] Clicking button triggers real price update
+- [ ] Success/error feedback shows immediately
+- [ ] Price changes reflect in Amazon Seller Central within 15-60 minutes
+
+**Production Ready When**:
+- [ ] End-to-end testing passes with multiple SKUs
+- [ ] Margin validation prevents dangerous updates
+- [ ] Error handling gracefully manages API failures
+- [ ] Performance acceptable with large dataset
+
+---
+
+**Document Status**: ✅ **Updated with Testing Results & Implementation Plan**  
+**Last Updated**: August 5, 2025  
+**Testing Status**: ✅ **Amazon Feeds API Validated - Price Updates Working**  
+**Next Step**: Execute Step 1 (Database Schema) to begin implementation  
+**Critical Insight**: Product type alignment is the key blocker - database solution required before UI can work at scale
 
 ## 🎯 **IMMEDIATE NEXT STEPS & CRITICAL CONSIDERATIONS**
 

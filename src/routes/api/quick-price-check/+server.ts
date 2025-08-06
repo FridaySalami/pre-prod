@@ -5,9 +5,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   try {
     // Temporarily bypass authentication for debugging
     console.log('🔍 Quick price check API called - bypassing authentication for debugging');
-    
+
     const asin = url.searchParams.get('asin') || 'B01EX15HEA'; // Default to your recent ASIN
-    
+
     console.log(`💰 Checking current live price for ASIN: ${asin}`);
 
     try {
@@ -26,14 +26,14 @@ export const GET: RequestHandler = async ({ url, locals }) => {
       if (updateResponse.ok) {
         const updateData = await updateResponse.json();
         console.log('📊 Live pricing update response:', updateData);
-        
+
         // Now fetch the updated record from your buybox data
         const recordResponse = await fetch(`http://localhost:3001/api/buybox-data/87bc5e35-106f-4a1a-a54f-7de4ddc2c004`);
-        
+
         if (recordResponse.ok) {
           const recordData = await recordResponse.json();
           console.log('📊 Current record data:', recordData);
-          
+
           return json({
             success: true,
             asin: asin,
@@ -58,7 +58,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
           });
         }
       }
-      
+
       // Fallback to basic response
       return json({
         success: false,
@@ -70,7 +70,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
     } catch (apiError) {
       console.error('❌ API error:', apiError);
-      
+
       return json({
         success: false,
         error: 'Failed to fetch live pricing',

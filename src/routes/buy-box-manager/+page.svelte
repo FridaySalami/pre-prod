@@ -1,7 +1,136 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
+	import { supabase } from '$lib/supabaseClient';
+
+	// Import Basket Components (UI Framework Only - Not Connected)
+	import BasketSidebar from '$lib/components/BasketSidebar.svelte';
+	import { basketActions } from '$lib/stores/pricingBasketStore';
+
+	// Toast notification types and management
+	interface ToastNotification {
+		id: string;
+		type: 'success' | 'error' | 'warning' | 'info';
+		title: string;
+		message: string;
+		duration?: number;
+		timestamp: Date;
+	}
+
+	let toastNotifications: ToastNotification[] = [];
+	let toastIdCounter = 0;
+
+	function showToast(
+		type: ToastNotification['type'],
+		title: string,
+		message: string,
+		duration: number = 5000
+	) {
+		const id = `toast-${++toastIdCounter}`;
+		const toast: ToastNotification = {
+			id,
+			type,
+			title,
+			message,
+			duration,
+			timestamp: new Date()
+		};
+
+		toastNotifications = [toast, ...toastNotifications];
+
+		// Auto-remove after duration
+		if (duration > 0) {
+			setTimeout(() => {
+				removeToast(id);
+			}, duration);
+		}
+
+		return id;
+	}
+
+	function removeToast(id: string) {
+		toastNotifications = toastNotifications.filter((toast) => toast.id !== id);
+	}
+
+	function removeAllToasts() {
+		toastNotifications = [];
+	}
+
+	// Convenience functions for different toast types
+	function showSuccessToast(title: string, message: string, duration?: number) {
+		return showToast('success', title, message, duration);
+	}
+
+	function showErrorToast(title: string, message: string, duration?: number) {
+		return showToast('error', title, message, duration || 8000); // Errors stay longer
+	}
+
+	function showWarningToast(title: string, message: string, duration?: number) {
+		return showToast('warning', title, message, duration || 6000);
+	}
+
+	function showInfoToast(title: string, message: string, duration?: number) {
+		return showToast('info', title, message, duration);
+	}
+
+	// Authentication error handler
+	function handleAuthError(error: any, context: string = 'API request') {
+		console.log('🔐 handleAuthError called with:', { error, context });
+
+		const errorMessage = error?.message || error?.error || String(error);
+
+		console.log('🔐 Checking error message:', errorMessage);
+
+		// Check for session expiry patterns
+		if (
+			errorMessage.includes('Session expired') ||
+			errorMessage.includes('session expired') ||
+			errorMessage.includes('Authentication required') ||
+			errorMessage.includes('token expired') ||
+			errorMessage.includes('authentication token') ||
+			errorMessage.includes('invalid session')
+		) {
+			console.log('🔐 Session expiry detected, redirecting to login');
+			showErrorToast('Session Expired', 'Your session has expired. Please log in again.', 5000);
+
+			// Redirect to login page after a short delay
+			setTimeout(() => {
+				window.location.href = '/login?redirectTo=' + encodeURIComponent(window.location.pathname);
+			}, 2000);
+			return true; // Indicates this was an auth error
+		}
+
+		console.log('🔐 Not a session auth error, continuing with normal error handling');
+		return false; // Not a session auth error
+	}
+
+	// Session management
+	async function checkAndRefreshSession() {
+		try {
+			console.log('🔐 Checking current session...');
+			const {
+				data: { session },
+				error
+			} = await supabase.auth.getSession();
+
+			if (error) {
+				console.error('🔐 Session check error:', error);
+				return false;
+			}
+
+			if (!session) {
+				console.log('🔐 No active session found');
+				return false;
+			}
+
+			console.log('🔐 Session is valid, user:', session.user?.email);
+			return true;
+		} catch (error) {
+			console.error('🔐 Session check failed:', error);
+			return false;
+		}
+	}
 
 	// Types for buy box management
 	interface BuyBoxData {
@@ -33,6 +162,10 @@
 		// Competitor analysis
 		margin_percent_at_buybox_price: number | null;
 		margin_difference: number | null;
+
+		// Price update tracking
+		last_price_update?: string | null; // ISO timestamp of last price update via UI
+		update_source?: string | null; // Source of last price update (e.g., 'match_buy_box')
 		profit_opportunity: number | null;
 
 		// Actual profit calculations
@@ -66,6 +199,17 @@
 	let filteredData: BuyBoxData[] = [];
 	let isLoading = true;
 	let errorMessage = '';
+
+	// Rate limiter status
+	let rateLimiterStatus = {
+		queueLength: 0,
+		processing: false,
+		estimatedWaitTime: 0,
+		estimatedWaitTimeFormatted: '0s',
+		lastRequestTime: 0,
+		requestsPerSecond: 0
+	};
+	let rateLimiterInterval: NodeJS.Timeout | null = null;
 
 	// Search and filters
 	let searchQuery = '';
@@ -244,6 +388,23 @@
 	let matchBuyBoxResults = new Map<string, any>(); // Store Match Buy Box results for each ASIN
 	let pendingMatchBuyBoxRequests = new Map<string, Promise<any>>(); // Prevent duplicate requests
 	let safetyMarginPercent = 10; // Default 10% safety margin
+
+	// Feed Status Checking State
+	let feedStatusChecks = new Map<string, any>(); // feedId -> status info
+	let activeFeedChecks = new Set<string>(); // Track which feeds are being checked
+	let feedStatusInterval: ReturnType<typeof setInterval> | null = null; // Auto-refresh interval
+
+	// Margin Confirmation Modal State
+	let marginConfirmationModal: {
+		show: boolean;
+		data: {
+			asin: string;
+			targetPrice: number;
+			currentMargin: number | null;
+			newMargin: number | null;
+			message: string;
+		} | null;
+	} = { show: false, data: null };
 
 	// Track active filters for better UX
 	let activeCardFilter = ''; // Track which summary card filter is active
@@ -759,10 +920,185 @@
 			total_investment_current: 18.5 + index,
 			total_investment_buybox: 16.2 + index,
 
+			// Price update tracking
+			last_price_update:
+				index === 0
+					? new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
+					: index === 1
+						? new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() // 3 hours ago
+						: index === 2
+							? new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() // 2 days ago
+							: null,
+			update_source: index <= 2 ? 'match_buy_box' : null,
+
 			run_id: 'test-run-001',
 			job_id: 'test-job-001',
 			is_skeleton: false
 		}));
+	}
+
+	/**
+	 * Check feed status for a specific feed ID
+	 */
+	async function checkFeedStatus(
+		feedId: string,
+		recordId?: string,
+		sku?: string,
+		asin?: string
+	): Promise<void> {
+		console.log(`🔍 Checking feed status for feed ID: ${feedId}`);
+
+		// Prevent duplicate checks
+		if (activeFeedChecks.has(feedId)) {
+			console.log(`⏳ Feed status check already in progress for ${feedId}`);
+			return;
+		}
+
+		activeFeedChecks.add(feedId);
+		activeFeedChecks = activeFeedChecks; // Trigger reactivity
+
+		try {
+			const response = await fetch('/api/check-feed-status', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					feedId,
+					recordId,
+					sku,
+					asin
+				})
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.message || `HTTP ${response.status}`);
+			}
+
+			const result = await response.json();
+
+			// Store the feed status information
+			feedStatusChecks.set(feedId, {
+				...result,
+				lastUpdated: new Date()
+			});
+			feedStatusChecks = feedStatusChecks; // Trigger reactivity
+
+			console.log(`✅ Feed status updated for ${feedId}:`, result);
+
+			// If the feed is complete, show a notification
+			if (result.isComplete) {
+				if (result.needsAttention) {
+					showWarningToast('Feed Completed with Issues', `Feed ${feedId}: ${result.userStatus}`);
+				} else {
+					showSuccessToast('Feed Completed Successfully', `Feed ${feedId}: ${result.userStatus}`);
+				}
+			}
+
+			return result;
+		} catch (error: unknown) {
+			console.error(`❌ Error checking feed status for ${feedId}:`, error);
+
+			// Store error information
+			feedStatusChecks.set(feedId, {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error',
+				feedId,
+				lastUpdated: new Date()
+			});
+			feedStatusChecks = feedStatusChecks; // Trigger reactivity
+
+			throw error;
+		} finally {
+			activeFeedChecks.delete(feedId);
+			activeFeedChecks = activeFeedChecks; // Trigger reactivity
+		}
+	}
+
+	/**
+	 * Start automatic feed status checking for all pending feeds
+	 */
+	function startFeedStatusMonitoring(): void {
+		if (feedStatusInterval) {
+			clearInterval(feedStatusInterval);
+		}
+
+		feedStatusInterval = setInterval(async () => {
+			// Check all feeds that are not complete
+			const pendingFeeds = Array.from(feedStatusChecks.entries()).filter(
+				([feedId, status]) => status.success && !status.isComplete
+			);
+
+			console.log(`🔄 Auto-checking ${pendingFeeds.length} pending feeds`);
+
+			for (const [feedId, statusInfo] of pendingFeeds) {
+				try {
+					await checkFeedStatus(feedId, statusInfo.recordId, statusInfo.sku, statusInfo.asin);
+				} catch (error) {
+					console.warn(`⚠️ Auto-check failed for feed ${feedId}:`, error);
+				}
+			}
+		}, 30000); // Check every 30 seconds
+	}
+
+	/**
+	 * Stop automatic feed status checking
+	 */
+	function stopFeedStatusMonitoring(): void {
+		if (feedStatusInterval) {
+			clearInterval(feedStatusInterval);
+			feedStatusInterval = null;
+		}
+	}
+
+	/**
+	 * Get feed status display information
+	 */
+	function getFeedStatusDisplay(feedId: string): {
+		status: string;
+		class: string;
+		icon: string;
+		showCheckButton: boolean;
+		lastChecked: string;
+	} {
+		const feedInfo = feedStatusChecks.get(feedId);
+
+		if (!feedInfo) {
+			return {
+				status: 'Unknown',
+				class: 'bg-gray-100 text-gray-800',
+				icon: '❓',
+				showCheckButton: true,
+				lastChecked: 'Never'
+			};
+		}
+
+		if (!feedInfo.success) {
+			return {
+				status: 'Check Failed',
+				class: 'bg-red-100 text-red-800',
+				icon: '❌',
+				showCheckButton: true,
+				lastChecked: feedInfo.lastUpdated ? formatDate(feedInfo.lastUpdated.toISOString()) : 'Never'
+			};
+		}
+
+		const isChecking = activeFeedChecks.has(feedId);
+
+		return {
+			status: isChecking ? 'Checking...' : feedInfo.userStatus,
+			class: isChecking ? 'bg-blue-100 text-blue-800' : feedInfo.statusClass,
+			icon: isChecking
+				? '🔄'
+				: feedInfo.isComplete
+					? feedInfo.needsAttention
+						? '⚠️'
+						: '✅'
+					: '⏳',
+			showCheckButton: !isChecking && !feedInfo.isComplete,
+			lastChecked: feedInfo.lastUpdated ? formatDate(feedInfo.lastUpdated.toISOString()) : 'Never'
+		};
 	}
 
 	/**
@@ -851,7 +1187,8 @@
 			asin,
 			targetPrice,
 			projectedMargin,
-			record.your_current_price
+			record.your_current_price,
+			record // Pass the record so we don't need to look it up again
 		);
 		pendingMatchBuyBoxRequests.set(asin, requestPromise);
 
@@ -865,99 +1202,178 @@
 
 	/**
 	 * Perform the actual Match Buy Box API request
+	 * Updated to use proper API endpoint instead of direct import
 	 */
 	async function performMatchBuyBoxRequest(
 		asin: string,
 		targetPrice: number,
 		projectedMargin: number | null,
-		currentPrice: number | null = null
+		currentPrice: number | null = null,
+		record: BuyBoxData
 	): Promise<void> {
+		// Fetch current rate limiter status before attempting request
+		await fetchRateLimiterStatus();
+
+		// Show user feedback about rate limiting if there's a queue
+		if (rateLimiterStatus.queueLength > 0) {
+			showInfoToast(
+				'Rate Limited',
+				`Your request is queued (${rateLimiterStatus.queueLength} ahead). Estimated wait: ${rateLimiterStatus.estimatedWaitTimeFormatted}`,
+				8000
+			);
+		} else if (rateLimiterStatus.estimatedWaitTime > 1000) {
+			showInfoToast(
+				'Rate Limited',
+				`Request will be processed in ${rateLimiterStatus.estimatedWaitTimeFormatted}`,
+				6000
+			);
+		}
+
 		// Add to in-progress tracking
 		matchBuyBoxInProgress.add(asin);
 		matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
 
 		try {
-			const response = await fetch('/api/match-buybox', {
+			console.log('🎯 Making API request to /api/match-buy-box');
+			console.log('🎯 Request payload:', {
+				asin: asin,
+				sku: record.sku,
+				newPrice: targetPrice,
+				recordId: record.id,
+				currentPrice: record.your_current_price,
+				buyboxPrice: record.buybox_price,
+				currentMargin: record.margin_percent_at_buybox_price
+			});
+
+			// Make API request to backend endpoint (using same auth method as other working endpoints)
+			const response = await fetch('/api/match-buy-box', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
-					asin,
-					targetPrice,
-					currentPrice,
-					marginPercent: safetyMarginPercent,
-					userId: 'current-user', // This will be set by the server from session
-					projectedMargin: projectedMargin // Send margin data for server-side validation
+					asin: asin,
+					sku: record.sku,
+					newPrice: targetPrice,
+					recordId: record.id
 				})
 			});
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`HTTP ${response.status}: ${errorText}`);
-			}
-
 			const result = await response.json();
 
-			// Store result
-			matchBuyBoxResults.set(asin, {
-				...result,
-				timestamp: new Date(),
-				targetPrice: targetPrice,
-				safetyMargin: safetyMarginPercent,
-				projectedMargin: projectedMargin
-			});
+			console.log('🎯 API response status:', response.status);
+			console.log('🎯 API response result:', result);
 
-			matchBuyBoxResults = matchBuyBoxResults; // Trigger reactivity
+			// Handle authentication errors
+			if (response.status === 401) {
+				console.log('🔐 Authentication error detected from match-buy-box endpoint');
+				console.log('🔐 Result object for auth error:', result);
+
+				// Instead of redirecting to login, show a helpful error message
+				// since this seems to be a backend issue rather than actual session expiry
+				showErrorToast(
+					'Authentication Issue',
+					'The Match Buy Box endpoint is having authentication issues. Try refreshing the page, or contact support if the problem persists.',
+					10000
+				);
+
+				// Store the error result for debugging
+				matchBuyBoxResults.set(asin, {
+					success: false,
+					timestamp: new Date(),
+					targetPrice: targetPrice,
+					error: 'Authentication error from backend endpoint',
+					status: 401
+				});
+				matchBuyBoxResults = matchBuyBoxResults; // Trigger reactivity
+
+				return;
+			}
 
 			if (result.success) {
+				// Store result in the same format as before
+				matchBuyBoxResults.set(asin, {
+					success: true,
+					timestamp: new Date(),
+					targetPrice: targetPrice,
+					safetyMargin: projectedMargin || 0,
+					projectedMargin: projectedMargin,
+					feedId: result.feedId,
+					newPrice: targetPrice,
+					message: result.message
+				});
+
 				console.log(`✅ Match Buy Box successful for ASIN: ${asin}`, result);
 
-				// Show success notification with feed-specific information
-				const successMessage = result.feedId
-					? `🎯 Match Buy Box Feed Submitted!\n\n` +
-						`ASIN: ${asin}\n` +
-						`SKU: ${result.sku || 'N/A'}\n` +
-						`Target: £${targetPrice}\n` +
-						`Final Price: £${result.newPrice}\n` +
-						`Safety Margin: ${safetyMarginPercent}%\n` +
-						`Projected Margin: ${projectedMargin?.toFixed(2) || 'Unknown'}%\n\n` +
-						`Feed ID: ${result.feedId}\n` +
-						`Status: ${result.feedStatus || 'SUBMITTED'}\n\n` +
-						`✅ Feed submitted to Amazon for processing.\n` +
-						`Check feed status in a few minutes.`
-					: `🎯 Match Buy Box Successful!\n\n` +
-						`ASIN: ${asin}\n` +
-						`Target: £${targetPrice}\n` +
-						`Final Price: £${result.newPrice}\n` +
-						`Safety Margin: ${safetyMarginPercent}%\n` +
-						`Projected Margin: ${projectedMargin?.toFixed(2) || 'Unknown'}%\n\n` +
-						`Response: ${result.message || 'Success'}`;
+				// Start feed monitoring if we got a feedId
+				if (result.feedId) {
+					console.log(`📡 Starting feed monitoring for feed ID: ${result.feedId}`);
 
-				alert(successMessage);
+					// Initialize feed status tracking
+					feedStatusChecks.set(result.feedId, {
+						success: true,
+						feedId: result.feedId,
+						status: 'SUBMITTED',
+						userStatus: 'Submitted for Processing',
+						statusClass: 'bg-blue-100 text-blue-800',
+						isComplete: false,
+						needsAttention: false,
+						lastChecked: new Date().toISOString(),
+						sku: record.sku,
+						asin: asin,
+						recordId: record.id
+					});
+					feedStatusChecks = feedStatusChecks; // Trigger reactivity
+
+					// Start auto-monitoring if not already running
+					if (!feedStatusInterval) {
+						startFeedStatusMonitoring();
+					}
+
+					// Do an immediate status check after a short delay
+					setTimeout(() => {
+						if (result.feedId) {
+							checkFeedStatus(result.feedId, record.id, record.sku, asin);
+						}
+					}, 5000);
+				}
+
+				// Show success notification with feed-specific information
+				if (result.feedId) {
+					showSuccessToast(
+						'Match Buy Box Feed Submitted!',
+						`ASIN: ${asin} | SKU: ${record.sku} | Price: £${targetPrice} | Feed ID: ${result.feedId}`,
+						8000
+					);
+				} else {
+					showSuccessToast(
+						'Match Buy Box Successful!',
+						`ASIN: ${asin} | Price: £${targetPrice} | Margin: ${projectedMargin?.toFixed(2) || 'Unknown'}%`,
+						6000
+					);
+				}
+			} else if (result.error === 'MARGIN_TOO_LOW' && result.requiresConfirmation) {
+				// Show confirmation modal for low margin
+				console.log('⚠️ Margin too low, showing confirmation modal');
+				showMarginConfirmationModal(asin, targetPrice, result);
 			} else {
 				console.error(`❌ Match Buy Box failed for ASIN: ${asin}`, result);
 
 				// Show specific error based on type
-				let errorMessage = `❌ Match Buy Box Failed!\n\nASIN: ${asin}\n`;
-
-				if (result.error?.includes('Missing required Amazon API credentials')) {
-					errorMessage +=
-						`Error: Amazon API credentials not configured\n\n` +
-						`Please contact your administrator to configure:\n` +
-						`- AMAZON_CLIENT_ID\n` +
-						`- AMAZON_CLIENT_SECRET\n` +
-						`- AMAZON_REFRESH_TOKEN\n\n` +
-						`For now, please update prices manually in Amazon Seller Central.`;
-				} else if (result.safetyRejected) {
-					errorMessage +=
-						`Error: Safety check failed - margin too low\n\n` +
-						`Please update this price manually in Amazon Seller Central if needed.`;
+				const errorMessage = result.error || result.message;
+				if (errorMessage?.includes('Missing required Amazon API credentials')) {
+					showErrorToast(
+						'Amazon API Not Configured',
+						'Amazon API credentials not configured. Please contact your administrator.',
+						10000
+					);
 				} else {
-					errorMessage += `Error: ${result.error || 'Unknown error'}\n\nPlease check the details and try again.`;
+					showErrorToast(
+						'Match Buy Box Failed',
+						`ASIN: ${asin} | Error: ${errorMessage || 'Unknown error'}`,
+						8000
+					);
 				}
-
-				alert(errorMessage);
 			}
 		} catch (error) {
 			console.error(`🚨 Match Buy Box error for ASIN: ${asin}:`, error);
@@ -976,28 +1392,135 @@
 			matchBuyBoxResults = matchBuyBoxResults; // Trigger reactivity
 
 			// Show specific error based on type
-			let alertMessage = `🚨 Match Buy Box Error!\n\nASIN: ${asin}\n`;
-
-			if (errorMessage.includes('Missing required Amazon API credentials')) {
-				alertMessage +=
-					`Error: Amazon API not properly configured\n\n` +
-					`Please contact your administrator to set up Amazon API credentials.\n` +
-					`For now, update prices manually in Amazon Seller Central.`;
-			} else if (errorMessage.includes('HTTP 401') || errorMessage.includes('Authentication')) {
-				alertMessage +=
-					`Error: Amazon API authentication failed\n\n` +
-					`Please check your Amazon API credentials or try again later.`;
-			} else if (errorMessage.includes('HTTP 429') || errorMessage.includes('rate limit')) {
-				alertMessage +=
-					`Error: Too many requests\n\n` + `Please wait a few minutes before trying again.`;
-			} else {
-				alertMessage += `Error: ${errorMessage}\n\nPlease try again or contact support.`;
+			// First check if this is a session expiry that requires redirect
+			if (handleAuthError(error, 'Match Buy Box')) {
+				return; // Session auth error handled, exit early
 			}
 
-			alert(alertMessage);
+			if (errorMessage.includes('Missing required Amazon API credentials')) {
+				showErrorToast(
+					'Amazon API Not Configured',
+					'Please contact your administrator to set up Amazon API credentials.',
+					10000
+				);
+			} else if (
+				errorMessage.includes('HTTP 401') ||
+				errorMessage.includes('Authentication required') ||
+				errorMessage.includes('Session expired')
+			) {
+				showErrorToast(
+					'Authentication Error',
+					'There was an authentication issue with the API request. Please try refreshing the page.',
+					8000
+				);
+			} else if (errorMessage.includes('HTTP 429') || errorMessage.includes('rate limit')) {
+				showWarningToast(
+					'Rate Limit Exceeded',
+					'Too many requests. Please wait a few minutes before trying again.',
+					6000
+				);
+			} else {
+				showErrorToast('Match Buy Box Error', `ASIN: ${asin} | Error: ${errorMessage}`, 8000);
+			}
 		} finally {
 			matchBuyBoxInProgress.delete(asin);
 			matchBuyBoxInProgress = matchBuyBoxInProgress; // Trigger reactivity
+		}
+	}
+
+	/**
+	 * Show margin confirmation modal for low margin updates
+	 */
+	function showMarginConfirmationModal(asin: string, targetPrice: number, validationResult: any) {
+		const modalData = {
+			asin,
+			targetPrice,
+			currentMargin: validationResult.currentMargin,
+			newMargin: validationResult.newMargin,
+			message: validationResult.message
+		};
+
+		// Show modal
+		marginConfirmationModal = { show: true, data: modalData };
+	}
+
+	/**
+	 * Close margin confirmation modal
+	 */
+	function closeMarginModal() {
+		marginConfirmationModal = { show: false, data: null };
+	}
+
+	/**
+	 * Confirm low margin update - proceed anyway
+	 */
+	/**
+	 * Fetch current rate limiter status
+	 */
+	async function fetchRateLimiterStatus() {
+		try {
+			const response = await fetch('/api/rate-limiter-status');
+			if (response.ok) {
+				const data = await response.json();
+				if (data.success) {
+					rateLimiterStatus = data.rateLimiter;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to fetch rate limiter status:', error);
+		}
+	}
+
+	/**
+	 * Confirm low margin update after user acknowledges the warning
+	 */
+	async function confirmLowMarginUpdate() {
+		if (!marginConfirmationModal.data) return;
+
+		const { asin, targetPrice }: { asin: string; targetPrice: number } =
+			marginConfirmationModal.data;
+
+		// Close modal first
+		closeMarginModal();
+
+		// Find the record for this ASIN
+		const record = filteredData.find((r) => r.asin === asin);
+		if (!record) {
+			showErrorToast('Error', 'Record not found');
+			return;
+		}
+
+		try {
+			// Make API request with confirmation flag
+			const response = await fetch('/api/match-buy-box', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					asin: asin,
+					sku: record.sku,
+					newPrice: targetPrice,
+					recordId: record.id,
+					confirmLowMargin: true // This flag tells the API to proceed despite low margin
+				})
+			});
+
+			const result = await response.json();
+
+			if (result.success) {
+				showSuccessToast(
+					'Price Updated (Low Margin)',
+					`Price updated to £${targetPrice.toFixed(2)} for ${record.sku} - Margin below 10%`,
+					8000
+				);
+				// Refresh data
+				await loadBuyBoxData();
+			} else {
+				showErrorToast('Update Failed', result.message || 'Failed to update price');
+			}
+		} catch (error) {
+			showErrorToast('Update Failed', 'Network error occurred');
 		}
 	}
 
@@ -1030,6 +1553,28 @@
 	// Initialize and load data
 	onMount(async () => {
 		await refreshData();
+
+		// Initial rate limiter status fetch
+		await fetchRateLimiterStatus();
+
+		// Start feed monitoring if there are any pending feeds
+		if (feedStatusChecks.size > 0) {
+			startFeedStatusMonitoring();
+		}
+
+		// Poll rate limiter status every 5 seconds
+		rateLimiterInterval = setInterval(fetchRateLimiterStatus, 5000);
+	});
+
+	// Cleanup on component unmount
+	onDestroy(() => {
+		stopFeedStatusMonitoring();
+
+		// Clear rate limiter polling interval
+		if (rateLimiterInterval) {
+			clearInterval(rateLimiterInterval);
+			rateLimiterInterval = null;
+		}
 	});
 
 	// Deduplicate data to show only the latest entry per SKU
@@ -1248,6 +1793,55 @@
 			return customPrice;
 		}
 		return sku.your_current_price || 0;
+	}
+
+	/**
+	 * Format last price update information with relative time, source, and price change
+	 */
+	function formatLastUpdate(
+		sku: BuyBoxData
+	): { text: string; class: string; tooltip: string } | null {
+		if (!sku.last_price_update || !sku.update_source) {
+			return null;
+		}
+
+		const updateTime = new Date(sku.last_price_update);
+		const now = new Date();
+		const diffMs = now.getTime() - updateTime.getTime();
+		const diffMinutes = Math.floor(diffMs / (1000 * 60));
+		const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+		const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+		let timeText: string;
+		let cssClass: string;
+
+		if (diffMinutes < 60) {
+			// Less than 1 hour - show minutes, green
+			timeText = `${diffMinutes}m ago`;
+			cssClass = 'text-xs text-green-600 font-medium';
+		} else if (diffHours < 24) {
+			// Less than 24 hours - show hours, blue
+			timeText = `${diffHours}h ago`;
+			cssClass = 'text-xs text-blue-600 font-medium';
+		} else if (diffDays < 7) {
+			// Less than 7 days - show days, gray
+			timeText = `${diffDays}d ago`;
+			cssClass = 'text-xs text-gray-600';
+		} else {
+			// Older than 7 days - show date, light gray
+			timeText = updateTime.toLocaleDateString();
+			cssClass = 'text-xs text-gray-400';
+		}
+
+		// Add source information
+		const sourceText =
+			sku.update_source === 'match_buy_box' ? 'via UI' : `via ${sku.update_source}`;
+
+		return {
+			text: `${timeText} ${sourceText}`,
+			class: cssClass,
+			tooltip: `Last price update: ${updateTime.toLocaleString()} via ${sku.update_source}`
+		};
 	}
 
 	function getEffectiveMargin(sku: BuyBoxData): number | null {
@@ -2162,7 +2756,7 @@
 		const selectedProducts = paginatedData.filter((item) => selectedItems.has(item.id));
 
 		if (selectedProducts.length === 0) {
-			alert('No products selected for bulk update.');
+			showWarningToast('No Selection', 'No products selected for bulk update.');
 			return;
 		}
 
@@ -2244,15 +2838,13 @@
 		}
 
 		// Show summary
-		const summary =
-			`🎯 Bulk Match Buy Box Complete\n\n` +
-			`Total Processed: ${products.length}\n` +
-			`✅ Successful: ${successCount}\n` +
-			`⚠️ Skipped (Safety): ${skippedCount}\n` +
-			`❌ Failed: ${failureCount}\n\n` +
-			`Check individual results below for details.`;
+		const successMessage = `Bulk Match Buy Box Complete: ${successCount} successful, ${skippedCount} skipped, ${failureCount} failed`;
 
-		alert(summary);
+		if (failureCount > 0 || skippedCount > 0) {
+			showWarningToast('Bulk Operation Completed', successMessage, 8000);
+		} else {
+			showSuccessToast('Bulk Operation Successful', successMessage, 6000);
+		}
 
 		// Clear selection after bulk operation
 		clearSelection();
@@ -2265,7 +2857,11 @@
 			selectedProducts.map((p) => p.sku)
 		);
 		// TODO: Implement bulk watchlist functionality
-		alert(`Added ${selectedProducts.length} products to watchlist`);
+		showInfoToast(
+			'Added to Watchlist',
+			`${selectedProducts.length} products added to watchlist`,
+			4000
+		);
 	}
 </script>
 
@@ -2273,1593 +2869,591 @@
 	<title>Buy Box Manager</title>
 </svelte:head>
 
-<div class="container mx-auto px-4 py-8">
-	<div class="flex justify-between items-center mb-6">
-		<div>
-			<div class="flex items-center gap-3">
-				<h1 class="text-3xl font-bold mb-2">Buy Box Manager</h1>
-				{#if testMode}
-					<span class="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium">
-						🧪 SANDBOX TEST MODE
-					</span>
-				{/if}
-			</div>
-			<p class="text-gray-600">
-				{testMode
-					? 'Testing Match Buy Box functionality in Amazon sandbox environment'
-					: 'Analyze and manage your Buy Box performance'}
-			</p>
+<!-- Margin Confirmation Modal -->
+{#if marginConfirmationModal.show}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-lg">
+			<h3 class="font-bold text-lg text-warning">⚠️ Low Margin Warning</h3>
 
-			<!-- Live Update Status Indicator -->
-			{#if hasActiveUpdates}
-				<div class="mt-2 flex items-center gap-2 text-blue-600 text-sm" in:fade>
-					<svg
-						class="animate-spin h-4 w-4"
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-						></circle>
-						<path
-							class="opacity-75"
-							fill="currentColor"
-							d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-						></path>
-					</svg>
-					<span class="font-medium">
-						{activeUpdates.length === 1 ? '1 live update' : `${activeUpdates.length} live updates`} in
-						progress...
-					</span>
+			{#if marginConfirmationModal.data}
+				<div class="py-4">
+					<p class="mb-4">{marginConfirmationModal.data.message}</p>
+
+					<div class="stats stats-vertical lg:stats-horizontal shadow mb-4">
+						<div class="stat">
+							<div class="stat-title">Current Margin</div>
+							<div class="stat-value text-sm">
+								{marginConfirmationModal.data.currentMargin?.toFixed(1) || 'Unknown'}%
+							</div>
+						</div>
+						<div class="stat">
+							<div class="stat-title">New Margin</div>
+							<div class="stat-value text-sm text-warning">
+								{marginConfirmationModal.data.newMargin?.toFixed(1) || 'Unknown'}%
+							</div>
+						</div>
+					</div>
+
+					<div class="alert alert-warning">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="stroke-current shrink-0 h-6 w-6"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.996-.833-2.732 0L3.732 19c-.77.833.192 2.5 1.732 2.5z"
+							/>
+						</svg>
+						<span>This price update will result in a margin below 10%</span>
+					</div>
 				</div>
-			{/if}
-		</div>
-		<div class="flex gap-3">
-			<!-- Test Mode Toggle -->
-			<button
-				class="{testMode
-					? 'bg-purple-600 hover:bg-purple-700'
-					: 'bg-gray-600 hover:bg-gray-700'} text-white py-2 px-4 rounded flex items-center gap-2"
-				on:click={toggleTestMode}
-				title={testMode ? 'Switch back to production data' : 'Switch to sandbox test environment'}
-			>
-				{#if testMode}
-					🧪 Test Mode ON
-				{:else}
-					🧪 Test Mode
-				{/if}
-			</button>
 
-			<!-- Safety Margin Control (only show in production mode) -->
-			{#if !testMode}
-				<div class="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-2">
-					<label for="safety-margin" class="text-sm font-medium text-green-800">
-						🛡️ Price Safety Margin:
-					</label>
-					<select
-						id="safety-margin"
-						bind:value={safetyMarginPercent}
-						class="bg-white border border-green-300 rounded px-2 py-1 text-sm text-green-800 focus:outline-none focus:ring-2 focus:ring-green-500"
-					>
-						<option value={5}>5%</option>
-						<option value={10}>10%</option>
-						<option value={15}>15%</option>
-						<option value={20}>20%</option>
-					</select>
-					<span
-						class="text-xs text-green-600"
-						title="Additional buffer added to target price; separate 10% margin safety check still applies"
-					>
-						Price buffer (margin safety is 10% minimum)
-					</span>
+				<div class="modal-action">
+					<button class="btn btn-outline" on:click={closeMarginModal}>Cancel</button>
+					<button class="btn btn-warning" on:click={confirmLowMarginUpdate}>
+						Proceed Anyway
+					</button>
 				</div>
-			{/if}
-
-			<!-- Test API Connectivity (only show in test mode) -->
-			{#if testMode}
-				<button
-					class="bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded flex items-center gap-2"
-					on:click={testAmazonAPIConnectivity}
-					title="Test Amazon SP-API connectivity in sandbox"
-				>
-					🔗 Test API
-				</button>
-			{/if}
-
-			<button
-				class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
-				on:click={refreshData}
-			>
-				{testMode ? 'Reload Test Data' : 'Refresh Data'}
-			</button>
-
-			{#if !testMode}
-				<button
-					class="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded flex items-center gap-2"
-					on:click={bulkScanTop100}
-				>
-					🚀 Update Top 100
-				</button>
-			{/if}
-
-			{#if customPrices.size > 0}
-				<button
-					class="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded flex items-center gap-2"
-					on:click={clearAllCustomPrices}
-					title="Clear all custom prices"
-				>
-					🗑️ Clear Custom Prices ({customPrices.size})
-				</button>
-			{/if}
-
-			{#if !testMode}
-				<a
-					href="/buy-box-monitor/jobs"
-					class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded"
-				>
-					Go to Jobs
-				</a>
 			{/if}
 		</div>
 	</div>
+{/if}
 
-	{#if errorMessage}
-		<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6" role="alert">
-			<p class="font-medium">Error Loading Data</p>
-			<p class="text-sm mt-1">{errorMessage}</p>
-			{#if errorMessage.includes('too large') || errorMessage.includes('size')}
-				<div class="mt-3 p-3 bg-red-50 rounded text-sm">
-					<p class="font-medium text-red-800 mb-2">💡 Tips to reduce data size:</p>
-					<ul class="list-disc list-inside space-y-1 text-red-700">
-						<li>Use "Latest data only" filter (enabled by default)</li>
-						<li>Add search filters for specific SKUs or ASINs</li>
-						<li>Filter by category (Winners, Opportunities, etc.)</li>
-						<li>Use minimum profit/margin filters</li>
-						<li>Contact support if you need access to larger datasets</li>
-					</ul>
-				</div>
-			{/if}
-		</div>
-	{/if}
-
-	<!-- Consolidated Smart Status Panel -->
-	{#if !isLoading && buyboxData.length > 0}
-		<div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
-			<!-- Status Header -->
-			<div class="bg-gradient-to-r from-blue-50 to-green-50 px-4 py-3 border-b">
-				<div class="flex justify-between items-center">
-					<div class="flex items-center gap-3">
-						<div class="text-lg font-medium text-gray-900">📊 Dataset Status</div>
-						<div class="flex gap-2">
-							{#if showLatestOnly}
-								<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
-									Latest Only
-								</span>
-							{:else}
-								<span class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium">
-									Historical Data
-								</span>
-							{/if}
-							{#if !includeNoMarginData}
-								<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-									Optimized View
-								</span>
-							{/if}
+<!-- Toast Notification Container -->
+{#if toastNotifications.length > 0}
+	<div
+		class="fixed top-16 left-1/2 transform -translate-x-1/2 z-50 space-y-2"
+		style="max-width: 500px; width: 90vw;"
+	>
+		{#each toastNotifications as toast (toast.id)}
+			<div
+				class="bg-white border-l-4 rounded-lg shadow-xl p-4 transition-all duration-300 ease-in-out transform"
+				class:border-green-500={toast.type === 'success'}
+				class:border-red-500={toast.type === 'error'}
+				class:border-yellow-500={toast.type === 'warning'}
+				class:border-blue-500={toast.type === 'info'}
+				in:fade={{ duration: 300 }}
+				out:fade={{ duration: 200 }}
+			>
+				<div class="flex items-start justify-between">
+					<div class="flex-1">
+						<div class="flex items-center gap-2">
+							<span class="text-lg">
+								{#if toast.type === 'success'}
+									✅
+								{:else if toast.type === 'error'}
+									❌
+								{:else if toast.type === 'warning'}
+									⚠️
+								{:else}
+									ℹ️
+								{/if}
+							</span>
+							<div
+								class="font-semibold text-sm"
+								class:text-green-800={toast.type === 'success'}
+								class:text-red-800={toast.type === 'error'}
+								class:text-yellow-800={toast.type === 'warning'}
+								class:text-blue-800={toast.type === 'info'}
+							>
+								{toast.title}
+							</div>
+						</div>
+						<div class="text-sm text-gray-700 mt-1 leading-tight">
+							{toast.message}
+						</div>
+						<div class="text-xs text-gray-500 mt-2">
+							{toast.timestamp.toLocaleTimeString()}
 						</div>
 					</div>
 					<button
-						on:click={() => (alertsExpanded = !alertsExpanded)}
-						class="text-gray-500 hover:text-gray-700 transition-colors"
+						on:click={() => removeToast(toast.id)}
+						class="ml-3 text-gray-400 hover:text-gray-600 transition-colors"
+						title="Dismiss"
+						aria-label="Dismiss notification"
 					>
-						{alertsExpanded ? '▼' : '▶'} Details
+						<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+							<path
+								fill-rule="evenodd"
+								d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+								clip-rule="evenodd"
+							></path>
+						</svg>
 					</button>
 				</div>
-
-				<!-- Quick Summary -->
-				<div class="mt-2 text-sm text-gray-600">
-					{totalResults} products displayed •
-					{totalWinners} wins •
-					{totalOpportunities} opportunities • £{totalPotentialProfit.toFixed(0)} potential
-				</div>
 			</div>
+		{/each}
+	</div>
+{/if}
 
-			<!-- Expandable Details -->
-			{#if alertsExpanded}
-				<div class="p-4 space-y-3 bg-gray-50">
-					<!-- Data Mode Info -->
-					<div class="flex items-start gap-3">
-						<div class="text-blue-500 mt-0.5">📊</div>
-						<div class="flex-1">
-							<div class="font-medium text-gray-900 mb-1">Data Mode</div>
-							{#if showLatestOnly}
-								<p class="text-sm text-gray-600">
-									Showing latest scan data per SKU. Multiple daily scans are deduplicated.
-								</p>
-								<button
-									on:click={() => {
-										showLatestOnly = false;
-										refreshData();
-									}}
-									class="text-blue-600 hover:text-blue-800 text-xs underline mt-1"
-								>
-									Switch to historical data
-								</button>
+<!-- Main Page Layout with Persistent Sidebar -->
+<div class="flex h-screen">
+	<div class="flex-1 overflow-y-auto min-w-0">
+		<div class="px-1 py-6 max-w-none">
+			<div class="flex justify-between items-center mb-4">
+				<div>
+					<div class="flex items-center gap-3">
+						<h1 class="text-3xl font-bold mb-2">Buy Box Manager</h1>
+						{#if testMode}
+							<span
+								class="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium"
+							>
+								🧪 SANDBOX TEST MODE
+							</span>
+						{/if}
+					</div>
+					<p class="text-gray-600">
+						{testMode
+							? 'Testing Match Buy Box functionality in Amazon sandbox environment'
+							: 'Analyze and manage your Buy Box performance'}
+					</p>
+				</div>
+
+				<!-- Live Update Status Indicator -->
+				{#if hasActiveUpdates}
+					<div class="mt-2 flex items-center gap-2 text-blue-600 text-sm" in:fade>
+						<svg
+							class="animate-spin h-4 w-4"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<circle
+								class="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								stroke-width="4"
+							></circle>
+							<path
+								class="opacity-75"
+								fill="currentColor"
+								d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+							></path>
+						</svg>
+						<span class="font-medium">
+							{activeUpdates.length === 1
+								? '1 live update'
+								: `${activeUpdates.length} live updates`} in progress...
+						</span>
+					</div>
+				{/if}
+
+				<!-- Rate Limiter Status Indicator -->
+				{#if rateLimiterStatus.queueLength > 0 || rateLimiterStatus.estimatedWaitTime > 1000}
+					<div class="mt-2 flex items-center gap-2 text-orange-600 text-sm" in:fade>
+						<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+							<path
+								fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+						<span class="font-medium">
+							{#if rateLimiterStatus.queueLength > 0}
+								Rate Limited: {rateLimiterStatus.queueLength} requests queued
+								{#if rateLimiterStatus.estimatedWaitTime > 0}
+									(~{rateLimiterStatus.estimatedWaitTimeFormatted} wait)
+								{/if}
 							{:else}
-								<p class="text-sm text-gray-600">
-									Showing all scan records including multiple entries per SKU.
-								</p>
-								<button
-									on:click={() => {
-										showLatestOnly = true;
-										refreshData();
-									}}
-									class="text-purple-600 hover:text-purple-800 text-xs underline mt-1"
-								>
-									Switch to latest only
-								</button>
+								Rate Limited: Next request in {rateLimiterStatus.estimatedWaitTimeFormatted}
 							{/if}
+						</span>
+					</div>
+				{/if}
+			</div>
+			<div class="flex gap-3">
+				<!-- Test Mode Toggle -->
+				<button
+					class="{testMode
+						? 'bg-purple-600 hover:bg-purple-700'
+						: 'bg-gray-600 hover:bg-gray-700'} text-white py-2 px-4 rounded flex items-center gap-2"
+					on:click={toggleTestMode}
+					title={testMode ? 'Switch back to production data' : 'Switch to sandbox test environment'}
+				>
+					{#if testMode}
+						🧪 Test Mode ON
+					{:else}
+						🧪 Test Mode
+					{/if}
+				</button>
+
+				<!-- Safety Margin Control (only show in production mode) -->
+				{#if !testMode}
+					<div
+						class="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-2"
+					>
+						<label for="safety-margin" class="text-sm font-medium text-green-800">
+							🛡️ Price Safety Margin:
+						</label>
+						<select
+							id="safety-margin"
+							bind:value={safetyMarginPercent}
+							class="bg-white border border-green-300 rounded px-2 py-1 text-sm text-green-800 focus:outline-none focus:ring-2 focus:ring-green-500"
+						>
+							<option value={5}>5%</option>
+							<option value={10}>10%</option>
+							<option value={15}>15%</option>
+							<option value={20}>20%</option>
+						</select>
+						<span
+							class="text-xs text-green-600"
+							title="Additional buffer added to target price; separate 10% margin safety check still applies"
+						>
+							Price buffer (margin safety is 10% minimum)
+						</span>
+					</div>
+				{/if}
+
+				<!-- Test API Connectivity (only show in test mode) -->
+				{#if testMode}
+					<button
+						class="bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded flex items-center gap-2"
+						on:click={testAmazonAPIConnectivity}
+						title="Test Amazon SP-API connectivity in sandbox"
+					>
+						🔗 Test API
+					</button>
+				{/if}
+
+				<button
+					class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
+					on:click={refreshData}
+				>
+					{testMode ? 'Reload Test Data' : 'Refresh Data'}
+				</button>
+
+				{#if !testMode}
+					<button
+						class="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded flex items-center gap-2"
+						on:click={bulkScanTop100}
+					>
+						🚀 Update Top 100
+					</button>
+				{/if}
+
+				{#if customPrices.size > 0}
+					<button
+						class="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded flex items-center gap-2"
+						on:click={clearAllCustomPrices}
+						title="Clear all custom prices"
+					>
+						🗑️ Clear Custom Prices ({customPrices.size})
+					</button>
+				{/if}
+
+				{#if !testMode}
+					<a
+						href="/buy-box-monitor/jobs"
+						class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded"
+					>
+						Go to Jobs
+					</a>
+				{/if}
+			</div>
+		</div>
+
+		{#if errorMessage}
+			<div
+				class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"
+				role="alert"
+			>
+				<p class="font-medium">Error Loading Data</p>
+				<p class="text-sm mt-1">{errorMessage}</p>
+				{#if errorMessage.includes('too large') || errorMessage.includes('size')}
+					<div class="mt-3 p-3 bg-red-50 rounded text-sm">
+						<p class="font-medium text-red-800 mb-2">💡 Tips to reduce data size:</p>
+						<ul class="list-disc list-inside space-y-1 text-red-700">
+							<li>Use "Latest data only" filter (enabled by default)</li>
+							<li>Add search filters for specific SKUs or ASINs</li>
+							<li>Filter by category (Winners, Opportunities, etc.)</li>
+							<li>Use minimum profit/margin filters</li>
+							<li>Contact support if you need access to larger datasets</li>
+						</ul>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Consolidated Smart Status Panel -->
+		{#if !isLoading && buyboxData.length > 0}
+			<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+				<!-- Status Header -->
+				<div class="bg-gradient-to-r from-blue-50 to-green-50 px-4 py-3 border-b">
+					<div class="flex justify-between items-center">
+						<div class="flex items-center gap-3">
+							<div class="text-lg font-medium text-gray-900">📊 Dataset Status</div>
+							<div class="flex gap-2">
+								{#if showLatestOnly}
+									<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+										Latest Only
+									</span>
+								{:else}
+									<span class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium">
+										Historical Data
+									</span>
+								{/if}
+								{#if !includeNoMarginData}
+									<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
+										Optimized View
+									</span>
+								{/if}
+							</div>
 						</div>
+						<button
+							on:click={() => (alertsExpanded = !alertsExpanded)}
+							class="text-gray-500 hover:text-gray-700 transition-colors"
+						>
+							{alertsExpanded ? '▼' : '▶'} Details
+						</button>
 					</div>
 
-					<!-- Optimization Info -->
-					<div class="flex items-start gap-3">
-						<div class="text-green-500 mt-0.5">🎯</div>
-						<div class="flex-1">
-							<div class="font-medium text-gray-900 mb-1">Performance Mode</div>
-							{#if !includeNoMarginData}
-								<p class="text-sm text-gray-600">
-									Only showing products with cost data. Excludes ~50-70% of records without margin
-									calculations.
-								</p>
-								<button
-									on:click={() => {
-										includeNoMarginData = true;
-										refreshData();
-									}}
-									class="text-green-600 hover:text-green-800 text-xs underline mt-1"
-								>
-									Include all records (slower)
-								</button>
-							{:else}
-								<p class="text-sm text-gray-600">
-									Including all records. This increases load times and may hit size limits.
-								</p>
-								<button
-									on:click={() => {
-										includeNoMarginData = false;
-										refreshData();
-									}}
-									class="text-orange-600 hover:text-orange-800 text-xs underline mt-1"
-								>
-									Use optimized view
-								</button>
-							{/if}
-						</div>
+					<!-- Quick Summary -->
+					<div class="mt-2 text-sm text-gray-600">
+						{totalResults} products displayed •
+						{totalWinners} wins •
+						{totalOpportunities} opportunities • £{totalPotentialProfit.toFixed(0)} potential
 					</div>
+				</div>
 
-					<!-- Base Cost Filtering -->
-					{#if !isLoading && buyboxData.length > 0}
-						{@const itemsWithoutBaseCost = allRawData.filter(
-							(item) => !item.your_cost || item.your_cost <= 0
-						).length}
-						{#if itemsWithoutBaseCost > 0}
-							<div class="flex items-start gap-3">
-								<div class="text-blue-500 mt-0.5">💰</div>
-								<div class="flex-1">
-									<div class="font-medium text-gray-900 mb-1">Cost Data Filtering</div>
+				<!-- Expandable Details -->
+				{#if alertsExpanded}
+					<div class="p-4 space-y-3 bg-gray-50">
+						<!-- Data Mode Info -->
+						<div class="flex items-start gap-3">
+							<div class="text-blue-500 mt-0.5">📊</div>
+							<div class="flex-1">
+								<div class="font-medium text-gray-900 mb-1">Data Mode</div>
+								{#if showLatestOnly}
 									<p class="text-sm text-gray-600">
-										Hiding {itemsWithoutBaseCost} items missing base cost data to ensure accurate profit
+										Showing latest scan data per SKU. Multiple daily scans are deduplicated.
+									</p>
+									<button
+										on:click={() => {
+											showLatestOnly = false;
+											refreshData();
+										}}
+										class="text-blue-600 hover:text-blue-800 text-xs underline mt-1"
+									>
+										Switch to historical data
+									</button>
+								{:else}
+									<p class="text-sm text-gray-600">
+										Showing all scan records including multiple entries per SKU.
+									</p>
+									<button
+										on:click={() => {
+											showLatestOnly = true;
+											refreshData();
+										}}
+										class="text-purple-600 hover:text-purple-800 text-xs underline mt-1"
+									>
+										Switch to latest only
+									</button>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Optimization Info -->
+						<div class="flex items-start gap-3">
+							<div class="text-green-500 mt-0.5">🎯</div>
+							<div class="flex-1">
+								<div class="font-medium text-gray-900 mb-1">Performance Mode</div>
+								{#if !includeNoMarginData}
+									<p class="text-sm text-gray-600">
+										Only showing products with cost data. Excludes ~50-70% of records without margin
 										calculations.
 									</p>
-								</div>
-							</div>
-						{/if}
-					{/if}
-
-					<!-- Data Freshness -->
-					{#if !isLoading && buyboxData.length > 0}
-						{@const oldestData = Math.min(
-							...buyboxData.map((item) => new Date(item.captured_at).getTime())
-						)}
-						{@const oldestAge = Math.floor((Date.now() - oldestData) / (1000 * 60 * 60))}
-						{#if oldestAge > 24}
-							<div class="flex items-start gap-3">
-								<div class="text-yellow-500 mt-0.5">⚠️</div>
-								<div class="flex-1">
-									<div class="font-medium text-gray-900 mb-1">Data Freshness Warning</div>
+									<button
+										on:click={() => {
+											includeNoMarginData = true;
+											refreshData();
+										}}
+										class="text-green-600 hover:text-green-800 text-xs underline mt-1"
+									>
+										Include all records (slower)
+									</button>
+								{:else}
 									<p class="text-sm text-gray-600">
-										Oldest data is {oldestAge} hours old. Consider running a fresh scan.
+										Including all records. This increases load times and may hit size limits.
 									</p>
-									<div class="flex gap-2 mt-2">
-										<a
-											href="/buy-box-monitor/jobs"
-											class="bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded text-xs"
-										>
-											Run New Scan
-										</a>
-										<button
-											on:click={refreshData}
-											class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-xs"
-										>
-											Refresh Data
-										</button>
+									<button
+										on:click={() => {
+											includeNoMarginData = false;
+											refreshData();
+										}}
+										class="text-orange-600 hover:text-orange-800 text-xs underline mt-1"
+									>
+										Use optimized view
+									</button>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Base Cost Filtering -->
+						{#if !isLoading && buyboxData.length > 0}
+							{@const itemsWithoutBaseCost = allRawData.filter(
+								(item) => !item.your_cost || item.your_cost <= 0
+							).length}
+							{#if itemsWithoutBaseCost > 0}
+								<div class="flex items-start gap-3">
+									<div class="text-blue-500 mt-0.5">💰</div>
+									<div class="flex-1">
+										<div class="font-medium text-gray-900 mb-1">Cost Data Filtering</div>
+										<p class="text-sm text-gray-600">
+											Hiding {itemsWithoutBaseCost} items missing base cost data to ensure accurate profit
+											calculations.
+										</p>
 									</div>
 								</div>
-							</div>
+							{/if}
 						{/if}
-					{/if}
-				</div>
-			{/if}
-		</div>
-	{/if}
 
-	<!-- Enhanced Summary Statistics Cards -->
-	{#if !isLoading && buyboxData.length > 0}
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
-			<!-- Winners Card -->
-			<button
-				on:click={() => handleSummaryCardClick('winners')}
-				class={`bg-green-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
-					activeCardFilter === 'Buy Box Winners' ? 'ring-2 ring-green-400 bg-green-100' : ''
-				}`}
-			>
-				<h3 class="text-sm font-medium text-gray-500 mb-1">Buy Box Won</h3>
-				<p class="text-2xl font-bold text-green-600">{totalWinners}</p>
-				<p class="text-xs text-gray-400">
-					{activeCardFilter === 'Buy Box Winners'
-						? 'Active filter - click to clear'
-						: 'Click to filter winners'}
-				</p>
-			</button>
-
-			<!-- Opportunities Card -->
-			<button
-				on:click={() => handleSummaryCardClick('opportunities')}
-				class={`bg-yellow-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
-					activeCardFilter === 'Opportunities' ? 'ring-2 ring-yellow-400 bg-yellow-100' : ''
-				}`}
-			>
-				<h3 class="text-sm font-medium text-gray-500 mb-1">Opportunities</h3>
-				<p class="text-2xl font-bold text-yellow-600">{totalOpportunities}</p>
-				<p class="text-xs text-gray-400">
-					{activeCardFilter === 'Opportunities'
-						? 'Active filter - click to clear'
-						: 'Click to find opportunities'}
-				</p>
-			</button>
-
-			<!-- Profitable Ops Card -->
-			<button
-				on:click={() => handleSummaryCardClick('profitable')}
-				class={`bg-purple-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
-					activeCardFilter === 'Profitable Items' ? 'ring-2 ring-purple-400 bg-purple-100' : ''
-				}`}
-			>
-				<h3 class="text-sm font-medium text-gray-500 mb-1">Profitable Ops</h3>
-				<p class="text-2xl font-bold text-purple-600">{totalProfitable}</p>
-				<p class="text-xs text-gray-400">
-					{activeCardFilter === 'Profitable Items'
-						? 'Active filter - click to clear'
-						: 'Click for profitable items'}
-				</p>
-			</button>
-
-			<!-- Analyzed Card -->
-			<button
-				on:click={() => handleSummaryCardClick('analyzed')}
-				class="bg-blue-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
-			>
-				<h3 class="text-sm font-medium text-gray-500 mb-1">Analyzed</h3>
-				<p class="text-2xl font-bold text-blue-600">{totalMarginAnalyzed}</p>
-				<p class="text-xs text-gray-400">
-					of {buyboxData.length} SKUs
-					{#if showLatestOnly}
-						<span class="block text-blue-600">(Latest data only)</span>
-					{:else}
-						<span class="block text-purple-600">(All historical data)</span>
-					{/if}
-				</p>
-			</button>
-
-			<!-- Average Profit Card -->
-			<button
-				on:click={() => handleSummaryCardClick('avg-profit')}
-				class="bg-orange-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
-			>
-				<h3 class="text-sm font-medium text-gray-500 mb-1">Avg Profit</h3>
-				<p
-					class={`text-2xl font-bold ${avgProfit >= 2 ? 'text-green-600' : avgProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
-				>
-					£{avgProfit.toFixed(2)}
-				</p>
-				<p class="text-xs text-gray-400">Click for high-profit items</p>
-			</button>
-
-			<!-- Potential Profit Card -->
-			<button
-				on:click={() => handleSummaryCardClick('potential')}
-				class="bg-indigo-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
-			>
-				<h3 class="text-sm font-medium text-gray-500 mb-1">Potential</h3>
-				<p class="text-2xl font-bold text-indigo-600">£{totalPotentialProfit.toFixed(2)}</p>
-				<p class="text-xs text-gray-400">Click for all opportunities</p>
-			</button>
-		</div>
-	{/if}
-
-	<!-- Enhanced Filters and Search -->
-	<div class="bg-white rounded-lg shadow p-6 mb-6">
-		<div class="flex items-center justify-between mb-4">
-			<h2 class="font-semibold">Filters & Search</h2>
-			<button
-				on:click={() => (filtersExpanded = !filtersExpanded)}
-				class="text-gray-500 hover:text-gray-700 transition-colors text-sm"
-			>
-				{filtersExpanded ? '▼ Collapse' : '▶ Expand All'}
-			</button>
-		</div>
-
-		<!-- Quick Filter Presets -->
-		<div class="mb-6">
-			<h3 class="text-sm font-medium text-gray-700 mb-3">Quick Filters</h3>
-			<div class="flex flex-wrap gap-2">
-				{#each filterPresets as preset}
-					<div
-						class={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-							activePresetFilter === preset.name
-								? 'bg-blue-100 text-blue-800 ring-2 ring-blue-300'
-								: 'bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer'
-						}`}
-					>
-						<button on:click={() => applyFilterPreset(preset)} class="flex items-center gap-2">
-							<span>{preset.emoji}</span>
-							<span>{preset.name}</span>
-						</button>
-						{#if activePresetFilter === preset.name}
-							<button
-								on:click={resetAllFilters}
-								class="ml-1 text-blue-600 hover:text-blue-800"
-								title="Clear this filter"
-							>
-								×
-							</button>
+						<!-- Data Freshness -->
+						{#if !isLoading && buyboxData.length > 0}
+							{@const oldestData = Math.min(
+								...buyboxData.map((item) => new Date(item.captured_at).getTime())
+							)}
+							{@const oldestAge = Math.floor((Date.now() - oldestData) / (1000 * 60 * 60))}
+							{#if oldestAge > 24}
+								<div class="flex items-start gap-3">
+									<div class="text-yellow-500 mt-0.5">⚠️</div>
+									<div class="flex-1">
+										<div class="font-medium text-gray-900 mb-1">Data Freshness Warning</div>
+										<p class="text-sm text-gray-600">
+											Oldest data is {oldestAge} hours old. Consider running a fresh scan.
+										</p>
+										<div class="flex gap-2 mt-2">
+											<a
+												href="/buy-box-monitor/jobs"
+												class="bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded text-xs"
+											>
+												Run New Scan
+											</a>
+											<button
+												on:click={refreshData}
+												class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-xs"
+											>
+												Refresh Data
+											</button>
+										</div>
+									</div>
+								</div>
+							{/if}
 						{/if}
 					</div>
-				{/each}
-				<button
-					on:click={resetAllFilters}
-					class="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-				>
-					🔄 Clear All
-				</button>
-			</div>
-		</div>
-
-		<!-- Active Filters Indicator -->
-		{#if hasActiveFilters}
-			<div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-2">
-						<span class="text-sm font-medium text-blue-900">Active Filters:</span>
-						<div class="flex flex-wrap gap-1">
-							{#if activeCardFilter}
-								<span
-									class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-								>
-									📊 {activeCardFilter}
-									<button
-										on:click={resetAllFilters}
-										class="text-blue-600 hover:text-blue-800 ml-1"
-										title="Clear this filter"
-									>
-										×
-									</button>
-								</span>
-							{/if}
-							{#if activePresetFilter}
-								<span
-									class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-								>
-									🎯 {activePresetFilter}
-									<button
-										on:click={resetAllFilters}
-										class="text-green-600 hover:text-green-800 ml-1"
-										title="Clear this filter"
-									>
-										×
-									</button>
-								</span>
-							{/if}
-							{#if searchQuery}
-								<span
-									class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-								>
-									🔍 Search: "{searchQuery}"
-									<button
-										on:click={() => {
-											searchQuery = '';
-											applyFilters();
-										}}
-										class="text-yellow-600 hover:text-yellow-800 ml-1"
-										title="Clear search"
-									>
-										×
-									</button>
-								</span>
-							{/if}
-							{#if categoryFilter !== 'all'}
-								<span
-									class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-								>
-									📂 Category: {categoryFilter}
-									<button
-										on:click={() => {
-											categoryFilter = 'all';
-											applyFilters();
-										}}
-										class="text-purple-600 hover:text-purple-800 ml-1"
-										title="Clear category filter"
-									>
-										×
-									</button>
-								</span>
-							{/if}
-							{#if shippingFilter !== 'all'}
-								<span
-									class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-								>
-									{shippingFilter === 'prime' ? '⚡' : '📦'}
-									{shippingFilter === 'prime' ? 'Prime' : 'Standard'} Shipping
-									<button
-										on:click={() => {
-											shippingFilter = 'all';
-											applyFilters();
-										}}
-										class="text-orange-600 hover:text-orange-800 ml-1"
-										title="Clear shipping filter"
-									>
-										×
-									</button>
-								</span>
-							{/if}
-							{#if minProfitFilter > 0}
-								<span
-									class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-								>
-									💰 Min Profit: £{minProfitFilter}
-									<button
-										on:click={() => {
-											minProfitFilter = 0;
-											applyFilters();
-										}}
-										class="text-green-600 hover:text-green-800 ml-1"
-										title="Clear profit filter"
-									>
-										×
-									</button>
-								</span>
-							{/if}
-							{#if minMarginFilter > 0}
-								<span
-									class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-								>
-									📊 Min ROI Margin: {minMarginFilter}%
-									<button
-										on:click={() => {
-											minMarginFilter = 0;
-											applyFilters();
-										}}
-										class="text-orange-600 hover:text-orange-800 ml-1"
-										title="Clear ROI margin filter"
-									>
-										×
-									</button>
-								</span>
-							{/if}
-						</div>
-					</div>
-					<button
-						on:click={resetAllFilters}
-						class="text-blue-600 hover:text-blue-800 text-sm underline"
-					>
-						Clear All Filters
-					</button>
-				</div>
+				{/if}
 			</div>
 		{/if}
 
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-			<!-- Search -->
-			<div>
-				<label for="search" class="block text-sm font-medium text-gray-700 mb-1"
-					>Search SKU/ASIN/Product</label
-				>
-				<input
-					id="search"
-					type="text"
-					placeholder="Enter SKU, ASIN, or Product Title"
-					class="w-full border rounded px-3 py-2"
-					bind:value={searchQuery}
-					on:input={applyFiltersFromEvent}
-				/>
-			</div>
-
-			<!-- Category Filter -->
-			<div>
-				<label for="category" class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-				<select
-					id="category"
-					class="w-full border rounded px-3 py-2"
-					bind:value={categoryFilter}
-					on:change={applyFiltersFromEvent}
-				>
-					<option value="all">All Products</option>
-					<option value="winners">🏆 Buy Box Winners</option>
-					<option value="losers">❌ Not Winning</option>
-					<option value="opportunities">⚡ Opportunities</option>
-					<option value="profitable">💰 Profitable Ops</option>
-					<optgroup label="Recommendations">
-						<option value="not_profitable">🚫 Not Profitable</option>
-						<option value="match_buybox">🎯 Match Buy Box</option>
-						<option value="hold_price">✋ Hold Price</option>
-						<option value="investigate">🔍 Investigate</option>
-					</optgroup>
-				</select>
-			</div>
-
-			<!-- Sort By -->
-			<div>
-				<label for="sort" class="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
-				<select
-					id="sort"
-					class="w-full border rounded px-3 py-2"
-					bind:value={sortBy}
-					on:change={applyFiltersFromEvent}
-				>
-					<option value="profit_desc">💰 Profit (High to Low)</option>
-					<option value="profit_asc">💰 Profit (Low to High)</option>
-					<option value="margin_desc">📊 ROI Margin % (High to Low)</option>
-					<option value="margin_asc">📊 ROI Margin % (Low to High)</option>
-					<option value="profit_difference_desc">💸 Losing by Most (Biggest Price Gap)</option>
-					<option value="profit_difference_asc">🎯 Quick Wins (Smallest Price Gap)</option>
-					<option value="margin_difference_desc">📊 Margin Opportunities (Biggest First)</option>
-					<option value="margin_difference_asc">📊 Margin Opportunities (Smallest First)</option>
-					<option value="sku_asc">📝 SKU (A to Z)</option>
-				</select>
-			</div>
-
-			<!-- Items per page -->
-			<div>
-				<label for="perPage" class="block text-sm font-medium text-gray-700 mb-1"
-					>Items per page</label
-				>
-				<select
-					id="perPage"
-					class="w-full border rounded px-3 py-2"
-					bind:value={itemsPerPage}
-					on:change={applyFiltersFromEvent}
-				>
-					<option value={25}>25</option>
-					<option value={50}>50</option>
-					<option value={100}>100</option>
-					<option value={200}>200</option>
-				</select>
-			</div>
-		</div>
-
-		<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-			<!-- Latest Data Only Filter -->
-			<div class="flex items-center">
-				<input
-					type="checkbox"
-					id="latestOnly"
-					class="mr-2"
-					bind:checked={showLatestOnly}
-					on:change={refreshData}
-				/>
-				<label for="latestOnly" class="text-sm">
-					Show only latest data per SKU
-					<span class="text-xs text-gray-500 block"> (Hides duplicate scans from same day) </span>
-				</label>
-			</div>
-
-			<!-- Margin Data Filter -->
-			<div class="flex items-center">
-				<input
-					type="checkbox"
-					id="marginData"
-					class="mr-2"
-					bind:checked={showOnlyWithMarginData}
-					on:change={applyFiltersFromEvent}
-				/>
-				<label for="marginData" class="text-sm">Only show items with margin data</label>
-			</div>
-
-			<!-- Include No Margin Data -->
-			<div class="flex items-center">
-				<input
-					type="checkbox"
-					id="includeNoMargin"
-					class="mr-2"
-					bind:checked={includeNoMarginData}
-					on:change={refreshData}
-				/>
-				<label for="includeNoMargin" class="text-sm">
-					Include records without cost data
-					<span class="text-xs text-gray-500 block"> (Increases data size significantly) </span>
-				</label>
-			</div>
-
-			<!-- Min Profit Filter -->
-			<div>
-				<label for="minProfit" class="block text-sm font-medium text-gray-700 mb-1"
-					>Min Profit £</label
-				>
-				<input
-					id="minProfit"
-					type="number"
-					min="0"
-					step="0.5"
-					placeholder="0.00"
-					class="w-full border rounded px-3 py-2"
-					bind:value={minProfitFilter}
-					on:input={applyFiltersFromEvent}
-				/>
-			</div>
-		</div>
-
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-			<!-- Min Margin Filter -->
-			<div>
-				<label for="minMargin" class="block text-sm font-medium text-gray-700 mb-1"
-					>Min ROI Margin %</label
-				>
-				<input
-					id="minMargin"
-					type="number"
-					min="0"
-					max="100"
-					step="1"
-					placeholder="0"
-					class="w-full border rounded px-3 py-2"
-					bind:value={minMarginFilter}
-					on:input={applyFiltersFromEvent}
-				/>
-			</div>
-		</div>
-	</div>
-
-	<!-- Results -->
-	<div class="bg-white rounded-lg shadow" data-results-section>
-		<div class="px-6 py-4 border-b border-gray-200">
-			<div class="flex justify-between items-center">
-				<div class="flex items-center gap-4">
-					<h2 class="font-semibold">
-						Buy Box Results ({totalResults} items)
-						{#if showLatestOnly}
-							<span class="text-sm font-normal text-blue-600"> - Latest data only </span>
-						{:else}
-							<span class="text-sm font-normal text-purple-600"> - All historical data </span>
-						{/if}
-					</h2>
-
-					<!-- View Mode Toggle -->
-					<div class="flex bg-gray-100 rounded-lg p-1">
-						<button
-							on:click={() => {
-								viewMode = 'individual';
-								currentPage = 1;
-							}}
-							class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-								viewMode === 'individual'
-									? 'bg-white text-blue-600 shadow-sm'
-									: 'text-gray-600 hover:text-gray-800'
-							}`}
-						>
-							📋 Individual SKUs
-						</button>
-						<button
-							on:click={() => {
-								viewMode = 'grouped';
-								currentPage = 1;
-							}}
-							class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-								viewMode === 'grouped'
-									? 'bg-white text-blue-600 shadow-sm'
-									: 'text-gray-600 hover:text-gray-800'
-							}`}
-						>
-							📦 Grouped by ASIN
-						</button>
-						<button
-							on:click={() => {
-								viewMode = 'bestsellers';
-								currentPage = 1;
-							}}
-							class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-								viewMode === 'bestsellers'
-									? 'bg-white text-orange-600 shadow-sm'
-									: 'text-gray-600 hover:text-gray-800'
-							}`}
-						>
-							🏆 Top 100 Best Sellers
-						</button>
-					</div>
-				</div>
-				<div class="flex items-center gap-3 text-sm text-gray-500">
-					{#if showLatestOnly}
-						<button
-							on:click={() => {
-								showLatestOnly = false;
-								refreshData();
-							}}
-							class="text-blue-600 hover:text-blue-800 underline"
-						>
-							View history
-						</button>
-					{:else}
-						<button
-							on:click={() => {
-								showLatestOnly = true;
-								refreshData();
-							}}
-							class="text-purple-600 hover:text-purple-800 underline"
-						>
-							Latest only
-						</button>
-					{/if}
-				</div>
-			</div>
-		</div>
-
-		<!-- Top Pagination -->
-		{#if totalResults > itemsPerPage}
-			<div class="px-6 py-3 border-b border-gray-200 bg-gray-50">
-				<div class="flex justify-between items-center">
-					<div class="text-sm text-gray-500">
-						Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
-							currentPage * itemsPerPage,
-							totalResults
-						)} of {totalResults} results
-					</div>
-					<div class="flex space-x-1">
-						<button
-							class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
-							disabled={currentPage === 1}
-							on:click={() => changePage(currentPage - 1, false)}
-						>
-							Previous
-						</button>
-
-						{#each Array(Math.min(5, Math.ceil(totalResults / itemsPerPage))) as _, i}
-							{@const pageNumber = Math.max(1, currentPage - 2) + i}
-							{#if pageNumber <= Math.ceil(totalResults / itemsPerPage)}
+		<!-- Feed Status Monitor -->
+		{#if feedStatusChecks.size > 0}
+			<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+				<div class="bg-gradient-to-r from-orange-50 to-blue-50 px-4 py-3 border-b">
+					<div class="flex justify-between items-center">
+						<div class="flex items-center gap-3">
+							<div class="text-lg font-medium text-gray-900">📡 Feed Status Monitor</div>
+							<div class="flex gap-2">
+								<span class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium">
+									{Array.from(feedStatusChecks.values()).filter((f) => f.success && !f.isComplete)
+										.length} Active
+								</span>
+								<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
+									{Array.from(feedStatusChecks.values()).filter(
+										(f) => f.success && f.isComplete && !f.needsAttention
+									).length} Completed
+								</span>
+								{#if Array.from(feedStatusChecks.values()).filter((f) => f.success && f.isComplete && f.needsAttention).length > 0}
+									<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">
+										{Array.from(feedStatusChecks.values()).filter(
+											(f) => f.success && f.isComplete && f.needsAttention
+										).length} Issues
+									</span>
+								{/if}
+							</div>
+						</div>
+						<div class="flex gap-2">
+							{#if feedStatusInterval}
 								<button
-									class={`px-3 py-1 rounded border ${currentPage === pageNumber ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-50'}`}
-									on:click={() => changePage(pageNumber, false)}
+									on:click={stopFeedStatusMonitoring}
+									class="text-orange-600 hover:text-orange-800 text-sm px-2 py-1 border border-orange-300 rounded"
 								>
-									{pageNumber}
+									⏸️ Stop Monitoring
+								</button>
+							{:else}
+								<button
+									on:click={startFeedStatusMonitoring}
+									class="text-green-600 hover:text-green-800 text-sm px-2 py-1 border border-green-300 rounded"
+								>
+									▶️ Start Monitoring
 								</button>
 							{/if}
-						{/each}
-
-						<button
-							class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
-							disabled={currentPage === Math.ceil(totalResults / itemsPerPage)}
-							on:click={() => changePage(currentPage + 1, false)}
-						>
-							Next
-						</button>
+						</div>
 					</div>
 				</div>
-			</div>
-		{/if}
 
-		{#if isLoading}
-			<div class="p-8 text-center">
-				<div class="flex flex-col items-center gap-4">
-					<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-					<p class="text-lg font-medium">Loading buy box data...</p>
-					<p class="text-sm text-gray-500">This may take a few moments for large datasets</p>
-				</div>
-			</div>
-		{:else if paginatedData.length === 0}
-			<div class="p-8 text-center">
-				<p>No results found with current filters</p>
-			</div>
-		{:else}
-			{#if viewMode === 'individual'}
-				<!-- Enhanced Data Table with Bulk Selection -->
 				<div class="overflow-x-auto">
-					<!-- Bulk Actions Bar -->
-					{#if selectedItems.size > 0}
-						<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-							<div class="flex items-center justify-between">
-								<div class="flex items-center gap-4">
-									<span class="text-sm font-medium text-blue-900">
-										{selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
-									</span>
-									<button
-										on:click={selectAllVisible}
-										class="text-blue-600 hover:text-blue-800 text-sm underline"
-									>
-										Select all visible ({paginatedData.length})
-									</button>
-									<button
-										on:click={clearSelection}
-										class="text-gray-600 hover:text-gray-800 text-sm underline"
-									>
-										Clear selection
-									</button>
-								</div>
-								<div class="flex gap-2">
-									<button
-										on:click={bulkMarkForUpdate}
-										class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm"
-									>
-										🎯 Bulk Match Buy Box
-									</button>
-									<button
-										on:click={bulkAddToWatchlist}
-										class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm"
-									>
-										👁️ Add to Watchlist
-									</button>
-								</div>
-							</div>
-						</div>
-					{/if}
-
 					<table class="min-w-full">
 						<thead class="bg-gray-50">
-							<tr>
-								<th class="py-3 px-3 text-left">
-									<input
-										type="checkbox"
-										checked={selectedItems.size > 0 && selectedItems.size === paginatedData.length}
-										on:change={(e) => {
-											const target = e.target as HTMLInputElement;
-											if (target?.checked) {
-												selectAllVisible();
-											} else {
-												clearSelection();
-											}
-										}}
-										class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-									/>
-								</th>
-								<th
-									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Product</th
-								>
-								<th
-									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Price Analysis</th
-								>
-								<th
-									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Cost Breakdown</th
-								>
-								<th
-									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Margin Analysis</th
-								>
-								<th
-									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Recommendation</th
-								>
-								<th
-									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Live Update</th
-								>
-								<th
-									class="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Actions</th
-								>
+							<tr class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th class="py-2 px-3">Feed ID</th>
+								<th class="py-2 px-3">SKU</th>
+								<th class="py-2 px-3">ASIN</th>
+								<th class="py-2 px-3">Status</th>
+								<th class="py-2 px-3">Last Checked</th>
+								<th class="py-2 px-3">Actions</th>
 							</tr>
 						</thead>
-						<tbody class="divide-y divide-gray-200">
-							{#each paginatedData as result}
-								<tr
-									class={`
-									hover:bg-gray-50 
-									${result.opportunity_flag ? 'bg-yellow-50' : ''} 
-									${result.is_winner ? 'bg-green-50' : ''}
-									${result.recommended_action === 'match_buybox' ? 'border-l-4 border-l-blue-500' : ''}
-									${result.recommended_action === 'not_profitable' ? 'border-l-4 border-l-red-500' : ''}
-									${selectedItems.has(result.id) ? 'ring-2 ring-blue-300' : ''}
-									${updatedRows.has(result.id) ? 'updated-row' : ''}
-									${recentlyUpdatedItems.has(result.id) ? 'recently-updated-bypass' : ''}
-									${livePricingUpdates.get(result.id)?.isUpdating ? 'updating-row' : ''}
-								`}
-								>
-									<!-- Selection Checkbox -->
-									<td class="py-4 px-3">
-										<input
-											type="checkbox"
-											checked={selectedItems.has(result.id)}
-											on:change={() => toggleItemSelection(result.id)}
-											class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-										/>
+						<tbody class="bg-white divide-y divide-gray-200">
+							{#each Array.from(feedStatusChecks.entries()) as [feedId, feedInfo]}
+								{@const statusDisplay = getFeedStatusDisplay(feedId)}
+								<tr class="hover:bg-gray-50">
+									<td class="py-2 px-3">
+										<div class="text-sm font-mono text-gray-900">{feedId}</div>
 									</td>
-
-									<!-- Product Info -->
-									<td class="py-4 px-6">
-										<div class="text-sm">
-											<!-- Shipping Type Badge -->
-											{#if result.merchant_shipping_group}
-												<div class="mb-2">
-													<span
-														class={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-															result.merchant_shipping_group === 'Nationwide Prime'
-																? 'bg-blue-100 text-blue-800'
-																: 'bg-gray-100 text-gray-800'
-														}`}
-													>
-														{result.merchant_shipping_group === 'Nationwide Prime'
-															? '⚡ Prime'
-															: '📦 Standard'}
-													</span>
-												</div>
-											{/if}
-
-											<div class="font-medium text-gray-900 mb-1 leading-tight">
-												SKU: {result.sku}
-												{#if recentlyUpdatedItems.has(result.id)}
-													<span
-														class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
-														title="Recently updated - visible despite current filters"
-													>
-														🔄 Recently Updated
-													</span>
-												{/if}
-											</div>
-											{#if result.item_name}
-												<!-- Show item name from buybox data -->
-												<div class="text-xs text-gray-600 mb-1">
-													{result.item_name}
-												</div>
-											{:else}
-												<!-- Show when no item name is available -->
-												<div class="text-xs text-gray-400 mb-1 italic">
-													No product title available
-												</div>
-											{/if}
-											<div>
-												<a
-													href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
-														result.sku
-													)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
-													target="_blank"
-													rel="noopener noreferrer"
-													class="font-medium text-blue-600 hover:text-blue-800 underline"
-													title="Manage price in Amazon Seller Central"
-												>
-													{result.sku} 📝
-												</a>
-											</div>
-											<div>
-												<a
-													href="https://amazon.co.uk/dp/{result.asin}"
-													target="_blank"
-													rel="noopener noreferrer"
-													class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
-													title="View on Amazon UK"
-												>
-													{result.asin} →
-												</a>
-												{#if !showLatestOnly}
-													{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-													<div class="text-xs text-purple-600 font-medium mt-1">
-														📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
-														{new Date(result.captured_at).toLocaleTimeString([], {
-															hour: '2-digit',
-															minute: '2-digit'
-														})}
-														{#if totalEntries > 1}
-															<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
-																{totalEntries} entries
-															</span>
-														{/if}
-													</div>
-												{/if}
-												<div class="mt-1">
-													{#if result.is_winner}
-														<span
-															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
-														>
-															🏆 Buy Box Winner
-														</span>
-													{:else if result.opportunity_flag}
-														<span
-															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
-														>
-															⚡ Opportunity
-														</span>
-													{/if}
-												</div>
-												<div class="text-xs text-gray-400 mt-1">
-													Last checked: {formatDate(result.captured_at)}
-													{#if showLatestOnly}
-														{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-														{#if totalEntries > 1}
-															<span class="text-blue-600 ml-1">
-																(Latest of {totalEntries} scans)
-															</span>
-														{/if}
-													{/if}
-												</div>
-											</div>
-										</div></td
-									>
-
-									<!-- Price Analysis -->
-									<td class="py-4 px-6">
-										<div class="text-sm space-y-1">
-											<!-- Our Price -->
-											<div class="font-medium text-gray-900">
-												{#if result.your_current_price === 0}
-													<span class="text-red-600">Out of Stock</span>
-												{:else}
-													Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
-												{/if}
-												{#if result.is_winner}
-													<span class="text-green-600 ml-1">🏆</span>
-												{/if}
-											</div>
-
-											<!-- Buy Box Price -->
-											{#if result.is_winner && result.your_current_price}
-												<!-- You're winning the buy box -->
-												<div class="font-medium text-green-700">
-													Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
-												</div>
-											{:else if !result.is_winner && result.buybox_price && result.buybox_price > 0}
-												<!-- You're losing - show actual buy box price -->
-												<div class="font-medium text-red-700">
-													Buy Box Price: £{result.buybox_price.toFixed(2)} (Competitor)
-												</div>
-											{:else if !result.is_winner && result.competitor_price && result.competitor_price > 0}
-												<!-- Fallback: use competitor_price if buybox_price not available -->
-												<div class="font-medium text-red-700">
-													Buy Box Price: £{result.competitor_price.toFixed(2)} (Competitor)
-												</div>
-											{:else}
-												<!-- No Buy Box available -->
-												<div class="font-medium text-orange-600">
-													Buy Box Price: No Buy Box Available
-													<span class="text-xs block text-orange-500"
-														>May be due to listing quality, pricing, or sales history</span
-													>
-												</div>
-											{/if}
-
-											<!-- Break Even Price -->
-											{#if result.break_even_price}
-												<div class="font-medium text-gray-600">
-													Break Even Price: £{result.break_even_price.toFixed(2)}
-												</div>
-											{:else}
-												<div class="font-medium text-gray-500">Break Even Price: N/A</div>
-											{/if}
-
-											<!-- Data Freshness Warning -->
-											{#if Date.now() - new Date(result.captured_at).getTime() > 24 * 60 * 60 * 1000}
-												{@const dataAge = Math.floor(
-													(Date.now() - new Date(result.captured_at).getTime()) / (1000 * 60 * 60)
-												)}
-												<div class="bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
-													<div class="text-xs text-yellow-800 font-medium">
-														⚠️ Data may be outdated ({dataAge}h old)
-													</div>
-													<div class="text-xs text-yellow-600 mt-1">
-														<a
-															href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
-															class="underline hover:text-yellow-800"
-															target="_blank"
-														>
-															Check live pricing →
-														</a>
-													</div>
-												</div>
-											{/if}
+									<td class="py-2 px-3">
+										<div class="text-sm text-gray-900">{feedInfo.sku || 'N/A'}</div>
+									</td>
+									<td class="py-2 px-3">
+										<div class="text-sm text-gray-900">{feedInfo.asin || 'N/A'}</div>
+									</td>
+									<td class="py-2 px-3">
+										<div class="flex items-center gap-2">
+											<span class="text-sm">{statusDisplay.icon}</span>
+											<span
+												class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {statusDisplay.class}"
+											>
+												{statusDisplay.status}
+											</span>
 										</div>
 									</td>
-
-									<!-- Cost Breakdown -->
-									<td class="py-4 px-6">
-										<div class="text-xs space-y-1">
-											<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
-											{#if result.your_cost && result.your_cost > 0}
-												<div>Base: £{result.your_cost.toFixed(2)}</div>
-											{:else}
-												<div class="text-red-600 font-medium">⚠️ Base: Missing/£0.00</div>
-											{/if}
-											{#if result.your_vat_amount}
-												<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
-											{/if}
-											{#if result.your_box_cost}
-												<div>Box: £{result.your_box_cost.toFixed(2)}</div>
-											{/if}
-											<div>Material: £0.20</div>
-											{#if result.your_fragile_charge && result.your_fragile_charge > 0}
-												<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
-											{/if}
-											{#if result.your_shipping_cost}
-												<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
-											{/if}
-											{#if result.total_operating_cost}
-												<div class="font-medium border-t pt-1 text-blue-800">
-													Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
-												</div>
-											{/if}
-
-											<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
-											{#if result.your_current_price}
-												{@const feeRate = result.your_current_price < 10 ? 0.08 : 0.15}
-												{@const feePercent = result.your_current_price < 10 ? 8 : 15}
-												<div class="text-red-600">
-													Amazon Fee ({feePercent}% of £{result.your_current_price.toFixed(2)}): £{(
-														result.your_current_price * feeRate
-													).toFixed(2)}
-												</div>
-											{/if}
-
-											{#if result.total_operating_cost && result.your_current_price}
-												<div class="font-bold border-t pt-2 text-orange-800">
-													Total Cost After Fees: £{(
-														result.total_operating_cost +
-														result.your_current_price * 0.15
-													).toFixed(2)}
-												</div>
-												<div class="text-xs text-gray-500">
-													(£{result.total_operating_cost.toFixed(2)} + £{(
-														result.your_current_price * 0.15
-													).toFixed(2)})
-												</div>
-											{/if}
-
-											{#if result.break_even_price}
-												{@const feeRate = (result.your_current_price ?? 0) < 10 ? 0.08 : 0.15}
-												{@const netRate = (1 - feeRate).toFixed(2)}
-												<div class="font-bold border-t pt-2 text-red-800">
-													Break-even: £{result.break_even_price.toFixed(2)}
-												</div>
-												<div class="text-xs text-gray-500">
-													(£{result.total_operating_cost?.toFixed(2)} ÷ {netRate})
-												</div>
-											{/if}
-										</div>
+									<td class="py-2 px-3">
+										<div class="text-xs text-gray-500">{statusDisplay.lastChecked}</div>
 									</td>
-
-									<!-- Margin Analysis -->
-									<td class="py-4 px-6">
-										<div class="text-sm space-y-1">
-											{#if result.current_actual_profit !== null}
-												<div
-													class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
-												>
-													£{result.current_actual_profit.toFixed(2)} profit
-												</div>
-											{/if}
-											{#if result.your_margin_percent_at_current_price !== null}
-												<div
-													class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
-												>
-													📊 Current Price: {result.your_margin_percent_at_current_price.toFixed(
-														1
-													)}% margin
-												</div>
-											{/if}
-
-											<!-- No competition detected message -->
-											{#if !result.is_winner && !result.price && !result.competitor_price}
-												<div class="border-t pt-1 mt-2">
-													<div class="text-xs font-medium text-green-700 mb-1">
-														🏆 No Competition Detected
-													</div>
-													<div class="text-xs text-green-600">
-														You may have the buy box by default - consider checking live pricing
-													</div>
-												</div>
-											{/if}
-
-											<!-- Match Buy Box Exactly (only when there's valid buy box data AND actual competition) -->
-											{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit && (result.price || result.competitor_price) && ((result.price && result.price > 0) || (result.competitor_price && result.competitor_price > 0))}
-												<div class="border-t pt-1 mt-1">
-													<div class="text-xs font-medium text-gray-700 mb-1">
-														🎯 Match Buy Box Exactly:
-													</div>
-													<div
-														class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
-													>
-														£{result.buybox_actual_profit.toFixed(2)} profit
-													</div>
-													{#if result.margin_percent_at_buybox_price !== null}
-														<div
-															class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
-														>
-															({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
-														</div>
-													{/if}
-													{#if result.margin_difference}
-														<div
-															class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
-														>
-															Difference: {result.margin_difference > 0
-																? '+'
-																: ''}£{result.margin_difference.toFixed(2)}
-														</div>
-													{/if}
-												</div>
-											{/if}
-
-											{#if result.profit_opportunity && result.profit_opportunity > 0}
-												<div
-													class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded mt-2"
-												>
-													+£{result.profit_opportunity.toFixed(2)} opportunity
-												</div>
-											{/if}
-
-											<!-- Margin Calculation Breakdown -->
-											{#if result.current_margin_calculation || result.buybox_margin_calculation}
-												<div class="border-t pt-2 mt-2">
-													<div class="text-xs font-medium text-gray-700 mb-2">
-														📈 ROI Margin Calculation:
-													</div>
-													{#if result.current_margin_calculation}
-														<div class="text-xs text-gray-600 mb-1">
-															<span class="font-medium">Current:</span>
-															{result.current_margin_calculation}
-														</div>
-													{/if}
-													{#if result.buybox_margin_calculation}
-														<div class="text-xs text-gray-600 mb-1">
-															<span class="font-medium">Buy Box:</span>
-															{result.buybox_margin_calculation}
-														</div>
-													{/if}
-													<div class="text-xs text-gray-500 italic mt-1">
-														ROI Margin % = Profit ÷ Total Investment (Costs + Fees)
-													</div>
-												</div>
-											{/if}
-										</div>
-									</td>
-
-									<!-- Recommendation -->
-									<td class="py-4 px-6">
-										{#if !result.price && !result.competitor_price}
-											<!-- No competition detected -->
-											<span
-												class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800"
-											>
-												🏆 No Competition
-											</span>
-										{:else if result.recommended_action === 'not_profitable' && !result.price && !result.competitor_price}
-											<!-- Not profitable but no competition - suggest investigation -->
-											<span
-												class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
-											>
-												🔍 Investigate
-											</span>
-										{:else if result.recommended_action}
-											<span
-												class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium
-											${result.recommended_action === 'match_buybox' ? 'bg-blue-100 text-blue-800' : ''}
-											${result.recommended_action === 'hold_price' ? 'bg-green-100 text-green-800' : ''}
-											${result.recommended_action === 'investigate' ? 'bg-yellow-100 text-yellow-800' : ''}
-											${result.recommended_action === 'not_profitable' ? 'bg-red-100 text-red-800' : ''}
-										`}
-											>
-												{#if result.recommended_action === 'match_buybox'}
-													📈 Match Buy Box
-												{:else if result.recommended_action === 'hold_price'}
-													✋ Hold Price
-												{:else if result.recommended_action === 'investigate'}
-													🔍 Investigate
-												{:else if result.recommended_action === 'not_profitable' && (result.price || result.competitor_price)}
-													❌ Not Profitable
-												{:else if result.recommended_action === 'not_profitable'}
-													🔍 Check Live Pricing
-												{:else}
-													{result.recommended_action}
-												{/if}
-											</span>
-										{:else}
-											<span class="text-gray-400 text-xs">No data</span>
-										{/if}
-									</td>
-
-									<!-- Live Update Column -->
-									<td class="py-4 px-6">
-										<div class="flex flex-col gap-2">
-											<!-- Data Freshness Badge -->
-											{#if result.captured_at}
-												{@const freshness = getDataFreshness(result.captured_at)}
-												<span
-													class="inline-flex items-center px-2 py-1 rounded text-xs font-medium {freshness.class}"
-													title={freshness.description}
-												>
-													{freshness.badge}
-												</span>
-											{/if}
-
-											<!-- Update Button -->
-											{#if result.id}
-												{@const buttonState = getUpdateButtonState(result.id)}
+									<td class="py-2 px-3">
+										<div class="flex gap-2">
+											{#if statusDisplay.showCheckButton}
 												<button
-													class="px-3 py-2 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center justify-center gap-1"
-													disabled={buttonState.disabled}
-													on:click={() => updateLivePrice(result)}
-													title={buttonState.error ||
-														'Update pricing data with latest Amazon SP-API data'}
+													on:click={() =>
+														checkFeedStatus(feedId, feedInfo.recordId, feedInfo.sku, feedInfo.asin)}
+													disabled={activeFeedChecks.has(feedId)}
+													class="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
 												>
-													{#if buttonState.isUpdating}
-														<!-- Spinning loader -->
-														<svg
-															class="animate-spin h-3 w-3 text-white"
-															xmlns="http://www.w3.org/2000/svg"
-															fill="none"
-															viewBox="0 0 24 24"
-														>
-															<circle
-																class="opacity-25"
-																cx="12"
-																cy="12"
-																r="10"
-																stroke="currentColor"
-																stroke-width="4"
-															></circle>
-															<path
-																class="opacity-75"
-																fill="currentColor"
-																d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-															></path>
-														</svg>
-													{/if}
-													<span class="whitespace-nowrap">{buttonState.text}</span>
+													{activeFeedChecks.has(feedId) ? '🔄 Checking...' : '🔍 Check Now'}
 												</button>
-
-												<!-- Error Message -->
-												{#if buttonState.error}
-													<div class="text-xs text-red-600 mt-1" title={buttonState.error}>
-														⚠️ {buttonState.error.length > 20
-															? buttonState.error.substring(0, 20) + '...'
-															: buttonState.error}
-													</div>
-												{/if}
 											{/if}
-										</div>
-									</td>
-
-									<!-- Actions -->
-									<td class="py-4 px-6">
-										<div class="flex flex-col gap-1">
-											{#if testMode}
-												<!-- Test Mode Actions -->
-												{#if result.recommended_action === 'match_buybox' && result.buybox_price && result.buybox_price > 0}
-													{@const isTestInProgress = testInProgress.has(result.asin)}
-													{@const testResult = testResults.get(result.asin)}
-
-													<button
-														class="{isTestInProgress
-															? 'bg-purple-400 cursor-not-allowed'
-															: 'bg-purple-600 hover:bg-purple-700'} text-white px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-														disabled={isTestInProgress}
-														on:click={() => testMatchBuyBox(result.asin, result.buybox_price!)}
-														title="Test Match Buy Box in sandbox environment"
-													>
-														{#if isTestInProgress}
-															<svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-																<circle
-																	class="opacity-25"
-																	cx="12"
-																	cy="12"
-																	r="10"
-																	stroke="currentColor"
-																	stroke-width="4"
-																></circle>
-																<path
-																	class="opacity-75"
-																	fill="currentColor"
-																	d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-																></path>
-															</svg>
-															Testing...
-														{:else}
-															🧪 Test Match Buy Box
-														{/if}
-													</button>
-
-													<!-- Test Result Display -->
-													{#if testResult}
-														<div class="text-xs mt-1">
-															{#if testResult.success}
-																<span class="text-green-600">✅ Test Passed</span>
-															{:else}
-																<span class="text-red-600">❌ Test Failed</span>
-															{/if}
-															<div class="text-gray-500">
-																{testResult.timestamp.toLocaleTimeString()}
-															</div>
-														</div>
-													{/if}
-												{:else}
-													<span class="text-gray-400 text-xs">No test action available</span>
-												{/if}
-											{:else}
-												<!-- Production Mode Actions -->
-												<a
-													href="/buy-box-monitor?query={encodeURIComponent(
-														result.sku || result.asin
-													)}"
-													target="_blank"
-													rel="noopener noreferrer"
-													class="text-blue-600 hover:text-blue-800 underline text-xs"
-												>
-													View Details
-												</a>
-
-												<!-- Match Buy Box Button - Available on ALL records -->
-												{@const targetPrice = (() => {
-													let price = 0;
-													if (result.buybox_price && result.buybox_price > 0) {
-														price = result.buybox_price;
-													} else if (result.competitor_price && result.competitor_price > 0) {
-														price = result.competitor_price;
-													}
-													// Round to 2 decimal places to avoid precision issues
-													return Math.round(price * 100) / 100;
-												})()}
-												{@const isInProgress = matchBuyBoxInProgress.has(result.asin)}
-												{@const hasResult = matchBuyBoxResults.has(result.asin)}
-												{@const matchResult = matchBuyBoxResults.get(result.asin)}
-
+											{#if feedInfo.processingReport?.hasResults}
 												<button
-													class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-3 py-1 rounded text-xs font-medium transition-colors duration-200 flex items-center gap-1"
-													disabled={isInProgress || targetPrice <= 0}
-													on:click={() => matchBuyBox(result.asin, targetPrice)}
-													title="Execute Match Buy Box - will validate 10% minimum margin before updating"
+													class="text-green-600 hover:text-green-800 text-xs px-2 py-1 border border-green-300 rounded"
+													title="Processing results available"
 												>
-													{#if isInProgress}
-														<div
-															class="animate-spin w-3 h-3 border border-white border-t-transparent rounded-full"
-														></div>
-														Processing...
-													{:else}
-														🎯 Match Buy Box
-													{/if}
+													📋 Results
 												</button>
-
-												{#if hasResult}
-													<div class="text-xs mt-1">
-														{#if matchResult?.success}
-															<div class="text-green-600 font-medium">
-																✅ Updated to £{matchResult.finalPrice}
-															</div>
-															<div class="text-gray-500 text-xs">
-																{matchResult.timestamp?.toLocaleTimeString() || 'Recently'}
-															</div>
-														{:else if matchResult?.safetyRejected}
-															<div class="text-yellow-600 font-medium">
-																⚠️ Safety Check: Margin too low
-															</div>
-															<div class="text-xs text-yellow-600">
-																Update manually in Seller Central
-															</div>
-														{:else}
-															<div class="text-red-600 font-medium">
-																❌ Failed: {matchResult?.error || 'Unknown error'}
-															</div>
-														{/if}
-													</div>
-												{/if}
-
-												<span class="text-gray-400 text-xs cursor-not-allowed">
-													Add to Watchlist (Coming Soon)
-												</span>
 											{/if}
 										</div>
 									</td>
@@ -3868,644 +3462,532 @@
 						</tbody>
 					</table>
 				</div>
-			{:else if viewMode === 'bestsellers'}
-				<!-- Top 100 Best Sellers View -->
-				<div class="space-y-6 p-6">
-					<div
-						class="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-lg p-4 mb-6"
+			</div>
+		{/if}
+
+		<!-- Enhanced Summary Statistics Cards -->
+		{#if !isLoading && buyboxData.length > 0}
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
+				<!-- Winners Card -->
+				<button
+					on:click={() => handleSummaryCardClick('winners')}
+					class={`bg-green-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
+						activeCardFilter === 'Buy Box Winners' ? 'ring-2 ring-green-400 bg-green-100' : ''
+					}`}
+				>
+					<h3 class="text-sm font-medium text-gray-500 mb-1">Buy Box Won</h3>
+					<p class="text-2xl font-bold text-green-600">{totalWinners}</p>
+					<p class="text-xs text-gray-400">
+						{activeCardFilter === 'Buy Box Winners'
+							? 'Active filter - click to clear'
+							: 'Click to filter winners'}
+					</p>
+				</button>
+
+				<!-- Opportunities Card -->
+				<button
+					on:click={() => handleSummaryCardClick('opportunities')}
+					class={`bg-yellow-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
+						activeCardFilter === 'Opportunities' ? 'ring-2 ring-yellow-400 bg-yellow-100' : ''
+					}`}
+				>
+					<h3 class="text-sm font-medium text-gray-500 mb-1">Opportunities</h3>
+					<p class="text-2xl font-bold text-yellow-600">{totalOpportunities}</p>
+					<p class="text-xs text-gray-400">
+						{activeCardFilter === 'Opportunities'
+							? 'Active filter - click to clear'
+							: 'Click to find opportunities'}
+					</p>
+				</button>
+
+				<!-- Profitable Ops Card -->
+				<button
+					on:click={() => handleSummaryCardClick('profitable')}
+					class={`bg-purple-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left ${
+						activeCardFilter === 'Profitable Items' ? 'ring-2 ring-purple-400 bg-purple-100' : ''
+					}`}
+				>
+					<h3 class="text-sm font-medium text-gray-500 mb-1">Profitable Ops</h3>
+					<p class="text-2xl font-bold text-purple-600">{totalProfitable}</p>
+					<p class="text-xs text-gray-400">
+						{activeCardFilter === 'Profitable Items'
+							? 'Active filter - click to clear'
+							: 'Click for profitable items'}
+					</p>
+				</button>
+
+				<!-- Analyzed Card -->
+				<button
+					on:click={() => handleSummaryCardClick('analyzed')}
+					class="bg-blue-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
+				>
+					<h3 class="text-sm font-medium text-gray-500 mb-1">Analyzed</h3>
+					<p class="text-2xl font-bold text-blue-600">{totalMarginAnalyzed}</p>
+					<p class="text-xs text-gray-400">
+						of {buyboxData.length} SKUs
+						{#if showLatestOnly}
+							<span class="block text-blue-600">(Latest data only)</span>
+						{:else}
+							<span class="block text-purple-600">(All historical data)</span>
+						{/if}
+					</p>
+				</button>
+
+				<!-- Average Profit Card -->
+				<button
+					on:click={() => handleSummaryCardClick('avg-profit')}
+					class="bg-orange-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
+				>
+					<h3 class="text-sm font-medium text-gray-500 mb-1">Avg Profit</h3>
+					<p
+						class={`text-2xl font-bold ${avgProfit >= 2 ? 'text-green-600' : avgProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
 					>
-						<div class="flex items-center gap-3">
-							<span class="text-2xl">🏆</span>
-							<div>
-								<h3 class="text-lg font-semibold text-orange-800">Top 100 Best Sellers</h3>
-								<p class="text-sm text-orange-600">
-									Based on sales data from July 16, 2025 business report. Showing {bestSellersGrouped.size}
-									ASINs with buy box data available.
-								</p>
-							</div>
-						</div>
-					</div>
+						£{avgProfit.toFixed(2)}
+					</p>
+					<p class="text-xs text-gray-400">Click for high-profit items</p>
+				</button>
 
-					{#each Array.from(bestSellersGrouped.entries()).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage) as [asin, skus]}
-						<div class="bg-white border border-gray-200 rounded-lg shadow-sm">
-							<!-- ASIN Header -->
-							<div
-								class={`px-6 py-4 border-b border-gray-200 ${
-									skus[0]?.is_skeleton
-										? 'bg-gradient-to-r from-gray-50 to-gray-100'
-										: (() => {
-												const winners = skus.filter((s) => s.is_winner).length;
-												const total = skus.length;
-												const winRate = total > 0 ? winners / total : 0;
+				<!-- Potential Profit Card -->
+				<button
+					on:click={() => handleSummaryCardClick('potential')}
+					class="bg-indigo-50 p-4 rounded-lg border hover:shadow-md transition-shadow text-left"
+				>
+					<h3 class="text-sm font-medium text-gray-500 mb-1">Potential</h3>
+					<p class="text-2xl font-bold text-indigo-600">£{totalPotentialProfit.toFixed(2)}</p>
+					<p class="text-xs text-gray-400">Click for all opportunities</p>
+				</button>
+			</div>
+		{/if}
 
-												if (winRate >= 0.5) {
-													// Winning: 50% or more of SKUs have buy box (includes 1/2, 2/2, etc.)
-													return 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200';
-												} else if (winRate > 0) {
-													// Partial: Some SKUs winning but less than half
-													return 'bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200';
-												} else {
-													// Losing: No SKUs have buy box
-													return 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200';
-												}
-											})()
-								}`}
-							>
-								<div class="flex items-center justify-between">
-									<div class="flex items-center gap-4">
-										<h3 class="text-lg font-semibold text-gray-900">ASIN: {asin}</h3>
-										{#if skus[0]?.is_skeleton}
-											<span
-												class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-sm font-medium"
-											>
-												📊 No Data Available
-											</span>
-										{:else}
-											<span
-												class={(() => {
-													const winners = skus.filter((s) => s.is_winner).length;
-													const total = skus.length;
-													const winRate = total > 0 ? winners / total : 0;
+		<!-- Enhanced Filters and Search -->
+		<div class="bg-white rounded-lg shadow p-4 mb-4">
+			<div class="flex items-center justify-between mb-3">
+				<h2 class="font-semibold">Filters & Search</h2>
+				<button
+					on:click={() => (filtersExpanded = !filtersExpanded)}
+					class="text-gray-500 hover:text-gray-700 transition-colors text-sm"
+				>
+					{filtersExpanded ? '▼ Collapse' : '▶ Expand All'}
+				</button>
+			</div>
 
-													if (winRate >= 0.5) {
-														// Winning: Green badge
-														return 'bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium';
-													} else if (winRate > 0) {
-														// Partial: Yellow badge
-														return 'bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium';
-													} else {
-														// Losing: Red badge
-														return 'bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium';
-													}
-												})()}
-											>
-												{(() => {
-													const winners = skus.filter((s) => s.is_winner).length;
-													const total = skus.length;
-													const winRate = total > 0 ? winners / total : 0;
-
-													if (winRate >= 0.5) {
-														return '🏆 Buy Box Winner';
-													} else if (winRate > 0) {
-														return '⚠️ Partial Winner';
-													} else {
-														return '❌ Buy Box Loser';
-													}
-												})()}
-											</span>
-										{/if}
-										<span
-											class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
-										>
-											{skus[0]?.is_skeleton
-												? 'Data Missing'
-												: `${skus.length} SKU${skus.length !== 1 ? 's' : ''}`}
-										</span>
-										<a
-											href="/buy-box-monitor?query={asin}"
-											target="_blank"
-											rel="noopener noreferrer"
-											class="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium hover:bg-purple-200 transition-colors"
-											title="Monitor buy box for this ASIN"
-										>
-											📈 Monitor
-										</a>
-										{#if skus[0]?.is_skeleton}
-											<button
-												on:click={() => fetchSingleASIN(asin)}
-												class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
-											>
-												🔄 Fetch Data
-											</button>
-										{/if}
-									</div>
-									<div class="flex items-center gap-2">
-										{#if !skus[0]?.is_skeleton}
-											{#if skus.some((s) => s.merchant_shipping_group === 'Nationwide Prime')}
-												<span
-													class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium"
-												>
-													⚡ Prime Available
-												</span>
-											{/if}
-											{#if skus.some((s) => s.merchant_shipping_group === 'UK Shipping')}
-												<span
-													class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium"
-												>
-													📦 Standard
-												</span>
-											{/if}
-										{:else}
-											<span
-												class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium"
-											>
-												⚠️ Click "Fetch Data" to analyze
-											</span>
-										{/if}
-									</div>
-								</div>
-
-								<!-- ASIN Summary Stats -->
-								{#if !skus[0]?.is_skeleton}
-									<div class="mt-3 grid grid-cols-5 gap-4 text-sm">
-										<div>
-											<span class="text-gray-500">Total Profit:</span>
-											<span class="font-medium">
-												£{skus
-													.reduce((sum, s) => sum + (s.current_actual_profit || 0), 0)
-													.toFixed(2)}
-											</span>
-										</div>
-										<div>
-											<span class="text-gray-500">Winners:</span>
-											<span class="font-medium text-green-600">
-												{skus.filter((s) => s.is_winner).length}/{skus.length}
-											</span>
-										</div>
-										<div>
-											<span class="text-gray-500">Price Matched:</span>
-											<span class="font-medium text-orange-600">
-												{skus.filter((s) => isPriceMatchedButLostBuyBox(s)).length}
-											</span>
-										</div>
-										<div>
-											<span class="text-gray-500">Opportunities:</span>
-											<span class="font-medium text-blue-600">
-												{skus.filter((s) => s.opportunity_flag).length}
-											</span>
-										</div>
-										<div>
-											<span class="text-gray-500">Last Updated:</span>
-											<span class="font-medium">
-												{new Date(
-													Math.max(...skus.map((s) => new Date(s.captured_at).getTime()))
-												).toLocaleDateString()}
-											</span>
-										</div>
-									</div>
-								{:else}
-									<div class="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-										<div class="flex items-center gap-2">
-											<span class="text-yellow-600">⚡</span>
-											<div>
-												<p class="text-sm font-medium text-yellow-800">
-													Buy Box Data Not Available
-												</p>
-												<p class="text-xs text-yellow-600">
-													This ASIN is in your top 100 best sellers but hasn't been analyzed yet.
-													Click "Fetch Data" to get current buy box information.
-												</p>
-											</div>
-										</div>
-									</div>
-								{/if}
-							</div>
-
-							<!-- SKUs Table or Skeleton -->
-							{#if !skus[0]?.is_skeleton}
-								<div class="overflow-x-auto">
-									<table class="min-w-full">
-										<thead class="bg-gray-50">
-											<tr
-												class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												<th class="py-3 px-6">SKU</th>
-												<th class="py-3 px-6">Shipping</th>
-												<th class="py-3 px-6">Our Price</th>
-												<th class="py-3 px-6">Buy Box</th>
-												<th class="py-3 px-6">
-													<div>Buy Box Profit</div>
-													<div class="text-xs font-normal text-gray-400">If matched</div>
-												</th>
-												<th class="py-3 px-6">
-													<div>ROI Margin %</div>
-													<div class="text-xs font-normal text-gray-400">If matched buy box</div>
-												</th>
-												<th class="py-3 px-6">Status</th>
-												<th class="py-3 px-6">Live Update</th>
-												<th class="py-3 px-6">Action</th>
-											</tr>
-										</thead>
-										<tbody class="bg-white divide-y divide-gray-200">
-											{#each skus as sku}
-												<tr
-													class="hover:bg-gray-50 {updatedRows.has(sku.id)
-														? 'updated-row'
-														: ''} {recentlyUpdatedItems.has(sku.id)
-														? 'recently-updated-bypass'
-														: ''} {livePricingUpdates.get(sku.id)?.isUpdating
-														? 'updating-row'
-														: ''}"
-												>
-													<td class="py-4 px-6">
-														<div class="text-sm">
-															<a
-																href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
-																	sku.sku
-																)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
-																target="_blank"
-																rel="noopener noreferrer"
-																class="font-medium text-blue-600 hover:text-blue-800 underline"
-																title="Manage price in Amazon Seller Central"
-															>
-																{sku.sku} 📝
-															</a>
-														</div>
-														<div class="mt-1">
-															<a
-																href="https://amazon.co.uk/dp/{sku.asin}"
-																target="_blank"
-																rel="noopener noreferrer"
-																class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
-																title="View on Amazon UK"
-															>
-																{sku.asin} →
-															</a>
-														</div>
-														<div class="text-xs text-gray-500 mt-1 max-w-xs">
-															<span class="block truncate">
-																SKU: {sku.sku}
-																{#if recentlyUpdatedItems.has(sku.id)}
-																	<span
-																		class="ml-1 inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
-																		title="Recently updated - visible despite current filters"
-																	>
-																		🔄
-																	</span>
-																{/if}
-															</span>
-														</div>
-													</td>
-													<td class="py-4 px-6 whitespace-nowrap">
-														{#if sku.merchant_shipping_group === 'Nationwide Prime'}
-															<span
-																class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
-															>
-																⚡ Prime
-															</span>
-														{:else if sku.merchant_shipping_group === 'UK Shipping'}
-															<span
-																class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
-															>
-																📦 Standard
-															</span>
-														{:else}
-															<span class="text-gray-400 text-xs whitespace-nowrap">Unknown</span>
-														{/if}
-													</td>
-													<td class="py-4 px-6">
-														<div class="text-sm">
-															{#if sku.your_current_price === 0}
-																<span class="text-red-600">Out of Stock</span>
-															{:else}
-																<div class="flex items-center gap-2">
-																	<div class="flex flex-col">
-																		{#if showCustomPriceInputs.get(sku.sku)}
-																			<!-- Custom price input -->
-																			<div class="flex items-center gap-1 mb-1">
-																				<input
-																					type="number"
-																					step="0.01"
-																					min="0"
-																					placeholder={sku.your_current_price?.toFixed(2) || '0.00'}
-																					value={customPrices.get(sku.sku) || ''}
-																					on:input={(e) =>
-																						updateCustomPrice(
-																							sku.sku,
-																							(e.target as HTMLInputElement)?.value || ''
-																						)}
-																					class="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:border-blue-500 focus:outline-none"
-																				/>
-																				<span class="text-xs text-gray-500">£</span>
-																			</div>
-																			<div class="flex items-center gap-1">
-																				<button
-																					on:click={() => resetCustomPrice(sku.sku)}
-																					class="text-xs text-gray-500 hover:text-gray-700 underline"
-																					title="Reset to current price"
-																				>
-																					Reset
-																				</button>
-																				<button
-																					on:click={() => toggleCustomPriceInput(sku.sku)}
-																					class="text-xs text-gray-500 hover:text-gray-700"
-																					title="Hide custom price input"
-																				>
-																					✕
-																				</button>
-																			</div>
-																		{:else}
-																			<!-- Current price display -->
-																			<div class="flex items-center gap-1">
-																				<span
-																					class={customPrices.has(sku.sku)
-																						? 'line-through text-gray-400'
-																						: ''}
-																				>
-																					£{sku.your_current_price?.toFixed(2) || 'N/A'}
-																				</span>
-																				{#if customPrices.has(sku.sku)}
-																					<span class="text-blue-600 font-medium">
-																						→ £{customPrices.get(sku.sku)?.toFixed(2)}
-																					</span>
-																				{/if}
-																			</div>
-																			<button
-																				on:click={() => toggleCustomPriceInput(sku.sku)}
-																				class="text-xs text-blue-600 hover:text-blue-800 underline mt-0.5"
-																				title="Test custom price"
-																			>
-																				{customPrices.has(sku.sku) ? 'Edit' : 'Test Price'}
-																			</button>
-																		{/if}
-																	</div>
-																	{#if sku.is_winner}
-																		<span class="text-green-600 ml-1">🏆</span>
-																	{/if}
-																</div>
-															{/if}
-														</div>
-													</td>
-													<td class="py-4 px-6">
-														<div class="text-sm">
-															{#if sku.buybox_price && sku.buybox_price > 0}
-																<!-- Always show actual Buy Box price -->
-																£{sku.buybox_price.toFixed(2)}
-																{#if sku.is_winner}
-																	<span class="text-green-600 ml-1" title="You have the Buy Box"
-																		>🏆</span
-																	>
-																{/if}
-															{:else if sku.competitor_price && sku.competitor_price > 0}
-																<!-- Fallback: use competitor_price if buybox_price not available -->
-																£{sku.competitor_price.toFixed(2)}
-																{#if sku.is_winner}
-																	<span class="text-green-600 ml-1" title="You have the Buy Box"
-																		>🏆</span
-																	>
-																{/if}
-															{:else}
-																<!-- No buy box data available - don't show your price here -->
-																<span class="text-gray-500 italic">No Buy Box</span>
-															{/if}
-														</div>
-													</td>
-													<td class="py-4 px-6">
-														<div class="text-sm">
-															{#if customPrices.has(sku.sku)}
-																<!-- Custom price profit -->
-																{@const customProfit = getEffectiveProfit(sku)}
-																{#if customProfit !== null}
-																	<div class="flex flex-col gap-1">
-																		<span
-																			class={customProfit >= 0
-																				? 'text-blue-600 font-medium'
-																				: 'text-red-600 font-medium'}
-																			title="Profit at custom price"
-																		>
-																			£{customProfit.toFixed(2)}
-																		</span>
-																		<span class="text-xs text-gray-500">
-																			(Custom: £{customPrices.get(sku.sku)?.toFixed(2)})
-																		</span>
-																	</div>
-																{:else}
-																	<span class="text-gray-400">N/A</span>
-																{/if}
-															{:else if sku.is_winner}
-																<!-- Winner: Show current profit since you already have buy box -->
-																{#if sku.current_actual_profit !== null}
-																	<span
-																		class={sku.current_actual_profit >= 0
-																			? 'text-green-600'
-																			: 'text-red-600'}
-																		title="Current profit (you have the buy box)"
-																	>
-																		£{sku.current_actual_profit.toFixed(2)}
-																	</span>
-																{:else}
-																	<span class="text-gray-400">N/A</span>
-																{/if}
-															{:else}
-																<!-- Loser: Show what profit would be if you matched buy box -->
-																{#if sku.buybox_actual_profit !== null}
-																	<span
-																		class={sku.buybox_actual_profit >= 0
-																			? 'text-green-600'
-																			: 'text-red-600'}
-																		title="Profit if you matched buy box price"
-																	>
-																		£{sku.buybox_actual_profit.toFixed(2)}
-																	</span>
-																{:else if sku.current_actual_profit !== null}
-																	<span
-																		class="text-gray-500"
-																		title="Current profit (not competitive)"
-																	>
-																		£{sku.current_actual_profit.toFixed(2)}
-																	</span>
-																{:else}
-																	<span class="text-gray-400">N/A</span>
-																{/if}
-															{/if}
-														</div>
-													</td>
-													<td class="py-4 px-6">
-														<div class="text-sm">
-															{#if customPrices.has(sku.sku)}
-																<!-- Custom price margin -->
-																{@const customMargin = getEffectiveMargin(sku)}
-																{#if customMargin !== null}
-																	<div class="flex flex-col gap-1">
-																		<span
-																			class={customMargin >= 20
-																				? 'text-blue-600 font-medium'
-																				: customMargin >= 10
-																					? 'text-yellow-600 font-medium'
-																					: 'text-red-600 font-medium'}
-																			title="Margin at custom price"
-																		>
-																			{customMargin.toFixed(1)}%
-																		</span>
-																		<span class="text-xs text-gray-500"> (Custom) </span>
-																	</div>
-																{:else}
-																	<span class="text-gray-400">N/A</span>
-																{/if}
-															{:else if sku.is_winner}
-																<!-- Winner: Show current margin since you already have buy box -->
-																{#if sku.your_margin_percent_at_current_price !== null}
-																	<span
-																		class={sku.your_margin_percent_at_current_price >= 20
-																			? 'text-green-600'
-																			: sku.your_margin_percent_at_current_price >= 10
-																				? 'text-yellow-600'
-																				: 'text-red-600'}
-																		title="Current ROI margin % (you have the buy box)"
-																	>
-																		{sku.your_margin_percent_at_current_price.toFixed(1)}%
-																	</span>
-																{:else}
-																	<span class="text-gray-400">N/A</span>
-																{/if}
-															{:else}
-																<!-- Loser: Show what margin would be if you matched buy box -->
-																{#if sku.margin_percent_at_buybox_price !== null}
-																	<span
-																		class={sku.margin_percent_at_buybox_price >= 20
-																			? 'text-green-600'
-																			: sku.margin_percent_at_buybox_price >= 10
-																				? 'text-yellow-600'
-																				: 'text-red-600'}
-																		title="ROI margin % if you matched buy box price"
-																	>
-																		{sku.margin_percent_at_buybox_price.toFixed(1)}%
-																	</span>
-																{:else if sku.your_margin_percent_at_current_price !== null}
-																	<span
-																		class="text-gray-500"
-																		title="Current ROI margin % (not competitive for buy box)"
-																	>
-																		{sku.your_margin_percent_at_current_price.toFixed(1)}%
-																	</span>
-																{:else}
-																	<span class="text-gray-400">N/A</span>
-																{/if}
-															{/if}
-														</div>
-													</td>
-													<td class="py-4 px-6 whitespace-nowrap">
-														{#if true}
-															{@const status = getSkuStatus(sku)}
-															<span
-																class="{status.bgClass} {status.textClass} px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
-																title={status.description}
-															>
-																{status.label}
-															</span>
-														{/if}
-													</td>
-													<td class="py-4 px-6 whitespace-nowrap">
-														<div class="flex flex-col gap-2">
-															<!-- Data Freshness Badge -->
-															{#if sku.captured_at}
-																{@const freshness = getDataFreshness(sku.captured_at)}
-																<span
-																	class="inline-flex items-center px-2 py-1 rounded text-xs font-medium {freshness.class}"
-																	title={freshness.description}
-																>
-																	{freshness.badge}
-																</span>
-															{/if}
-
-															<!-- Update Button -->
-															{#if sku.id}
-																{@const buttonState = getUpdateButtonState(sku.id)}
-																<button
-																	class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center justify-center gap-1"
-																	disabled={buttonState.disabled}
-																	on:click={() => updateLivePrice(sku)}
-																	title={buttonState.error ||
-																		'Update pricing data with latest Amazon SP-API data'}
-																>
-																	{#if buttonState.isUpdating}
-																		<!-- Spinning loader -->
-																		<svg
-																			class="animate-spin h-3 w-3 text-white"
-																			xmlns="http://www.w3.org/2000/svg"
-																			fill="none"
-																			viewBox="0 0 24 24"
-																		>
-																			<circle
-																				class="opacity-25"
-																				cx="12"
-																				cy="12"
-																				r="10"
-																				stroke="currentColor"
-																				stroke-width="4"
-																			></circle>
-																			<path
-																				class="opacity-75"
-																				fill="currentColor"
-																				d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-																			></path>
-																		</svg>
-																	{/if}
-																	<span class="whitespace-nowrap">{buttonState.text}</span>
-																</button>
-
-																<!-- Error Message -->
-																{#if buttonState.error}
-																	<div class="text-xs text-red-600 mt-1" title={buttonState.error}>
-																		⚠️ {buttonState.error.length > 15
-																			? buttonState.error.substring(0, 15) + '...'
-																			: buttonState.error}
-																	</div>
-																{/if}
-															{/if}
-														</div>
-													</td>
-													<td class="py-4 px-6 whitespace-nowrap">
-														<a
-															href="/buy-box-monitor?query={encodeURIComponent(sku.sku)}"
-															class="text-blue-600 hover:text-blue-800 text-sm underline"
-															target="_blank"
-														>
-															Check Live
-														</a>
-													</td>
-												</tr>
-											{/each}
-										</tbody>
-									</table>
-								</div>
-							{:else}
-								<!-- Skeleton view for missing ASIN data -->
-								<div class="p-6">
-									<div class="flex items-center justify-center py-8">
-										<div class="text-center">
-											<div
-												class="flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full"
-											>
-												<span class="text-2xl">📊</span>
-											</div>
-											<h3 class="text-lg font-medium text-gray-900 mb-2">
-												No Buy Box Data Available
-											</h3>
-											<p class="text-sm text-gray-500 mb-4">
-												This ASIN appears in your top 100 best sellers but hasn't been analyzed for
-												buy box opportunities yet.
-											</p>
-											<div class="flex items-center justify-center gap-3">
-												<a
-													href="https://amazon.co.uk/dp/{asin}"
-													target="_blank"
-													rel="noopener noreferrer"
-													class="text-blue-600 hover:text-blue-800 underline text-sm"
-													title="View on Amazon UK"
-												>
-													{asin} → View Product
-												</a>
-												<span class="text-gray-300">|</span>
-												<button
-													on:click={() => fetchSingleASIN(asin)}
-													class="inline-flex items-center px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md transition-colors"
-												>
-													🔄 Analyze This ASIN
-												</button>
-											</div>
-										</div>
-									</div>
-								</div>
+			<!-- Quick Filter Presets -->
+			<div class="mb-4">
+				<h3 class="text-sm font-medium text-gray-700 mb-3">Quick Filters</h3>
+				<div class="flex flex-wrap gap-2">
+					{#each filterPresets as preset}
+						<div
+							class={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+								activePresetFilter === preset.name
+									? 'bg-blue-100 text-blue-800 ring-2 ring-blue-300'
+									: 'bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer'
+							}`}
+						>
+							<button on:click={() => applyFilterPreset(preset)} class="flex items-center gap-2">
+								<span>{preset.emoji}</span>
+								<span>{preset.name}</span>
+							</button>
+							{#if activePresetFilter === preset.name}
+								<button
+									on:click={resetAllFilters}
+									class="ml-1 text-blue-600 hover:text-blue-800"
+									title="Clear this filter"
+								>
+									×
+								</button>
 							{/if}
 						</div>
 					{/each}
+					<button
+						on:click={resetAllFilters}
+						class="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+					>
+						🔄 Clear All
+					</button>
+				</div>
+			</div>
+
+			<!-- Active Filters Indicator -->
+			{#if hasActiveFilters}
+				<div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-2">
+							<span class="text-sm font-medium text-blue-900">Active Filters:</span>
+							<div class="flex flex-wrap gap-1">
+								{#if activeCardFilter}
+									<span
+										class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+									>
+										📊 {activeCardFilter}
+										<button
+											on:click={resetAllFilters}
+											class="text-blue-600 hover:text-blue-800 ml-1"
+											title="Clear this filter"
+										>
+											×
+										</button>
+									</span>
+								{/if}
+								{#if activePresetFilter}
+									<span
+										class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+									>
+										🎯 {activePresetFilter}
+										<button
+											on:click={resetAllFilters}
+											class="text-green-600 hover:text-green-800 ml-1"
+											title="Clear this filter"
+										>
+											×
+										</button>
+									</span>
+								{/if}
+								{#if searchQuery}
+									<span
+										class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+									>
+										🔍 Search: "{searchQuery}"
+										<button
+											on:click={() => {
+												searchQuery = '';
+												applyFilters();
+											}}
+											class="text-yellow-600 hover:text-yellow-800 ml-1"
+											title="Clear search"
+										>
+											×
+										</button>
+									</span>
+								{/if}
+								{#if categoryFilter !== 'all'}
+									<span
+										class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+									>
+										📂 Category: {categoryFilter}
+										<button
+											on:click={() => {
+												categoryFilter = 'all';
+												applyFilters();
+											}}
+											class="text-purple-600 hover:text-purple-800 ml-1"
+											title="Clear category filter"
+										>
+											×
+										</button>
+									</span>
+								{/if}
+								{#if shippingFilter !== 'all'}
+									<span
+										class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+									>
+										{shippingFilter === 'prime' ? '⚡' : '📦'}
+										{shippingFilter === 'prime' ? 'Prime' : 'Standard'} Shipping
+										<button
+											on:click={() => {
+												shippingFilter = 'all';
+												applyFilters();
+											}}
+											class="text-orange-600 hover:text-orange-800 ml-1"
+											title="Clear shipping filter"
+										>
+											×
+										</button>
+									</span>
+								{/if}
+								{#if minProfitFilter > 0}
+									<span
+										class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+									>
+										💰 Min Profit: £{minProfitFilter}
+										<button
+											on:click={() => {
+												minProfitFilter = 0;
+												applyFilters();
+											}}
+											class="text-green-600 hover:text-green-800 ml-1"
+											title="Clear profit filter"
+										>
+											×
+										</button>
+									</span>
+								{/if}
+								{#if minMarginFilter > 0}
+									<span
+										class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+									>
+										📊 Min ROI Margin: {minMarginFilter}%
+										<button
+											on:click={() => {
+												minMarginFilter = 0;
+												applyFilters();
+											}}
+											class="text-orange-600 hover:text-orange-800 ml-1"
+											title="Clear ROI margin filter"
+										>
+											×
+										</button>
+									</span>
+								{/if}
+							</div>
+						</div>
+						<button
+							on:click={resetAllFilters}
+							class="text-blue-600 hover:text-blue-800 text-sm underline"
+						>
+							Clear All Filters
+						</button>
+					</div>
 				</div>
 			{/if}
 
-			<!-- Bottom Pagination -->
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+				<!-- Search -->
+				<div>
+					<label for="search" class="block text-sm font-medium text-gray-700 mb-1"
+						>Search SKU/ASIN/Product</label
+					>
+					<input
+						id="search"
+						type="text"
+						placeholder="Enter SKU, ASIN, or Product Title"
+						class="w-full border rounded px-3 py-2"
+						bind:value={searchQuery}
+						on:input={applyFiltersFromEvent}
+					/>
+				</div>
+
+				<!-- Category Filter -->
+				<div>
+					<label for="category" class="block text-sm font-medium text-gray-700 mb-1">Category</label
+					>
+					<select
+						id="category"
+						class="w-full border rounded px-3 py-2"
+						bind:value={categoryFilter}
+						on:change={applyFiltersFromEvent}
+					>
+						<option value="all">All Products</option>
+						<option value="winners">🏆 Buy Box Winners</option>
+						<option value="losers">❌ Not Winning</option>
+						<option value="opportunities">⚡ Opportunities</option>
+						<option value="profitable">💰 Profitable Ops</option>
+						<optgroup label="Recommendations">
+							<option value="not_profitable">🚫 Not Profitable</option>
+							<option value="match_buybox">🎯 Match Buy Box</option>
+							<option value="hold_price">✋ Hold Price</option>
+							<option value="investigate">🔍 Investigate</option>
+						</optgroup>
+					</select>
+				</div>
+
+				<!-- Sort By -->
+				<div>
+					<label for="sort" class="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+					<select
+						id="sort"
+						class="w-full border rounded px-3 py-2"
+						bind:value={sortBy}
+						on:change={applyFiltersFromEvent}
+					>
+						<option value="profit_desc">💰 Profit (High to Low)</option>
+						<option value="profit_asc">💰 Profit (Low to High)</option>
+						<option value="margin_desc">📊 ROI Margin % (High to Low)</option>
+						<option value="margin_asc">📊 ROI Margin % (Low to High)</option>
+						<option value="profit_difference_desc">💸 Losing by Most (Biggest Price Gap)</option>
+						<option value="profit_difference_asc">🎯 Quick Wins (Smallest Price Gap)</option>
+						<option value="margin_difference_desc">📊 Margin Opportunities (Biggest First)</option>
+						<option value="margin_difference_asc">📊 Margin Opportunities (Smallest First)</option>
+						<option value="sku_asc">📝 SKU (A to Z)</option>
+					</select>
+				</div>
+
+				<!-- Items per page -->
+				<div>
+					<label for="perPage" class="block text-sm font-medium text-gray-700 mb-1"
+						>Items per page</label
+					>
+					<select
+						id="perPage"
+						class="w-full border rounded px-3 py-2"
+						bind:value={itemsPerPage}
+						on:change={applyFiltersFromEvent}
+					>
+						<option value={25}>25</option>
+						<option value={50}>50</option>
+						<option value={100}>100</option>
+						<option value={200}>200</option>
+					</select>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+				<!-- Latest Data Only Filter -->
+				<div class="flex items-center">
+					<input
+						type="checkbox"
+						id="latestOnly"
+						class="mr-2"
+						bind:checked={showLatestOnly}
+						on:change={refreshData}
+					/>
+					<label for="latestOnly" class="text-sm">
+						Show only latest data per SKU
+						<span class="text-xs text-gray-500 block"> (Hides duplicate scans from same day) </span>
+					</label>
+				</div>
+
+				<!-- Margin Data Filter -->
+				<div class="flex items-center">
+					<input
+						type="checkbox"
+						id="marginData"
+						class="mr-2"
+						bind:checked={showOnlyWithMarginData}
+						on:change={applyFiltersFromEvent}
+					/>
+					<label for="marginData" class="text-sm">Only show items with margin data</label>
+				</div>
+
+				<!-- Include No Margin Data -->
+				<div class="flex items-center">
+					<input
+						type="checkbox"
+						id="includeNoMargin"
+						class="mr-2"
+						bind:checked={includeNoMarginData}
+						on:change={refreshData}
+					/>
+					<label for="includeNoMargin" class="text-sm">
+						Include records without cost data
+						<span class="text-xs text-gray-500 block"> (Increases data size significantly) </span>
+					</label>
+				</div>
+
+				<!-- Min Profit Filter -->
+				<div>
+					<label for="minProfit" class="block text-sm font-medium text-gray-700 mb-1"
+						>Min Profit £</label
+					>
+					<input
+						id="minProfit"
+						type="number"
+						min="0"
+						step="0.5"
+						placeholder="0.00"
+						class="w-full border rounded px-3 py-2"
+						bind:value={minProfitFilter}
+						on:input={applyFiltersFromEvent}
+					/>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+				<!-- Min Margin Filter -->
+				<div>
+					<label for="minMargin" class="block text-sm font-medium text-gray-700 mb-1"
+						>Min ROI Margin %</label
+					>
+					<input
+						id="minMargin"
+						type="number"
+						min="0"
+						max="100"
+						step="1"
+						placeholder="0"
+						class="w-full border rounded px-3 py-2"
+						bind:value={minMarginFilter}
+						on:input={applyFiltersFromEvent}
+					/>
+				</div>
+			</div>
+		</div>
+
+		<!-- Results -->
+		<div class="bg-white rounded-lg shadow" data-results-section>
+			<div class="px-4 py-3 border-b border-gray-200">
+				<div class="flex justify-between items-center">
+					<div class="flex items-center gap-4">
+						<h2 class="font-semibold">
+							Buy Box Results ({totalResults} items)
+							{#if showLatestOnly}
+								<span class="text-sm font-normal text-blue-600"> - Latest data only </span>
+							{:else}
+								<span class="text-sm font-normal text-purple-600"> - All historical data </span>
+							{/if}
+						</h2>
+
+						<!-- View Mode Toggle -->
+						<div class="flex bg-gray-100 rounded-lg p-1">
+							<button
+								on:click={() => {
+									viewMode = 'individual';
+									currentPage = 1;
+								}}
+								class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+									viewMode === 'individual'
+										? 'bg-white text-blue-600 shadow-sm'
+										: 'text-gray-600 hover:text-gray-800'
+								}`}
+							>
+								📋 Individual SKUs
+							</button>
+							<button
+								on:click={() => {
+									viewMode = 'grouped';
+									currentPage = 1;
+								}}
+								class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+									viewMode === 'grouped'
+										? 'bg-white text-blue-600 shadow-sm'
+										: 'text-gray-600 hover:text-gray-800'
+								}`}
+							>
+								📦 Grouped by ASIN
+							</button>
+							<button
+								on:click={() => {
+									viewMode = 'bestsellers';
+									currentPage = 1;
+								}}
+								class={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+									viewMode === 'bestsellers'
+										? 'bg-white text-orange-600 shadow-sm'
+										: 'text-gray-600 hover:text-gray-800'
+								}`}
+							>
+								🏆 Top 100 Best Sellers
+							</button>
+						</div>
+					</div>
+					<div class="flex items-center gap-3 text-sm text-gray-500">
+						{#if showLatestOnly}
+							<button
+								on:click={() => {
+									showLatestOnly = false;
+									refreshData();
+								}}
+								class="text-blue-600 hover:text-blue-800 underline"
+							>
+								View history
+							</button>
+						{:else}
+							<button
+								on:click={() => {
+									showLatestOnly = true;
+									refreshData();
+								}}
+								class="text-purple-600 hover:text-purple-800 underline"
+							>
+								Latest only
+							</button>
+						{/if}
+					</div>
+				</div>
+			</div>
+
+			<!-- Top Pagination -->
 			{#if totalResults > itemsPerPage}
-				<div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
+				<div class="px-6 py-3 border-b border-gray-200 bg-gray-50">
 					<div class="flex justify-between items-center">
 						<div class="text-sm text-gray-500">
 							Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
@@ -4517,7 +3999,7 @@
 							<button
 								class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
 								disabled={currentPage === 1}
-								on:click={() => changePage(currentPage - 1)}
+								on:click={() => changePage(currentPage - 1, false)}
 							>
 								Previous
 							</button>
@@ -4527,7 +4009,7 @@
 								{#if pageNumber <= Math.ceil(totalResults / itemsPerPage)}
 									<button
 										class={`px-3 py-1 rounded border ${currentPage === pageNumber ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-50'}`}
-										on:click={() => changePage(pageNumber)}
+										on:click={() => changePage(pageNumber, false)}
 									>
 										{pageNumber}
 									</button>
@@ -4537,7 +4019,7 @@
 							<button
 								class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
 								disabled={currentPage === Math.ceil(totalResults / itemsPerPage)}
-								on:click={() => changePage(currentPage + 1)}
+								on:click={() => changePage(currentPage + 1, false)}
 							>
 								Next
 							</button>
@@ -4545,8 +4027,1382 @@
 					</div>
 				</div>
 			{/if}
-		{/if}
+
+			{#if isLoading}
+				<div class="p-6 text-center">
+					<div class="flex flex-col items-center gap-4">
+						<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+						<p class="text-lg font-medium">Loading buy box data...</p>
+						<p class="text-sm text-gray-500">This may take a few moments for large datasets</p>
+					</div>
+				</div>
+			{:else if paginatedData.length === 0}
+				<div class="p-6 text-center">
+					<p>No results found with current filters</p>
+				</div>
+			{:else}
+				{#if viewMode === 'individual'}
+					<!-- Enhanced Data Table with Bulk Selection -->
+					<div class="overflow-x-auto">
+						<!-- Bulk Actions Bar -->
+						{#if selectedItems.size > 0}
+							<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-4">
+										<span class="text-sm font-medium text-blue-900">
+											{selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+										</span>
+										<button
+											on:click={selectAllVisible}
+											class="text-blue-600 hover:text-blue-800 text-sm underline"
+										>
+											Select all visible ({paginatedData.length})
+										</button>
+										<button
+											on:click={clearSelection}
+											class="text-gray-600 hover:text-gray-800 text-sm underline"
+										>
+											Clear selection
+										</button>
+									</div>
+									<div class="flex gap-2">
+										<button
+											on:click={bulkMarkForUpdate}
+											class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm"
+										>
+											🎯 Bulk Match Buy Box
+										</button>
+										<button
+											on:click={bulkAddToWatchlist}
+											class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm"
+										>
+											👁️ Add to Watchlist
+										</button>
+									</div>
+								</div>
+							</div>
+						{/if}
+
+						<table class="min-w-full">
+							<thead class="bg-gray-50">
+								<tr>
+									<th class="py-3 px-3 text-left">
+										<input
+											type="checkbox"
+											checked={selectedItems.size > 0 &&
+												selectedItems.size === paginatedData.length}
+											on:change={(e) => {
+												const target = e.target as HTMLInputElement;
+												if (target?.checked) {
+													selectAllVisible();
+												} else {
+													clearSelection();
+												}
+											}}
+											class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+										/>
+									</th>
+									<th
+										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										>Product</th
+									>
+									<th
+										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										>Price Analysis</th
+									>
+									<th
+										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										>Cost Breakdown</th
+									>
+									<th
+										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										>Margin Analysis</th
+									>
+									<th
+										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										>Actions</th
+									>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-gray-200">
+								{#each paginatedData as result}
+									<tr
+										class={`
+									hover:bg-gray-50 
+									${result.opportunity_flag ? 'bg-yellow-50' : ''} 
+									${result.is_winner ? 'bg-green-50' : ''}
+									${result.recommended_action === 'match_buybox' ? 'border-l-4 border-l-blue-500' : ''}
+									${result.recommended_action === 'not_profitable' ? 'border-l-4 border-l-red-500' : ''}
+									${selectedItems.has(result.id) ? 'ring-2 ring-blue-300' : ''}
+									${updatedRows.has(result.id) ? 'updated-row' : ''}
+									${recentlyUpdatedItems.has(result.id) ? 'recently-updated-bypass' : ''}
+									${livePricingUpdates.get(result.id)?.isUpdating ? 'updating-row' : ''}
+								`}
+									>
+										<!-- Selection Checkbox -->
+										<td class="py-4 px-3">
+											<input
+												type="checkbox"
+												checked={selectedItems.has(result.id)}
+												on:change={() => toggleItemSelection(result.id)}
+												class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+											/>
+										</td>
+
+										<!-- Product Info -->
+										<td class="py-2 px-4">
+											<div class="text-sm">
+												<!-- Shipping Type Badge -->
+												{#if result.merchant_shipping_group}
+													<div class="mb-2">
+														<span
+															class={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+																result.merchant_shipping_group === 'Nationwide Prime'
+																	? 'bg-blue-100 text-blue-800'
+																	: 'bg-gray-100 text-gray-800'
+															}`}
+														>
+															{result.merchant_shipping_group === 'Nationwide Prime'
+																? '⚡ Prime'
+																: '📦 Standard'}
+														</span>
+													</div>
+												{/if}
+
+												<div class="font-medium text-gray-900 mb-1 leading-tight">
+													SKU: {result.sku}
+													{#if recentlyUpdatedItems.has(result.id)}
+														<span
+															class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
+															title="Recently updated - visible despite current filters"
+														>
+															🔄 Recently Updated
+														</span>
+													{/if}
+												</div>
+												{#if result.item_name}
+													<!-- Show item name from buybox data -->
+													<div class="text-xs text-gray-600 mb-1">
+														{result.item_name}
+													</div>
+												{:else}
+													<!-- Show when no item name is available -->
+													<div class="text-xs text-gray-400 mb-1 italic">
+														No product title available
+													</div>
+												{/if}
+												<div>
+													<a
+														href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
+															result.sku
+														)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
+														target="_blank"
+														rel="noopener noreferrer"
+														class="font-medium text-blue-600 hover:text-blue-800 underline"
+														title="Manage price in Amazon Seller Central"
+													>
+														{result.sku} 📝
+													</a>
+												</div>
+												<div>
+													<a
+														href="https://amazon.co.uk/dp/{result.asin}"
+														target="_blank"
+														rel="noopener noreferrer"
+														class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
+														title="View on Amazon UK"
+													>
+														{result.asin} →
+													</a>
+													{#if !showLatestOnly}
+														{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+														<div class="text-xs text-purple-600 font-medium mt-1">
+															📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
+															{new Date(result.captured_at).toLocaleTimeString([], {
+																hour: '2-digit',
+																minute: '2-digit'
+															})}
+															{#if totalEntries > 1}
+																<span
+																	class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1"
+																>
+																	{totalEntries} entries
+																</span>
+															{/if}
+														</div>
+													{/if}
+													<div class="mt-1">
+														{#if result.is_winner}
+															<span
+																class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+															>
+																🏆 Buy Box Winner
+															</span>
+														{:else if result.opportunity_flag}
+															<span
+																class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+															>
+																⚡ Opportunity
+															</span>
+														{/if}
+													</div>
+													<div class="text-xs text-gray-400 mt-1">
+														Last checked: {formatDate(result.captured_at)}
+														{#if showLatestOnly}
+															{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+															{#if totalEntries > 1}
+																<span class="text-blue-600 ml-1">
+																	(Latest of {totalEntries} scans)
+																</span>
+															{/if}
+														{/if}
+													</div>
+												</div>
+											</div></td
+										>
+
+										<!-- Price Analysis -->
+										<td class="py-2 px-4">
+											<div class="text-sm space-y-1">
+												<!-- Our Price -->
+												<div class="font-medium text-gray-900">
+													{#if result.your_current_price === 0}
+														<span class="text-red-600">Out of Stock</span>
+													{:else}
+														Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
+													{/if}
+													{#if result.is_winner}
+														<span class="text-green-600 ml-1">🏆</span>
+													{/if}
+												</div>
+
+												<!-- Last Price Update Info -->
+												{#if formatLastUpdate(result)}
+													{@const updateInfo = formatLastUpdate(result)!}
+													<div class="{updateInfo.class} mt-0.5" title={updateInfo.tooltip}>
+														📅 Last updated: {updateInfo.text}
+													</div>
+												{/if}
+
+												<!-- Buy Box Price -->
+												{#if result.is_winner && result.your_current_price}
+													<!-- You're winning the buy box -->
+													<div class="font-medium text-green-700">
+														Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
+													</div>
+												{:else if !result.is_winner && result.buybox_price && result.buybox_price > 0}
+													<!-- You're losing - show actual buy box price -->
+													<div class="font-medium text-red-700">
+														Buy Box Price: £{result.buybox_price.toFixed(2)} (Competitor)
+													</div>
+												{:else if !result.is_winner && result.competitor_price && result.competitor_price > 0}
+													<!-- Fallback: use competitor_price if buybox_price not available -->
+													<div class="font-medium text-red-700">
+														Buy Box Price: £{result.competitor_price.toFixed(2)} (Competitor)
+													</div>
+												{:else}
+													<!-- No Buy Box available -->
+													<div class="font-medium text-orange-600">
+														Buy Box Price: No Buy Box Available
+														<span class="text-xs block text-orange-500"
+															>May be due to listing quality, pricing, or sales history</span
+														>
+													</div>
+												{/if}
+
+												<!-- Break Even Price -->
+												{#if result.break_even_price}
+													<div class="font-medium text-gray-600">
+														Break Even Price: £{result.break_even_price.toFixed(2)}
+													</div>
+												{:else}
+													<div class="font-medium text-gray-500">Break Even Price: N/A</div>
+												{/if}
+
+												<!-- Data Freshness Warning -->
+												{#if Date.now() - new Date(result.captured_at).getTime() > 24 * 60 * 60 * 1000}
+													{@const dataAge = Math.floor(
+														(Date.now() - new Date(result.captured_at).getTime()) / (1000 * 60 * 60)
+													)}
+													<div class="bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
+														<div class="text-xs text-yellow-800 font-medium">
+															⚠️ Data may be outdated ({dataAge}h old)
+														</div>
+														<div class="text-xs text-yellow-600 mt-1">
+															<a
+																href="/buy-box-monitor?query={encodeURIComponent(result.sku)}"
+																class="underline hover:text-yellow-800"
+																target="_blank"
+															>
+																Check live pricing →
+															</a>
+														</div>
+													</div>
+												{/if}
+											</div>
+										</td>
+
+										<!-- Cost Breakdown -->
+										<td class="py-2 px-4">
+											<div class="text-xs space-y-1">
+												<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
+												{#if result.your_cost && result.your_cost > 0}
+													<div>Base: £{result.your_cost.toFixed(2)}</div>
+												{:else}
+													<div class="text-red-600 font-medium">⚠️ Base: Missing/£0.00</div>
+												{/if}
+												{#if result.your_vat_amount}
+													<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
+												{/if}
+												{#if result.your_box_cost}
+													<div>Box: £{result.your_box_cost.toFixed(2)}</div>
+												{/if}
+												<div>Material: £0.20</div>
+												{#if result.your_fragile_charge && result.your_fragile_charge > 0}
+													<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
+												{/if}
+												{#if result.your_shipping_cost}
+													<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
+												{/if}
+												{#if result.total_operating_cost}
+													<div class="font-medium border-t pt-1 text-blue-800">
+														Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
+													</div>
+												{/if}
+
+												<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
+												{#if result.your_current_price}
+													{@const feeRate = result.your_current_price < 10 ? 0.08 : 0.15}
+													{@const feePercent = result.your_current_price < 10 ? 8 : 15}
+													<div class="text-red-600">
+														Amazon Fee ({feePercent}% of £{result.your_current_price.toFixed(2)}): £{(
+															result.your_current_price * feeRate
+														).toFixed(2)}
+													</div>
+												{/if}
+
+												{#if result.total_operating_cost && result.your_current_price}
+													<div class="font-bold border-t pt-2 text-orange-800">
+														Total Cost After Fees: £{(
+															result.total_operating_cost +
+															result.your_current_price * 0.15
+														).toFixed(2)}
+													</div>
+													<div class="text-xs text-gray-500">
+														(£{result.total_operating_cost.toFixed(2)} + £{(
+															result.your_current_price * 0.15
+														).toFixed(2)})
+													</div>
+												{/if}
+
+												{#if result.break_even_price}
+													{@const feeRate = (result.your_current_price ?? 0) < 10 ? 0.08 : 0.15}
+													{@const netRate = (1 - feeRate).toFixed(2)}
+													<div class="font-bold border-t pt-2 text-red-800">
+														Break-even: £{result.break_even_price.toFixed(2)}
+													</div>
+													<div class="text-xs text-gray-500">
+														(£{result.total_operating_cost?.toFixed(2)} ÷ {netRate})
+													</div>
+												{/if}
+											</div>
+										</td>
+
+										<!-- Margin Analysis -->
+										<td class="py-2 px-4">
+											<div class="text-sm space-y-1">
+												<!-- Recommendation Badge -->
+												{#if !result.price && !result.competitor_price}
+													<!-- No competition detected -->
+													<span
+														class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 mb-2"
+													>
+														🏆 No Competition
+													</span>
+												{:else if result.recommended_action === 'not_profitable' && !result.price && !result.competitor_price}
+													<!-- Not profitable but no competition - suggest investigation -->
+													<span
+														class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800 mb-2"
+													>
+														🔍 Investigate
+													</span>
+												{:else if result.recommended_action}
+													<span
+														class={`inline-flex items-center px-2 py-1 rounded text-xs font-medium mb-2
+												${result.recommended_action === 'match_buybox' ? 'bg-blue-100 text-blue-800' : ''}
+												${result.recommended_action === 'hold_price' ? 'bg-green-100 text-green-800' : ''}
+												${result.recommended_action === 'investigate' ? 'bg-yellow-100 text-yellow-800' : ''}
+												${result.recommended_action === 'not_profitable' ? 'bg-red-100 text-red-800' : ''}
+											`}
+													>
+														{#if result.recommended_action === 'match_buybox'}
+															📈 Match Buy Box
+														{:else if result.recommended_action === 'hold_price'}
+															✋ Hold Price
+														{:else if result.recommended_action === 'investigate'}
+															🔍 Investigate
+														{:else if result.recommended_action === 'not_profitable' && (result.price || result.competitor_price)}
+															❌ Not Profitable
+														{:else if result.recommended_action === 'not_profitable'}
+															🔍 Check Live Pricing
+														{:else}
+															{result.recommended_action}
+														{/if}
+													</span>
+												{:else}
+													<span class="text-gray-400 text-xs mb-2 block">No recommendation</span>
+												{/if}
+
+												{#if result.current_actual_profit !== null}
+													<div
+														class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
+													>
+														£{result.current_actual_profit.toFixed(2)} profit
+													</div>
+												{/if}
+												{#if result.your_margin_percent_at_current_price !== null}
+													<div
+														class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+													>
+														📊 Current Price: {result.your_margin_percent_at_current_price.toFixed(
+															1
+														)}% margin
+													</div>
+												{/if}
+
+												<!-- No competition detected message -->
+												{#if !result.is_winner && !result.price && !result.competitor_price}
+													<div class="border-t pt-1 mt-2">
+														<div class="text-xs font-medium text-green-700 mb-1">
+															🏆 No Competition Detected
+														</div>
+														<div class="text-xs text-green-600">
+															You may have the buy box by default - consider checking live pricing
+														</div>
+													</div>
+												{/if}
+
+												<!-- Match Buy Box Exactly (only when there's valid buy box data AND actual competition) -->
+												{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit && (result.price || result.competitor_price) && ((result.price && result.price > 0) || (result.competitor_price && result.competitor_price > 0))}
+													<div class="border-t pt-1 mt-1">
+														<div class="text-xs font-medium text-gray-700 mb-1">
+															🎯 Match Buy Box Exactly:
+														</div>
+														<div
+															class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
+														>
+															£{result.buybox_actual_profit.toFixed(2)} profit
+														</div>
+														{#if result.margin_percent_at_buybox_price !== null}
+															<div
+																class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+															>
+																({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
+															</div>
+														{/if}
+														{#if result.margin_difference}
+															<div
+																class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
+															>
+																Difference: {result.margin_difference > 0
+																	? '+'
+																	: ''}£{result.margin_difference.toFixed(2)}
+															</div>
+														{/if}
+													</div>
+												{/if}
+
+												{#if result.profit_opportunity && result.profit_opportunity > 0}
+													<div
+														class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded mt-2"
+													>
+														+£{result.profit_opportunity.toFixed(2)} opportunity
+													</div>
+												{/if}
+											</div>
+										</td>
+
+										<!-- Actions -->
+										<td class="py-2 px-4">
+											<div class="flex flex-col gap-2">
+												<!-- Data Age Indicator -->
+												{#if result.captured_at}
+													{@const freshness = getDataFreshness(result.captured_at)}
+													<span
+														class="inline-flex items-center px-2 py-1 rounded text-xs font-medium {freshness.class} self-start"
+														title={freshness.description}
+													>
+														{freshness.badge}
+													</span>
+												{:else}
+													<span class="text-gray-400 text-xs">Unknown</span>
+												{/if}
+												{#if testMode}
+													<!-- Test Mode Actions -->
+													{#if result.recommended_action === 'match_buybox' && result.buybox_price && result.buybox_price > 0}
+														{@const isTestInProgress = testInProgress.has(result.asin)}
+														{@const testResult = testResults.get(result.asin)}
+
+														<button
+															class="{isTestInProgress
+																? 'bg-purple-400 cursor-not-allowed'
+																: 'bg-purple-600 hover:bg-purple-700'} text-white px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+															disabled={isTestInProgress}
+															on:click={() => testMatchBuyBox(result.asin, result.buybox_price!)}
+															title="Test Match Buy Box in sandbox environment"
+														>
+															{#if isTestInProgress}
+																<svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+																	<circle
+																		class="opacity-25"
+																		cx="12"
+																		cy="12"
+																		r="10"
+																		stroke="currentColor"
+																		stroke-width="4"
+																	></circle>
+																	<path
+																		class="opacity-75"
+																		fill="currentColor"
+																		d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																	></path>
+																</svg>
+																Testing...
+															{:else}
+																🧪 Test Match Buy Box
+															{/if}
+														</button>
+
+														<!-- Test Result Display -->
+														{#if testResult}
+															<div class="text-xs mt-1">
+																{#if testResult.success}
+																	<span class="text-green-600">✅ Test Passed</span>
+																{:else}
+																	<span class="text-red-600">❌ Test Failed</span>
+																{/if}
+																<div class="text-gray-500">
+																	{testResult.timestamp.toLocaleTimeString()}
+																</div>
+															</div>
+														{/if}
+													{:else}
+														<span class="text-gray-400 text-xs">No test action available</span>
+													{/if}
+												{:else}
+													<!-- Production Mode Actions - Stacked Layout -->
+													<div class="flex flex-col gap-1">
+														<!-- Update Live Price Button -->
+														{#if result.id}
+															{@const buttonState = getUpdateButtonState(result.id)}
+															<button
+																class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center gap-1 w-full justify-center"
+																disabled={buttonState.disabled}
+																on:click={() => updateLivePrice(result)}
+																title={buttonState.error ||
+																	'Update pricing data with latest Amazon SP-API data'}
+															>
+																{#if buttonState.isUpdating}
+																	<svg
+																		class="animate-spin h-3 w-3 text-white"
+																		fill="none"
+																		viewBox="0 0 24 24"
+																	>
+																		<circle
+																			class="opacity-25"
+																			cx="12"
+																			cy="12"
+																			r="10"
+																			stroke="currentColor"
+																			stroke-width="4"
+																		></circle>
+																		<path
+																			class="opacity-75"
+																			fill="currentColor"
+																			d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																		></path>
+																	</svg>
+																{/if}
+																<span class="whitespace-nowrap">{buttonState.text}</span>
+															</button>
+														{/if}
+
+														<!-- Add to Basket Button (UI Demo) -->
+														{#if result}
+															{@const targetPrice = (() => {
+																let price = 0;
+																if (result.buybox_price && result.buybox_price > 0) {
+																	price = result.buybox_price;
+																} else if (result.competitor_price && result.competitor_price > 0) {
+																	price = result.competitor_price;
+																}
+																return Math.round(price * 100) / 100;
+															})()}
+															{@const isInProgress = matchBuyBoxInProgress.has(result.asin)}
+
+															<button
+																class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 w-full justify-center"
+																disabled={isInProgress || targetPrice <= 0}
+																on:click={() => {
+																	// Demo: Add to basket UI (not connected to real backend yet)
+																	basketActions.addItem({
+																		sku: result.sku,
+																		asin: result.asin,
+																		itemName: result.item_name || 'Product Name Not Available',
+																		currentPrice: result.your_current_price || 0,
+																		targetPrice: targetPrice,
+																		priceChangeAmount:
+																			targetPrice - (result.your_current_price || 0),
+																		marginAtTarget: result.margin_percent_at_buybox_price || 0,
+																		reason: `Match buy box price: £${targetPrice.toFixed(2)}`,
+																		status: 'pending'
+																	});
+
+																	// Show success feedback
+																	showToast(
+																		'success',
+																		'Added to Basket',
+																		`${result.sku} queued for price update to £${targetPrice.toFixed(2)}`
+																	);
+																}}
+																title="Add to pricing basket for bulk update"
+															>
+																{#if isInProgress}
+																	<div
+																		class="animate-spin w-3 h-3 border border-white border-t-transparent rounded-full"
+																	></div>
+																	Processing...
+																{:else}
+																	🛒 Add to Basket
+																{/if}
+															</button>
+														{/if}
+
+														<!-- View Details Link -->
+														<a
+															href="/buy-box-monitor?query={encodeURIComponent(
+																result.sku || result.asin
+															)}"
+															target="_blank"
+															rel="noopener noreferrer"
+															class="text-blue-600 hover:text-blue-800 underline text-xs text-center w-full block py-1"
+														>
+															View Details
+														</a>
+
+														<!-- Live Price Update Error Display -->
+														{#if result.id}
+															{@const buttonState = getUpdateButtonState(result.id)}
+															{#if buttonState.error}
+																<div class="text-xs text-red-600" title={buttonState.error}>
+																	⚠️ {buttonState.error.length > 30
+																		? buttonState.error.substring(0, 30) + '...'
+																		: buttonState.error}
+																</div>
+															{/if}
+														{/if}
+													</div>
+												{/if}
+											</div>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{:else if viewMode === 'bestsellers'}
+					<!-- Top 100 Best Sellers View -->
+					<div class="space-y-6 p-2">
+						<div
+							class="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-lg p-4 mb-4"
+						>
+							<div class="flex items-center gap-3">
+								<span class="text-2xl">🏆</span>
+								<div>
+									<h3 class="text-lg font-semibold text-orange-800">Top 100 Best Sellers</h3>
+									<p class="text-sm text-orange-600">
+										Based on sales data from July 16, 2025 business report. Showing {bestSellersGrouped.size}
+										ASINs with buy box data available.
+									</p>
+								</div>
+							</div>
+						</div>
+
+						{#each Array.from(bestSellersGrouped.entries()).slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage) as [asin, skus]}
+							<div class="bg-white border border-gray-200 rounded-lg shadow-sm">
+								<!-- ASIN Header -->
+								<div
+									class={`px-4 py-3 border-b border-gray-200 ${
+										skus[0]?.is_skeleton
+											? 'bg-gradient-to-r from-gray-50 to-gray-100'
+											: (() => {
+													const winners = skus.filter((s) => s.is_winner).length;
+													const total = skus.length;
+													const winRate = total > 0 ? winners / total : 0;
+
+													if (winRate >= 0.5) {
+														// Winning: 50% or more of SKUs have buy box (includes 1/2, 2/2, etc.)
+														return 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200';
+													} else if (winRate > 0) {
+														// Partial: Some SKUs winning but less than half
+														return 'bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200';
+													} else {
+														// Losing: No SKUs have buy box
+														return 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200';
+													}
+												})()
+									}`}
+								>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-4">
+											<h3 class="text-lg font-semibold text-gray-900">ASIN: {asin}</h3>
+											{#if skus[0]?.is_skeleton}
+												<span
+													class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-sm font-medium"
+												>
+													📊 No Data Available
+												</span>
+											{:else}
+												<span
+													class={(() => {
+														const winners = skus.filter((s) => s.is_winner).length;
+														const total = skus.length;
+														const winRate = total > 0 ? winners / total : 0;
+
+														if (winRate >= 0.5) {
+															// Winning: Green badge
+															return 'bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium';
+														} else if (winRate > 0) {
+															// Partial: Yellow badge
+															return 'bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium';
+														} else {
+															// Losing: Red badge
+															return 'bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium';
+														}
+													})()}
+												>
+													{(() => {
+														const winners = skus.filter((s) => s.is_winner).length;
+														const total = skus.length;
+														const winRate = total > 0 ? winners / total : 0;
+
+														if (winRate >= 0.5) {
+															return '🏆 Buy Box Winner';
+														} else if (winRate > 0) {
+															return '⚠️ Partial Winner';
+														} else {
+															return '❌ Buy Box Loser';
+														}
+													})()}
+												</span>
+											{/if}
+											<span
+												class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
+											>
+												{skus[0]?.is_skeleton
+													? 'Data Missing'
+													: `${skus.length} SKU${skus.length !== 1 ? 's' : ''}`}
+											</span>
+											<a
+												href="/buy-box-monitor?query={asin}"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium hover:bg-purple-200 transition-colors"
+												title="Monitor buy box for this ASIN"
+											>
+												📈 Monitor
+											</a>
+											{#if skus[0]?.is_skeleton}
+												<button
+													on:click={() => fetchSingleASIN(asin)}
+													class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
+												>
+													🔄 Fetch Data
+												</button>
+											{/if}
+										</div>
+										<div class="flex items-center gap-2">
+											{#if !skus[0]?.is_skeleton}
+												{#if skus.some((s) => s.merchant_shipping_group === 'Nationwide Prime')}
+													<span
+														class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium"
+													>
+														⚡ Prime Available
+													</span>
+												{/if}
+												{#if skus.some((s) => s.merchant_shipping_group === 'UK Shipping')}
+													<span
+														class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium"
+													>
+														📦 Standard
+													</span>
+												{/if}
+											{:else}
+												<span
+													class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium"
+												>
+													⚠️ Click "Fetch Data" to analyze
+												</span>
+											{/if}
+										</div>
+									</div>
+
+									<!-- ASIN Summary Stats -->
+									{#if !skus[0]?.is_skeleton}
+										<div class="mt-3 grid grid-cols-5 gap-4 text-sm">
+											<div>
+												<span class="text-gray-500">Total Profit:</span>
+												<span class="font-medium">
+													£{skus
+														.reduce((sum, s) => sum + (s.current_actual_profit || 0), 0)
+														.toFixed(2)}
+												</span>
+											</div>
+											<div>
+												<span class="text-gray-500">Winners:</span>
+												<span class="font-medium text-green-600">
+													{skus.filter((s) => s.is_winner).length}/{skus.length}
+												</span>
+											</div>
+											<div>
+												<span class="text-gray-500">Price Matched:</span>
+												<span class="font-medium text-orange-600">
+													{skus.filter((s) => isPriceMatchedButLostBuyBox(s)).length}
+												</span>
+											</div>
+											<div>
+												<span class="text-gray-500">Opportunities:</span>
+												<span class="font-medium text-blue-600">
+													{skus.filter((s) => s.opportunity_flag).length}
+												</span>
+											</div>
+											<div>
+												<span class="text-gray-500">Last Updated:</span>
+												<span class="font-medium">
+													{new Date(
+														Math.max(...skus.map((s) => new Date(s.captured_at).getTime()))
+													).toLocaleDateString()}
+												</span>
+											</div>
+										</div>
+									{:else}
+										<div class="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+											<div class="flex items-center gap-2">
+												<span class="text-yellow-600">⚡</span>
+												<div>
+													<p class="text-sm font-medium text-yellow-800">
+														Buy Box Data Not Available
+													</p>
+													<p class="text-xs text-yellow-600">
+														This ASIN is in your top 100 best sellers but hasn't been analyzed yet.
+														Click "Fetch Data" to get current buy box information.
+													</p>
+												</div>
+											</div>
+										</div>
+									{/if}
+								</div>
+
+								<!-- SKUs Table or Skeleton -->
+								{#if !skus[0]?.is_skeleton}
+									<div class="overflow-x-auto">
+										<table class="min-w-full">
+											<thead class="bg-gray-50">
+												<tr
+													class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+												>
+													<th class="py-2 px-4">SKU</th>
+													<th class="py-2 px-4">Shipping</th>
+													<th class="py-2 px-4">Our Price</th>
+													<th class="py-2 px-4">Buy Box</th>
+													<th class="py-2 px-4">
+														<div>Buy Box Profit</div>
+														<div class="text-xs font-normal text-gray-400">If matched</div>
+													</th>
+													<th class="py-2 px-4">
+														<div>ROI Margin %</div>
+														<div class="text-xs font-normal text-gray-400">If matched buy box</div>
+													</th>
+													<th class="py-2 px-4">Status</th>
+													<th class="py-2 px-4">Action</th>
+												</tr>
+											</thead>
+											<tbody class="bg-white divide-y divide-gray-200">
+												{#each skus as sku}
+													<tr
+														class="hover:bg-gray-50 {updatedRows.has(sku.id)
+															? 'updated-row'
+															: ''} {recentlyUpdatedItems.has(sku.id)
+															? 'recently-updated-bypass'
+															: ''} {livePricingUpdates.get(sku.id)?.isUpdating
+															? 'updating-row'
+															: ''}"
+													>
+														<td class="py-2 px-4">
+															<div class="text-sm">
+																<a
+																	href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={encodeURIComponent(
+																		sku.sku
+																	)}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
+																	target="_blank"
+																	rel="noopener noreferrer"
+																	class="font-medium text-blue-600 hover:text-blue-800 underline"
+																	title="Manage price in Amazon Seller Central"
+																>
+																	{sku.sku} 📝
+																</a>
+															</div>
+															<div class="mt-1">
+																<a
+																	href="https://amazon.co.uk/dp/{sku.asin}"
+																	target="_blank"
+																	rel="noopener noreferrer"
+																	class="text-blue-600 hover:text-blue-800 underline text-xs font-medium"
+																	title="View on Amazon UK"
+																>
+																	{sku.asin} →
+																</a>
+															</div>
+															<div class="text-xs text-gray-500 mt-1 max-w-xs">
+																<span class="block truncate">
+																	SKU: {sku.sku}
+																	{#if recentlyUpdatedItems.has(sku.id)}
+																		<span
+																			class="ml-1 inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
+																			title="Recently updated - visible despite current filters"
+																		>
+																			🔄
+																		</span>
+																	{/if}
+																</span>
+															</div>
+														</td>
+														<td class="py-2 px-4 whitespace-nowrap">
+															{#if sku.merchant_shipping_group === 'Nationwide Prime'}
+																<span
+																	class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+																>
+																	⚡ Prime
+																</span>
+															{:else if sku.merchant_shipping_group === 'UK Shipping'}
+																<span
+																	class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+																>
+																	📦 Standard
+																</span>
+															{:else}
+																<span class="text-gray-400 text-xs whitespace-nowrap">Unknown</span>
+															{/if}
+														</td>
+														<td class="py-2 px-4">
+															<div class="text-sm">
+																{#if sku.your_current_price === 0}
+																	<span class="text-red-600">Out of Stock</span>
+																{:else}
+																	<div class="flex items-center gap-2">
+																		<div class="flex flex-col">
+																			{#if showCustomPriceInputs.get(sku.sku)}
+																				<!-- Custom price input -->
+																				<div class="flex items-center gap-1 mb-1">
+																					<input
+																						type="number"
+																						step="0.01"
+																						min="0"
+																						placeholder={sku.your_current_price?.toFixed(2) ||
+																							'0.00'}
+																						value={customPrices.get(sku.sku) || ''}
+																						on:input={(e) =>
+																							updateCustomPrice(
+																								sku.sku,
+																								(e.target as HTMLInputElement)?.value || ''
+																							)}
+																						class="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:border-blue-500 focus:outline-none"
+																					/>
+																					<span class="text-xs text-gray-500">£</span>
+																				</div>
+																				<div class="flex items-center gap-1">
+																					<button
+																						on:click={() => resetCustomPrice(sku.sku)}
+																						class="text-xs text-gray-500 hover:text-gray-700 underline"
+																						title="Reset to current price"
+																					>
+																						Reset
+																					</button>
+																					<button
+																						on:click={() => toggleCustomPriceInput(sku.sku)}
+																						class="text-xs text-gray-500 hover:text-gray-700"
+																						title="Hide custom price input"
+																					>
+																						✕
+																					</button>
+																				</div>
+																			{:else}
+																				<!-- Current price display -->
+																				<div class="flex items-center gap-1">
+																					<span
+																						class={customPrices.has(sku.sku)
+																							? 'line-through text-gray-400'
+																							: ''}
+																					>
+																						£{sku.your_current_price?.toFixed(2) || 'N/A'}
+																					</span>
+																					{#if customPrices.has(sku.sku)}
+																						<span class="text-blue-600 font-medium">
+																							→ £{customPrices.get(sku.sku)?.toFixed(2)}
+																						</span>
+																					{/if}
+																				</div>
+																				<!-- Last update information -->
+																				{#if formatLastUpdate(sku)}
+																					{@const updateInfo = formatLastUpdate(sku)!}
+																					<div class={updateInfo.class} title={updateInfo.tooltip}>
+																						📅 {updateInfo.text}
+																					</div>
+																				{/if}
+																				<button
+																					on:click={() => toggleCustomPriceInput(sku.sku)}
+																					class="text-xs text-blue-600 hover:text-blue-800 underline mt-0.5"
+																					title="Test custom price"
+																				>
+																					{customPrices.has(sku.sku) ? 'Edit' : 'Test Price'}
+																				</button>
+																			{/if}
+																		</div>
+																		{#if sku.is_winner}
+																			<span class="text-green-600 ml-1">🏆</span>
+																		{/if}
+																	</div>
+																{/if}
+															</div>
+														</td>
+														<td class="py-2 px-4">
+															<div class="text-sm">
+																{#if sku.buybox_price && sku.buybox_price > 0}
+																	<!-- Always show actual Buy Box price -->
+																	£{sku.buybox_price.toFixed(2)}
+																	{#if sku.is_winner}
+																		<span class="text-green-600 ml-1" title="You have the Buy Box"
+																			>🏆</span
+																		>
+																	{/if}
+																{:else if sku.competitor_price && sku.competitor_price > 0}
+																	<!-- Fallback: use competitor_price if buybox_price not available -->
+																	£{sku.competitor_price.toFixed(2)}
+																	{#if sku.is_winner}
+																		<span class="text-green-600 ml-1" title="You have the Buy Box"
+																			>🏆</span
+																		>
+																	{/if}
+																{:else}
+																	<!-- No buy box data available - don't show your price here -->
+																	<span class="text-gray-500 italic">No Buy Box</span>
+																{/if}
+															</div>
+														</td>
+														<td class="py-2 px-4">
+															<div class="text-sm">
+																{#if customPrices.has(sku.sku)}
+																	<!-- Custom price profit -->
+																	{@const customProfit = getEffectiveProfit(sku)}
+																	{#if customProfit !== null}
+																		<div class="flex flex-col gap-1">
+																			<span
+																				class={customProfit >= 0
+																					? 'text-blue-600 font-medium'
+																					: 'text-red-600 font-medium'}
+																				title="Profit at custom price"
+																			>
+																				£{customProfit.toFixed(2)}
+																			</span>
+																			<span class="text-xs text-gray-500">
+																				(Custom: £{customPrices.get(sku.sku)?.toFixed(2)})
+																			</span>
+																		</div>
+																	{:else}
+																		<span class="text-gray-400">N/A</span>
+																	{/if}
+																{:else if sku.is_winner}
+																	<!-- Winner: Show current profit since you already have buy box -->
+																	{#if sku.current_actual_profit !== null}
+																		<span
+																			class={sku.current_actual_profit >= 0
+																				? 'text-green-600'
+																				: 'text-red-600'}
+																			title="Current profit (you have the buy box)"
+																		>
+																			£{sku.current_actual_profit.toFixed(2)}
+																		</span>
+																	{:else}
+																		<span class="text-gray-400">N/A</span>
+																	{/if}
+																{:else}
+																	<!-- Loser: Show what profit would be if you matched buy box -->
+																	{#if sku.buybox_actual_profit !== null}
+																		<span
+																			class={sku.buybox_actual_profit >= 0
+																				? 'text-green-600'
+																				: 'text-red-600'}
+																			title="Profit if you matched buy box price"
+																		>
+																			£{sku.buybox_actual_profit.toFixed(2)}
+																		</span>
+																	{:else if sku.current_actual_profit !== null}
+																		<span
+																			class="text-gray-500"
+																			title="Current profit (not competitive)"
+																		>
+																			£{sku.current_actual_profit.toFixed(2)}
+																		</span>
+																	{:else}
+																		<span class="text-gray-400">N/A</span>
+																	{/if}
+																{/if}
+															</div>
+														</td>
+														<td class="py-2 px-4">
+															<div class="text-sm">
+																{#if customPrices.has(sku.sku)}
+																	<!-- Custom price margin -->
+																	{@const customMargin = getEffectiveMargin(sku)}
+																	{#if customMargin !== null}
+																		<div class="flex flex-col gap-1">
+																			<span
+																				class={customMargin >= 20
+																					? 'text-blue-600 font-medium'
+																					: customMargin >= 10
+																						? 'text-yellow-600 font-medium'
+																						: 'text-red-600 font-medium'}
+																				title="Margin at custom price"
+																			>
+																				{customMargin.toFixed(1)}%
+																			</span>
+																			<span class="text-xs text-gray-500"> (Custom) </span>
+																		</div>
+																	{:else}
+																		<span class="text-gray-400">N/A</span>
+																	{/if}
+																{:else if sku.is_winner}
+																	<!-- Winner: Show current margin since you already have buy box -->
+																	{#if sku.your_margin_percent_at_current_price !== null}
+																		<span
+																			class={sku.your_margin_percent_at_current_price >= 20
+																				? 'text-green-600'
+																				: sku.your_margin_percent_at_current_price >= 10
+																					? 'text-yellow-600'
+																					: 'text-red-600'}
+																			title="Current ROI margin % (you have the buy box)"
+																		>
+																			{sku.your_margin_percent_at_current_price.toFixed(1)}%
+																		</span>
+																	{:else}
+																		<span class="text-gray-400">N/A</span>
+																	{/if}
+																{:else}
+																	<!-- Loser: Show what margin would be if you matched buy box -->
+																	{#if sku.margin_percent_at_buybox_price !== null}
+																		<span
+																			class={sku.margin_percent_at_buybox_price >= 20
+																				? 'text-green-600'
+																				: sku.margin_percent_at_buybox_price >= 10
+																					? 'text-yellow-600'
+																					: 'text-red-600'}
+																			title="ROI margin % if you matched buy box price"
+																		>
+																			{sku.margin_percent_at_buybox_price.toFixed(1)}%
+																		</span>
+																	{:else if sku.your_margin_percent_at_current_price !== null}
+																		<span
+																			class="text-gray-500"
+																			title="Current ROI margin % (not competitive for buy box)"
+																		>
+																			{sku.your_margin_percent_at_current_price.toFixed(1)}%
+																		</span>
+																	{:else}
+																		<span class="text-gray-400">N/A</span>
+																	{/if}
+																{/if}
+															</div>
+														</td>
+														<td class="py-2 px-4 whitespace-nowrap">
+															{#if true}
+																{@const status = getSkuStatus(sku)}
+																<span
+																	class="{status.bgClass} {status.textClass} px-2 py-1 rounded text-xs font-medium whitespace-nowrap inline-block"
+																	title={status.description}
+																>
+																	{status.label}
+																</span>
+															{/if}
+														</td>
+														<td class="py-2 px-4 whitespace-nowrap">
+															<div class="flex flex-col gap-2">
+																<!-- Data Freshness Badge -->
+																{#if sku.captured_at}
+																	{@const freshness = getDataFreshness(sku.captured_at)}
+																	<span
+																		class="inline-flex items-center px-2 py-1 rounded text-xs font-medium {freshness.class}"
+																		title={freshness.description}
+																	>
+																		{freshness.badge}
+																	</span>
+																{/if}
+
+																<!-- Update Button -->
+																{#if sku.id}
+																	{@const buttonState = getUpdateButtonState(sku.id)}
+																	<button
+																		class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center justify-center gap-1"
+																		disabled={buttonState.disabled}
+																		on:click={() => updateLivePrice(sku)}
+																		title={buttonState.error ||
+																			'Update pricing data with latest Amazon SP-API data'}
+																	>
+																		{#if buttonState.isUpdating}
+																			<!-- Spinning loader -->
+																			<svg
+																				class="animate-spin h-3 w-3 text-white"
+																				xmlns="http://www.w3.org/2000/svg"
+																				fill="none"
+																				viewBox="0 0 24 24"
+																			>
+																				<circle
+																					class="opacity-25"
+																					cx="12"
+																					cy="12"
+																					r="10"
+																					stroke="currentColor"
+																					stroke-width="4"
+																				></circle>
+																				<path
+																					class="opacity-75"
+																					fill="currentColor"
+																					d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																				></path>
+																			</svg>
+																		{/if}
+																		<span class="whitespace-nowrap">{buttonState.text}</span>
+																	</button>
+
+																	<!-- Error Message -->
+																	{#if buttonState.error}
+																		<div
+																			class="text-xs text-red-600 mt-1"
+																			title={buttonState.error}
+																		>
+																			⚠️ {buttonState.error.length > 15
+																				? buttonState.error.substring(0, 15) + '...'
+																				: buttonState.error}
+																		</div>
+																	{/if}
+																{/if}
+															</div>
+														</td>
+														<td class="py-2 px-4 whitespace-nowrap">
+															<a
+																href="/buy-box-monitor?query={encodeURIComponent(sku.sku)}"
+																class="text-blue-600 hover:text-blue-800 text-sm underline"
+																target="_blank"
+															>
+																Check Live
+															</a>
+														</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								{:else}
+									<!-- Skeleton view for missing ASIN data -->
+									<div class="p-6">
+										<div class="flex items-center justify-center py-6">
+											<div class="text-center">
+												<div
+													class="flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full"
+												>
+													<span class="text-2xl">📊</span>
+												</div>
+												<h3 class="text-lg font-medium text-gray-900 mb-2">
+													No Buy Box Data Available
+												</h3>
+												<p class="text-sm text-gray-500 mb-4">
+													This ASIN appears in your top 100 best sellers but hasn't been analyzed
+													for buy box opportunities yet.
+												</p>
+												<div class="flex items-center justify-center gap-3">
+													<a
+														href="https://amazon.co.uk/dp/{asin}"
+														target="_blank"
+														rel="noopener noreferrer"
+														class="text-blue-600 hover:text-blue-800 underline text-sm"
+														title="View on Amazon UK"
+													>
+														{asin} → View Product
+													</a>
+													<span class="text-gray-300">|</span>
+													<button
+														on:click={() => fetchSingleASIN(asin)}
+														class="inline-flex items-center px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-md transition-colors"
+													>
+														🔄 Analyze This ASIN
+													</button>
+												</div>
+											</div>
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<!-- Bottom Pagination -->
+				{#if totalResults > itemsPerPage}
+					<div class="px-2 py-4 border-t border-gray-200 bg-gray-50">
+						<div class="flex justify-between items-center">
+							<div class="text-sm text-gray-500">
+								Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
+									currentPage * itemsPerPage,
+									totalResults
+								)} of {totalResults} results
+							</div>
+							<div class="flex space-x-1">
+								<button
+									class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
+									disabled={currentPage === 1}
+									on:click={() => changePage(currentPage - 1)}
+								>
+									Previous
+								</button>
+
+								{#each Array(Math.min(5, Math.ceil(totalResults / itemsPerPage))) as _, i}
+									{@const pageNumber = Math.max(1, currentPage - 2) + i}
+									{#if pageNumber <= Math.ceil(totalResults / itemsPerPage)}
+										<button
+											class={`px-3 py-1 rounded border ${currentPage === pageNumber ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-50'}`}
+											on:click={() => changePage(pageNumber)}
+										>
+											{pageNumber}
+										</button>
+									{/if}
+								{/each}
+
+								<button
+									class="px-3 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50"
+									disabled={currentPage === Math.ceil(totalResults / itemsPerPage)}
+									on:click={() => changePage(currentPage + 1)}
+								>
+									Next
+								</button>
+							</div>
+						</div>
+					</div>
+				{/if}
+			{/if}
+		</div>
 	</div>
+
+	<!-- Persistent Pricing Basket Sidebar -->
+	<BasketSidebar />
 </div>
 
 <style>
@@ -4590,6 +5446,20 @@
 			background-color: transparent;
 			border-left: none;
 		}
+	}
+
+	/* Pricing Basket Layout Adjustments */
+	:global(.main-content) {
+		transition: margin-right 0.3s ease-in-out;
+		max-width: 1200px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	:global(.main-content.basket-open) {
+		margin-right: 26rem !important; /* Extra space for sidebar + padding */
+		margin-left: 2rem;
+		max-width: none;
 	}
 
 	/* Smooth transitions for button states */

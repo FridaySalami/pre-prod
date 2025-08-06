@@ -85,7 +85,9 @@ export async function GET({ url }) {
       // Shipping information
       'merchant_shipping_group',
       // Product information
-      'item_name' // Re-added for better UX instead of lazy loading
+      'item_name', // Re-added for better UX instead of lazy loading
+      // Price update tracking
+      'last_price_update', 'update_source'
       // Removed: product_title (replaced with item_name), material_cost_only, current_profit_breakdown, 
       // buybox_profit_breakdown, price_adjustment_needed, margin_calculation_version, 
       // cost_data_source, and other metadata fields not displayed in UI

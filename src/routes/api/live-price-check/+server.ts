@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   try {
     // Temporarily bypass authentication for debugging
     console.log('🔍 Live price check API called - bypassing authentication for debugging');
-    
+
     const asin = url.searchParams.get('asin');
     if (!asin) {
       return json(
@@ -26,13 +26,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
     try {
       // Import the listings service (since pricing service doesn't exist)
       const { default: AmazonListingsAPI } = await import('$lib/services/amazon-listings-api-server.js');
-      
+
       const listingsAPI = new AmazonListingsAPI({
         environment: 'production'
       });
 
       console.log('🔍 Note: Live pricing check not fully implemented in listings API. Returning placeholder data...');
-      
+
       // Since the listings API doesn't have live pricing functionality, 
       // we'll return a placeholder response that indicates this feature needs implementation
       const result = {
@@ -55,7 +55,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
     } catch (importError) {
       console.error('❌ Failed to import listings service:', importError);
-      
+
       // Fallback: Try to use the existing buybox pricing service
       try {
         const response = await fetch(`http://localhost:3001/api/live-pricing/check?asin=${asin}`);
@@ -75,7 +75,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
         const errorMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
         console.log('Fallback pricing service also failed:', errorMessage);
       }
-      
+
       const errorMessage = importError instanceof Error ? importError.message : 'Unknown error';
       return json(
         {

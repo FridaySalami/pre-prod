@@ -70,7 +70,8 @@ const ROUTE_PROTECTION = {
     '/buy-box-monitor', // Moved from manager to authenticated
     '/buy-box-manager', // Moved from admin to authenticated
     '/api/live-pricing',
-    '/api/match-buybox'
+    '/api/match-buybox',
+    '/api/match-buy-box'
   ],
 
   // Routes requiring manager privileges (can read pricing data but not modify)
@@ -81,8 +82,6 @@ const ROUTE_PROTECTION = {
 
   // Routes requiring admin privileges
   admin: [
-    '/api/match-buy-box',
-    '/api/price-update',
     '/api/admin'
   ]
 };
@@ -377,12 +376,18 @@ function hasRequiredPermissions(userRole: string | undefined, requiredLevel: str
  */
 async function performEnhancedSecurityChecks(event: any, adminClient: any) {
   const session = await event.locals.getSession();
-  if (!session) return;
+  if (!session) {
+    console.log('🔐 Enhanced security check: No session found');
+    return;
+  }
+
+  console.log('🔐 Enhanced security check starting for user:', session.user.email);
 
   const clientIP = event.getClientAddress();
   const userAgent = event.request.headers.get('user-agent') || 'unknown';
 
   // Check for rate limiting
+  console.log('🔐 Checking rate limit...');
   const rateLimitCheck = await checkRateLimit(
     event.locals.supabase,
     session.user.id,
@@ -392,6 +397,7 @@ async function performEnhancedSecurityChecks(event: any, adminClient: any) {
   );
 
   if (!rateLimitCheck.allowed) {
+    console.log('🔐 Rate limit exceeded:', rateLimitCheck);
     await logSecurityEvent(adminClient, 'RATE_LIMIT_EXCEEDED', {
       userId: session.user.id,
       operation: 'price_modification',
@@ -404,13 +410,23 @@ async function performEnhancedSecurityChecks(event: any, adminClient: any) {
   }
 
   // Check for suspicious activity patterns
+  console.log('🔐 Checking for suspicious activity...');
   await detectSuspiciousActivity(event.locals.supabase, adminClient, session.user.id, clientIP);
 
   // Validate session age (require re-authentication for old sessions)
   const sessionAge = Date.now() - new Date(session.user.last_sign_in_at || 0).getTime();
-  const maxSessionAge = 8 * 60 * 60 * 1000; // 8 hours
+  const maxSessionAge = 24 * 60 * 60 * 1000; // Extended to 24 hours for better UX
+
+  console.log('🔐 Session age check:', {
+    userEmail: session.user.email,
+    sessionAgeMinutes: Math.floor(sessionAge / 1000 / 60),
+    maxSessionAgeMinutes: Math.floor(maxSessionAge / 1000 / 60),
+    lastSignInAt: session.user.last_sign_in_at
+  });
 
   if (sessionAge > maxSessionAge) {
+    console.log(`🔐 Session too old for ${session.user.email}: ${Math.floor(sessionAge / 1000 / 60)} minutes old`);
+
     await logSecurityEvent(adminClient, 'SESSION_TOO_OLD', {
       userId: session.user.id,
       sessionAge: Math.floor(sessionAge / 1000 / 60), // minutes
@@ -419,9 +435,9 @@ async function performEnhancedSecurityChecks(event: any, adminClient: any) {
 
     throw error(401, 'Session expired. Please log in again.');
   }
-}
 
-/**
+  console.log('🔐 Enhanced security checks passed for user:', session.user.email);
+}/**
  * Check rate limiting for sensitive operations
  */
 async function checkRateLimit(

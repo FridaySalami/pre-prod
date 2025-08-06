@@ -1,50 +1,37 @@
-// @ts-nocheck
-/**
- * Amazon Listings API Service - Clean Implementation
- * Focused specifically on price updates for existing listings
- */
-
-// Import environment variables using SvelteKit's static private env
-import {
-  AMAZON_CLIENT_ID,
-  AMAZON_CLIENT_SECRET,
-  AMAZON_REFRESH_TOKEN,
-  AMAZON_AWS_ACCESS_KEY_ID,
-  AMAZON_AWS_SECRET_ACCESS_KEY,
-  AMAZON_REGION,
-  AMAZON_MARKETPLACE_ID,
-  PRIVATE_SUPABASE_SERVICE_KEY
-} from '$env/static/private';
-
-import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+// Standalone Amazon Listings API for Node.js scripts
+// This version uses regular environment variables instead of SvelteKit's $env
 
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 class AmazonListingsAPI {
   constructor(config = {}) {
     console.log('🏗️ Initializing AmazonListingsAPI with config:', {
       environment: config.environment || 'production',
-      hasClientId: !!AMAZON_CLIENT_ID,
-      hasRefreshToken: !!AMAZON_REFRESH_TOKEN,
-      hasAwsCredentials: !!(AMAZON_AWS_ACCESS_KEY_ID && AMAZON_AWS_SECRET_ACCESS_KEY)
+      hasClientId: !!process.env.AMAZON_CLIENT_ID,
+      hasRefreshToken: !!process.env.AMAZON_REFRESH_TOKEN,
+      hasAwsCredentials: !!(process.env.AMAZON_AWS_ACCESS_KEY_ID && process.env.AMAZON_AWS_SECRET_ACCESS_KEY)
     });
 
     this.config = {
       endpoint: 'https://sellingpartnerapi-eu.amazon.com',
-      clientId: config.clientId || AMAZON_CLIENT_ID,
-      clientSecret: config.clientSecret || AMAZON_CLIENT_SECRET,
-      refreshToken: config.refreshToken || AMAZON_REFRESH_TOKEN,
-      awsAccessKeyId: config.awsAccessKeyId || AMAZON_AWS_ACCESS_KEY_ID,
-      awsSecretAccessKey: config.awsSecretAccessKey || AMAZON_AWS_SECRET_ACCESS_KEY,
-      awsRegion: config.awsRegion || AMAZON_REGION || 'eu-west-1',
-      marketplaceId: config.marketplaceId || AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
+      clientId: config.clientId || process.env.AMAZON_CLIENT_ID,
+      clientSecret: config.clientSecret || process.env.AMAZON_CLIENT_SECRET,
+      refreshToken: config.refreshToken || process.env.AMAZON_REFRESH_TOKEN,
+      awsAccessKeyId: config.awsAccessKeyId || process.env.AMAZON_AWS_ACCESS_KEY_ID,
+      awsSecretAccessKey: config.awsSecretAccessKey || process.env.AMAZON_AWS_SECRET_ACCESS_KEY,
+      awsRegion: config.awsRegion || process.env.AMAZON_REGION || 'eu-west-1',
+      marketplaceId: config.marketplaceId || process.env.AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
       environment: config.environment || 'production'
     };
 
     // Initialize Supabase client for logging
     this.supabase = createClient(
-      PUBLIC_SUPABASE_URL,
-      PRIVATE_SUPABASE_SERVICE_KEY
+      process.env.PUBLIC_SUPABASE_URL,
+      process.env.PRIVATE_SUPABASE_SERVICE_KEY
     );
 
     this.validateCredentials();
@@ -226,7 +213,7 @@ class AmazonListingsAPI {
     try {
       // First get the product type for this ASIN
       const productType = await this.getProductTypeForAsin(asin, token);
-      console.log(`� Discovered product type for ${asin}: ${productType}`);
+      console.log(`🔍 Discovered product type for ${asin}: ${productType}`);
 
       const requestBody = {
         productType: productType,
@@ -307,7 +294,7 @@ class AmazonListingsAPI {
 
     console.log('✅ REAL API - Price update completed successfully:', successResult);
 
-    // Log the price update to the audit_log table
+    // Log the price update to the audit_log table (simplified for standalone)
     this.logPriceUpdate(asin, newPrice, result, status).catch(error => {
       console.warn('⚠️ Failed to log price update to database:', error);
     });
@@ -319,35 +306,70 @@ class AmazonListingsAPI {
     try {
       console.log('💾 Logging price update to database...');
 
+      // Since audit_log table structure was unclear, let's just log a simple entry
       const logEntry = {
-        event_type: 'AMAZON_PRICE_UPDATE',
-        details: {
-          asin: asin,
-          new_price: parseFloat(newPrice),
-          currency: 'GBP',
+        action: 'AMAZON_PRICE_UPDATE',
+        asin: asin,
+        new_price: parseFloat(newPrice),
+        currency: 'GBP',
+        status_code: status,
+        timestamp: new Date().toISOString(),
+        details: JSON.stringify({
           amazon_response: amazonResponse,
-          status_code: status,
           environment: this.config.environment,
-          timestamp: new Date().toISOString(),
           marketplace_id: this.config.marketplaceId
-        },
-        created_at: new Date().toISOString()
+        })
       };
 
+      // Try to insert to audit_log - if it fails, we'll continue anyway
       const { data, error } = await this.supabase
         .from('audit_log')
         .insert([logEntry]);
 
       if (error) {
-        console.error('❌ Failed to insert audit log:', error);
-        throw error;
+        console.warn('⚠️ Could not log to audit_log table:', error.message);
+        console.log('💾 Price update completed without database logging');
+      } else {
+        console.log('✅ Price update logged to database successfully');
       }
 
-      console.log('✅ Price update logged to database successfully');
       return data;
     } catch (error) {
-      console.error('❌ Database logging error:', error);
-      throw error;
+      console.warn('❌ Database logging error:', error.message);
+      // Don't throw - continue with the price update even if logging fails
+      return null;
+    }
+  }
+
+  async getProductTypeForAsin(asin, token) {
+    try {
+      console.log(`🔍 Getting product type for ASIN: ${asin}`);
+
+      // Try to get the listing to discover product type
+      const response = await fetch(
+        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-amz-access-token': token,
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const productType = data.productType || 'PRODUCT';
+        console.log(`✅ Product type discovered: ${productType}`);
+        return productType;
+      } else {
+        console.log(`⚠️ Could not determine product type, using default: PRODUCT`);
+        return 'PRODUCT';
+      }
+    } catch (error) {
+      console.log(`⚠️ Error getting product type, using default: ${error.message}`);
+      return 'PRODUCT';
     }
   }
 
@@ -400,41 +422,6 @@ class AmazonListingsAPI {
       throw error;
     }
   }
-
-  async getProductTypeForAsin(asin, token) {
-    try {
-      console.log(`🔍 Getting product type for ASIN: ${asin}`);
-
-      // Try to get the listing to discover product type
-      const response = await fetch(
-        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'x-amz-access-token': token,
-            'Accept': 'application/json'
-          }
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const productType = data.productType || 'PRODUCT';
-        console.log(`✅ Product type discovered: ${productType}`);
-        return productType;
-      } else {
-        console.log(`⚠️ Could not determine product type, using default: PRODUCT`);
-        return 'PRODUCT';
-      }
-    } catch (error) {
-      console.log(`⚠️ Error getting product type, using default: ${error.message}`);
-      return 'PRODUCT';
-    }
-  }
 }
 
 export default AmazonListingsAPI;
-export { AmazonListingsAPI };
-
-console.log('📦 Amazon Listings API Server module loaded (clean version)');
