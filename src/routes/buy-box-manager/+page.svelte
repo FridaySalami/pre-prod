@@ -360,6 +360,13 @@
 				).length,
 				match_buybox: buyboxData.filter((item) => item.recommended_action === 'match_buybox')
 					.length,
+				no_buybox: buyboxData.filter((item) => item.buybox_price === null).length,
+				low_margin_sales: buyboxData.filter(
+					(item) =>
+						item.your_margin_percent_at_current_price !== null &&
+						item.your_margin_percent_at_current_price >= 0 &&
+						item.your_margin_percent_at_current_price <= 10
+				).length,
 				investigate: buyboxData.filter((item) => item.recommended_action === 'investigate').length
 			};
 
@@ -1950,6 +1957,17 @@
 				break;
 			case 'match_buybox':
 				filtered = filtered.filter((item) => item.recommended_action === 'match_buybox');
+				break;
+			case 'no_buybox':
+				filtered = filtered.filter((item) => item.buybox_price === null);
+				break;
+			case 'low_margin_sales':
+				filtered = filtered.filter(
+					(item) =>
+						item.your_margin_percent_at_current_price !== null &&
+						item.your_margin_percent_at_current_price >= 0 &&
+						item.your_margin_percent_at_current_price <= 10
+				);
 				break;
 			case 'investigate':
 				filtered = filtered.filter((item) => item.recommended_action === 'investigate');

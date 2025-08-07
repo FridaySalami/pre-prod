@@ -12,6 +12,8 @@
 		not_profitable?: number;
 		match_buybox?: number;
 		investigate?: number;
+		no_buybox?: number;
+		low_margin_sales?: number;
 	}
 
 	interface ShippingCounts {
@@ -64,6 +66,12 @@
 			value: 'match_buybox',
 			label: 'Out of Stock - Higher Buy Box Price',
 			count: categoryCounts.match_buybox || 0
+		},
+		{ value: 'no_buybox', label: 'No Buy Box Available', count: categoryCounts.no_buybox || 0 },
+		{
+			value: 'low_margin_sales',
+			label: 'Low Margin Sales (≤10%)',
+			count: categoryCounts.low_margin_sales || 0
 		},
 		{ value: 'investigate', label: 'Investigate', count: categoryCounts.investigate || 0 }
 	];
@@ -188,9 +196,13 @@
 												? 'Products that would lose money if matched to buy box price'
 												: category.value === 'match_buybox'
 													? 'Out of stock items where buy box price is higher than your original price - opportunity to restock at lower price or match higher price for better margin'
-													: category.value === 'investigate'
-														? 'Products requiring manual review or investigation'
-														: 'Filter products by this category'}
+													: category.value === 'no_buybox'
+														? 'Products with no competing buy box - you have the market to yourself'
+														: category.value === 'low_margin_sales'
+															? 'Products currently selling with profit margins of 10% or less (including 0% margin) - consider price optimization'
+															: category.value === 'investigate'
+																? 'Products requiring manual review or investigation'
+																: 'Filter products by this category'}
 				>
 					<div class="flex items-center">
 						<input
