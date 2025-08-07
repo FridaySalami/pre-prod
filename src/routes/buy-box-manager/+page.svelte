@@ -503,11 +503,6 @@
 	let selectedItems = new Set<string>(); // Track selected item IDs for bulk actions
 	let filtersExpanded = false;
 
-	// Test Environment State
-	let testMode = false; // Toggle between production data and sandbox testing
-	let testResults = new Map<string, any>(); // Store test results for each ASIN
-	let testInProgress = new Set<string>(); // Track which tests are running
-
 	// Production Match Buy Box State
 	let matchBuyBoxInProgress = new Set<string>(); // Track which Match Buy Box operations are running
 	let matchBuyBoxResults = new Map<string, any>(); // Store Match Buy Box results for each ASIN
@@ -892,197 +887,6 @@
 			disabled: false,
 			error: null
 		};
-	}
-
-	// Test Environment Functions (Sandbox Amazon API Testing)
-	/**
-	 * Test Match Buy Box functionality in sandbox environment
-	 */
-	async function testMatchBuyBox(asin: string, targetPrice: number): Promise<void> {
-		console.log(`🧪 Testing Match Buy Box for ASIN: ${asin} at price: £${targetPrice}`);
-
-		testInProgress.add(asin);
-		testInProgress = testInProgress; // Trigger reactivity
-
-		try {
-			const response = await fetch('/api/test-match-buybox', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					asin: asin,
-					targetPrice: targetPrice,
-					environment: 'sandbox', // Always use sandbox for testing
-					userId: 'test-user' // Test user ID
-				})
-			});
-
-			const result = await response.json();
-
-			testResults.set(asin, {
-				success: response.ok,
-				timestamp: new Date(),
-				targetPrice: targetPrice,
-				result: result,
-				status: response.status
-			});
-
-			testResults = testResults; // Trigger reactivity
-
-			if (response.ok) {
-				console.log(`✅ Test successful for ASIN: ${asin}`, result);
-			} else {
-				console.error(`❌ Test failed for ASIN: ${asin}`, result);
-			}
-		} catch (error) {
-			console.error(`🚨 Test error for ASIN: ${asin}:`, error);
-
-			testResults.set(asin, {
-				success: false,
-				timestamp: new Date(),
-				targetPrice: targetPrice,
-				error: error instanceof Error ? error.message : 'Unknown error',
-				status: 0
-			});
-
-			testResults = testResults; // Trigger reactivity
-		} finally {
-			testInProgress.delete(asin);
-			testInProgress = testInProgress; // Trigger reactivity
-		}
-	}
-
-	/**
-	 * Test Amazon API connectivity in sandbox
-	 */
-	async function testAmazonAPIConnectivity(): Promise<void> {
-		console.log('🧪 Testing Amazon API connectivity in sandbox...');
-
-		try {
-			const response = await fetch('/api/test-amazon-connection', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					environment: 'sandbox'
-				})
-			});
-
-			const result = await response.json();
-
-			if (response.ok) {
-				console.log('✅ Amazon API connectivity test successful:', result);
-				alert(
-					`✅ Amazon API Test Successful!\n\nEnvironment: ${result.environment}\nStatus: ${result.status}\nListings API: ${result.listingsApi ? 'Working' : 'Not Available'}`
-				);
-			} else {
-				console.error('❌ Amazon API connectivity test failed:', result);
-				alert(
-					`❌ Amazon API Test Failed!\n\nError: ${result.error || 'Unknown error'}\nStatus: ${result.status || 'No status'}`
-				);
-			}
-		} catch (error) {
-			console.error('🚨 Amazon API test error:', error);
-			alert(
-				`🚨 Amazon API Test Error!\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`
-			);
-		}
-	}
-
-	/**
-	 * Create test scenario with sample data
-	 */
-	function createTestScenario(): BuyBoxData[] {
-		const testASINs = [
-			'B09T3GDNGT', // Your top ASIN - small gap loser
-			'B076B1NF1Q', // Another small gap loser
-			'B004BTED72' // Larger gap loser
-		];
-
-		return testASINs.map((asin, index) => {
-			const buyboxPrice = 19.99 + index;
-			let yourPrice, priceGap, marginAtBuybox;
-
-			if (index === 0) {
-				// Small gap loser: £0.01 difference - profitable if matched
-				yourPrice = buyboxPrice + 0.01;
-				priceGap = 0.01;
-				marginAtBuybox = 15.2; // Positive margin
-			} else if (index === 1) {
-				// Small gap loser: £0.05 difference - barely profitable
-				yourPrice = buyboxPrice + 0.05;
-				priceGap = 0.05;
-				marginAtBuybox = 2.1; // Small positive margin
-			} else {
-				// Larger gap loser: £3.00 difference - NOT profitable if matched
-				yourPrice = buyboxPrice + 3.0;
-				priceGap = 3.0;
-				marginAtBuybox = -5.3; // Negative margin - would lose money
-			}
-
-			return {
-				id: `test-${asin}`,
-				asin: asin,
-				sku: `TEST-SKU-${index + 1}`,
-				item_name: `Test Product ${index + 1} (${asin}) - Gap: £${priceGap.toFixed(2)}, Margin: ${marginAtBuybox}%`,
-				price: null,
-				buybox_price: buyboxPrice,
-				your_current_price: yourPrice,
-				competitor_price: buyboxPrice,
-				price_gap: priceGap,
-				is_winner: false, // You're not winning
-				is_buy_box_winner: false, // Not winning the buy box
-				opportunity_flag: true, // This is an opportunity
-				captured_at: new Date().toISOString(),
-				merchant_shipping_group: index % 2 === 0 ? 'Nationwide Prime' : 'UK Shipping',
-
-				// Cost data for testing
-				your_cost: 10.0 + index,
-				your_shipping_cost: 2.5,
-				your_material_total_cost: 0.2,
-				your_box_cost: 0.5,
-				your_vat_amount: 2.0 + index * 0.2,
-				your_fragile_charge: 0,
-				total_operating_cost: 15.2 + index * 1.2,
-
-				// Margin data
-				your_margin_percent_at_current_price: 25.5 + index,
-				margin_percent_at_buybox_price: marginAtBuybox,
-				margin_difference: -10.3,
-				profit_opportunity: 2.5 + index,
-
-				// Profit data
-				current_actual_profit: 6.5 + index,
-				buybox_actual_profit: 4.0 + index,
-
-				// Recommendations
-				recommended_action: 'match_buybox',
-				break_even_price: 16.5 + index,
-
-				// Additional fields
-				current_margin_calculation: `Test calculation for ${asin}`,
-				buybox_margin_calculation: `Buy box calculation for ${asin}`,
-				total_investment_current: 18.5 + index,
-				total_investment_buybox: 16.2 + index,
-
-				// Price update tracking
-				last_price_update:
-					index === 0
-						? new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
-						: index === 1
-							? new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() // 3 hours ago
-							: index === 2
-								? new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() // 2 days ago
-								: null,
-				update_source: index <= 2 ? 'match_buy_box' : null,
-
-				run_id: 'test-run-001',
-				job_id: 'test-job-001',
-				is_skeleton: false
-			};
-		});
 	}
 
 	/**
@@ -1669,32 +1473,6 @@
 			}
 		} catch (error) {
 			showErrorToast('Update Failed', 'Network error occurred');
-		}
-	}
-
-	/**
-	 * Toggle test mode and load appropriate data
-	 */
-	async function toggleTestMode(): Promise<void> {
-		testMode = !testMode;
-
-		if (testMode) {
-			console.log('🧪 Switching to test mode - loading test scenarios');
-
-			// Load test scenario data
-			const testData = createTestScenario();
-			buyboxData = testData;
-			allRawData = [...testData];
-
-			calculateSummaryStats();
-			applyFilters();
-
-			console.log('✅ Test mode activated with sample data');
-		} else {
-			console.log('📊 Switching back to production data');
-
-			// Reload production data
-			await refreshData();
 		}
 	}
 
@@ -3106,11 +2884,6 @@
 				<div class="flex-1">
 					<div class="flex items-center gap-3 mb-1">
 						<h1 class="text-2xl font-bold">Buy Box Manager</h1>
-						{#if testMode}
-							<span class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-medium">
-								🧪 SANDBOX MODE
-							</span>
-						{/if}
 						<!-- Live Update Status Indicator (inline) -->
 						{#if hasActiveUpdates}
 							<div class="flex items-center gap-1 text-blue-600 text-xs" in:fade>
@@ -3155,54 +2928,24 @@
 							</div>
 						{/if}
 					</div>
-					<p class="text-sm text-gray-600">
-						{testMode
-							? 'Testing environment - Safe to experiment'
-							: 'Live Amazon pricing management'}
-					</p>
+					<p class="text-sm text-gray-600">Live Amazon pricing management</p>
 				</div>
 
 				<!-- Compact Action Buttons -->
 				<div class="flex flex-wrap gap-2 items-start">
-					<!-- Test Mode Toggle -->
-					<button
-						class="{testMode
-							? 'bg-purple-600 hover:bg-purple-700'
-							: 'bg-gray-600 hover:bg-gray-700'} text-white py-1.5 px-3 rounded text-sm flex items-center gap-1"
-						on:click={toggleTestMode}
-						title={testMode
-							? 'Switch back to production data'
-							: 'Switch to sandbox test environment'}
-					>
-						🧪 {testMode ? 'Test ON' : 'Test'}
-					</button>
-
-					<!-- Test API Connectivity (only show in test mode) -->
-					{#if testMode}
-						<button
-							class="bg-orange-600 hover:bg-orange-700 text-white py-1.5 px-3 rounded text-sm flex items-center gap-1"
-							on:click={testAmazonAPIConnectivity}
-							title="Test Amazon SP-API connectivity in sandbox"
-						>
-							🔗 Test API
-						</button>
-					{/if}
-
 					<button
 						class="bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-3 rounded text-sm"
 						on:click={refreshData}
 					>
-						{testMode ? 'Reload' : 'Refresh'}
+						Refresh
 					</button>
 
-					{#if !testMode}
-						<button
-							class="bg-green-600 hover:bg-green-700 text-white py-1.5 px-3 rounded text-sm flex items-center gap-1"
-							on:click={bulkScanTop100}
-						>
-							🚀 Top 100
-						</button>
-					{/if}
+					<button
+						class="bg-green-600 hover:bg-green-700 text-white py-1.5 px-3 rounded text-sm flex items-center gap-1"
+						on:click={bulkScanTop100}
+					>
+						🚀 Top 100
+					</button>
 
 					{#if customPrices.size > 0}
 						<button
@@ -3214,38 +2957,34 @@
 						</button>
 					{/if}
 
-					{#if !testMode}
-						<a
-							href="/buy-box-monitor/jobs"
-							class="bg-gray-600 hover:bg-gray-700 text-white py-1.5 px-3 rounded text-sm"
-						>
-							Jobs
-						</a>
-					{/if}
+					<a
+						href="/buy-box-monitor/jobs"
+						class="bg-gray-600 hover:bg-gray-700 text-white py-1.5 px-3 rounded text-sm"
+					>
+						Jobs
+					</a>
 				</div>
 			</div>
 
 			<!-- Safety Margin Control (compact inline version) -->
-			{#if !testMode}
-				<div
-					class="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-1.5 mb-3"
+			<div
+				class="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-1.5 mb-3"
+			>
+				<label for="safety-margin" class="text-xs font-medium text-green-800">
+					🛡️ Safety Margin:
+				</label>
+				<select
+					id="safety-margin"
+					bind:value={safetyMarginPercent}
+					class="bg-white border border-green-300 rounded px-2 py-0.5 text-xs text-green-800 focus:outline-none focus:ring-1 focus:ring-green-500"
 				>
-					<label for="safety-margin" class="text-xs font-medium text-green-800">
-						🛡️ Safety Margin:
-					</label>
-					<select
-						id="safety-margin"
-						bind:value={safetyMarginPercent}
-						class="bg-white border border-green-300 rounded px-2 py-0.5 text-xs text-green-800 focus:outline-none focus:ring-1 focus:ring-green-500"
-					>
-						<option value={5}>5%</option>
-						<option value={10}>10%</option>
-						<option value={15}>15%</option>
-						<option value={20}>20%</option>
-					</select>
-					<span class="text-xs text-green-600">Price buffer (10% margin minimum)</span>
-				</div>
-			{/if}
+					<option value={5}>5%</option>
+					<option value={10}>10%</option>
+					<option value={15}>15%</option>
+					<option value={20}>20%</option>
+				</select>
+				<span class="text-xs text-green-600">Price buffer (10% margin minimum)</span>
+			</div>
 		</div>
 
 		{#if errorMessage}
@@ -4152,22 +3891,24 @@
 											{:else}
 												<span class="text-gray-400 text-xs">Unknown</span>
 											{/if}
-											{#if testMode}
-												<!-- Test Mode Actions -->
-												{#if result.recommended_action === 'match_buybox' && result.buybox_price && result.buybox_price > 0}
-													{@const isTestInProgress = testInProgress.has(result.asin)}
-													{@const testResult = testResults.get(result.asin)}
-
+											<!-- Production Mode Actions - Stacked Layout -->
+											<div class="flex flex-col gap-1">
+												<!-- Update Live Price Button -->
+												{#if result.id}
+													{@const buttonState = getUpdateButtonState(result.id)}
 													<button
-														class="{isTestInProgress
-															? 'bg-purple-400 cursor-not-allowed'
-															: 'bg-purple-600 hover:bg-purple-700'} text-white px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-														disabled={isTestInProgress}
-														on:click={() => testMatchBuyBox(result.asin, result.buybox_price!)}
-														title="Test Match Buy Box in sandbox environment"
+														class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center gap-1 w-full justify-center"
+														disabled={buttonState.disabled}
+														on:click={() => updateLivePrice(result)}
+														title={buttonState.error ||
+															'Update pricing data with latest Amazon SP-API data'}
 													>
-														{#if isTestInProgress}
-															<svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+														{#if buttonState.isUpdating}
+															<svg
+																class="animate-spin h-3 w-3 text-white"
+																fill="none"
+																viewBox="0 0 24 24"
+															>
 																<circle
 																	class="opacity-25"
 																	cx="12"
@@ -4182,136 +3923,80 @@
 																	d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 																></path>
 															</svg>
-															Testing...
+														{/if}
+														<span class="whitespace-nowrap">{buttonState.text}</span>
+													</button>
+												{/if}
+
+												<!-- Add to Basket Button (UI Demo) -->
+												{#if result}
+													{@const targetPrice = (() => {
+														let price = 0;
+														if (result.buybox_price && result.buybox_price > 0) {
+															price = result.buybox_price;
+														} else if (result.competitor_price && result.competitor_price > 0) {
+															price = result.competitor_price;
+														}
+														return Math.round(price * 100) / 100;
+													})()}
+													{@const isInProgress = matchBuyBoxInProgress.has(result.asin)}
+
+													<button
+														class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 w-full justify-center"
+														disabled={isInProgress || targetPrice <= 0}
+														on:click={() => {
+															// Demo: Add to basket UI (not connected to real backend yet)
+															basketActions.addItem({
+																sku: result.sku,
+																asin: result.asin,
+																itemName: result.item_name || 'Product Name Not Available',
+																currentPrice: result.your_current_price || 0,
+																targetPrice: targetPrice,
+																priceChangeAmount: targetPrice - (result.your_current_price || 0),
+																marginAtTarget: result.margin_percent_at_buybox_price || 0,
+																reason: `Match buy box price: £${targetPrice.toFixed(2)}`,
+																status: 'pending'
+															});
+
+															// Item added to basket (no toast notification)
+														}}
+														title="Add to pricing basket for bulk update"
+													>
+														{#if isInProgress}
+															<div
+																class="animate-spin w-3 h-3 border border-white border-t-transparent rounded-full"
+															></div>
+															Processing...
 														{:else}
-															🧪 Test Match Buy Box
+															🛒 Add to Basket
 														{/if}
 													</button>
+												{/if}
 
-													<!-- Test Result Display -->
-													{#if testResult}
-														<div class="text-xs mt-1">
-															{#if testResult.success}
-																<span class="text-green-600">✅ Test Passed</span>
-															{:else}
-																<span class="text-red-600">❌ Test Failed</span>
-															{/if}
-															<div class="text-gray-500">
-																{testResult.timestamp.toLocaleTimeString()}
-															</div>
+												<!-- View Details Link -->
+												<a
+													href="/buy-box-monitor?query={encodeURIComponent(
+														result.sku || result.asin
+													)}"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="text-blue-600 hover:text-blue-800 underline text-xs text-center w-full block py-1"
+												>
+													View Details
+												</a>
+
+												<!-- Live Price Update Error Display -->
+												{#if result.id}
+													{@const buttonState = getUpdateButtonState(result.id)}
+													{#if buttonState.error}
+														<div class="text-xs text-red-600" title={buttonState.error}>
+															⚠️ {buttonState.error.length > 30
+																? buttonState.error.substring(0, 30) + '...'
+																: buttonState.error}
 														</div>
 													{/if}
-												{:else}
-													<span class="text-gray-400 text-xs">No test action available</span>
 												{/if}
-											{:else}
-												<!-- Production Mode Actions - Stacked Layout -->
-												<div class="flex flex-col gap-1">
-													<!-- Update Live Price Button -->
-													{#if result.id}
-														{@const buttonState = getUpdateButtonState(result.id)}
-														<button
-															class="px-2 py-1 rounded text-xs font-medium transition-colors {buttonState.class} flex items-center gap-1 w-full justify-center"
-															disabled={buttonState.disabled}
-															on:click={() => updateLivePrice(result)}
-															title={buttonState.error ||
-																'Update pricing data with latest Amazon SP-API data'}
-														>
-															{#if buttonState.isUpdating}
-																<svg
-																	class="animate-spin h-3 w-3 text-white"
-																	fill="none"
-																	viewBox="0 0 24 24"
-																>
-																	<circle
-																		class="opacity-25"
-																		cx="12"
-																		cy="12"
-																		r="10"
-																		stroke="currentColor"
-																		stroke-width="4"
-																	></circle>
-																	<path
-																		class="opacity-75"
-																		fill="currentColor"
-																		d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-																	></path>
-																</svg>
-															{/if}
-															<span class="whitespace-nowrap">{buttonState.text}</span>
-														</button>
-													{/if}
-
-													<!-- Add to Basket Button (UI Demo) -->
-													{#if result}
-														{@const targetPrice = (() => {
-															let price = 0;
-															if (result.buybox_price && result.buybox_price > 0) {
-																price = result.buybox_price;
-															} else if (result.competitor_price && result.competitor_price > 0) {
-																price = result.competitor_price;
-															}
-															return Math.round(price * 100) / 100;
-														})()}
-														{@const isInProgress = matchBuyBoxInProgress.has(result.asin)}
-
-														<button
-															class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 w-full justify-center"
-															disabled={isInProgress || targetPrice <= 0}
-															on:click={() => {
-																// Demo: Add to basket UI (not connected to real backend yet)
-																basketActions.addItem({
-																	sku: result.sku,
-																	asin: result.asin,
-																	itemName: result.item_name || 'Product Name Not Available',
-																	currentPrice: result.your_current_price || 0,
-																	targetPrice: targetPrice,
-																	priceChangeAmount: targetPrice - (result.your_current_price || 0),
-																	marginAtTarget: result.margin_percent_at_buybox_price || 0,
-																	reason: `Match buy box price: £${targetPrice.toFixed(2)}`,
-																	status: 'pending'
-																});
-
-																// Item added to basket (no toast notification)
-															}}
-															title="Add to pricing basket for bulk update"
-														>
-															{#if isInProgress}
-																<div
-																	class="animate-spin w-3 h-3 border border-white border-t-transparent rounded-full"
-																></div>
-																Processing...
-															{:else}
-																🛒 Add to Basket
-															{/if}
-														</button>
-													{/if}
-
-													<!-- View Details Link -->
-													<a
-														href="/buy-box-monitor?query={encodeURIComponent(
-															result.sku || result.asin
-														)}"
-														target="_blank"
-														rel="noopener noreferrer"
-														class="text-blue-600 hover:text-blue-800 underline text-xs text-center w-full block py-1"
-													>
-														View Details
-													</a>
-
-													<!-- Live Price Update Error Display -->
-													{#if result.id}
-														{@const buttonState = getUpdateButtonState(result.id)}
-														{#if buttonState.error}
-															<div class="text-xs text-red-600" title={buttonState.error}>
-																⚠️ {buttonState.error.length > 30
-																	? buttonState.error.substring(0, 30) + '...'
-																	: buttonState.error}
-															</div>
-														{/if}
-													{/if}
-												</div>
-											{/if}
+											</div>
 										</div>
 									</td>
 								</tr>
