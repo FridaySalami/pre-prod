@@ -55,8 +55,16 @@
 			label: 'Opportunities Under 10% Margin',
 			count: categoryCounts.opportunities_low_margin || 0
 		},
-		{ value: 'not_profitable', label: 'Not Profitable', count: categoryCounts.not_profitable || 0 },
-		{ value: 'match_buybox', label: 'Match Buy Box', count: categoryCounts.match_buybox || 0 },
+		{
+			value: 'not_profitable',
+			label: 'Not Profitable to match Buy Box',
+			count: categoryCounts.not_profitable || 0
+		},
+		{
+			value: 'match_buybox',
+			label: 'Out of Stock - Higher Buy Box Price',
+			count: categoryCounts.match_buybox || 0
+		},
 		{ value: 'investigate', label: 'Investigate', count: categoryCounts.investigate || 0 }
 	];
 
@@ -179,7 +187,7 @@
 											: category.value === 'not_profitable'
 												? 'Products that would lose money if matched to buy box price'
 												: category.value === 'match_buybox'
-													? 'Products recommended to match the current buy box price'
+													? 'Out of stock items where buy box price is higher than your original price - opportunity to restock at lower price or match higher price for better margin'
 													: category.value === 'investigate'
 														? 'Products requiring manual review or investigation'
 														: 'Filter products by this category'}

@@ -3796,7 +3796,7 @@
 													{:else if result.recommended_action === 'investigate'}
 														🔍 Investigate
 													{:else if result.recommended_action === 'not_profitable' && (result.price || result.competitor_price)}
-														❌ Not Profitable
+														❌ Not Profitable to match Buy Box
 													{:else if result.recommended_action === 'not_profitable'}
 														🔍 Check Live Pricing
 													{:else}
@@ -3808,19 +3808,22 @@
 											{/if}
 
 											{#if result.current_actual_profit !== null}
-												<div
-													class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
-												>
-													£{result.current_actual_profit.toFixed(2)} profit
-												</div>
-											{/if}
-											{#if result.your_margin_percent_at_current_price !== null}
-												<div
-													class={`font-medium text-xs ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
-												>
-													📊 Current Price: {result.your_margin_percent_at_current_price.toFixed(
-														1
-													)}% margin
+												<div class="mb-3">
+													<div class="text-sm font-semibold text-gray-800 mb-1">
+														Current Pricing:
+													</div>
+													<div
+														class={`font-bold text-lg ${result.current_actual_profit >= 5 ? 'text-green-600' : result.current_actual_profit >= 1 ? 'text-yellow-600' : result.current_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
+													>
+														£{result.current_actual_profit.toFixed(2)} profit at current price
+													</div>
+													{#if result.your_margin_percent_at_current_price !== null}
+														<div
+															class={`font-medium text-sm ${result.your_margin_percent_at_current_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+														>
+															📊 {result.your_margin_percent_at_current_price.toFixed(1)}% margin
+														</div>
+													{/if}
 												</div>
 											{/if}
 
@@ -3838,29 +3841,34 @@
 
 											<!-- Match Buy Box Exactly (only when there's valid buy box data AND actual competition) -->
 											{#if result.buybox_actual_profit !== null && result.buybox_actual_profit !== result.current_actual_profit && (result.price || result.competitor_price) && ((result.price && result.price > 0) || (result.competitor_price && result.competitor_price > 0))}
-												<div class="border-t pt-1 mt-1">
-													<div class="text-xs font-medium text-gray-700 mb-1">
-														🎯 Match Buy Box Exactly:
+												<div class="border-t border-gray-200 pt-2 mt-2">
+													<div class="text-sm font-semibold text-gray-800 mb-1">
+														If Matched at Buy Box:
 													</div>
 													<div
-														class={`text-xs ${result.buybox_actual_profit >= (result.current_actual_profit || 0) ? 'text-green-600' : 'text-gray-600'}`}
+														class={`font-bold text-lg ${result.buybox_actual_profit >= 5 ? 'text-green-600' : result.buybox_actual_profit >= 1 ? 'text-yellow-600' : result.buybox_actual_profit >= 0 ? 'text-orange-600' : 'text-red-600'}`}
 													>
 														£{result.buybox_actual_profit.toFixed(2)} profit
 													</div>
 													{#if result.margin_percent_at_buybox_price !== null}
 														<div
-															class={`text-xs ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
+															class={`font-medium text-sm ${result.margin_percent_at_buybox_price >= 10 ? 'text-green-600' : 'text-red-600'}`}
 														>
-															({result.margin_percent_at_buybox_price.toFixed(1)}% margin)
+															🎯 {result.margin_percent_at_buybox_price.toFixed(1)}% margin
 														</div>
 													{/if}
 													{#if result.margin_difference}
-														<div
-															class={`text-xs ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
-														>
-															Difference: {result.margin_difference > 0
-																? '+'
-																: ''}£{result.margin_difference.toFixed(2)}
+														<div class="mt-1 pt-1 border-t border-gray-100">
+															<div class="text-xs font-medium text-gray-700">
+																Difference in new price from original price:
+															</div>
+															<div
+																class={`text-base font-semibold ${result.margin_difference > 0 ? 'text-green-600' : 'text-red-600'}`}
+															>
+																{result.margin_difference > 0
+																	? '+'
+																	: ''}£{result.margin_difference.toFixed(2)}
+															</div>
 														</div>
 													{/if}
 												</div>
