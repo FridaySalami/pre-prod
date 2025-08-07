@@ -215,7 +215,7 @@
 
 	// Search and filters
 	let searchTerm = ''; // Renamed from searchQuery for FilterSidebar compatibility
-	let categoryFilter = 'all'; // all, winners, losers, small_gap_losers, opportunities, not_profitable, raise_price, reduce_price, match_buybox, investigate
+	let categoryFilter = 'all'; // all, winners, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
 	let shippingFilter = 'all'; // all, prime, standard
 	let dateRange = 'all'; // all, today, yesterday, week, month
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, price_gap_asc, price_gap_desc, sku_asc, sku_desc
@@ -257,6 +257,8 @@
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
+		opportunities_high_margin?: number;
+		opportunities_low_margin?: number;
 		not_profitable?: number;
 		match_buybox?: number;
 		hold_price?: number;
@@ -285,6 +287,19 @@
 						item.is_winner === false &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price > 0
+				).length,
+				opportunities_high_margin: buyboxData.filter(
+					(item) =>
+						item.is_winner === false &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price >= 10
+				).length,
+				opportunities_low_margin: buyboxData.filter(
+					(item) =>
+						item.is_winner === false &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price > 0 &&
+						item.margin_percent_at_buybox_price < 10
 				).length,
 				not_profitable: buyboxData.filter(
 					(item) =>
@@ -2087,6 +2102,23 @@
 						item.margin_percent_at_buybox_price > 0
 				);
 				break;
+			case 'opportunities_high_margin':
+				filtered = filtered.filter(
+					(item) =>
+						!item.is_winner &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price >= 10
+				);
+				break;
+			case 'opportunities_low_margin':
+				filtered = filtered.filter(
+					(item) =>
+						!item.is_winner &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price > 0 &&
+						item.margin_percent_at_buybox_price < 10
+				);
+				break;
 			case 'not_profitable':
 				filtered = filtered.filter(
 					(item) =>
@@ -3723,10 +3755,10 @@
 						</div>
 					{/if}
 
-					<table class="min-w-full">
+					<table class="min-w-full table-fixed">
 						<thead class="bg-gray-50">
 							<tr>
-								<th class="py-3 px-3 text-left">
+								<th class="py-3 px-3 text-left w-12">
 									<input
 										type="checkbox"
 										checked={selectedItems.size > 0 && selectedItems.size === paginatedData.length}
@@ -3742,25 +3774,25 @@
 									/>
 								</th>
 								<th
-									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3 min-w-0"
 									>Product</th
 								>
 								<th
-									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-48 min-w-0"
 									>Price Analysis</th
 								>
 								{#if showCostBreakdown}
 									<th
-										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-48 min-w-0"
 										>Cost Breakdown</th
 									>
 								{/if}
 								<th
-									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3 min-w-0"
 									>Margin Analysis</th
 								>
 								<th
-									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32"
 									>Actions</th
 								>
 							</tr>

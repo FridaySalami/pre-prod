@@ -7,6 +7,8 @@
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
+		opportunities_high_margin?: number;
+		opportunities_low_margin?: number;
 		not_profitable?: number;
 		match_buybox?: number;
 		investigate?: number;
@@ -63,7 +65,8 @@
 			label: 'Small Gap Losers (<£0.10)',
 			count: categoryCounts.small_gap_losers || 0
 		},
-		{ value: 'opportunities', label: 'Opportunities', count: categoryCounts.opportunities || 0 },
+		{ value: 'opportunities_high_margin', label: 'Opportunities Margin +10%', count: categoryCounts.opportunities_high_margin || 0 },
+		{ value: 'opportunities_low_margin', label: 'Opportunities Under 10% Margin', count: categoryCounts.opportunities_low_margin || 0 },
 		{ value: 'not_profitable', label: 'Not Profitable', count: categoryCounts.not_profitable || 0 },
 		{ value: 'match_buybox', label: 'Match Buy Box', count: categoryCounts.match_buybox || 0 },
 		{ value: 'investigate', label: 'Investigate', count: categoryCounts.investigate || 0 }
