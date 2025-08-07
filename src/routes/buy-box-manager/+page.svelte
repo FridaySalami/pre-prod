@@ -320,8 +320,10 @@
 			}
 
 			categoryCounts = {
-				winners: buyboxData.filter((item) => item.is_winner === true).length,
-				losers: buyboxData.filter((item) => item.is_winner === false).length,
+				winners: buyboxData.filter((item) => item.is_winner === true && item.buybox_price !== null)
+					.length,
+				losers: buyboxData.filter((item) => item.is_winner === false && item.buybox_price !== null)
+					.length,
 				small_gap_losers: buyboxData.filter((item) => {
 					if (item.is_winner) return false;
 
@@ -366,8 +368,7 @@
 						item.your_margin_percent_at_current_price !== null &&
 						item.your_margin_percent_at_current_price >= 0 &&
 						item.your_margin_percent_at_current_price <= 10
-				).length,
-				investigate: buyboxData.filter((item) => item.recommended_action === 'investigate').length
+				).length
 			};
 
 			shippingCounts = {
@@ -1904,10 +1905,10 @@
 		// Category filter
 		switch (categoryFilter) {
 			case 'winners':
-				filtered = filtered.filter((item) => item.is_winner);
+				filtered = filtered.filter((item) => item.is_winner && item.buybox_price !== null);
 				break;
 			case 'losers':
-				filtered = filtered.filter((item) => !item.is_winner);
+				filtered = filtered.filter((item) => !item.is_winner && item.buybox_price !== null);
 				break;
 			case 'small_gap_losers':
 				filtered = filtered.filter((item) => {
@@ -1968,9 +1969,6 @@
 						item.your_margin_percent_at_current_price >= 0 &&
 						item.your_margin_percent_at_current_price <= 10
 				);
-				break;
-			case 'investigate':
-				filtered = filtered.filter((item) => item.recommended_action === 'investigate');
 				break;
 		}
 

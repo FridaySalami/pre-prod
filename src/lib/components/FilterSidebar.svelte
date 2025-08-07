@@ -11,7 +11,6 @@
 		opportunities_low_margin?: number;
 		not_profitable?: number;
 		match_buybox?: number;
-		investigate?: number;
 		no_buybox?: number;
 		low_margin_sales?: number;
 	}
@@ -72,8 +71,7 @@
 			value: 'low_margin_sales',
 			label: 'Low Margin Sales (≤10%)',
 			count: categoryCounts.low_margin_sales || 0
-		},
-		{ value: 'investigate', label: 'Investigate', count: categoryCounts.investigate || 0 }
+		}
 	];
 
 	// Shipping options - use dynamic counts from actual data
@@ -200,9 +198,7 @@
 														? 'Products with no competing buy box - you have the market to yourself'
 														: category.value === 'low_margin_sales'
 															? 'Products currently selling with profit margins of 10% or less (including 0% margin) - consider price optimization'
-															: category.value === 'investigate'
-																? 'Products requiring manual review or investigation'
-																: 'Filter products by this category'}
+															: 'Filter products by this category'}
 				>
 					<div class="flex items-center">
 						<input
