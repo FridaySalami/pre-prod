@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { amazonFeedsRateLimiter } from '$lib/utils/rate-limiter.ts';
+import { amazonFeedsRateLimiter } from '$lib/utils/rate-limiter';
 
 export const GET: RequestHandler = async () => {
   const status = amazonFeedsRateLimiter.getStatus();
