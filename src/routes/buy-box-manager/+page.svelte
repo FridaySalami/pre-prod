@@ -224,6 +224,7 @@
 	let minProfitFilter = 0;
 	let minMarginFilter = 0;
 	let showLatestOnly = true; // New filter to show only latest data per SKU
+	let showCostBreakdown = false; // Toggle for cost breakdown column visibility
 
 	// Custom price simulation
 	let customPrices = new Map<string, number>(); // SKU -> custom price
@@ -3617,11 +3618,23 @@
 			{#if totalResults > itemsPerPage}
 				<div class="px-4 py-2 border-b border-gray-200 bg-gray-50">
 					<div class="flex justify-between items-center">
-						<div class="text-xs text-gray-500">
-							Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
-								currentPage * itemsPerPage,
-								totalResults
-							)} of {totalResults} results
+						<div class="flex items-center space-x-4">
+							<div class="text-xs text-gray-500">
+								Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
+									currentPage * itemsPerPage,
+									totalResults
+								)} of {totalResults} results
+							</div>
+							<div class="flex items-center space-x-2">
+								<label class="flex items-center cursor-pointer">
+									<input
+										type="checkbox"
+										bind:checked={showCostBreakdown}
+										class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+									/>
+									<span class="ml-2 text-xs text-gray-600">Cost breakdown view</span>
+								</label>
+							</div>
 						</div>
 						<div class="flex space-x-1">
 							<button
@@ -3736,10 +3749,12 @@
 									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
 									>Price Analysis</th
 								>
-								<th
-									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Cost Breakdown</th
-								>
+								{#if showCostBreakdown}
+									<th
+										class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										>Cost Breakdown</th
+									>
+								{/if}
 								<th
 									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
 									>Margin Analysis</th
@@ -3967,70 +3982,72 @@
 									</td>
 
 									<!-- Cost Breakdown -->
-									<td class="py-2 px-4">
-										<div class="text-xs space-y-1">
-											<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
-											{#if result.your_cost && result.your_cost > 0}
-												<div>Base: £{result.your_cost.toFixed(2)}</div>
-											{:else}
-												<div class="text-red-600 font-medium">⚠️ Base: Missing/£0.00</div>
-											{/if}
-											{#if result.your_vat_amount}
-												<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
-											{/if}
-											{#if result.your_box_cost}
-												<div>Box: £{result.your_box_cost.toFixed(2)}</div>
-											{/if}
-											<div>Material: £0.20</div>
-											{#if result.your_fragile_charge && result.your_fragile_charge > 0}
-												<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
-											{/if}
-											{#if result.your_shipping_cost}
-												<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
-											{/if}
-											{#if result.total_operating_cost}
-												<div class="font-medium border-t pt-1 text-blue-800">
-													Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
-												</div>
-											{/if}
+									{#if showCostBreakdown}
+										<td class="py-2 px-4">
+											<div class="text-xs space-y-1">
+												<div class="font-medium text-gray-700 mb-1">Fixed Costs:</div>
+												{#if result.your_cost && result.your_cost > 0}
+													<div>Base: £{result.your_cost.toFixed(2)}</div>
+												{:else}
+													<div class="text-red-600 font-medium">⚠️ Base: Missing/£0.00</div>
+												{/if}
+												{#if result.your_vat_amount}
+													<div>VAT: £{result.your_vat_amount.toFixed(2)}</div>
+												{/if}
+												{#if result.your_box_cost}
+													<div>Box: £{result.your_box_cost.toFixed(2)}</div>
+												{/if}
+												<div>Material: £0.20</div>
+												{#if result.your_fragile_charge && result.your_fragile_charge > 0}
+													<div>Fragile: £{result.your_fragile_charge.toFixed(2)}</div>
+												{/if}
+												{#if result.your_shipping_cost}
+													<div>Shipping: £{result.your_shipping_cost.toFixed(2)}</div>
+												{/if}
+												{#if result.total_operating_cost}
+													<div class="font-medium border-t pt-1 text-blue-800">
+														Total Fixed Costs: £{result.total_operating_cost.toFixed(2)}
+													</div>
+												{/if}
 
-											<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
-											{#if result.your_current_price}
-												{@const feeRate = result.your_current_price < 10 ? 0.08 : 0.15}
-												{@const feePercent = result.your_current_price < 10 ? 8 : 15}
-												<div class="text-red-600">
-													Amazon Fee ({feePercent}% of £{result.your_current_price.toFixed(2)}): £{(
-														result.your_current_price * feeRate
-													).toFixed(2)}
-												</div>
-											{/if}
+												<div class="font-medium text-gray-700 mt-2 mb-1">Variable Cost:</div>
+												{#if result.your_current_price}
+													{@const feeRate = result.your_current_price < 10 ? 0.08 : 0.15}
+													{@const feePercent = result.your_current_price < 10 ? 8 : 15}
+													<div class="text-red-600">
+														Amazon Fee ({feePercent}% of £{result.your_current_price.toFixed(2)}): £{(
+															result.your_current_price * feeRate
+														).toFixed(2)}
+													</div>
+												{/if}
 
-											{#if result.total_operating_cost && result.your_current_price}
-												<div class="font-bold border-t pt-2 text-orange-800">
-													Total Cost After Fees: £{(
-														result.total_operating_cost +
-														result.your_current_price * 0.15
-													).toFixed(2)}
-												</div>
-												<div class="text-xs text-gray-500">
-													(£{result.total_operating_cost.toFixed(2)} + £{(
-														result.your_current_price * 0.15
-													).toFixed(2)})
-												</div>
-											{/if}
+												{#if result.total_operating_cost && result.your_current_price}
+													<div class="font-bold border-t pt-2 text-orange-800">
+														Total Cost After Fees: £{(
+															result.total_operating_cost +
+															result.your_current_price * 0.15
+														).toFixed(2)}
+													</div>
+													<div class="text-xs text-gray-500">
+														(£{result.total_operating_cost.toFixed(2)} + £{(
+															result.your_current_price * 0.15
+														).toFixed(2)})
+													</div>
+												{/if}
 
-											{#if result.break_even_price}
-												{@const feeRate = (result.your_current_price ?? 0) < 10 ? 0.08 : 0.15}
-												{@const netRate = (1 - feeRate).toFixed(2)}
-												<div class="font-bold border-t pt-2 text-red-800">
-													Break-even: £{result.break_even_price.toFixed(2)}
-												</div>
-												<div class="text-xs text-gray-500">
-													(£{result.total_operating_cost?.toFixed(2)} ÷ {netRate})
-												</div>
-											{/if}
-										</div>
-									</td>
+												{#if result.break_even_price}
+													{@const feeRate = (result.your_current_price ?? 0) < 10 ? 0.08 : 0.15}
+													{@const netRate = (1 - feeRate).toFixed(2)}
+													<div class="font-bold border-t pt-2 text-red-800">
+														Break-even: £{result.break_even_price.toFixed(2)}
+													</div>
+													<div class="text-xs text-gray-500">
+														(£{result.total_operating_cost?.toFixed(2)} ÷ {netRate})
+													</div>
+												{/if}
+											</div>
+										</td>
+									{/if}
 
 									<!-- Margin Analysis -->
 									<td class="py-2 px-4">
