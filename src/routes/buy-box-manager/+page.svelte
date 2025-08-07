@@ -273,11 +273,66 @@
 	// Calculate dynamic counts from buyboxData
 	$: {
 		if (buyboxData && buyboxData.length > 0) {
+			// Debug: Let's see what price_gap values we have
+			console.log('🔍 Debugging Small Gap Losers:');
+			const losers = buyboxData.filter((item) => !item.is_winner);
+			console.log(`Total losers: ${losers.length}`);
+			
+			const losersWithGap = losers.filter((item) => item.price_gap);
+			console.log(`Losers with price_gap field: ${losersWithGap.length}`);
+			
+			const losersWithCalculatedGap = losers.filter((item) => {
+				let gap = item.price_gap;
+				if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
+					gap = item.your_current_price - (item.buybox_price || item.price);
+				}
+				return gap && gap > 0;
+			});
+			console.log(`Losers with calculated gap: ${losersWithCalculatedGap.length}`);
+			
+			const smallGapCandidates = losers.filter((item) => {
+				let gap = item.price_gap;
+				if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
+					gap = item.your_current_price - (item.buybox_price || item.price);
+				}
+				return gap && gap > 0 && gap <= 0.1;
+			});
+			console.log(`Small gap candidates: ${smallGapCandidates.length}`);
+			
+			// Log some sample data
+			if (losers.length > 0) {
+				const sampleItem = losers[0];
+				let calculatedGap = null;
+				if (sampleItem.your_current_price && (sampleItem.buybox_price || sampleItem.price)) {
+					calculatedGap = sampleItem.your_current_price - (sampleItem.buybox_price || sampleItem.price);
+				}
+				
+				console.log('Sample loser data:', {
+					sku: sampleItem.sku,
+					is_winner: sampleItem.is_winner,
+					price_gap: sampleItem.price_gap,
+					calculated_gap: calculatedGap,
+					your_current_price: sampleItem.your_current_price,
+					price: sampleItem.price,
+					buybox_price: sampleItem.buybox_price
+				});
+			}
+
 			categoryCounts = {
 				winners: buyboxData.filter((item) => item.is_winner === true).length,
 				losers: buyboxData.filter((item) => item.is_winner === false).length,
 				small_gap_losers: buyboxData.filter(
-					(item) => !item.is_winner && item.price_gap && item.price_gap > 0 && item.price_gap <= 0.1
+					(item) => {
+						if (item.is_winner) return false;
+						
+						// Try to get price_gap from the field, or calculate it
+						let gap = item.price_gap;
+						if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
+							gap = item.your_current_price - (item.buybox_price || item.price);
+						}
+						
+						return gap && gap > 0 && gap <= 0.1;
+					}
 				).length,
 				opportunities: buyboxData.filter(
 					(item) =>
@@ -2088,7 +2143,17 @@
 				break;
 			case 'small_gap_losers':
 				filtered = filtered.filter(
-					(item) => !item.is_winner && item.price_gap && item.price_gap > 0 && item.price_gap <= 0.1
+					(item) => {
+						if (item.is_winner) return false;
+						
+						// Try to get price_gap from the field, or calculate it
+						let gap = item.price_gap;
+						if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
+							gap = item.your_current_price - (item.buybox_price || item.price);
+						}
+						
+						return gap && gap > 0 && gap <= 0.1;
+					}
 				);
 				break;
 			case 'opportunities':
