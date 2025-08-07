@@ -23,65 +23,8 @@ export interface BasketSummary {
   estimatedProcessingTime: number;
 }
 
-// Mock data for UI development
-const mockBasketItems: BasketItem[] = [
-  {
-    id: '1',
-    sku: 'SKU001',
-    asin: 'B0123456789',
-    itemName: 'Premium Widget Pro - 24 Pack',
-    currentPrice: 45.99,
-    targetPrice: 42.50,
-    priceChangeAmount: -3.49, // Decrease of £3.49
-    marginAtTarget: 19.4,
-    reason: 'Match buy box competitor',
-    status: 'pending',
-    createdAt: new Date('2025-08-06T10:30:00Z')
-  },
-  {
-    id: '2',
-    sku: 'SKU002',
-    asin: 'B0987654321',
-    itemName: 'Ultra Gadget Set',
-    currentPrice: 89.99,
-    targetPrice: 85.00,
-    priceChangeAmount: -4.99, // Decrease of £4.99
-    marginAtTarget: 18.2,
-    reason: 'Undercut competitor by £0.01',
-    status: 'pending',
-    createdAt: new Date('2025-08-06T10:45:00Z')
-  },
-  {
-    id: '3',
-    sku: 'SKU003',
-    asin: 'B0555666777',
-    itemName: 'Essential Tools Bundle',
-    currentPrice: 25.49,
-    targetPrice: 23.99,
-    priceChangeAmount: -1.50, // Decrease of £1.50
-    marginAtTarget: 24.0,
-    reason: 'Match Amazon buy box',
-    status: 'processing',
-    createdAt: new Date('2025-08-06T09:15:00Z')
-  },
-  {
-    id: '4',
-    sku: 'SKU004',
-    asin: 'B0111222333',
-    itemName: 'Professional Kit v2',
-    currentPrice: 120.00,
-    targetPrice: 115.99,
-    priceChangeAmount: -4.01, // Decrease of £4.01
-    marginAtTarget: 19.7,
-    reason: 'Increase competitiveness',
-    status: 'failed',
-    createdAt: new Date('2025-08-06T08:20:00Z'),
-    errorMessage: 'Rate limit exceeded, will retry'
-  }
-];
-
-// Stores
-export const basketItems = writable<BasketItem[]>(mockBasketItems);
+// Stores - Initialize with empty basket for production
+export const basketItems = writable<BasketItem[]>([]);
 export const selectedItems = writable<Set<string>>(new Set());
 export const isProcessing = writable<boolean>(false);
 export const userEmail = writable<string>('jack@example.com');
@@ -177,9 +120,8 @@ export const basketActions = {
 
   processSelected: async () => {
     isProcessing.set(true);
-    // Mock processing delay
-    await new Promise(resolve => setTimeout(resolve, 3000));
 
+    // Process selected items immediately
     selectedItems.subscribe(selected => {
       basketItems.update(items =>
         items.map(item =>
@@ -196,33 +138,20 @@ export const basketActions = {
 
   submitChanges: async () => {
     isProcessing.set(true);
-    // Mock processing delay for submitting changes
-    await new Promise(resolve => setTimeout(resolve, 2000));
 
+    // Process changes immediately
     selectedItems.subscribe(selected => {
       basketItems.update(items =>
         items.map(item =>
           selected.has(item.id) && item.status === 'pending'
-            ? { ...item, status: 'processing' as const }
+            ? { ...item, status: 'completed' as const }
             : item
         )
       );
     })();
 
-    // Simulate completion after a delay
-    setTimeout(() => {
-      selectedItems.subscribe(selected => {
-        basketItems.update(items =>
-          items.map(item =>
-            selected.has(item.id)
-              ? { ...item, status: 'completed' as const }
-              : item
-          )
-        );
-      })();
-      selectedItems.set(new Set());
-      isProcessing.set(false);
-    }, 3000);
+    selectedItems.set(new Set());
+    isProcessing.set(false);
   },
 
   deleteSelected: () => {

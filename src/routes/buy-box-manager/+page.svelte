@@ -277,36 +277,37 @@
 			console.log('🔍 Debugging Small Gap Losers:');
 			const losers = buyboxData.filter((item) => !item.is_winner);
 			console.log(`Total losers: ${losers.length}`);
-			
+
 			const losersWithGap = losers.filter((item) => item.price_gap);
 			console.log(`Losers with price_gap field: ${losersWithGap.length}`);
-			
+
 			const losersWithCalculatedGap = losers.filter((item) => {
 				let gap = item.price_gap;
 				if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
-					gap = item.your_current_price - (item.buybox_price || item.price);
+					gap = item.your_current_price - ((item.buybox_price || item.price) ?? 0);
 				}
 				return gap && gap > 0;
 			});
 			console.log(`Losers with calculated gap: ${losersWithCalculatedGap.length}`);
-			
+
 			const smallGapCandidates = losers.filter((item) => {
 				let gap = item.price_gap;
 				if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
-					gap = item.your_current_price - (item.buybox_price || item.price);
+					gap = item.your_current_price - ((item.buybox_price || item.price) ?? 0);
 				}
 				return gap && gap > 0 && gap <= 0.1;
 			});
 			console.log(`Small gap candidates: ${smallGapCandidates.length}`);
-			
+
 			// Log some sample data
 			if (losers.length > 0) {
 				const sampleItem = losers[0];
 				let calculatedGap = null;
 				if (sampleItem.your_current_price && (sampleItem.buybox_price || sampleItem.price)) {
-					calculatedGap = sampleItem.your_current_price - (sampleItem.buybox_price || sampleItem.price);
+					calculatedGap =
+						sampleItem.your_current_price - ((sampleItem.buybox_price || sampleItem.price) ?? 0);
 				}
-				
+
 				console.log('Sample loser data:', {
 					sku: sampleItem.sku,
 					is_winner: sampleItem.is_winner,
@@ -321,19 +322,17 @@
 			categoryCounts = {
 				winners: buyboxData.filter((item) => item.is_winner === true).length,
 				losers: buyboxData.filter((item) => item.is_winner === false).length,
-				small_gap_losers: buyboxData.filter(
-					(item) => {
-						if (item.is_winner) return false;
-						
-						// Try to get price_gap from the field, or calculate it
-						let gap = item.price_gap;
-						if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
-							gap = item.your_current_price - (item.buybox_price || item.price);
-						}
-						
-						return gap && gap > 0 && gap <= 0.1;
+				small_gap_losers: buyboxData.filter((item) => {
+					if (item.is_winner) return false;
+
+					// Try to get price_gap from the field, or calculate it
+					let gap = item.price_gap;
+					if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
+						gap = item.your_current_price - ((item.buybox_price || item.price) ?? 0);
 					}
-				).length,
+
+					return gap && gap > 0 && gap <= 0.1;
+				}).length,
 				opportunities: buyboxData.filter(
 					(item) =>
 						!item.is_winner &&
@@ -497,9 +496,6 @@
 	// Summary stats
 	let totalWinners = 0;
 	let totalOpportunities = 0;
-	let totalProfitable = 0;
-	let totalMarginAnalyzed = 0;
-	let avgProfit = 0;
 	let totalPotentialProfit = 0;
 
 	// UI State
@@ -536,7 +532,6 @@
 	} = { show: false, data: null };
 
 	// Track active filters for better UX
-	let activeCardFilter = ''; // Track which summary card filter is active
 	let activePresetFilter = ''; // Track which preset filter is active
 	let hasActiveFilters = false; // Track if any filters are applied
 
@@ -1038,6 +1033,7 @@
 				competitor_price: buyboxPrice,
 				price_gap: priceGap,
 				is_winner: false, // You're not winning
+				is_buy_box_winner: false, // Not winning the buy box
 				opportunity_flag: true, // This is an opportunity
 				captured_at: new Date().toISOString(),
 				merchant_shipping_group: index % 2 === 0 ? 'Nationwide Prime' : 'UK Shipping',
@@ -1901,19 +1897,6 @@
 	function calculateSummaryStats(): void {
 		totalWinners = buyboxData.filter((item) => item.is_winner).length;
 		totalOpportunities = buyboxData.filter((item) => item.opportunity_flag).length;
-		totalProfitable = buyboxData.filter(
-			(item) => item.profit_opportunity && item.profit_opportunity > 0
-		).length;
-		totalMarginAnalyzed = buyboxData.filter(
-			(item) => item.your_margin_percent_at_current_price !== null
-		).length;
-
-		const profitableItems = buyboxData.filter((item) => item.current_actual_profit !== null);
-		avgProfit =
-			profitableItems.length > 0
-				? profitableItems.reduce((sum, item) => sum + (item.current_actual_profit || 0), 0) /
-					profitableItems.length
-				: 0;
 
 		totalPotentialProfit = buyboxData
 			.filter((item) => item.profit_opportunity && item.profit_opportunity > 0)
@@ -2142,19 +2125,17 @@
 				filtered = filtered.filter((item) => !item.is_winner);
 				break;
 			case 'small_gap_losers':
-				filtered = filtered.filter(
-					(item) => {
-						if (item.is_winner) return false;
-						
-						// Try to get price_gap from the field, or calculate it
-						let gap = item.price_gap;
-						if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
-							gap = item.your_current_price - (item.buybox_price || item.price);
-						}
-						
-						return gap && gap > 0 && gap <= 0.1;
+				filtered = filtered.filter((item) => {
+					if (item.is_winner) return false;
+
+					// Try to get price_gap from the field, or calculate it
+					let gap = item.price_gap;
+					if (!gap && item.your_current_price && (item.buybox_price || item.price)) {
+						gap = item.your_current_price - ((item.buybox_price || item.price) ?? 0);
 					}
-				);
+
+					return gap && gap > 0 && gap <= 0.1;
+				});
 				break;
 			case 'opportunities':
 				filtered = filtered.filter(
@@ -2738,7 +2719,6 @@
 		currentPage = 1; // Reset to first page
 
 		// Clear active filter tracking
-		activeCardFilter = '';
 		activePresetFilter = '';
 
 		// Apply filters to refresh the display
@@ -2756,7 +2736,6 @@
 			minProfitFilter > 0 ||
 			minMarginFilter > 0 ||
 			showOnlyWithMarginData ||
-			activeCardFilter !== '' ||
 			activePresetFilter !== '';
 
 		console.log('🔍 Active filters check:', {
@@ -2766,7 +2745,6 @@
 			minProfitFilter,
 			minMarginFilter,
 			showOnlyWithMarginData,
-			activeCardFilter,
 			activePresetFilter,
 			hasActiveFilters
 		});
@@ -2775,7 +2753,6 @@
 	// Apply filter preset
 	function applyFilterPreset(preset: (typeof filterPresets)[0]): void {
 		// Reset other active filters first
-		activeCardFilter = '';
 
 		// Apply preset filters
 		if (preset.filters.categoryFilter) {
@@ -2799,7 +2776,6 @@
 		const { filterType, value } = event.detail;
 
 		// Reset active states when user manually changes filters
-		activeCardFilter = '';
 		activePresetFilter = '';
 
 		switch (filterType) {
@@ -2840,40 +2816,6 @@
 
 	function handleClearFilters() {
 		resetAllFilters();
-	} // Handle summary card clicks with improved feedback
-	function handleSummaryCardClick(filterType: string): void {
-		// Reset other active filters first
-		activePresetFilter = '';
-
-		switch (filterType) {
-			case 'winners':
-				categoryFilter = 'winners';
-				activeCardFilter = 'Buy Box Winners';
-				break;
-			case 'opportunities':
-				categoryFilter = 'opportunities';
-				activeCardFilter = 'Opportunities';
-				break;
-			case 'analyzed':
-				showOnlyWithMarginData = true;
-				activeCardFilter = 'Items with Margin Data';
-				break;
-			case 'high-profit':
-			case 'avg-profit':
-			case 'potential':
-				minProfitFilter = 2;
-				sortBy = 'current_actual_profit';
-				activeCardFilter = 'High Profit Items';
-				break;
-			case 'total':
-			default:
-				// Reset to show all
-				resetAllFilters();
-				return;
-		}
-
-		applyFilters();
-		checkActiveFilters();
 	}
 
 	// Bulk actions
@@ -3147,7 +3089,6 @@
 		bind:showLatestOnly
 		bind:sortBy
 		bind:hasActiveFilters
-		bind:activePresetFilter
 		filteredCount={filteredData.length}
 		totalCount={buyboxData.length}
 		{categoryCounts}
@@ -3618,118 +3559,57 @@
 			</div>
 		{/if}
 
-		<!-- Enhanced Summary Statistics Cards -->
-		{#if !isLoading && buyboxData.length > 0}
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2 mb-3">
-				<!-- Winners Card -->
-				<button
-					on:click={() => handleSummaryCardClick('winners')}
-					class={`bg-green-50 p-3 rounded-lg border hover:shadow-md transition-shadow text-left ${
-						activeCardFilter === 'Buy Box Winners' ? 'ring-2 ring-green-400 bg-green-100' : ''
-					}`}
-				>
-					<h3 class="text-xs font-medium text-gray-500 mb-1">Buy Box Won</h3>
-					<p class="text-xl font-bold text-green-600">{totalWinners}</p>
-					<p class="text-xs text-gray-400 leading-tight">
-						{activeCardFilter === 'Buy Box Winners' ? 'Active filter' : 'Click to filter'}
-					</p>
-				</button>
-
-				<!-- Opportunities Card -->
-				<button
-					on:click={() => handleSummaryCardClick('opportunities')}
-					class={`bg-yellow-50 p-3 rounded-lg border hover:shadow-md transition-shadow text-left ${
-						activeCardFilter === 'Opportunities' ? 'ring-2 ring-yellow-400 bg-yellow-100' : ''
-					}`}
-				>
-					<h3 class="text-xs font-medium text-gray-500 mb-1">Opportunities</h3>
-					<p class="text-xl font-bold text-yellow-600">{totalOpportunities}</p>
-					<p class="text-xs text-gray-400 leading-tight">
-						{activeCardFilter === 'Opportunities' ? 'Active filter' : 'Click to find'}
-					</p>
-				</button>
-
-				<!-- Profitable Ops Card -->
-				<button
-					on:click={() => handleSummaryCardClick('profitable')}
-					class={`bg-purple-50 p-3 rounded-lg border hover:shadow-md transition-shadow text-left ${
-						activeCardFilter === 'Profitable Items' ? 'ring-2 ring-purple-400 bg-purple-100' : ''
-					}`}
-				>
-					<h3 class="text-xs font-medium text-gray-500 mb-1">Profitable Ops</h3>
-					<p class="text-xl font-bold text-purple-600">{totalProfitable}</p>
-					<p class="text-xs text-gray-400 leading-tight">
-						{activeCardFilter === 'Profitable Items' ? 'Active filter' : 'Click for profit'}
-					</p>
-				</button>
-
-				<!-- Analyzed Card -->
-				<button
-					on:click={() => handleSummaryCardClick('analyzed')}
-					class="bg-blue-50 p-3 rounded-lg border hover:shadow-md transition-shadow text-left"
-				>
-					<h3 class="text-xs font-medium text-gray-500 mb-1">Analyzed</h3>
-					<p class="text-xl font-bold text-blue-600">{totalMarginAnalyzed}</p>
-					<p class="text-xs text-gray-400 leading-tight">
-						of {buyboxData.length} SKUs
-						{#if showLatestOnly}
-							<span class="block text-blue-600">(Latest)</span>
-						{:else}
-							<span class="block text-purple-600">(All data)</span>
-						{/if}
-					</p>
-				</button>
-
-				<!-- Average Profit Card -->
-				<button
-					on:click={() => handleSummaryCardClick('avg-profit')}
-					class="bg-orange-50 p-3 rounded-lg border hover:shadow-md transition-shadow text-left"
-				>
-					<h3 class="text-xs font-medium text-gray-500 mb-1">Avg Profit</h3>
-					<p
-						class={`text-xl font-bold ${avgProfit >= 2 ? 'text-green-600' : avgProfit >= 0 ? 'text-yellow-600' : 'text-red-600'}`}
-					>
-						£{avgProfit.toFixed(2)}
-					</p>
-					<p class="text-xs text-gray-400 leading-tight">Click for high-profit</p>
-				</button>
-
-				<!-- Potential Profit Card -->
-				<button
-					on:click={() => handleSummaryCardClick('potential')}
-					class="bg-indigo-50 p-3 rounded-lg border hover:shadow-md transition-shadow text-left"
-				>
-					<h3 class="text-xs font-medium text-gray-500 mb-1">Potential</h3>
-					<p class="text-xl font-bold text-indigo-600">£{totalPotentialProfit.toFixed(2)}</p>
-					<p class="text-xs text-gray-400 leading-tight">Click for opportunities</p>
-				</button>
-			</div>
-		{/if}
-
 		<!-- Results -->
 		<div class="bg-white rounded-lg shadow" data-results-section>
-			<!-- Top Pagination -->
-			{#if totalResults > itemsPerPage}
-				<div class="px-4 py-2 border-b border-gray-200 bg-gray-50">
-					<div class="flex justify-between items-center">
-						<div class="flex items-center space-x-4">
-							<div class="text-xs text-gray-500">
+			<!-- Controls Bar (Always Visible) -->
+			<div class="px-4 py-2 border-b border-gray-200 bg-gray-50">
+				<div class="flex justify-between items-center">
+					<div class="flex items-center space-x-4">
+						<div class="text-xs text-gray-500">
+							{#if totalResults > itemsPerPage}
 								Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
 									currentPage * itemsPerPage,
 									totalResults
 								)} of {totalResults} results
-							</div>
-							<div class="flex items-center space-x-2">
-								<label class="flex items-center cursor-pointer">
-									<input
-										type="checkbox"
-										bind:checked={showCostBreakdown}
-										class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-									/>
-									<span class="ml-2 text-xs text-gray-600">Cost breakdown view</span>
-								</label>
-							</div>
+							{:else}
+								Showing {totalResults} result{totalResults !== 1 ? 's' : ''}
+							{/if}
 						</div>
+						<div class="flex items-center space-x-2">
+							<label class="flex items-center cursor-pointer">
+								<input
+									type="checkbox"
+									bind:checked={showCostBreakdown}
+									class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+								/>
+								<span class="ml-2 text-xs text-gray-600">Cost breakdown view</span>
+							</label>
+						</div>
+					</div>
+					{#if totalResults > itemsPerPage}
+						<div class="flex space-x-1">
+							<button
+								class="px-2 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50 text-xs"
+								disabled={currentPage === 1}
+								on:click={() => changePage(currentPage - 1, false)}>Previous</button
+							>
+							<span class="px-2 py-1 text-xs text-gray-600">
+								Page {currentPage} of {Math.ceil(totalResults / itemsPerPage)}
+							</span>
+							<button
+								class="px-2 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50 text-xs"
+								disabled={currentPage === Math.ceil(totalResults / itemsPerPage)}
+								on:click={() => changePage(currentPage + 1, false)}>Next</button
+							>
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Pagination (Only when needed) -->
+			{#if totalResults > itemsPerPage}
+				<div class="px-4 py-2 border-b border-gray-200 bg-gray-100">
+					<div class="flex justify-center items-center">
 						<div class="flex space-x-1">
 							<button
 								class="px-2 py-1 rounded border disabled:opacity-50 bg-white hover:bg-gray-50 text-xs"
@@ -4392,12 +4272,7 @@
 																	status: 'pending'
 																});
 
-																// Show success feedback
-																showToast(
-																	'success',
-																	'Added to Basket',
-																	`${result.sku} queued for price update to £${targetPrice.toFixed(2)}`
-																);
+																// Item added to basket (no toast notification)
 															}}
 															title="Add to pricing basket for bulk update"
 														>
