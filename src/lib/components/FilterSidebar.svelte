@@ -1,6 +1,22 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 
+	// Type definitions for dynamic counts
+	interface CategoryCounts {
+		winners?: number;
+		losers?: number;
+		small_gap_losers?: number;
+		opportunities?: number;
+		not_profitable?: number;
+		match_buybox?: number;
+		investigate?: number;
+	}
+
+	interface ShippingCounts {
+		prime?: number;
+		standard?: number;
+	}
+
 	export let searchTerm = '';
 	export let categoryFilter = 'all';
 	export let shippingFilter = 'all';
@@ -13,55 +29,51 @@
 	export let activePresetFilter = '';
 	export let filteredCount = 0;
 	export let totalCount = 0;
+	export let categoryCounts: CategoryCounts = {}; // Dynamic counts from actual data
+	export let shippingCounts: ShippingCounts = {}; // Dynamic counts from actual data
 
 	const dispatch = createEventDispatcher();
 
-	// Filter presets matching Amazon's style
-	const filterPresets = [
+	// Filter presets matching Amazon's style - use dynamic counts
+	$: filterPresets = [
 		{
 			name: 'High Profit Opportunities',
-			emoji: '💎',
-			count: 24,
+			count: categoryCounts.opportunities || 0,
 			filters: { categoryFilter: 'opportunities', minProfitFilter: 2, sortBy: 'profit_desc' }
 		},
 		{
+			name: 'Small Price Gap Losers',
+			count: categoryCounts.small_gap_losers || 0,
+			filters: { categoryFilter: 'small_gap_losers', sortBy: 'price_gap_asc' }
+		},
+		{
 			name: 'Urgent Price Updates',
-			emoji: '🚨',
-			count: 12,
+			count: categoryCounts.match_buybox || 0,
 			filters: { categoryFilter: 'match_buybox', sortBy: 'profit_desc' }
-		},
-		{
-			name: 'New Competition',
-			emoji: '⚔️',
-			count: 8,
-			filters: { categoryFilter: 'losers', sortBy: 'profit_desc' }
-		},
-		{
-			name: 'Winning Products',
-			emoji: '🏆',
-			count: 156,
-			filters: { categoryFilter: 'winners', sortBy: 'profit_desc' }
 		}
 	];
 
-	// Category options
-	const categories = [
+	// Category options - use dynamic counts from actual data
+	$: categories = [
 		{ value: 'all', label: 'All Categories', count: totalCount },
-		{ value: 'winners', label: 'Buy Box Winners', count: 156 },
-		{ value: 'losers', label: 'Buy Box Losers', count: 42 },
-		{ value: 'opportunities', label: 'Opportunities', count: 24 },
-		{ value: 'profitable', label: 'Profitable', count: 89 },
-		{ value: 'not_profitable', label: 'Not Profitable', count: 33 },
-		{ value: 'match_buybox', label: 'Match Buy Box', count: 12 },
-		{ value: 'hold_price', label: 'Hold Price', count: 18 },
-		{ value: 'investigate', label: 'Investigate', count: 6 }
+		{ value: 'winners', label: 'Buy Box Winners', count: categoryCounts.winners || 0 },
+		{ value: 'losers', label: 'Buy Box Losers', count: categoryCounts.losers || 0 },
+		{
+			value: 'small_gap_losers',
+			label: 'Small Gap Losers (<£0.10)',
+			count: categoryCounts.small_gap_losers || 0
+		},
+		{ value: 'opportunities', label: 'Opportunities', count: categoryCounts.opportunities || 0 },
+		{ value: 'not_profitable', label: 'Not Profitable', count: categoryCounts.not_profitable || 0 },
+		{ value: 'match_buybox', label: 'Match Buy Box', count: categoryCounts.match_buybox || 0 },
+		{ value: 'investigate', label: 'Investigate', count: categoryCounts.investigate || 0 }
 	];
 
-	// Shipping options
-	const shippingOptions = [
+	// Shipping options - use dynamic counts from actual data
+	$: shippingOptions = [
 		{ value: 'all', label: 'All Shipping', count: totalCount },
-		{ value: 'prime', label: 'Prime Shipping', count: 198 },
-		{ value: 'standard', label: 'Standard Shipping', count: 82 }
+		{ value: 'prime', label: 'Prime Shipping', count: shippingCounts.prime || 0 },
+		{ value: 'standard', label: 'Standard Shipping', count: shippingCounts.standard || 0 }
 	];
 
 	// Date range options
@@ -81,6 +93,8 @@
 		{ value: 'profit_asc', label: 'Lowest Profit' },
 		{ value: 'margin_desc', label: 'Highest Margin' },
 		{ value: 'margin_asc', label: 'Lowest Margin' },
+		{ value: 'price_gap_asc', label: 'Smallest Price Gap' },
+		{ value: 'price_gap_desc', label: 'Largest Price Gap' },
 		{ value: 'sku_asc', label: 'SKU A-Z' },
 		{ value: 'sku_desc', label: 'SKU Z-A' }
 	];
@@ -149,24 +163,24 @@
 	<!-- Quick Actions (Filter Presets) -->
 	<div class="p-4 border-b border-gray-200">
 		<h3 class="text-sm font-medium text-gray-900 mb-3">Quick Actions</h3>
-		<div class="space-y-2">
+		<div class="space-y-1">
 			{#each filterPresets as preset}
-				<button
-					on:click={() => applyPreset(preset)}
-					class={`w-full text-left p-3 rounded-lg border transition-colors ${
-						activePresetFilter === preset.name
-							? 'bg-blue-50 border-blue-200 text-blue-800'
-							: 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-700'
-					}`}
+				<label
+					class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded"
 				>
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-2">
-							<span class="text-lg">{preset.emoji}</span>
-							<span class="text-sm font-medium">{preset.name}</span>
-						</div>
-						<span class="text-xs text-gray-500">({preset.count})</span>
+					<div class="flex items-center">
+						<input
+							type="radio"
+							name="quickAction"
+							value={preset.name}
+							checked={activePresetFilter === preset.name}
+							on:change={() => applyPreset(preset)}
+							class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+						/>
+						<span class="ml-2 text-sm text-gray-700">{preset.name}</span>
 					</div>
-				</button>
+					<span class="text-xs text-gray-500">({preset.count})</span>
+				</label>
 			{/each}
 		</div>
 	</div>

@@ -143,6 +143,7 @@
 		buybox_price: number | null; // Preferred field for buy box price
 		your_current_price: number | null; // This is our current listed price
 		competitor_price: number | null;
+		price_gap: number | null; // Difference between our price and buy box price
 		is_winner: boolean;
 		opportunity_flag: boolean;
 		captured_at: string;
@@ -214,10 +215,10 @@
 
 	// Search and filters
 	let searchTerm = ''; // Renamed from searchQuery for FilterSidebar compatibility
-	let categoryFilter = 'all'; // all, winners, losers, opportunities, profitable, not_profitable, match_buybox, hold_price, investigate
+	let categoryFilter = 'all'; // all, winners, losers, small_gap_losers, opportunities, not_profitable, raise_price, reduce_price, match_buybox, investigate
 	let shippingFilter = 'all'; // all, prime, standard
 	let dateRange = 'all'; // all, today, yesterday, week, month
-	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, sku_asc
+	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, price_gap_asc, price_gap_desc, sku_asc, sku_desc
 	let showOnlyWithMarginData = false;
 	let includeNoMarginData = false; // New option to include records without margin data
 	let minProfitFilter = 0;
@@ -248,6 +249,70 @@
 
 	// Computed property to check if any live updates are in progress
 	$: activeUpdates = Array.from(livePricingUpdates.values()).filter((state) => state.isUpdating);
+
+	// Dynamic filter counts based on actual data
+	let categoryCounts: {
+		winners?: number;
+		losers?: number;
+		small_gap_losers?: number;
+		opportunities?: number;
+		not_profitable?: number;
+		match_buybox?: number;
+		hold_price?: number;
+		investigate?: number;
+	} = {};
+	let shippingCounts: {
+		prime?: number;
+		standard?: number;
+	} = {};
+
+	// Calculate dynamic counts from buyboxData
+	$: {
+		if (buyboxData && buyboxData.length > 0) {
+			categoryCounts = {
+				winners: buyboxData.filter((item) => item.is_winner === true).length,
+				losers: buyboxData.filter((item) => item.is_winner === false).length,
+				small_gap_losers: buyboxData.filter(
+					(item) =>
+						item.is_winner === false &&
+						item.price_gap &&
+						item.price_gap > 0 &&
+						item.price_gap <= 0.1
+				).length,
+				opportunities: buyboxData.filter(
+					(item) =>
+						item.is_winner === false &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price > 0
+				).length,
+				not_profitable: buyboxData.filter(
+					(item) =>
+						item.is_winner === false &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price < 0
+				).length,
+				match_buybox: buyboxData.filter((item) => item.recommended_action === 'match_buybox')
+					.length,
+				investigate: buyboxData.filter((item) => item.recommended_action === 'investigate').length
+			};
+
+			shippingCounts = {
+				prime: buyboxData.filter(
+					(item) =>
+						item.merchant_shipping_group &&
+						(item.merchant_shipping_group.toLowerCase().includes('prime') ||
+							item.merchant_shipping_group.toLowerCase().includes('next day'))
+				).length,
+				standard: buyboxData.filter(
+					(item) =>
+						item.merchant_shipping_group &&
+						(item.merchant_shipping_group.toLowerCase().includes('standard') ||
+							item.merchant_shipping_group.toLowerCase().includes('uk shipping') ||
+							!item.merchant_shipping_group.toLowerCase().includes('prime'))
+				).length
+			};
+		}
+	}
 	$: hasActiveUpdates = activeUpdates.length > 0;
 
 	// Best sellers list (top 100 ASINs from business report)
@@ -868,69 +933,92 @@
 	 */
 	function createTestScenario(): BuyBoxData[] {
 		const testASINs = [
-			'B09T3GDNGT', // Your top ASIN
-			'B076B1NF1Q',
-			'B004BTED72'
+			'B09T3GDNGT', // Your top ASIN - small gap loser
+			'B076B1NF1Q', // Another small gap loser
+			'B004BTED72' // Larger gap loser
 		];
 
-		return testASINs.map((asin, index) => ({
-			id: `test-${asin}`,
-			asin: asin,
-			sku: `TEST-SKU-${index + 1}`,
-			item_name: `Test Product ${index + 1} (${asin})`,
-			price: null,
-			buybox_price: 19.99 + index, // Simulated buy box price
-			your_current_price: 22.99 + index, // Your current price (higher than buy box)
-			competitor_price: 19.99 + index,
-			is_winner: false, // You're not winning
-			opportunity_flag: true, // This is an opportunity
-			captured_at: new Date().toISOString(),
-			merchant_shipping_group: index % 2 === 0 ? 'Nationwide Prime' : 'UK Shipping',
+		return testASINs.map((asin, index) => {
+			const buyboxPrice = 19.99 + index;
+			let yourPrice, priceGap, marginAtBuybox;
 
-			// Cost data for testing
-			your_cost: 10.0 + index,
-			your_shipping_cost: 2.5,
-			your_material_total_cost: 0.2,
-			your_box_cost: 0.5,
-			your_vat_amount: 2.0 + index * 0.2,
-			your_fragile_charge: 0,
-			total_operating_cost: 15.2 + index * 1.2,
+			if (index === 0) {
+				// Small gap loser: £0.01 difference - profitable if matched
+				yourPrice = buyboxPrice + 0.01;
+				priceGap = 0.01;
+				marginAtBuybox = 15.2; // Positive margin
+			} else if (index === 1) {
+				// Small gap loser: £0.05 difference - barely profitable
+				yourPrice = buyboxPrice + 0.05;
+				priceGap = 0.05;
+				marginAtBuybox = 2.1; // Small positive margin
+			} else {
+				// Larger gap loser: £3.00 difference - NOT profitable if matched
+				yourPrice = buyboxPrice + 3.0;
+				priceGap = 3.0;
+				marginAtBuybox = -5.3; // Negative margin - would lose money
+			}
 
-			// Margin data
-			your_margin_percent_at_current_price: 25.5 + index,
-			margin_percent_at_buybox_price: 15.2 + index,
-			margin_difference: -10.3,
-			profit_opportunity: 2.5 + index,
+			return {
+				id: `test-${asin}`,
+				asin: asin,
+				sku: `TEST-SKU-${index + 1}`,
+				item_name: `Test Product ${index + 1} (${asin}) - Gap: £${priceGap.toFixed(2)}, Margin: ${marginAtBuybox}%`,
+				price: null,
+				buybox_price: buyboxPrice,
+				your_current_price: yourPrice,
+				competitor_price: buyboxPrice,
+				price_gap: priceGap,
+				is_winner: false, // You're not winning
+				opportunity_flag: true, // This is an opportunity
+				captured_at: new Date().toISOString(),
+				merchant_shipping_group: index % 2 === 0 ? 'Nationwide Prime' : 'UK Shipping',
 
-			// Profit data
-			current_actual_profit: 6.5 + index,
-			buybox_actual_profit: 4.0 + index,
+				// Cost data for testing
+				your_cost: 10.0 + index,
+				your_shipping_cost: 2.5,
+				your_material_total_cost: 0.2,
+				your_box_cost: 0.5,
+				your_vat_amount: 2.0 + index * 0.2,
+				your_fragile_charge: 0,
+				total_operating_cost: 15.2 + index * 1.2,
 
-			// Recommendations
-			recommended_action: 'match_buybox',
-			break_even_price: 16.5 + index,
+				// Margin data
+				your_margin_percent_at_current_price: 25.5 + index,
+				margin_percent_at_buybox_price: marginAtBuybox,
+				margin_difference: -10.3,
+				profit_opportunity: 2.5 + index,
 
-			// Additional fields
-			current_margin_calculation: `Test calculation for ${asin}`,
-			buybox_margin_calculation: `Buy box calculation for ${asin}`,
-			total_investment_current: 18.5 + index,
-			total_investment_buybox: 16.2 + index,
+				// Profit data
+				current_actual_profit: 6.5 + index,
+				buybox_actual_profit: 4.0 + index,
 
-			// Price update tracking
-			last_price_update:
-				index === 0
-					? new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
-					: index === 1
-						? new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() // 3 hours ago
-						: index === 2
-							? new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() // 2 days ago
-							: null,
-			update_source: index <= 2 ? 'match_buy_box' : null,
+				// Recommendations
+				recommended_action: 'match_buybox',
+				break_even_price: 16.5 + index,
 
-			run_id: 'test-run-001',
-			job_id: 'test-job-001',
-			is_skeleton: false
-		}));
+				// Additional fields
+				current_margin_calculation: `Test calculation for ${asin}`,
+				buybox_margin_calculation: `Buy box calculation for ${asin}`,
+				total_investment_current: 18.5 + index,
+				total_investment_buybox: 16.2 + index,
+
+				// Price update tracking
+				last_price_update:
+					index === 0
+						? new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
+						: index === 1
+							? new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() // 3 hours ago
+							: index === 2
+								? new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() // 2 days ago
+								: null,
+				update_source: index <= 2 ? 'match_buy_box' : null,
+
+				run_id: 'test-run-001',
+				job_id: 'test-job-001',
+				is_skeleton: false
+			};
+		});
 	}
 
 	/**
@@ -1614,8 +1702,8 @@
 		console.log('🔵 Frontend: Starting Buy Box data request at', new Date().toISOString());
 
 		try {
-			// Use retry limit if provided, otherwise use a more conservative limit
-			const currentLimit = retryLimit || 3000; // Reduced from 4000 to be safer
+			// Use retry limit if provided, otherwise use limit high enough for all 3700+ records
+			const currentLimit = retryLimit || 4000; // Increased to handle all buybox_data records
 
 			// Get latest data from all jobs - use a more reasonable limit for production
 			const controller = new AbortController();
@@ -1985,22 +2073,29 @@
 			case 'losers':
 				filtered = filtered.filter((item) => !item.is_winner);
 				break;
-			case 'opportunities':
-				filtered = filtered.filter((item) => item.opportunity_flag);
-				break;
-			case 'profitable':
+			case 'small_gap_losers':
 				filtered = filtered.filter(
-					(item) => item.profit_opportunity && item.profit_opportunity > 0
+					(item) => !item.is_winner && item.price_gap && item.price_gap > 0 && item.price_gap <= 0.1
+				);
+				break;
+			case 'opportunities':
+				filtered = filtered.filter(
+					(item) =>
+						!item.is_winner &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price > 0
 				);
 				break;
 			case 'not_profitable':
-				filtered = filtered.filter((item) => item.recommended_action === 'not_profitable');
+				filtered = filtered.filter(
+					(item) =>
+						!item.is_winner &&
+						item.margin_percent_at_buybox_price !== null &&
+						item.margin_percent_at_buybox_price < 0
+				);
 				break;
 			case 'match_buybox':
 				filtered = filtered.filter((item) => item.recommended_action === 'match_buybox');
-				break;
-			case 'hold_price':
-				filtered = filtered.filter((item) => item.recommended_action === 'hold_price');
 				break;
 			case 'investigate':
 				filtered = filtered.filter((item) => item.recommended_action === 'investigate');
@@ -2161,8 +2256,19 @@
 					return aDiff - bDiff; // Smallest difference first (easy wins)
 				});
 				break;
+			case 'price_gap_asc':
+				// Sort by smallest price gap first - shows easiest wins for buy box losers
+				filtered.sort((a, b) => (a.price_gap || 0) - (b.price_gap || 0));
+				break;
+			case 'price_gap_desc':
+				// Sort by largest price gap first
+				filtered.sort((a, b) => (b.price_gap || 0) - (a.price_gap || 0));
+				break;
 			case 'sku_asc':
 				filtered.sort((a, b) => a.sku.localeCompare(b.sku));
+				break;
+			case 'sku_desc':
+				filtered.sort((a, b) => b.sku.localeCompare(a.sku));
 				break;
 		}
 
@@ -2653,10 +2759,6 @@
 				categoryFilter = 'opportunities';
 				activeCardFilter = 'Opportunities';
 				break;
-			case 'profitable':
-				categoryFilter = 'profitable';
-				activeCardFilter = 'Profitable Items';
-				break;
 			case 'analyzed':
 				showOnlyWithMarginData = true;
 				activeCardFilter = 'Items with Margin Data';
@@ -2953,6 +3055,8 @@
 		bind:activePresetFilter
 		filteredCount={filteredData.length}
 		totalCount={buyboxData.length}
+		{categoryCounts}
+		{shippingCounts}
 		on:filterChange={handleFilterChange}
 		on:applyPreset={handleFilterPresetApply}
 		on:clearFilters={handleClearFilters}
@@ -3509,44 +3613,6 @@
 
 		<!-- Results -->
 		<div class="bg-white rounded-lg shadow" data-results-section>
-			<div class="px-4 py-2 border-b border-gray-200">
-				<div class="flex justify-between items-center">
-					<div class="flex items-center gap-4">
-						<h2 class="text-lg font-semibold">
-							Buy Box Results ({totalResults} items)
-							{#if showLatestOnly}
-								<span class="text-sm font-normal text-blue-600"> - Latest data only </span>
-							{:else}
-								<span class="text-sm font-normal text-purple-600"> - All historical data </span>
-							{/if}
-						</h2>
-					</div>
-					<div class="flex items-center gap-3 text-sm text-gray-500">
-						{#if showLatestOnly}
-							<button
-								on:click={() => {
-									showLatestOnly = false;
-									refreshData();
-								}}
-								class="text-blue-600 hover:text-blue-800 underline"
-							>
-								View history
-							</button>
-						{:else}
-							<button
-								on:click={() => {
-									showLatestOnly = true;
-									refreshData();
-								}}
-								class="text-purple-600 hover:text-purple-800 underline"
-							>
-								Latest only
-							</button>
-						{/if}
-					</div>
-				</div>
-			</div>
-
 			<!-- Top Pagination -->
 			{#if totalResults > itemsPerPage}
 				<div class="px-4 py-2 border-b border-gray-200 bg-gray-50">
