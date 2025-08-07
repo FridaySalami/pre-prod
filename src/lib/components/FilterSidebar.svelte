@@ -28,32 +28,12 @@
 	export let showLatestOnly = true;
 	export let sortBy = 'created_desc';
 	export let hasActiveFilters = false;
-	export let activePresetFilter = '';
 	export let filteredCount = 0;
 	export let totalCount = 0;
 	export let categoryCounts: CategoryCounts = {}; // Dynamic counts from actual data
 	export let shippingCounts: ShippingCounts = {}; // Dynamic counts from actual data
 
 	const dispatch = createEventDispatcher();
-
-	// Filter presets matching Amazon's style - use dynamic counts
-	$: filterPresets = [
-		{
-			name: 'High Profit Opportunities',
-			count: categoryCounts.opportunities || 0,
-			filters: { categoryFilter: 'opportunities', minProfitFilter: 2, sortBy: 'profit_desc' }
-		},
-		{
-			name: 'Small Price Gap Losers',
-			count: categoryCounts.small_gap_losers || 0,
-			filters: { categoryFilter: 'small_gap_losers', sortBy: 'price_gap_asc' }
-		},
-		{
-			name: 'Urgent Price Updates',
-			count: categoryCounts.match_buybox || 0,
-			filters: { categoryFilter: 'match_buybox', sortBy: 'profit_desc' }
-		}
-	];
 
 	// Category options - use dynamic counts from actual data
 	$: categories = [
@@ -65,8 +45,16 @@
 			label: 'Small Gap Losers (<£0.10)',
 			count: categoryCounts.small_gap_losers || 0
 		},
-		{ value: 'opportunities_high_margin', label: 'Opportunities Margin +10%', count: categoryCounts.opportunities_high_margin || 0 },
-		{ value: 'opportunities_low_margin', label: 'Opportunities Under 10% Margin', count: categoryCounts.opportunities_low_margin || 0 },
+		{
+			value: 'opportunities_high_margin',
+			label: 'Opportunities Margin +10%',
+			count: categoryCounts.opportunities_high_margin || 0
+		},
+		{
+			value: 'opportunities_low_margin',
+			label: 'Opportunities Under 10% Margin',
+			count: categoryCounts.opportunities_low_margin || 0
+		},
 		{ value: 'not_profitable', label: 'Not Profitable', count: categoryCounts.not_profitable || 0 },
 		{ value: 'match_buybox', label: 'Match Buy Box', count: categoryCounts.match_buybox || 0 },
 		{ value: 'investigate', label: 'Investigate', count: categoryCounts.investigate || 0 }
@@ -104,10 +92,6 @@
 
 	function handleFilterChange(filterType: string, value: any) {
 		dispatch('filterChange', { filterType, value });
-	}
-
-	function applyPreset(preset: any) {
-		dispatch('applyPreset', preset);
 	}
 
 	function clearAllFilters() {
@@ -161,31 +145,6 @@
 				Clear All Filters
 			</button>
 		{/if}
-	</div>
-
-	<!-- Quick Actions (Filter Presets) -->
-	<div class="p-4 border-b border-gray-200">
-		<h3 class="text-sm font-medium text-gray-900 mb-3">Quick Actions</h3>
-		<div class="space-y-1">
-			{#each filterPresets as preset}
-				<label
-					class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded"
-				>
-					<div class="flex items-center">
-						<input
-							type="radio"
-							name="quickAction"
-							value={preset.name}
-							checked={activePresetFilter === preset.name}
-							on:change={() => applyPreset(preset)}
-							class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-						/>
-						<span class="ml-2 text-sm text-gray-700">{preset.name}</span>
-					</div>
-					<span class="text-xs text-gray-500">({preset.count})</span>
-				</label>
-			{/each}
-		</div>
 	</div>
 
 	<!-- Category Filter -->

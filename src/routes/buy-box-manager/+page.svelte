@@ -145,6 +145,7 @@
 		competitor_price: number | null;
 		price_gap: number | null; // Difference between our price and buy box price
 		is_winner: boolean;
+		is_buy_box_winner: boolean; // Whether this item is currently winning the buy box
 		opportunity_flag: boolean;
 		captured_at: string;
 		merchant_shipping_group?: string; // Prime or Standard shipping type
@@ -276,34 +277,30 @@
 				winners: buyboxData.filter((item) => item.is_winner === true).length,
 				losers: buyboxData.filter((item) => item.is_winner === false).length,
 				small_gap_losers: buyboxData.filter(
-					(item) =>
-						item.is_winner === false &&
-						item.price_gap &&
-						item.price_gap > 0 &&
-						item.price_gap <= 0.1
+					(item) => !item.is_winner && item.price_gap && item.price_gap > 0 && item.price_gap <= 0.1
 				).length,
 				opportunities: buyboxData.filter(
 					(item) =>
-						item.is_winner === false &&
+						!item.is_winner &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price > 0
 				).length,
 				opportunities_high_margin: buyboxData.filter(
 					(item) =>
-						item.is_winner === false &&
+						!item.is_winner &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price >= 10
 				).length,
 				opportunities_low_margin: buyboxData.filter(
 					(item) =>
-						item.is_winner === false &&
+						!item.is_winner &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price > 0 &&
 						item.margin_percent_at_buybox_price < 10
 				).length,
 				not_profitable: buyboxData.filter(
 					(item) =>
-						item.is_winner === false &&
+						!item.is_winner &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price < 0
 				).length,
