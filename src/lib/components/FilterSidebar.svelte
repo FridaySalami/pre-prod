@@ -111,7 +111,10 @@
 		<h2 class="text-lg font-semibold text-gray-900 mb-3">Refine by:</h2>
 
 		<!-- Results Counter -->
-		<div class="text-sm text-gray-600 mb-3">
+		<div
+			class="text-sm text-gray-600 mb-3"
+			title="Current number of products matching your active filters"
+		>
 			{filteredCount.toLocaleString()} of {totalCount.toLocaleString()} products
 		</div>
 
@@ -123,6 +126,7 @@
 				value={searchTerm}
 				on:input={handleSearchInput}
 				class="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+				title="Search by product name, SKU, ASIN, or any text in the product details"
 			/>
 			<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
 				<svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -141,6 +145,7 @@
 			<button
 				on:click={clearAllFilters}
 				class="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm py-2 px-3 rounded-md transition-colors"
+				title="Reset all filters to their default values and show all products"
 			>
 				Clear All Filters
 			</button>
@@ -149,11 +154,35 @@
 
 	<!-- Category Filter -->
 	<div class="p-4 border-b border-gray-200">
-		<h3 class="text-sm font-medium text-gray-900 mb-3">Category</h3>
+		<h3
+			class="text-sm font-medium text-gray-900 mb-3"
+			title="Filter products by their buy box status and profitability"
+		>
+			Category
+		</h3>
 		<div class="space-y-1">
 			{#each categories as category}
 				<label
 					class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded"
+					title={category.value === 'all'
+						? 'Show all products regardless of category'
+						: category.value === 'winners'
+							? 'Products currently winning the buy box'
+							: category.value === 'losers'
+								? 'Products not winning the buy box'
+								: category.value === 'small_gap_losers'
+									? 'Products losing by less than £0.10 - quick wins'
+									: category.value === 'opportunities_high_margin'
+										? 'Profitable opportunities with 10%+ margin if matched'
+										: category.value === 'opportunities_low_margin'
+											? 'Opportunities with under 10% margin - proceed with caution'
+											: category.value === 'not_profitable'
+												? 'Products that would lose money if matched to buy box price'
+												: category.value === 'match_buybox'
+													? 'Products recommended to match the current buy box price'
+													: category.value === 'investigate'
+														? 'Products requiring manual review or investigation'
+														: 'Filter products by this category'}
 				>
 					<div class="flex items-center">
 						<input
@@ -174,11 +203,23 @@
 
 	<!-- Shipping Filter -->
 	<div class="p-4 border-b border-gray-200">
-		<h3 class="text-sm font-medium text-gray-900 mb-3">Shipping Service</h3>
+		<h3
+			class="text-sm font-medium text-gray-900 mb-3"
+			title="Filter by Amazon shipping service type"
+		>
+			Shipping Service
+		</h3>
 		<div class="space-y-1">
 			{#each shippingOptions as option}
 				<label
 					class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded"
+					title={option.value === 'all'
+						? 'Show products with any shipping service'
+						: option.value === 'prime'
+							? 'Products with Amazon Prime shipping (faster delivery)'
+							: option.value === 'standard'
+								? 'Products with standard shipping service'
+								: 'Filter by this shipping service'}
 				>
 					<div class="flex items-center">
 						<input
@@ -199,10 +240,28 @@
 
 	<!-- Date Range Filter -->
 	<div class="p-4 border-b border-gray-200">
-		<h3 class="text-sm font-medium text-gray-900 mb-3">Date Range</h3>
+		<h3
+			class="text-sm font-medium text-gray-900 mb-3"
+			title="Filter products by when the pricing data was captured"
+		>
+			Date Range
+		</h3>
 		<div class="space-y-1">
 			{#each dateRanges as range}
-				<label class="flex items-center py-1 cursor-pointer hover:bg-gray-50 px-2 rounded">
+				<label
+					class="flex items-center py-1 cursor-pointer hover:bg-gray-50 px-2 rounded"
+					title={range.value === 'all'
+						? 'Show products from any date'
+						: range.value === 'today'
+							? 'Show only products captured today'
+							: range.value === 'yesterday'
+								? 'Show only products captured yesterday'
+								: range.value === 'week'
+									? 'Show products captured within the last 7 days'
+									: range.value === 'month'
+										? 'Show products captured within the last 30 days'
+										: 'Filter by this date range'}
+				>
 					<input
 						type="radio"
 						name="dateRange"
@@ -219,9 +278,16 @@
 
 	<!-- Profit Filter -->
 	<div class="p-4 border-b border-gray-200">
-		<h3 class="text-sm font-medium text-gray-900 mb-3">Minimum Profit</h3>
+		<h3
+			class="text-sm font-medium text-gray-900 mb-3"
+			title="Set minimum profit threshold - only show products with potential profit above this amount"
+		>
+			Minimum Profit
+		</h3>
 		<div class="space-y-3">
-			<div>
+			<div
+				title="Drag to set the minimum profit amount you want to see. Products below this threshold will be hidden."
+			>
 				<input
 					type="range"
 					min="0"
@@ -231,6 +297,7 @@
 					on:input={(e) =>
 						handleFilterChange('minProfitFilter', parseFloat((e.target as HTMLInputElement).value))}
 					class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+					title="Set minimum profit threshold: £{minProfitFilter}"
 				/>
 				<div class="flex justify-between text-xs text-gray-500 mt-1">
 					<span>£0</span>
@@ -243,9 +310,16 @@
 
 	<!-- Margin Filter -->
 	<div class="p-4 border-b border-gray-200">
-		<h3 class="text-sm font-medium text-gray-900 mb-3">Minimum Margin</h3>
+		<h3
+			class="text-sm font-medium text-gray-900 mb-3"
+			title="Set minimum margin percentage - only show products with profit margins above this percentage"
+		>
+			Minimum Margin
+		</h3>
 		<div class="space-y-3">
-			<div>
+			<div
+				title="Drag to set the minimum margin percentage. Products with lower margins will be hidden. Higher margins = more profitable."
+			>
 				<input
 					type="range"
 					min="0"
@@ -255,6 +329,7 @@
 					on:input={(e) =>
 						handleFilterChange('minMarginFilter', parseFloat((e.target as HTMLInputElement).value))}
 					class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+					title="Set minimum margin percentage: {minMarginFilter}%"
 				/>
 				<div class="flex justify-between text-xs text-gray-500 mt-1">
 					<span>0%</span>
@@ -267,7 +342,10 @@
 
 	<!-- Show Latest Only -->
 	<div class="p-4 border-b border-gray-200">
-		<label class="flex items-center cursor-pointer">
+		<label
+			class="flex items-center cursor-pointer"
+			title="When enabled, only shows the most recent pricing data for each product. When disabled, shows all historical data including older captures."
+		>
 			<input
 				type="checkbox"
 				checked={showLatestOnly}
@@ -281,11 +359,17 @@
 
 	<!-- Sort Options -->
 	<div class="p-4">
-		<h3 class="text-sm font-medium text-gray-900 mb-3">Sort by</h3>
+		<h3
+			class="text-sm font-medium text-gray-900 mb-3"
+			title="Choose how to order the product results"
+		>
+			Sort by
+		</h3>
 		<select
 			value={sortBy}
 			on:change={(e) => handleFilterChange('sortBy', (e.target as HTMLSelectElement).value)}
 			class="w-full text-sm border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+			title="Select how you want the products to be ordered in the results"
 		>
 			{#each sortOptions as option}
 				<option value={option.value}>{option.label}</option>
