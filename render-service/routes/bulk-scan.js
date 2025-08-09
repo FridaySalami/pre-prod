@@ -30,7 +30,10 @@ if (USE_REAL_API) {
     console.warn('⚠️ Falling back to mock data');
   }
 } else {
-  console.log('ℹ️  Using mock data (USE_AMAZON_SPAPI not set to true)');
+  console.error('❌ PRODUCTION ERROR: USE_AMAZON_SPAPI not set to true');
+  console.error('❌ This is a production system and MUST use real Amazon SP-API data');
+  console.error('❌ Mock data would provide false information to users');
+  console.error('❌ Please set USE_AMAZON_SPAPI=true in environment variables');
 }
 
 // Initialize cost calculator for mock data enrichment
@@ -166,8 +169,9 @@ async function processBulkScan(jobId, asins) {
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
       console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} ASINs`);
-      // Collect buyBoxData for batch insert
+      // Collect buyBoxData summaries and competitor offers for batch insert
       const batchBuyBoxData = [];
+      const batchOffers = [];
       for (const asin of batch) {
         let retryCount = 0;
         const maxRetries = 3;
@@ -178,7 +182,22 @@ async function processBulkScan(jobId, asins) {
             await rateLimiter.waitForNextRequest();
             if (USE_REAL_API && amazonAPI) {
               try {
-                buyBoxData = await amazonAPI.getBuyBoxData(asin.asin1, asin.seller_sku, jobId, rateLimiter);
+                const result = await amazonAPI.getBuyBoxData(asin.asin1, asin.seller_sku, jobId, rateLimiter);
+                // result contains { summary, offers }
+                console.log(`🔍 ASIN ${asin.asin1}: API result structure:`, {
+                  hasSummary: !!result?.summary,
+                  hasOffers: !!result?.offers,
+                  offersCount: Array.isArray(result?.offers) ? result.offers.length : 0,
+                  offersType: typeof result?.offers
+                });
+                if (result?.summary) batchBuyBoxData.push(result.summary);
+                if (Array.isArray(result?.offers) && result.offers.length > 0) {
+                  console.log(`📊 Found ${result.offers.length} competitor offers for ASIN ${asin.asin1}`);
+                  batchOffers.push(...result.offers);
+                } else {
+                  console.log(`📭 No competitor offers found for ASIN ${asin.asin1}`);
+                }
+                buyBoxData = result?.summary;
               } catch (apiError) {
                 lastError = apiError;
                 if (retryCount < maxRetries - 1) {
@@ -204,14 +223,19 @@ async function processBulkScan(jobId, asins) {
                 }
               }
             } else {
-              buyBoxData = await mockAmazonApiCall(asin.asin1, asin.seller_sku, jobId);
-              if (buyBoxData && costCalculator) {
-                try {
-                  buyBoxData = await costCalculator.enrichBuyBoxData(buyBoxData);
-                } catch (enrichError) {
-                  console.warn(`Failed to enrich mock data for ASIN ${asin.asin1}:`, enrichError.message);
-                }
-              }
+              // No real API available - this is a production error
+              console.error(`❌ Amazon SP-API not available for ASIN ${asin.asin1} - this is a production system and requires real data`);
+              await SupabaseService.recordFailure(
+                jobId,
+                asin.asin1,
+                asin.seller_sku,
+                'Amazon SP-API not available - production system requires real data',
+                'NO_API_AVAILABLE',
+                1,
+                { asin: asin.asin1, sku: asin.seller_sku, error: 'Production system must use real Amazon SP-API data' }
+              );
+              failCount++;
+              buyBoxData = null;
             }
             break; // Success, exit retry loop
           } catch (err) {
@@ -227,7 +251,6 @@ async function processBulkScan(jobId, asins) {
           }
         }
         if (buyBoxData) {
-          batchBuyBoxData.push(buyBoxData);
           successCount++;
           console.log(`✅ Stored data for ASIN ${asin.asin1}, SKU: ${asin.seller_sku}`);
         } else {
@@ -272,21 +295,37 @@ async function processBulkScan(jobId, asins) {
           await new Promise(resolve => setTimeout(resolve, 60000));
         }
       }
-      // Batch insert for buyBoxData
+      // Batch insert for summaries
       if (batchBuyBoxData.length > 0) {
         try {
           if (typeof SupabaseService.insertBuyBoxDataBatch === 'function') {
             await SupabaseService.insertBuyBoxDataBatch(batchBuyBoxData);
           } else {
-            // fallback to single insert if batch not implemented
             for (const data of batchBuyBoxData) {
               await SupabaseService.insertBuyBoxData(data);
             }
           }
         } catch (insertError) {
-          console.error('❌ Batch insert error:', insertError.message);
-          // Optionally record batch insert failure
+          console.error('❌ Batch insert error (summaries):', insertError.message);
         }
+      }
+      // Batch insert competitor offers (only when real API provided offers)
+      console.log(`🔍 Batch ${batchIndex + 1}: batchOffers.length = ${batchOffers.length}, type = ${typeof batchOffers}, isArray = ${Array.isArray(batchOffers)}`);
+      if (batchOffers.length > 0) {
+        console.log(`🎯 Sample batchOffers[0]:`, batchOffers[0]);
+      }
+      if (batchOffers.length > 0 && typeof SupabaseService.insertBuyBoxOffers === 'function') {
+        try {
+          console.log(`🚀 Attempting to insert ${batchOffers.length} competitor offers...`);
+          await SupabaseService.insertBuyBoxOffers(batchOffers);
+          console.log(`📥 Inserted ${batchOffers.length} competitor offers for batch ${batchIndex + 1}`);
+        } catch (offersError) {
+          console.error('❌ Batch insert error (offers):', offersError.message);
+        }
+      } else if (batchOffers.length === 0) {
+        console.log(`📭 No offers to insert for batch ${batchIndex + 1}`);
+      } else if (typeof SupabaseService.insertBuyBoxOffers !== 'function') {
+        console.error('❌ insertBuyBoxOffers function not available!');
       }
       if (batchIndex < batches.length - 1) {
         console.log(`⏸️  Batch ${batchIndex + 1} completed. Waiting 30s before next batch...`);
@@ -301,177 +340,6 @@ async function processBulkScan(jobId, asins) {
     console.error(`Processing error for job ${jobId}:`, error);
     await SupabaseService.failJob(jobId, error.message);
   }
-}
-
-/**
- * Mock Amazon API call with margin analysis
- */
-async function mockAmazonApiCall(asinCode, sku, runId) {
-  // Simulate API processing time
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  // Mock success/failure (10% failure rate for testing)
-  if (Math.random() < 0.1) {
-    return null; // Simulate failure
-  }
-
-  // Get product title from sku_asin_mapping - NO LONGER SAVING TO buybox_data
-  let productTitle = null;
-  try {
-    productTitle = await SupabaseService.getProductTitle(sku, asinCode);
-    console.log(`Mock API - Product title for ${sku}/${asinCode}: ${productTitle || 'Not found'}`);
-    // Note: We still fetch the title for logging/validation but don't save it to buybox_data
-  } catch (titleError) {
-    console.warn(`Failed to fetch product title for ${sku}/${asinCode}:`, titleError.message);
-  }
-
-  // Return data structure that matches buybox_data table schema with margin fields
-  const mockPrice = parseFloat((Math.random() * 100 + 10).toFixed(2));
-  const competitorPrice = parseFloat((mockPrice + (Math.random() - 0.5) * 20).toFixed(2));
-
-  // Get your seller ID for comparison
-  const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID || 'A2D8NG39VURSL3';
-
-  // 30% chance you're the winner for testing
-  const isWinner = Math.random() < 0.3;
-  const competitorId = isWinner ? yourSellerId : 'A' + Math.random().toString(36).substring(2, 15).toUpperCase();
-
-  // Determine pricing scenario
-  let yourCurrentPrice, buyBoxPrice;
-  if (isWinner) {
-    // If you're the winner, your price IS the buy box price
-    yourCurrentPrice = mockPrice;
-    buyBoxPrice = mockPrice;
-  } else {
-    // If you're not the winner, create a price gap
-    buyBoxPrice = competitorPrice;
-    // Your price could be higher (missed buy box) or lower (but not winning due to other factors)
-    yourCurrentPrice = Math.random() < 0.7
-      ? parseFloat((buyBoxPrice + Math.random() * 5 + 0.5).toFixed(2)) // 70% chance you're priced higher
-      : parseFloat((buyBoxPrice - Math.random() * 2).toFixed(2)); // 30% chance you're priced lower but not winning
-  }
-
-  const priceGap = yourCurrentPrice - buyBoxPrice;
-  const pricingStatus = isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox');
-
-  console.log(`Mock ASIN ${asinCode}: Your ID: ${yourSellerId}, Winner: ${isWinner}, Your Price: £${yourCurrentPrice}, Buy Box: £${buyBoxPrice}, Gap: £${priceGap.toFixed(2)}`);
-
-  // Mock cost data for margin calculations
-  const baseCost = parseFloat((Math.random() * 30 + 5).toFixed(2));
-  const shippingCost = parseFloat((Math.random() * 8 + 3).toFixed(2));
-  const materialTotalCost = parseFloat((baseCost + Math.random() * 10 + 2).toFixed(2));
-
-  // Calculate mock margins using the correct pricing
-  const amazonFee = yourCurrentPrice * 0.15;
-  const yourMargin = yourCurrentPrice - amazonFee - materialTotalCost - shippingCost;
-  const yourMarginPercent = yourCurrentPrice > 0 ? (yourMargin / yourCurrentPrice) * 100 : 0;
-
-  // Calculate buy box margin only if there's actual competition
-  let buyboxAmazonFee, buyboxMargin, buyboxMarginPercent, marginDifference, profitOpportunity;
-
-  if (buyBoxPrice && buyBoxPrice > 0) {
-    // There's actual competition - calculate buy box margins
-    buyboxAmazonFee = buyBoxPrice * 0.15;
-    buyboxMargin = buyBoxPrice - buyboxAmazonFee - materialTotalCost - shippingCost;
-    buyboxMarginPercent = (buyboxMargin / buyBoxPrice) * 100;
-    marginDifference = buyboxMargin - yourMargin;
-    profitOpportunity = Math.max(0, marginDifference);
-  } else {
-    // No competition - set null values (don't calculate negative margins)
-    buyboxAmazonFee = null;
-    buyboxMargin = null;
-    buyboxMarginPercent = null;
-    marginDifference = null;
-    profitOpportunity = null;
-  }
-
-  const breakEvenPrice = (materialTotalCost + shippingCost) / 0.85;
-
-  // Determine recommended action
-  let recommendedAction;
-  if (!buyBoxPrice || buyBoxPrice === null) {
-    // No Buy Box available - suggest investigation
-    recommendedAction = 'investigate';
-  } else if (buyboxMarginPercent === null || buyboxMarginPercent < 5) {
-    // Low or invalid margin at buy box price - not profitable
-    recommendedAction = 'not_profitable';
-  } else if (buyboxMarginPercent < 10) {
-    // Medium margin - needs investigation
-    recommendedAction = 'investigate';
-  } else if (profitOpportunity > 1) {
-    // Good margin with significant profit opportunity
-    recommendedAction = 'match_buybox';
-  } else {
-    // Good margin but limited opportunity
-    recommendedAction = 'hold_price';
-  }
-
-  return {
-    // Essential core fields
-    run_id: runId,
-    asin: asinCode,
-    sku: sku || `SKU-${asinCode}`,
-    item_name: productTitle, // Re-added for better UX - product titles shown immediately
-
-    // Essential pricing fields
-    price: yourCurrentPrice, // Use YOUR current price for margin calculations
-    is_winner: isWinner,
-    competitor_id: competitorId,
-    competitor_name: `MockSeller${Math.floor(Math.random() * 1000)}`,
-    competitor_price: buyBoxPrice, // This is the buy box price
-    opportunity_flag: !isWinner && (buyBoxPrice - yourCurrentPrice) > 5,
-    total_offers: Math.floor(Math.random() * 10) + 1,
-    captured_at: new Date().toISOString(),
-    merchant_token: yourSellerId,
-    buybox_merchant_token: competitorId,
-
-    // Enhanced pricing clarity fields
-    your_current_price: yourCurrentPrice,
-    your_current_shipping: 0, // Mock free shipping
-    your_current_total: yourCurrentPrice,
-    buybox_price: buyBoxPrice,
-    buybox_shipping: 0, // Mock free shipping
-    buybox_total: buyBoxPrice,
-    price_gap: parseFloat(priceGap.toFixed(2)),
-    price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
-    pricing_status: pricingStatus,
-    your_offer_found: true, // Mock that your offer was found
-
-    // New margin analysis fields (essential for frontend display)
-    your_cost: parseFloat(baseCost.toFixed(2)),
-    your_shipping_cost: parseFloat(shippingCost.toFixed(2)),
-    your_material_total_cost: parseFloat(materialTotalCost.toFixed(2)),
-    your_box_cost: parseFloat((Math.random() * 2).toFixed(2)),
-    your_vat_amount: parseFloat((baseCost * 0.2).toFixed(2)),
-    your_fragile_charge: Math.random() < 0.3 ? 0.66 : 0.00,
-
-    // Current pricing margins
-    your_margin_at_current_price: parseFloat(yourMargin.toFixed(2)),
-    your_margin_percent_at_current_price: parseFloat(yourMarginPercent.toFixed(2)),
-
-    // Competitor analysis
-    margin_at_buybox_price: buyboxMargin !== null ? parseFloat(buyboxMargin.toFixed(2)) : null,
-    margin_percent_at_buybox_price: buyboxMarginPercent !== null ? parseFloat(buyboxMarginPercent.toFixed(2)) : null,
-    margin_difference: marginDifference !== null ? parseFloat(marginDifference.toFixed(2)) : null,
-    profit_opportunity: profitOpportunity !== null ? parseFloat(profitOpportunity.toFixed(2)) : null,
-
-    // Recommendations
-    recommended_action: recommendedAction,
-    price_adjustment_needed: buyBoxPrice && buyBoxPrice > 0 ? parseFloat((buyBoxPrice - yourCurrentPrice).toFixed(2)) : null,
-    break_even_price: parseFloat(breakEvenPrice.toFixed(2))
-
-    // REMOVED to reduce payload size (not used by frontend):
-    // currency: 'GBP',
-    // marketplace: 'UK',
-    // min_profitable_price: parseFloat((yourCurrentPrice * 0.8).toFixed(2)),
-    // margin_at_buybox: parseFloat((yourCurrentPrice * 0.3).toFixed(2)),
-    // margin_percent_at_buybox: parseFloat((0.3 + Math.random() * 0.2).toFixed(4)),
-    // category: 'Electronics',
-    // brand: 'MockBrand',
-    // fulfillment_channel: Math.random() > 0.5 ? 'AMAZON' : 'DEFAULT',
-    // merchant_shipping_group: 'UK Shipping',
-    // source: 'mock-api'
-  };
 }
 
 /**

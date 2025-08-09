@@ -134,6 +134,19 @@
 	}
 
 	// Types for buy box management
+	interface CompetitorOffer {
+		seller_id: string;
+		seller_name?: string;
+		listing_price: number;
+		shipping: number | null;
+		is_prime: boolean;
+		is_fba?: boolean;
+		condition?: string;
+		seller_rating?: number | null; // Percentage (0-100)
+		feedback_count?: number | null;
+		shipping_time?: string | null; // e.g., "24h" or "24-48h"
+	}
+
 	interface BuyBoxData {
 		id: string;
 		asin: string;
@@ -195,6 +208,9 @@
 		// your_margin_at_current_price, margin_at_buybox_price,
 		// current_profit_breakdown, buybox_profit_breakdown,
 		// price_adjustment_needed, margin_calculation_version, cost_data_source
+
+		// Competitor intelligence data
+		competitor_offers?: CompetitorOffer[];
 	}
 
 	// State management
@@ -264,6 +280,8 @@
 		match_buybox?: number;
 		hold_price?: number;
 		investigate?: number;
+		no_buybox?: number;
+		low_margin_sales?: number;
 	} = {};
 	let shippingCounts: {
 		prime?: number;
@@ -3471,12 +3489,16 @@
 									/>
 								</th>
 								<th
-									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3 min-w-0"
+									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5 min-w-0"
 									>Product</th
 								>
 								<th
 									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-48 min-w-0"
 									>Price Analysis</th
+								>
+								<th
+									class="py-2 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-80 min-w-0"
+									>Competitor Intelligence</th
 								>
 								{#if showCostBreakdown}
 									<th
@@ -3710,6 +3732,99 @@
 										</div>
 									</td>
 
+									<!-- Competitor Intelligence -->
+									<td class="py-2 px-4">
+										<div class="text-sm">
+											{#if result.competitor_offers && result.competitor_offers.length > 0}
+												<div class="font-medium text-gray-900 mb-2 text-xs">
+													Showing {Math.min(3, result.competitor_offers.length)} lowest priced competitor{result
+														.competitor_offers.length > 1
+														? 's'
+														: ''}
+												</div>
+												<div class="grid gap-1.5">
+													{#each result.competitor_offers.slice(0, 3) as offer, index}
+														<div class="border border-gray-200 rounded px-2 py-1.5 bg-gray-50">
+															<!-- Header with seller ID and fulfillment -->
+															<div class="flex items-center justify-between mb-1">
+																<div class="text-xs font-medium text-gray-700 truncate flex-1 mr-2">
+																	#{index + 1}
+																	{offer.seller_id.substring(0, 10)}
+																</div>
+																{#if offer.is_prime}
+																	<span
+																		class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 whitespace-nowrap"
+																	>
+																		⚡ Prime
+																	</span>
+																{:else}
+																	<span
+																		class="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 whitespace-nowrap"
+																	>
+																		📦 Std
+																	</span>
+																{/if}
+															</div>
+
+															<!-- Price and shipping -->
+															<div class="flex items-baseline justify-between mb-1">
+																<div class="text-sm font-semibold text-blue-700">
+																	£{offer.listing_price.toFixed(2)}
+																</div>
+																{#if offer.shipping && offer.shipping > 0}
+																	<div class="text-xs text-gray-500 ml-2">
+																		+£{offer.shipping.toFixed(2)}
+																	</div>
+																{/if}
+															</div>
+
+															<!-- Seller rating and shipping time -->
+															<div class="flex items-center justify-between text-xs">
+																<div class="flex items-center space-x-2">
+																	{#if offer.seller_rating !== null && offer.seller_rating !== undefined}
+																		<div class="flex items-center">
+																			<span class="text-yellow-500">⭐</span>
+																			<span class="text-gray-600 ml-0.5">
+																				{offer.seller_rating}%
+																			</span>
+																			{#if offer.feedback_count}
+																				<span class="text-gray-500 ml-1">
+																					({offer.feedback_count.toLocaleString()})
+																				</span>
+																			{/if}
+																		</div>
+																	{/if}
+																</div>
+																<div class="flex items-center space-x-1">
+																	{#if offer.shipping_time}
+																		<span class="text-gray-500">
+																			🚚 {offer.shipping_time}
+																		</span>
+																	{/if}
+																	{#if offer.is_fba}
+																		<span class="text-blue-600 font-medium"> FBA </span>
+																	{:else}
+																		<span class="text-green-600 font-medium"> FBM </span>
+																	{/if}
+																</div>
+															</div>
+														</div>
+													{/each}
+												</div>
+												{#if result.competitor_offers.length > 3}
+													<div class="text-xs text-gray-500 italic mt-1.5">
+														+ {result.competitor_offers.length - 3} more
+													</div>
+												{/if}
+											{:else}
+												<div
+													class="text-xs text-gray-500 italic p-2 bg-gray-50 rounded border border-gray-200 text-center"
+												>
+													No competitor data
+												</div>
+											{/if}
+										</div>
+									</td>
 									<!-- Cost Breakdown -->
 									{#if showCostBreakdown}
 										<td class="py-2 px-4">

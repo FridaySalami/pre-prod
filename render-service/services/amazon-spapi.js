@@ -245,7 +245,6 @@ class AmazonSPAPI {
       const yourCurrentTotal = yourCurrentPrice + yourCurrentShipping;
 
       // Determine winner status and opportunity
-      // Winner is determined by Amazon's Buy Box algorithm, not price matching
       const isWinner = buyBoxOffer?.SellerId === yourSellerId;
       const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
 
@@ -256,7 +255,69 @@ class AmazonSPAPI {
       console.log(`Price Gap Debug - Your: ${yourCurrentPrice} (${typeof yourCurrentPrice}), BuyBox: ${buyBoxPrice} (${typeof buyBoxPrice}), Gap: ${priceGap} (${typeof priceGap})`);
       console.log(`Pricing for ${asin}: Your Price: £${yourCurrentPrice}, Buy Box Price: £${buyBoxPrice || 'No Buy Box'}, Gap: £${priceGap.toFixed(2)}`);
 
-      return {
+      // Filter out our own offers - we only want competitor data
+      const YOUR_SELLER_ID = process.env.AMAZON_SELLER_ID || 'A2D8NG39VURSL3';
+      console.log(`🔍 Filtering offers for seller ID: ${YOUR_SELLER_ID}`);
+      console.log(`📋 All offer seller IDs:`, offers.map(o => o.SellerId));
+
+      const competitorOffers = offers.filter(offer => {
+        const isCompetitor = offer.SellerId !== YOUR_SELLER_ID;
+        console.log(`   Seller ${offer.SellerId}: ${isCompetitor ? 'COMPETITOR' : 'YOUR OFFER'} (${offer.SellerId === YOUR_SELLER_ID ? 'FILTERED OUT' : 'KEPT'})`);
+        return isCompetitor;
+      });
+
+      console.log(`🏷️ ASIN ${asin}: Raw offers from Amazon SP-API:`, offers.length);
+      console.log(`👥 Competitor offers (excluding your seller ID ${YOUR_SELLER_ID}):`, competitorOffers.length);
+
+      // Build normalized offers for child table (competitors only)
+      const offersNormalized = competitorOffers.map(offer => ({
+        run_id: runId,
+        asin,
+        sku,
+        seller_id: offer.SellerId || null,
+        seller_name: offer.SellerName || null,
+        listing_price: offer.ListingPrice?.Amount ?? 0,
+        shipping: offer.Shipping?.Amount ?? 0,
+        // Note: 'total' is a generated column - don't include it in insert
+        is_buybox_winner: offer.IsBuyBoxWinner === true,
+        is_prime: offer.PrimeInformation?.IsOfferPrime === true,
+        is_fba: offer.IsFulfilledByAmazon === true,
+        fulfillment_channel: offer.IsFulfilledByAmazon ? 'FBA' : 'FBM',
+        condition: offer.ItemCondition || 'New',
+        captured_at: new Date().toISOString(),
+        raw_offer: offer
+      }));
+
+      if (competitorOffers.length > 0) {
+        console.log(`🔍 Sample competitor offer structure:`, competitorOffers[0] ? {
+          SellerId: competitorOffers[0].SellerId,
+          SellerName: competitorOffers[0].SellerName || 'Not provided',
+          IsBuyBoxWinner: competitorOffers[0].IsBuyBoxWinner,
+          SubCondition: competitorOffers[0].SubCondition,
+          PrimeInformation: competitorOffers[0].PrimeInformation,
+          ShippingTime: competitorOffers[0].ShippingTime
+        } : 'No competitor offers');
+      } else {
+        console.log(`📭 No competitor offers found for ASIN ${asin} (you are the only seller)`);
+      }
+      console.log(`📊 Full response summary:`, {
+        totalOffers: offers.length,
+        yourOffers: offers.length - competitorOffers.length,
+        competitorOffers: competitorOffers.length,
+        competitorSellerIds: competitorOffers.map(o => o.SellerId),
+        buyBoxWinners: offers.filter(o => o.IsBuyBoxWinner).length
+      });
+      console.log(`🎯 Normalized offers created:`, offersNormalized.length);
+      if (offersNormalized.length > 0) {
+        console.log(`📋 Sample offer data:`, {
+          asin: offersNormalized[0].asin,
+          seller_id: offersNormalized[0].seller_id,
+          price: offersNormalized[0].listing_price,
+          is_buybox: offersNormalized[0].is_buybox_winner
+        });
+      }
+
+      const summary = {
         run_id: runId,
         asin: asin,
         sku: sku,
@@ -284,20 +345,10 @@ class AmazonSPAPI {
         price_gap: parseFloat(priceGap.toFixed(2)),
         price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
         pricing_status: isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox'),
-        your_offer_found: !!yourOfferFromApi,
-
-        // REMOVED to reduce payload size (not used by frontend):
-        // currency: buyBoxOffer?.ListingPrice?.CurrencyCode || 'GBP',
-        // marketplace: 'UK',
-        // min_profitable_price: buyBoxPrice * 0.8,
-        // margin_at_buybox: buyBoxPrice * 0.3,
-        // margin_percent_at_buybox: 0.3,
-        // category: 'Unknown',
-        // brand: 'Unknown',
-        // fulfillment_channel: buyBoxOffer?.IsFulfilledByAmazon ? 'AMAZON' : 'DEFAULT',
-        // merchant_shipping_group: 'UK Shipping',
-        // source: 'sp-api'
+        your_offer_found: !!yourOfferFromApi
       };
+
+      return { summary, offers: offersNormalized };
     } catch (error) {
       console.error('Error transforming pricing data:', error);
       throw new Error(`Failed to transform pricing data: ${error.message}`);
@@ -328,19 +379,19 @@ class AmazonSPAPI {
         }
 
         const pricingData = await this.getCompetitivePricing(asin);
-        const transformedData = await this.transformPricingData(pricingData, asin, sku, runId, productTitle);
+        const transformed = await this.transformPricingData(pricingData, asin, sku, runId, productTitle);
 
-        // Enrich with cost calculator data for margin analysis
-        const enrichedData = await this.costCalculator.enrichBuyBoxData(transformedData);
+        // Enrich with cost calculator data for margin analysis (summary only)
+        const enrichedSummary = await this.costCalculator.enrichBuyBoxData(transformed.summary);
 
         // Notify rate limiter of success
         if (rateLimiter) {
           rateLimiter.onRequestSuccess();
         }
 
-        console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedData.competitor_name || 'Unknown'}, margin: ${enrichedData.margin_percent_at_buybox_price || 0}%`);
+        console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedSummary.competitor_name || 'Unknown'}, margin: ${enrichedSummary.margin_percent_at_buybox_price || 0}%`);
 
-        return enrichedData;
+        return { summary: enrichedSummary, offers: transformed.offers };
 
       } catch (error) {
         lastError = error;

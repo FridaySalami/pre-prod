@@ -65,7 +65,7 @@ export async function GET({ url }) {
     // OPTIMIZATION: Only select columns that are actually used in buy-box-manager interface
     // This significantly reduces response size by excluding unused columns
     const selectedColumns = [
-      'id', 'asin', 'sku', 'captured_at',
+      'id', 'asin', 'sku', 'captured_at', 'run_id',
       // Status flags
       'is_winner', 'opportunity_flag',
       // Pricing fields
@@ -233,7 +233,115 @@ export async function GET({ url }) {
       }, { status: 500 });
     }
 
-    // Build total count query with the same filters
+    // Fetch competitor offers for each buybox record
+    console.log(`🔵 [REQ-${requestId}] Starting competitor offers fetch...`);
+    const competitorFetchStartTime = Date.now();
+
+    if (results && results.length > 0) {
+      try {
+        // Get unique run_ids from results
+        const runIds = [...new Set(results.map(r => r.run_id).filter(Boolean))];
+        console.log(`🔵 [REQ-${requestId}] Fetching competitor offers for ${runIds.length} unique run_ids`);
+
+        if (runIds.length > 0) {
+          // Fetch detailed competitor data including raw offer information
+          const { data: competitorOffers, error: competitorError } = await supabaseAdmin
+            .from('buybox_offers')
+            .select('run_id, asin, sku, seller_id, seller_name, listing_price, shipping, is_prime, is_fba, condition, raw_offer')
+            .in('run_id', runIds)
+            .order('listing_price', { ascending: true }) // Order by price to get cheapest first
+            .limit(500); // Limit total competitors to keep response size reasonable
+
+          if (competitorError) {
+            console.error(`🔴 [REQ-${requestId}] Competitor offers error:`, competitorError);
+          } else {
+            console.log(`🔵 [REQ-${requestId}] Fetched ${competitorOffers?.length || 0} competitor offers`);
+
+            // Group competitor offers by run_id + asin (+ sku if available) and limit to top 3 per listing
+            const offersByKey = new Map();
+            competitorOffers?.forEach(offer => {
+              // Create unique key for each ASIN within this run_id
+              const key = `${offer.run_id}_${offer.asin}${offer.sku ? '_' + offer.sku : ''}`;
+
+              if (!offersByKey.has(key)) {
+                offersByKey.set(key, []);
+              }
+
+              // Only keep top 3 competitors per ASIN to reduce data size
+              const currentOffers = offersByKey.get(key);
+              if (currentOffers.length < 3) {
+                // Extract additional data from raw_offer if available
+                let sellerRating = null;
+                let feedbackCount = null;
+                let shippingTime = null;
+                let isPrime = offer.is_prime; // Default to database value
+                let isFba = offer.is_fba; // Default to database value
+
+                if (offer.raw_offer) {
+                  // Extract seller feedback rating
+                  if (offer.raw_offer.SellerFeedbackRating) {
+                    sellerRating = offer.raw_offer.SellerFeedbackRating.SellerPositiveFeedbackRating;
+                    feedbackCount = offer.raw_offer.SellerFeedbackRating.FeedbackCount;
+                  }
+
+                  // Extract shipping time information
+                  if (offer.raw_offer.ShippingTime) {
+                    const shippingTimeData = offer.raw_offer.ShippingTime;
+                    if (shippingTimeData.maximumHours && shippingTimeData.minimumHours) {
+                      if (shippingTimeData.maximumHours === shippingTimeData.minimumHours) {
+                        shippingTime = `${shippingTimeData.maximumHours}h`;
+                      } else {
+                        shippingTime = `${shippingTimeData.minimumHours}-${shippingTimeData.maximumHours}h`;
+                      }
+                    }
+                  }
+
+                  // Extract Prime information from raw data (more reliable than database field)
+                  if (offer.raw_offer.PrimeInformation) {
+                    isPrime = offer.raw_offer.PrimeInformation.IsPrime || offer.raw_offer.PrimeInformation.IsNationalPrime;
+                  }
+
+                  // Extract FBA information from raw data
+                  if (offer.raw_offer.IsFulfilledByAmazon !== undefined) {
+                    isFba = offer.raw_offer.IsFulfilledByAmazon;
+                  }
+                }
+
+                currentOffers.push({
+                  seller_id: offer.seller_id,
+                  seller_name: offer.seller_name,
+                  listing_price: offer.listing_price,
+                  shipping: offer.shipping,
+                  is_prime: isPrime,
+                  is_fba: isFba,
+                  condition: offer.condition,
+                  seller_rating: sellerRating,
+                  feedback_count: feedbackCount,
+                  shipping_time: shippingTime
+                });
+              }
+            });
+
+            // Add competitor offers to each result by matching run_id + asin + sku
+            results = results.map(result => {
+              const key = `${result.run_id}_${result.asin}${result.sku ? '_' + result.sku : ''}`;
+              return {
+                ...result,
+                competitor_offers: offersByKey.get(key) || []
+              };
+            });
+
+            console.log(`🔵 [REQ-${requestId}] Added competitor offers to ${results.length} records (max 3 per ASIN/SKU combination)`);
+          }
+        }
+      } catch (competitorError) {
+        console.error(`🔴 [REQ-${requestId}] Error fetching competitor offers:`, competitorError);
+        // Don't fail the entire request if competitor data fails
+      }
+    }
+
+    const competitorFetchTime = Date.now() - competitorFetchStartTime;
+    console.log(`🔵 [REQ-${requestId}] Competitor offers fetch completed in ${competitorFetchTime}ms`);    // Build total count query with the same filters
     console.log(`🔵 [REQ-${requestId}] Starting count queries...`);
     const countStartTime = Date.now();
 

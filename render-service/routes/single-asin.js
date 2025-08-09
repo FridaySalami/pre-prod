@@ -149,13 +149,17 @@ async function processSingleASIN(asin, jobId) {
       const tempSku = `TEMP-${asin}`;
 
       try {
-        buyBoxData = await amazonAPI.getBuyBoxData(asin, tempSku, jobId, rateLimiter);
+        const result = await amazonAPI.getBuyBoxData(asin, tempSku, jobId, rateLimiter);
 
-        // If we got data, wrap it in an array for consistency
-        if (buyBoxData) {
-          buyBoxData = [buyBoxData];
+        if (result?.summary) {
+          buyBoxData = [result.summary];
         } else {
           buyBoxData = [];
+        }
+
+        // Insert offers into child table if available
+        if (Array.isArray(result?.offers) && result.offers.length > 0 && typeof SupabaseService.insertBuyBoxOffers === 'function') {
+          await SupabaseService.insertBuyBoxOffers(result.offers);
         }
       } catch (apiError) {
         console.error(`Amazon SP-API error for ASIN ${asin}:`, apiError.message);

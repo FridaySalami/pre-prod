@@ -239,6 +239,40 @@ class SupabaseService {
   }
 
   /**
+   * Insert a batch of Buy Box data summaries
+   */
+  async insertBuyBoxDataBatch(records) {
+    const { data, error } = await supabase
+      .from('buybox_data')
+      .insert(records)
+      .select();
+
+    if (error) {
+      throw new Error(`Failed to insert Buy Box data batch: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Insert competitor offers for a run into child table buybox_offers
+   */
+  async insertBuyBoxOffers(offers) {
+    if (!offers || offers.length === 0) return [];
+
+    const { data, error } = await supabase
+      .from('buybox_offers')
+      .insert(offers)
+      .select();
+
+    if (error) {
+      throw new Error(`Failed to insert competitor offers: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
    * Log failed ASIN processing (Legacy method - deprecated)
    */
   async logFailure(runId, asin, sku, errorMessage) {
