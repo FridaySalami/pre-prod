@@ -154,6 +154,12 @@
 			requiredRole: 'user' // Changed from admin to user
 		},
 		{
+			title: 'Pricer Tool',
+			url: '/pricer',
+			icon: 'calculate',
+			requiredRole: 'user'
+		},
+		{
 			type: 'separator'
 		},
 		{
@@ -181,12 +187,6 @@
 			title: 'Schedules',
 			url: '/schedules',
 			icon: 'calendar_today',
-			requiredRole: 'user'
-		},
-		{
-			title: 'Pricer Tool',
-			url: '/pricer',
-			icon: 'calculate',
 			requiredRole: 'user'
 		},
 		{
