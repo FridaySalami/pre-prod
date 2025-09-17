@@ -94,6 +94,10 @@
 	let isSearching = false;
 	let showSearchResults = false;
 
+	// Clear data functionality
+	let isClearingData = false;
+	let currentDataCounts = { buybox_data: 0, buybox_offers: 0, total: 0 };
+
 	// Filters for results
 	let showOnlyOpportunities = false;
 	let showOnlyWinners = false;
@@ -385,6 +389,80 @@
 			isSearching = false;
 		}
 	}
+
+	// Clear Buy Box data tables
+	async function clearBuyBoxData(): Promise<void> {
+		// First get current counts to show in confirmation
+		try {
+			const countResponse = await fetch('/api/buybox/clear');
+			const countData = await countResponse.json();
+
+			if (countResponse.ok && countData.success) {
+				currentDataCounts = countData.counts;
+			}
+		} catch (error) {
+			console.warn('Could not get current data counts:', error);
+		}
+
+		// Show confirmation dialog with current counts
+		const confirmMessage = `Are you sure you want to clear ALL Buy Box data?
+
+This will permanently delete:
+• ${currentDataCounts.buybox_data} Buy Box results
+• ${currentDataCounts.buybox_offers} competitor offers
+• Total: ${currentDataCounts.total} records
+
+This action cannot be undone!`;
+
+		if (!confirm(confirmMessage)) {
+			return;
+		}
+
+		isClearingData = true;
+		errorMessage = '';
+
+		try {
+			console.log('🗑️ Starting Buy Box data clear operation...');
+
+			const response = await fetch('/api/buybox/clear', {
+				method: 'DELETE',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			const data = await response.json();
+
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to clear Buy Box data');
+			}
+
+			console.log('✅ Buy Box data cleared successfully:', data);
+
+			// Show success message
+			alert(`Buy Box data cleared successfully!
+
+Remaining records:
+• buybox_data: ${data.remainingRecords.buybox_data}
+• buybox_offers: ${data.remainingRecords.buybox_offers}
+
+You can now start fresh scans without old data.`);
+
+			// Refresh the jobs to reflect the cleared state
+			await fetchJobs();
+
+			// If a job was selected, refresh its results
+			if (selectedJob) {
+				await fetchJobResults(selectedJob.id);
+			}
+		} catch (error: unknown) {
+			console.error('Error clearing Buy Box data:', error);
+			errorMessage =
+				error instanceof Error ? error.message : 'An error occurred while clearing Buy Box data';
+		} finally {
+			isClearingData = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -425,7 +503,7 @@
 
 			{#if scanInProgress}
 				<button
-					class="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded"
+					class="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded mr-2"
 					on:click={() => {
 						const runningJob = jobs.find((job) => job.status === 'running');
 						if (runningJob) {
@@ -436,6 +514,19 @@
 					Cancel Scan
 				</button>
 			{/if}
+
+			<button
+				class="bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded"
+				on:click={clearBuyBoxData}
+				disabled={isClearingData || scanInProgress}
+				title="Clear all Buy Box data from database"
+			>
+				{#if isClearingData}
+					Clearing Data...
+				{:else}
+					🗑️ Clear All Data
+				{/if}
+			</button>
 		</div>
 
 		<div>
