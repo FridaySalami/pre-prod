@@ -529,6 +529,9 @@
 	let selectedItems = new Set<string>(); // Track selected item IDs for bulk actions
 	let filtersExpanded = false;
 
+	// CSV Export State
+	let isExportingCSV = false;
+
 	// Production Match Buy Box State
 	let matchBuyBoxInProgress = new Set<string>(); // Track which Match Buy Box operations are running
 	let matchBuyBoxResults = new Map<string, any>(); // Store Match Buy Box results for each ASIN
@@ -2583,6 +2586,163 @@
 		checkActiveFilters();
 	}
 
+	// CSV Export Functionality
+	async function exportToCSV(): Promise<void> {
+		if (isExportingCSV) return;
+
+		isExportingCSV = true;
+
+		try {
+			console.log('📊 Starting CSV export...');
+
+			// Use the currently filtered data
+			const dataToExport = filteredData;
+
+			if (!dataToExport || dataToExport.length === 0) {
+				showWarningToast('No Data', 'No data available to export. Try adjusting your filters.');
+				return;
+			}
+
+			console.log(`📊 Exporting ${dataToExport.length} records to CSV`);
+
+			// Define CSV columns with all the important fields
+			const columns = [
+				{ key: 'sku', header: 'SKU' },
+				{ key: 'asin', header: 'ASIN' },
+				{ key: 'item_name', header: 'Product Name' },
+				{ key: 'your_current_price', header: 'Your Current Price' },
+				{ key: 'buybox_price', header: 'Buy Box Price' },
+				{ key: 'price_gap', header: 'Price Gap' },
+				{ key: 'is_winner', header: 'Buy Box Winner' },
+				{ key: 'opportunity_flag', header: 'Opportunity' },
+				{ key: 'your_margin_percent_at_current_price', header: 'Current Margin %' },
+				{ key: 'margin_percent_at_buybox_price', header: 'Buy Box Margin %' },
+				{ key: 'margin_difference', header: 'Margin Difference' },
+				{ key: 'current_actual_profit', header: 'Current Profit' },
+				{ key: 'buybox_actual_profit', header: 'Buy Box Profit' },
+				{ key: 'profit_opportunity', header: 'Profit Opportunity' },
+				{ key: 'recommended_action', header: 'Recommendation' },
+				{ key: 'break_even_price', header: 'Break Even Price' },
+				{ key: 'your_cost', header: 'Product Cost' },
+				{ key: 'your_shipping_cost', header: 'Shipping Cost' },
+				{ key: 'your_material_total_cost', header: 'Material Cost' },
+				{ key: 'your_box_cost', header: 'Box Cost' },
+				{ key: 'your_vat_amount', header: 'VAT Amount' },
+				{ key: 'your_fragile_charge', header: 'Fragile Charge' },
+				{ key: 'total_operating_cost', header: 'Total Operating Cost' },
+				{ key: 'merchant_shipping_group', header: 'Shipping Type' },
+				{ key: 'captured_at', header: 'Last Updated' },
+				{ key: 'last_price_update', header: 'Last Price Update' },
+				{ key: 'update_source', header: 'Update Source' }
+			];
+
+			// Create CSV header
+			const csvHeader = columns.map((col) => col.header).join(',');
+
+			// Create CSV rows
+			const csvRows = dataToExport.map((item) => {
+				return columns
+					.map((col) => {
+						let value = item[col.key as keyof BuyBoxData];
+
+						// Special handling for price_gap - calculate if missing
+						if (col.key === 'price_gap') {
+							if (value === null || value === undefined) {
+								// Calculate price gap: buybox price - our price (negative = we're higher/less competitive)
+								const ourPrice = item.your_current_price;
+								const buyboxPrice = item.buybox_price || item.price; // Try buybox_price first, then fall back to price
+
+								if (ourPrice !== null && buyboxPrice !== null) {
+									value = buyboxPrice - ourPrice; // Inverted: negative when we're higher priced
+								} else {
+									return '';
+								}
+							}
+						}
+
+						// Handle different data types
+						if (value === null || value === undefined) {
+							return '';
+						}
+
+						// Format booleans
+						if (typeof value === 'boolean') {
+							return value ? 'Yes' : 'No';
+						}
+
+						// Format numbers (round to 2 decimal places)
+						if (typeof value === 'number') {
+							return value.toFixed(2);
+						}
+
+						// Format dates
+						if (col.key === 'captured_at' || col.key === 'last_price_update') {
+							try {
+								const date = new Date(value as string);
+								return date.toLocaleString('en-GB', {
+									year: 'numeric',
+									month: '2-digit',
+									day: '2-digit',
+									hour: '2-digit',
+									minute: '2-digit'
+								});
+							} catch {
+								return value as string;
+							}
+						}
+
+						// Escape commas and quotes in text fields
+						const stringValue = String(value);
+						if (
+							stringValue.includes(',') ||
+							stringValue.includes('"') ||
+							stringValue.includes('\n')
+						) {
+							return `"${stringValue.replace(/"/g, '""')}"`;
+						}
+
+						return stringValue;
+					})
+					.join(',');
+			});
+
+			// Combine header and rows
+			const csvContent = [csvHeader, ...csvRows].join('\n');
+
+			// Create and download file
+			const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+			const link = document.createElement('a');
+
+			// Generate filename with timestamp and filter info
+			const timestamp = new Date().toISOString().split('T')[0];
+			const filterInfo = activePresetFilter || (hasActiveFilters ? 'filtered' : 'all');
+			const filename = `buybox-data-${filterInfo}-${timestamp}.csv`;
+
+			link.href = URL.createObjectURL(blob);
+			link.download = filename;
+			link.style.display = 'none';
+
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+
+			// Clean up the blob URL
+			URL.revokeObjectURL(link.href);
+
+			console.log(`✅ CSV export completed: ${filename}`);
+			showSuccessToast(
+				'Export Successful',
+				`Exported ${dataToExport.length} records to ${filename}`
+			);
+		} catch (error: unknown) {
+			console.error('❌ CSV export failed:', error);
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			showErrorToast('Export Failed', `Failed to export CSV: ${errorMessage}`);
+		} finally {
+			isExportingCSV = false;
+		}
+	}
+
 	// New filter event handlers for FilterSidebar
 	function handleFilterChange(event: CustomEvent) {
 		const { filterType, value } = event.detail;
@@ -2979,6 +3139,19 @@
 						on:click={bulkScanTop100}
 					>
 						🚀 Top 100
+					</button>
+
+					<button
+						class="bg-purple-600 hover:bg-purple-700 text-white py-1.5 px-3 rounded text-sm flex items-center gap-1"
+						on:click={exportToCSV}
+						disabled={isExportingCSV || !filteredData || filteredData.length === 0}
+						title="Export current filtered data to CSV"
+					>
+						{#if isExportingCSV}
+							⏳ Exporting...
+						{:else}
+							📊 Export CSV ({filteredData?.length || 0})
+						{/if}
 					</button>
 
 					{#if customPrices.size > 0}
