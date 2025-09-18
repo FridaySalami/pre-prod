@@ -233,7 +233,7 @@
 	// Search and filters
 	let searchTerm = ''; // Renamed from searchQuery for FilterSidebar compatibility
 	let categoryFilter = 'all'; // all, winners, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
-	let shippingFilter = 'all'; // all, prime, standard
+	let shippingFilter = 'all'; // all, prime, standard, oneday
 	let dateRange = 'all'; // all, today, yesterday, week, month
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, price_gap_asc, price_gap_desc, sku_asc, sku_desc
 	let showOnlyWithMarginData = false;
@@ -286,6 +286,7 @@
 	let shippingCounts: {
 		prime?: number;
 		standard?: number;
+		oneday?: number;
 	} = {};
 
 	// Calculate dynamic counts from buyboxData
@@ -400,8 +401,13 @@
 					(item) =>
 						item.merchant_shipping_group &&
 						(item.merchant_shipping_group.toLowerCase().includes('standard') ||
-							item.merchant_shipping_group.toLowerCase().includes('uk shipping') ||
-							!item.merchant_shipping_group.toLowerCase().includes('prime'))
+							item.merchant_shipping_group.toLowerCase().includes('uk shipping')) &&
+						!item.merchant_shipping_group.toLowerCase().includes('one day')
+				).length,
+				oneday: buyboxData.filter(
+					(item) =>
+						item.merchant_shipping_group &&
+						item.merchant_shipping_group.toLowerCase().includes('one day')
 				).length
 			};
 		}
@@ -590,6 +596,11 @@
 			name: 'Standard Shipping',
 			emoji: '📦',
 			filters: { shippingFilter: 'standard', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'One Day Shipping',
+			emoji: '🚀',
+			filters: { shippingFilter: 'oneday', sortBy: 'profit_desc' }
 		}
 	];
 
@@ -2000,6 +2011,11 @@
 				break;
 			case 'standard':
 				filtered = filtered.filter((item) => item.merchant_shipping_group === 'UK Shipping');
+				break;
+			case 'oneday':
+				filtered = filtered.filter(
+					(item) => item.merchant_shipping_group === 'UK shipping One day'
+				);
 				break;
 			// 'all' case - no filtering needed
 		}
@@ -3732,12 +3748,16 @@
 														class={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
 															result.merchant_shipping_group === 'Nationwide Prime'
 																? 'bg-blue-100 text-blue-800'
-																: 'bg-gray-100 text-gray-800'
+																: result.merchant_shipping_group === 'UK shipping One day'
+																	? 'bg-orange-100 text-orange-800'
+																	: 'bg-gray-100 text-gray-800'
 														}`}
 													>
 														{result.merchant_shipping_group === 'Nationwide Prime'
 															? '⚡ Prime'
-															: '📦 Standard'}
+															: result.merchant_shipping_group === 'UK shipping One day'
+																? '🚀 One Day'
+																: '📦 Standard'}
 													</span>
 												</div>
 											{/if}

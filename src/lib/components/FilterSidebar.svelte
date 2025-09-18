@@ -18,6 +18,7 @@
 	interface ShippingCounts {
 		prime?: number;
 		standard?: number;
+		oneday?: number;
 	}
 
 	export let searchTerm = '';
@@ -78,7 +79,8 @@
 	$: shippingOptions = [
 		{ value: 'all', label: 'All Shipping', count: totalCount },
 		{ value: 'prime', label: 'Prime Shipping', count: shippingCounts.prime || 0 },
-		{ value: 'standard', label: 'Standard Shipping', count: shippingCounts.standard || 0 }
+		{ value: 'standard', label: 'Standard Shipping', count: shippingCounts.standard || 0 },
+		{ value: 'oneday', label: 'One Day Shipping', count: shippingCounts.oneday || 0 }
 	];
 
 	// Date range options
