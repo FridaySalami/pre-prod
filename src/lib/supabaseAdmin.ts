@@ -1,15 +1,21 @@
 // Server-side Supabase client with service role key for admin operations
 import { createClient } from '@supabase/supabase-js';
 import { browser } from '$app/environment';
+import { 
+  PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY 
+} from '$env/static/public';
+import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
 
-// Use runtime environment variables to avoid build-time dependency
+// Use SvelteKit's environment variable system
 const getSupabaseConfig = () => {
   if (browser) {
     throw new Error('supabaseAdmin should only be used on the server');
   }
 
-  const url = process.env.PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.PRIVATE_SUPABASE_SERVICE_KEY;
+  // Use SvelteKit static imports for environment variables
+  const url = PUBLIC_SUPABASE_URL;
+  const serviceKey = PRIVATE_SUPABASE_SERVICE_KEY;
 
   if (!url || !serviceKey) {
     throw new Error("Missing Supabase server configuration. Ensure PUBLIC_SUPABASE_URL and PRIVATE_SUPABASE_SERVICE_KEY are set.");
