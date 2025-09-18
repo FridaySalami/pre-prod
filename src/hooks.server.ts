@@ -45,7 +45,8 @@ const ROUTE_PROTECTION = {
   // Routes that support API key authentication (for external services like Make.com)
   apiKeySupported: [
     '/api/linnworks',
-    '/api/upload'
+    '/api/upload',
+    '/api/buybox'
   ],
 
   // Routes requiring basic authentication
