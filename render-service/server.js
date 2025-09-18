@@ -18,13 +18,14 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const bulkScanRoute = require('./routes/bulk-scan');
 const singleAsinRoute = require('./routes/single-asin');
 const weeklyComparisonRoute = require('./routes/weekly-comparison');
+const healthRoute = require('./routes/health');
 const jobStatusRoute = require('./routes/job-status');
 const jobFailuresRoute = require('./routes/job-failures');
 const jobResultsRoute = require('./routes/job-results');
-const healthRoute = require('./routes/health');
-const debugRoute = require('./routes/debug');
 const livePricingRoute = require('./routes/live-pricing');
 const buyboxRecordRoute = require('./routes/buybox-record');
+const debugRoute = require('./routes/debug');
+const emergencyRoute = require('./routes/emergency');
 const { SupabaseService } = require('./services/supabase-client');
 
 // Create Express app
@@ -53,6 +54,7 @@ app.use('/api/job-results', jobResultsRoute);
 app.use('/api/live-pricing', livePricingRoute);
 app.use('/api', buyboxRecordRoute);
 app.use('/api/debug', debugRoute);
+app.use('/api/emergency', emergencyRoute.router);
 
 // Root endpoint
 app.get('/', (req, res) => {
