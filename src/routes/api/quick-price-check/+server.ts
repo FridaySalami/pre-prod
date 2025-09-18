@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
     try {
       // Use your existing live pricing update service to get fresh data
-      const updateResponse = await fetch(`http://localhost:3001/api/live-pricing/update`, {
+      const updateResponse = await fetch(`https://buy-box-render-service-4603.onrender.com/api/live-pricing/update`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -28,7 +28,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
         console.log('📊 Live pricing update response:', updateData);
 
         // Now fetch the updated record from your buybox data
-        const recordResponse = await fetch(`http://localhost:3001/api/buybox-data/87bc5e35-106f-4a1a-a54f-7de4ddc2c004`);
+        const recordResponse = await fetch(`https://buy-box-render-service-4603.onrender.com/api/buybox-data/87bc5e35-106f-4a1a-a54f-7de4ddc2c004`);
 
         if (recordResponse.ok) {
           const recordData = await recordResponse.json();

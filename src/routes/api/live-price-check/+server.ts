@@ -58,7 +58,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
       // Fallback: Try to use the existing buybox pricing service
       try {
-        const response = await fetch(`http://localhost:3001/api/live-pricing/check?asin=${asin}`);
+        const response = await fetch(`https://buy-box-render-service-4603.onrender.com/api/live-pricing/check?asin=${asin}`);
         if (response.ok) {
           const fallbackData = await response.json();
           return json({

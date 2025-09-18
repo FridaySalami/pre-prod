@@ -106,7 +106,8 @@
 			</div>
 			<div class="card-content">
 				<div class="code-block">
-					{currentOrigin || 'http://localhost:3001'}/api/amazon/oauth/callback
+					{currentOrigin ||
+						'https://buy-box-render-service-4603.onrender.com'}/api/amazon/oauth/callback
 				</div>
 				<p class="help-text">
 					Go to your Amazon Developer Console → Your App → Login with Amazon → Web Settings →

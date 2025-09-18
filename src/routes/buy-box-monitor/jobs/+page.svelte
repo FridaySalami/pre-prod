@@ -235,19 +235,22 @@
 		try {
 			console.log(`Starting new scan with optimized render service endpoint`);
 
-			// Use the local render service endpoint for data extraction
-			const response = await fetch('http://localhost:3001/api/bulk-scan/start', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					source: `ui_manual_scan_${new Date().toISOString().split('T')[0]}`,
-					filterType: 'active',
-					maxAsins: null, // Process all active ASINs
-					notes: `Manual scan started from UI at ${new Date().toLocaleString()}`
-				})
-			});
+			// Use the Render service endpoint for data extraction
+			const response = await fetch(
+				'https://buy-box-render-service-4603.onrender.com/api/bulk-scan/start',
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						source: `ui_manual_scan_${new Date().toISOString().split('T')[0]}`,
+						filterType: 'active',
+						maxAsins: null, // Process all active ASINs
+						notes: `Manual scan started from UI at ${new Date().toLocaleString()}`
+					})
+				}
+			);
 
 			const data = await response.json();
 
@@ -572,9 +575,7 @@ You can now start fresh scans without old data.`);
 				<div>📊 <strong>Advanced Rate Limiting</strong></div>
 				<div>� <strong>No Time Limits - Full Data Export</strong></div>
 			</div>
-			<p class="text-xs text-blue-600 mt-2">
-				Running locally on localhost:3001 - unlimited scan duration
-			</p>
+			<p class="text-xs text-blue-600 mt-2">Running on Render service - unlimited scan duration</p>
 		</div>
 	</div>
 

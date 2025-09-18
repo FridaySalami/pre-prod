@@ -2222,16 +2222,19 @@
 		console.log(`🔄 Fetching data for ASIN: ${asin}`);
 
 		try {
-			const response = await fetch(`http://localhost:3001/api/single-asin/${asin}`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					source: `ui_single_asin_${new Date().toISOString().split('T')[0]}`,
-					notes: `Single ASIN fetch from Best Sellers view at ${new Date().toLocaleString()}`
-				})
-			});
+			const response = await fetch(
+				`https://buy-box-render-service-4603.onrender.com/api/single-asin/${asin}`,
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						source: `ui_single_asin_${new Date().toISOString().split('T')[0]}`,
+						notes: `Single ASIN fetch from Best Sellers view at ${new Date().toLocaleString()}`
+					})
+				}
+			);
 
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
@@ -2263,18 +2266,21 @@
 		console.log(`🚀 Starting bulk scan for ${top100ASINs.length} top ASINs`);
 
 		try {
-			const response = await fetch(`http://localhost:3001/api/bulk-scan/start`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					source: `ui_bulk_top100_${new Date().toISOString().split('T')[0]}`,
-					filterType: 'custom',
-					customAsins: top100ASINs,
-					notes: `Bulk scan of top 100 ASINs from Best Sellers view at ${new Date().toLocaleString()}`
-				})
-			});
+			const response = await fetch(
+				`https://buy-box-render-service-4603.onrender.com/api/bulk-scan/start`,
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						source: `ui_bulk_top100_${new Date().toISOString().split('T')[0]}`,
+						filterType: 'custom',
+						customAsins: top100ASINs,
+						notes: `Bulk scan of top 100 ASINs from Best Sellers view at ${new Date().toLocaleString()}`
+					})
+				}
+			);
 
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
@@ -2313,7 +2319,9 @@
 			console.log(`🔄 Polling bulk scan status (${pollCount}/${maxPolls})...`);
 
 			try {
-				const response = await fetch(`http://localhost:3001/api/bulk-scan/status/${jobId}`);
+				const response = await fetch(
+					`https://buy-box-render-service-4603.onrender.com/api/bulk-scan/status/${jobId}`
+				);
 				if (!response.ok) {
 					throw new Error(`HTTP error! status: ${response.status}`);
 				}
