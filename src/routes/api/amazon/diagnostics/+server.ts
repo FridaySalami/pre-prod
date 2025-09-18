@@ -1,6 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { AMAZON_CLIENT_ID, AMAZON_CLIENT_SECRET, AMAZON_REFRESH_TOKEN, AMAZON_AWS_ACCESS_KEY_ID, AMAZON_AWS_SECRET_ACCESS_KEY } from '$env/static/private';
+
+// Use runtime environment variables to avoid build-time dependency
+const getAmazonConfig = () => {
+  return {
+    clientId: process.env.AMAZON_CLIENT_ID,
+    clientSecret: process.env.AMAZON_CLIENT_SECRET,
+    refreshToken: process.env.AMAZON_REFRESH_TOKEN,
+    awsAccessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID,
+    awsSecretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY
+  };
+};
 
 interface DiagnosticResult {
   status: 'pass' | 'fail' | 'warning';
@@ -26,12 +36,13 @@ interface DiagnosticReport {
 }
 
 async function testEnvironmentVariables(): Promise<DiagnosticResult> {
+  const config = getAmazonConfig();
   const required = {
-    AMAZON_CLIENT_ID,
-    AMAZON_CLIENT_SECRET,
-    AMAZON_REFRESH_TOKEN,
-    AMAZON_AWS_ACCESS_KEY_ID,
-    AMAZON_AWS_SECRET_ACCESS_KEY
+    AMAZON_CLIENT_ID: config.clientId,
+    AMAZON_CLIENT_SECRET: config.clientSecret,
+    AMAZON_REFRESH_TOKEN: config.refreshToken,
+    AMAZON_AWS_ACCESS_KEY_ID: config.awsAccessKeyId,
+    AMAZON_AWS_SECRET_ACCESS_KEY: config.awsSecretAccessKey
   };
 
   const missing = Object.entries(required).filter(([_, value]) => !value);
@@ -46,13 +57,13 @@ async function testEnvironmentVariables(): Promise<DiagnosticResult> {
 
   // Check if credentials look valid
   const issues = [];
-  if (!AMAZON_CLIENT_ID?.startsWith('amzn1.application-oa2-client.')) {
+  if (!config.clientId?.startsWith('amzn1.application-oa2-client.')) {
     issues.push('AMAZON_CLIENT_ID format appears invalid');
   }
-  if (AMAZON_REFRESH_TOKEN && !AMAZON_REFRESH_TOKEN.startsWith('Atzr|')) {
+  if (config.refreshToken && !config.refreshToken.startsWith('Atzr|')) {
     issues.push('AMAZON_REFRESH_TOKEN format appears invalid');
   }
-  if (AMAZON_AWS_ACCESS_KEY_ID && AMAZON_AWS_ACCESS_KEY_ID.length !== 20) {
+  if (config.awsAccessKeyId && config.awsAccessKeyId.length !== 20) {
     issues.push('AMAZON_AWS_ACCESS_KEY_ID length appears invalid');
   }
 
@@ -68,16 +79,18 @@ async function testEnvironmentVariables(): Promise<DiagnosticResult> {
     status: 'pass',
     message: 'All required environment variables are present and appear valid',
     details: {
-      amazonClientId: AMAZON_CLIENT_ID?.substring(0, 20) + '...',
-      hasRefreshToken: !!AMAZON_REFRESH_TOKEN,
-      awsAccessKeyId: AMAZON_AWS_ACCESS_KEY_ID?.substring(0, 10) + '...'
+      amazonClientId: config.clientId?.substring(0, 20) + '...',
+      hasRefreshToken: !!config.refreshToken,
+      awsAccessKeyId: config.awsAccessKeyId?.substring(0, 10) + '...'
     }
   };
 }
 
 async function testOAuthAndTokenExchange(): Promise<DiagnosticResult> {
   try {
-    if (!AMAZON_REFRESH_TOKEN) {
+    const config = getAmazonConfig();
+
+    if (!config.refreshToken) {
       return {
         status: 'fail',
         message: 'No refresh token available',
@@ -92,9 +105,9 @@ async function testOAuthAndTokenExchange(): Promise<DiagnosticResult> {
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        refresh_token: AMAZON_REFRESH_TOKEN,
-        client_id: AMAZON_CLIENT_ID,
-        client_secret: AMAZON_CLIENT_SECRET
+        refresh_token: config.refreshToken || '',
+        client_id: config.clientId || '',
+        client_secret: config.clientSecret || ''
       })
     });
 
@@ -130,6 +143,8 @@ async function testOAuthAndTokenExchange(): Promise<DiagnosticResult> {
 
 async function testAWSCredentials(): Promise<DiagnosticResult> {
   try {
+    const config = getAmazonConfig();
+
     // Test AWS credentials by making a simple STS call
     const crypto = await import('crypto');
 
@@ -150,14 +165,14 @@ async function testAWSCredentials(): Promise<DiagnosticResult> {
     const credential_scope = `${date}/${region}/${service}/aws4_request`;
     const string_to_sign = `${algorithm}\n${timestamp}\n${credential_scope}\n${crypto.createHash('sha256').update(canonical_request).digest('hex')}`;
 
-    const kDate = crypto.createHmac('sha256', 'AWS4' + AMAZON_AWS_SECRET_ACCESS_KEY).update(date).digest();
+    const kDate = crypto.createHmac('sha256', 'AWS4' + config.awsSecretAccessKey).update(date).digest();
     const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
     const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
     const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
 
     const signature = crypto.createHmac('sha256', kSigning).update(string_to_sign).digest('hex');
 
-    const authorization = `${algorithm} Credential=${AMAZON_AWS_ACCESS_KEY_ID}/${credential_scope}, SignedHeaders=host;x-amz-date, Signature=${signature}`;
+    const authorization = `${algorithm} Credential=${config.awsAccessKeyId}/${credential_scope}, SignedHeaders=host;x-amz-date, Signature=${signature}`;
 
     const response = await fetch(`https://${host}/?${querystring}`, {
       method: 'GET',
@@ -201,6 +216,7 @@ async function testAWSCredentials(): Promise<DiagnosticResult> {
 
 async function testSpApiEndpoint(endpoint: string, accessToken: string): Promise<DiagnosticResult> {
   try {
+    const config = getAmazonConfig();
     const crypto = await import('crypto');
 
     const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
@@ -220,14 +236,14 @@ async function testSpApiEndpoint(endpoint: string, accessToken: string): Promise
     const credential_scope = `${date}/${region}/${service}/aws4_request`;
     const string_to_sign = `${algorithm}\n${timestamp}\n${credential_scope}\n${crypto.createHash('sha256').update(canonical_request).digest('hex')}`;
 
-    const kDate = crypto.createHmac('sha256', 'AWS4' + AMAZON_AWS_SECRET_ACCESS_KEY).update(date).digest();
+    const kDate = crypto.createHmac('sha256', 'AWS4' + config.awsSecretAccessKey).update(date).digest();
     const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
     const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
     const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
 
     const signature = crypto.createHmac('sha256', kSigning).update(string_to_sign).digest('hex');
 
-    const authorization = `${algorithm} Credential=${AMAZON_AWS_ACCESS_KEY_ID}/${credential_scope}, SignedHeaders=host;x-amz-access-token;x-amz-date, Signature=${signature}`;
+    const authorization = `${algorithm} Credential=${config.awsAccessKeyId}/${credential_scope}, SignedHeaders=host;x-amz-access-token;x-amz-date, Signature=${signature}`;
 
     const response = await fetch(`https://${host}${endpoint}`, {
       method: 'GET',
@@ -343,6 +359,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   } else if (report.oauth.status === 'pass') {
     // Get fresh access token
     try {
+      const config = getAmazonConfig();
+
       const tokenResponse = await fetch('https://api.amazon.com/auth/o2/token', {
         method: 'POST',
         headers: {
@@ -350,9 +368,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
         },
         body: new URLSearchParams({
           grant_type: 'refresh_token',
-          refresh_token: AMAZON_REFRESH_TOKEN,
-          client_id: AMAZON_CLIENT_ID,
-          client_secret: AMAZON_CLIENT_SECRET
+          refresh_token: config.refreshToken || '',
+          client_id: config.clientId || '',
+          client_secret: config.clientSecret || ''
         })
       });
 
