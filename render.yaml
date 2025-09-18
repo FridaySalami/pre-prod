@@ -11,3 +11,16 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+
+  - type: cron
+    name: buy-box-scheduler
+    env: node
+    rootDir: render-service
+    buildCommand: npm install
+    startCommand: node scheduler.js
+    schedule: "0 4 * * *"  # Daily at 4 AM GMT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RENDER_SERVICE_URL
+        value: https://buy-box-render-service-4603.onrender.com
