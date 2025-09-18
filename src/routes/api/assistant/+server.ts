@@ -1,7 +1,15 @@
 import { json, error } from '@sveltejs/kit';
 import { OpenAI } from 'openai';
-import { OPENAI_API_KEY } from '$env/static/private';
 import type { RequestHandler } from './$types';
+
+// Use runtime environment variables to avoid build-time dependency
+const getOpenAIClient = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY environment variable is required');
+  }
+  return new OpenAI({ apiKey });
+};
 
 // Define the tools/functions the assistant can use
 const tools = [
@@ -367,13 +375,7 @@ export const POST: RequestHandler = async ({ request }) => {
   try {
     const { message, analyticsData } = await request.json();
 
-    if (!OPENAI_API_KEY) {
-      throw error(500, 'OpenAI API key not configured');
-    }
-
-    const openai = new OpenAI({
-      apiKey: OPENAI_API_KEY
-    });
+    const openai = getOpenAIClient();
 
     if (!message) {
       throw error(400, 'Message is required');
