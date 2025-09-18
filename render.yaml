@@ -3,8 +3,9 @@ services:
   - type: web
     name: buy-box-render-service
     env: node
+    rootDir: render-service
     buildCommand: npm install
-    startCommand: node render-service/server.js
+    startCommand: node server.js
     healthCheckPath: /health
     autoDeploy: false
     envVars:
