@@ -4,6 +4,8 @@
 	// Type definitions for dynamic counts
 	interface CategoryCounts {
 		winners?: number;
+		secure_winners?: number;
+		rotation_winners?: number;
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
@@ -41,6 +43,16 @@
 	$: categories = [
 		{ value: 'all', label: 'All Categories', count: totalCount },
 		{ value: 'winners', label: 'Buy Box Winners', count: categoryCounts.winners || 0 },
+		{
+			value: 'secure_winners',
+			label: 'Secure Winners (Price Advantage)',
+			count: categoryCounts.secure_winners || 0
+		},
+		{
+			value: 'rotation_winners',
+			label: 'Rotation Winners (Equal Price)',
+			count: categoryCounts.rotation_winners || 0
+		},
 		{ value: 'losers', label: 'Buy Box Losers', count: categoryCounts.losers || 0 },
 		{
 			value: 'small_gap_losers',

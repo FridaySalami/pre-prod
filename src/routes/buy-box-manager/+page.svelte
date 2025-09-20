@@ -232,7 +232,7 @@
 
 	// Search and filters
 	let searchTerm = ''; // Renamed from searchQuery for FilterSidebar compatibility
-	let categoryFilter = 'all'; // all, winners, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
+	let categoryFilter = 'all'; // all, winners, secure_winners, rotation_winners, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
 	let shippingFilter = 'all'; // all, prime, standard, oneday
 	let dateRange = 'all'; // all, today, yesterday, week, month
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, price_gap_asc, price_gap_desc, sku_asc, sku_desc
@@ -271,6 +271,8 @@
 	// Dynamic filter counts based on actual data
 	let categoryCounts: {
 		winners?: number;
+		secure_winners?: number;
+		rotation_winners?: number;
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
@@ -341,6 +343,24 @@
 			categoryCounts = {
 				winners: buyboxData.filter((item) => item.is_winner === true && item.buybox_price !== null)
 					.length,
+				secure_winners: buyboxData.filter((item) => {
+					// Secure winners: You win AND your price is lower than Buy Box (price advantage)
+					return (
+						item.is_winner &&
+						item.buybox_price !== null &&
+						item.your_current_price &&
+						item.your_current_price < item.buybox_price
+					);
+				}).length,
+				rotation_winners: buyboxData.filter((item) => {
+					// Rotation winners: You win BUT prices are equal (Buy Box rotation scenario)
+					return (
+						item.is_winner &&
+						item.buybox_price !== null &&
+						item.your_current_price &&
+						Math.abs(item.your_current_price - item.buybox_price) < 0.01
+					); // Within 1p
+				}).length,
 				losers: buyboxData.filter((item) => item.is_winner === false && item.buybox_price !== null)
 					.length,
 				small_gap_losers: buyboxData.filter((item) => {
@@ -586,6 +606,16 @@
 			name: 'Winning Products',
 			emoji: '🏆',
 			filters: { categoryFilter: 'winners', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'Secure Wins',
+			emoji: '🛡️',
+			filters: { categoryFilter: 'secure_winners', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'Rotation Wins',
+			emoji: '🔄',
+			filters: { categoryFilter: 'rotation_winners', sortBy: 'profit_desc' }
 		},
 		{
 			name: 'Prime Shipping',
@@ -1938,6 +1968,26 @@
 		switch (categoryFilter) {
 			case 'winners':
 				filtered = filtered.filter((item) => item.is_winner && item.buybox_price !== null);
+				break;
+			case 'secure_winners':
+				filtered = filtered.filter((item) => {
+					return (
+						item.is_winner &&
+						item.buybox_price !== null &&
+						item.your_current_price !== null &&
+						item.your_current_price < item.buybox_price
+					);
+				});
+				break;
+			case 'rotation_winners':
+				filtered = filtered.filter((item) => {
+					return (
+						item.is_winner &&
+						item.buybox_price !== null &&
+						item.your_current_price !== null &&
+						item.your_current_price === item.buybox_price
+					);
+				});
 				break;
 			case 'losers':
 				filtered = filtered.filter((item) => !item.is_winner && item.buybox_price !== null);
