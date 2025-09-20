@@ -611,6 +611,50 @@ class SupabaseService {
       return null;
     }
   }
+
+  /**
+   * Upsert pricing data in batch for efficiency during bulk scans
+   * Uses existing amazon_listings table
+   */
+  async upsertPricingDataBatch(pricingUpdates) {
+    if (!pricingUpdates || pricingUpdates.length === 0) {
+      console.log('📊 No pricing updates to process');
+      return [];
+    }
+
+    console.log(`📊 Upserting ${pricingUpdates.length} pricing records to amazon_listings table...`);
+
+    try {
+      // Transform pricing updates to match amazon_listings table structure
+      const amazonListingsUpdates = pricingUpdates.map(update => ({
+        seller_sku: update.sku,
+        item_name: update.item_name || `Product ${update.asin}`,
+        price: update.current_price,
+        merchant_shipping_group: update.fulfillment_channel === 'FBA' ? 'FBA' : 'Standard',
+        status: update.status || 'active',
+        updated_at: new Date().toISOString()
+      }));
+
+      const { data, error } = await supabase
+        .from('amazon_listings')
+        .upsert(amazonListingsUpdates, {
+          onConflict: 'seller_sku',
+          ignoreDuplicates: false
+        })
+        .select();
+
+      if (error) {
+        throw new Error(`Failed to upsert pricing data to amazon_listings: ${error.message}`);
+      }
+
+      console.log(`✅ Successfully updated pricing for ${data?.length || pricingUpdates.length} SKUs in amazon_listings`);
+      return data;
+
+    } catch (error) {
+      console.error('❌ Batch pricing update error:', error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = {

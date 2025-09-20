@@ -3,6 +3,11 @@
  * 
  * Handles bulk ASIN scanning for Buy Box monitoring
  * Processes thousands of ASINs with proper rate limiting
+ * 
+ * Enhanced Features:
+ * - Real-time pricing data updates to amazon_listings table during bulk scans
+ * - Batch processing for both buybox and pricing data
+ * - Integrated competitive analysis and pricing sync
  */
 
 const express = require('express');
@@ -163,15 +168,17 @@ async function processBulkScan(jobId, asins) {
     const batchProcessor = new BatchProcessor(50, 30000); // 50 ASINs per batch, 30 second delay
     let successCount = 0;
     let failCount = 0;
+    let pricingUpdateCount = 0;
     const batches = batchProcessor.createBatches(asins);
     console.log(`Processing ${batches.length} batches for job ${jobId}`);
     rateLimiter.printReport();
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
       console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} ASINs`);
-      // Collect buyBoxData summaries and competitor offers for batch insert
+      // Collect buyBoxData summaries, competitor offers, and pricing data for batch insert
       const batchBuyBoxData = [];
       const batchOffers = [];
+      const batchPricingUpdates = [];
       for (const asin of batch) {
         let retryCount = 0;
         const maxRetries = 3;
@@ -198,6 +205,22 @@ async function processBulkScan(jobId, asins) {
                   console.log(`📭 No competitor offers found for ASIN ${asin.asin1}`);
                 }
                 buyBoxData = result?.summary;
+
+                // Extract pricing data from the same API response for amazon_listings table updates
+                if (result?.summary) {
+                  const pricingData = {
+                    sku: asin.seller_sku,
+                    asin: asin.asin1,
+                    current_price: result.summary.your_current_price || null,
+                    item_name: result.summary.item_name || `Product ${asin.asin1}`,
+                    status: 'active',
+                    fulfillment_channel: result.summary.fulfillment_type || 'MFN',
+                    last_updated: new Date().toISOString(),
+                    source: 'bulk_scan_competitive_pricing'
+                  };
+                  batchPricingUpdates.push(pricingData);
+                  console.log(`💰 Collected pricing data for SKU ${asin.seller_sku}: £${pricingData.current_price}`);
+                }
               } catch (apiError) {
                 lastError = apiError;
                 if (retryCount < maxRetries - 1) {
@@ -327,6 +350,21 @@ async function processBulkScan(jobId, asins) {
       } else if (typeof SupabaseService.insertBuyBoxOffers !== 'function') {
         console.error('❌ insertBuyBoxOffers function not available!');
       }
+
+      // Batch update amazon_listings table with pricing data (when real API provided pricing)
+      if (batchPricingUpdates.length > 0 && USE_REAL_API) {
+        try {
+          console.log(`💰 Attempting to update amazon_listings table for ${batchPricingUpdates.length} SKUs...`);
+          await SupabaseService.upsertPricingDataBatch(batchPricingUpdates);
+          pricingUpdateCount += batchPricingUpdates.length;
+          console.log(`💰 Updated amazon_listings table for ${batchPricingUpdates.length} SKUs in batch ${batchIndex + 1}`);
+        } catch (pricingError) {
+          console.error('❌ Batch amazon_listings update error:', pricingError.message);
+        }
+      } else if (batchPricingUpdates.length === 0) {
+        console.log(`💰 No amazon_listings updates to process for batch ${batchIndex + 1}`);
+      }
+
       if (batchIndex < batches.length - 1) {
         console.log(`⏸️  Batch ${batchIndex + 1} completed. Waiting 30s before next batch...`);
         rateLimiter.printReport();
@@ -335,7 +373,7 @@ async function processBulkScan(jobId, asins) {
     }
     rateLimiter.printReport();
     await SupabaseService.completeJob(jobId, successCount, failCount);
-    console.log(`Job ${jobId} completed: ${successCount} successful, ${failCount} failed`);
+    console.log(`Job ${jobId} completed: ${successCount} successful, ${failCount} failed, ${pricingUpdateCount} pricing updates`);
   } catch (error) {
     console.error(`Processing error for job ${jobId}:`, error);
     await SupabaseService.failJob(jobId, error.message);
