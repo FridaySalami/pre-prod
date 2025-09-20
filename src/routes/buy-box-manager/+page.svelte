@@ -232,6 +232,304 @@
 
 	// Search and filters
 	let searchTerm = ''; // Renamed from searchQuery for FilterSidebar compatibility
+	// Comprehensive merchant/seller mapping system
+	// This maps seller IDs and merchant tokens to company names and details
+	const merchantMapping: Record<string, {
+		name: string;
+		type: 'amazon' | 'business' | 'individual' | 'wholesale' | 'own';
+		icon?: string;
+		description?: string;
+	}> = {
+		// Your own store
+		'A2D8NG39VURSL3': {
+			name: 'Your Store',
+			type: 'own',
+			icon: '🏠',
+			description: 'Your Amazon seller account'
+		},
+		
+		// Amazon official stores
+		'ATVPDKIKX0DER': {
+			name: 'Amazon.com',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon direct sales'
+		},
+		'A3P5ROKL5A1OLE': {
+			name: 'Amazon EU',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon Europe'
+		},
+		'A1F83G8C2ARO7P': {
+			name: 'Amazon UK',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon United Kingdom'
+		},
+		'A13V1IB3VIYZZH': {
+			name: 'Amazon.de',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon Germany'
+		},
+		'A1PA6795UKMFR9': {
+			name: 'Amazon.de',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon Germany (Alt)'
+		},
+		'A1RKKUPIHCS9HS': {
+			name: 'Amazon.es',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon Spain'
+		},
+		'A13BTO71TTSMC6': {
+			name: 'Amazon.ca',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon Canada'
+		},
+		'A1VC38T7YXB528': {
+			name: 'Amazon.co.jp',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon Japan'
+		},
+		'AFKAY3F4D44F5': {
+			name: 'Amazon Business',
+			type: 'amazon',
+			icon: '🏪',
+			description: 'Amazon B2B marketplace'
+		},
+
+		// TODO: Add your specific merchant mappings here
+		// Example format:
+		// 'MERCHANT_TOKEN_HERE': {
+		//   name: 'Company Name',
+		//   type: 'business',
+		//   icon: '🏢',
+		//   description: 'Company description'
+		// },
+
+		// Real merchant mappings for testing
+		'A3TP6UW8QITUQR': {
+			name: 'MMJ ENTERPRISE LIMITED',
+			type: 'business',
+			icon: '🏢',
+			description: 'MMJ Enterprise Limited - Business seller'
+		},
+		'AAQW3RYFVYMNP': {
+			name: 'Wildflower Trading Ltd',
+			type: 'business',
+			icon: '🏢',
+			description: 'Wildflower Trading Ltd - Trading company'
+		},
+		'A2X8YYA8M6A8UN': {
+			name: 'Asetena Pa',
+			type: 'business',
+			icon: '🏢',
+			description: 'Asetena Pa - Business seller'
+		},
+		'A3NOZPPWLQBAFB': {
+			name: 'FoodServiceDirect',
+			type: 'wholesale',
+			icon: '📦',
+			description: 'FoodServiceDirect - Wholesale food service supplier'
+		},
+		'A2NRJ9BW85H5AC': {
+			name: 'SLR SUPPLIES LTD',
+			type: 'business',
+			icon: '🏢',
+			description: 'SLR Supplies Ltd - Business supplies company'
+		},
+		'A2ED42H88SXFIJ': {
+			name: 'CFW Catering Supplies',
+			type: 'wholesale',
+			icon: '📦',
+			description: 'CFW Catering Supplies - Catering equipment supplier'
+		},
+		'A24VQX7LPBJ2BC': {
+			name: 'Cooking Marvellous',
+			type: 'business',
+			icon: '🏢',
+			description: 'Cooking Marvellous - Cooking supplies retailer'
+		},
+		'A3PYC4L15PN3U8': {
+			name: 'Blossom & Bramble',
+			type: 'business',
+			icon: '🏢',
+			description: 'Blossom & Bramble - Retail business'
+		},
+		'AOX23X2X27TEJ': {
+			name: 'YesChef!',
+			type: 'business',
+			icon: '🏢',
+			description: 'YesChef! - Culinary products retailer'
+		},
+		'A1SQL9R21PZQ7E': {
+			name: 'Drinks & FMCG',
+			type: 'wholesale',
+			icon: '📦',
+			description: 'Drinks & FMCG - Fast-moving consumer goods wholesaler'
+		},
+		'A1CC0AP45VV6J9': {
+			name: 'Universal Product Solutions',
+			type: 'business',
+			icon: '🏢',
+			description: 'Universal Product Solutions - Product solutions company'
+		},
+		'A34V35WF4RSA9Q': {
+			name: 'Right Price To You',
+			type: 'business',
+			icon: '🏢',
+			description: 'Right Price To You - Retail business'
+		},
+		'ATUCW8T149Y55': {
+			name: 'UK Business Supplies',
+			type: 'business',
+			icon: '🏢',
+			description: 'UK Business Supplies - Business supply company'
+		},
+		'A1J0XS2PVZ4CF1': {
+			name: 'SPECIAL INGREDIENTS',
+			type: 'wholesale',
+			icon: '📦',
+			description: 'Special Ingredients - Specialty ingredients supplier'
+		},
+		'AW413N7QKQ9T1': {
+			name: 'VRSH Express',
+			type: 'business',
+			icon: '🏢',
+			description: 'VRSH Express - Express delivery business'
+		},
+		'A3TM04D9JZ956I': {
+			name: 'Papaval Retail',
+			type: 'business',
+			icon: '🏢',
+			description: 'Papaval Retail - Retail business'
+		},
+		'ACJZ1FPSBEO7J': {
+			name: '2Door24',
+			type: 'business',
+			icon: '🏢',
+			description: '2Door24 - Online retail business'
+		},
+		'A2HL1N2RC3M8N8': {
+			name: 'E.U. Xtores',
+			type: 'business',
+			icon: '🏢',
+			description: 'E.U. Xtores - European retail stores'
+		},
+	};
+
+	/**
+	 * Get merchant information from seller ID or merchant token
+	 */
+	function getMerchantInfo(sellerId: string, sellerName?: string): {
+		displayName: string;
+		icon: string;
+		type: string;
+		description?: string;
+	} {
+		// Check if we have a mapping for this seller ID
+		const mapping = merchantMapping[sellerId];
+		if (mapping) {
+			return {
+				displayName: mapping.name,
+				icon: mapping.icon || getDefaultIcon(mapping.type),
+				type: mapping.type,
+				description: mapping.description
+			};
+		}
+
+		// If we have a seller_name from the API, use it (but clean it up)
+		if (sellerName && sellerName.trim() && sellerName !== sellerId) {
+			const cleanName = cleanSellerName(sellerName);
+			const detectedType = detectSellerType(sellerName);
+			
+			return {
+				displayName: cleanName,
+				icon: getDefaultIcon(detectedType),
+				type: detectedType,
+				description: `Third-party seller: ${cleanName} (ID: ${sellerId})`
+			};
+		}
+
+		// Fall back to full seller ID - no truncation for easy copying
+		return {
+			displayName: sellerId,
+			icon: '👤',
+			type: 'individual',
+			description: `Seller ID: ${sellerId}`
+		};
+	}
+
+	/**
+	 * Clean up seller name for display
+	 */
+	function cleanSellerName(sellerName: string): string {
+		let cleanName = sellerName.trim();
+		if (cleanName.length > 25) {
+			cleanName = cleanName.substring(0, 22) + '...';
+		}
+		return cleanName;
+	}
+
+	/**
+	 * Detect seller type from seller name
+	 */
+	function detectSellerType(sellerName: string): 'business' | 'individual' | 'wholesale' {
+		const businessIndicators = ['Ltd', 'LLC', 'Corp', 'Inc', 'Limited', 'Company', 'Co.', 'Trading', 'Wholesale', 'Distribution', 'Supply', 'Enterprise'];
+		const name = sellerName.toLowerCase();
+		
+		if (businessIndicators.some(indicator => name.includes(indicator.toLowerCase()))) {
+			if (name.includes('wholesale') || name.includes('distribution') || name.includes('supply')) {
+				return 'wholesale';
+			}
+			return 'business';
+		}
+		
+		return 'individual';
+	}
+
+	/**
+	 * Get default icon for seller type
+	 */
+	function getDefaultIcon(type: string): string {
+		switch (type) {
+			case 'amazon': return '🏪';
+			case 'own': return '🏠';
+			case 'business': return '🏢';
+			case 'wholesale': return '📦';
+			case 'individual': return '👤';
+			default: return '👤';
+		}
+	}
+
+	// Legacy functions for backward compatibility
+	function getSellerDisplayName(sellerId: string, sellerName?: string): string {
+		return getMerchantInfo(sellerId, sellerName).displayName;
+	}
+
+	function getSellerIcon(sellerId: string, sellerName?: string): string {
+		return getMerchantInfo(sellerId, sellerName).icon;
+	}
+
+	/**
+	 * Copy merchant token to clipboard
+	 */
+	async function copyMerchantToken(sellerId: string) {
+		try {
+			await navigator.clipboard.writeText(sellerId);
+			showSuccessToast('Copied!', `Merchant token ${sellerId} copied to clipboard`, 2000);
+		} catch (error) {
+			console.error('Failed to copy merchant token:', error);
+			showErrorToast('Copy Failed', 'Could not copy merchant token to clipboard', 3000);
+		}
+	}
+
 	let categoryFilter = 'all'; // all, winners, secure_winners, rotation_winners, only_seller, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
 	let shippingFilter = 'all'; // all, prime, standard, oneday
 	let dateRange = 'all'; // all, today, yesterday, week, month
@@ -4031,12 +4329,22 @@
 												</div>
 												<div class="grid gap-1.5">
 													{#each result.competitor_offers.slice(0, 3) as offer, index}
+														{@const merchantInfo = getMerchantInfo(offer.seller_id, offer.seller_name)}
 														<div class="border border-gray-200 rounded px-2 py-1.5 bg-gray-50">
-															<!-- Header with seller ID and fulfillment -->
+															<!-- Header with seller name and fulfillment -->
 															<div class="flex items-center justify-between mb-1">
-																<div class="text-xs font-medium text-gray-700 truncate flex-1 mr-2">
-																	#{index + 1}
-																	{offer.seller_id.substring(0, 10)}
+																<div 
+																	class="text-xs font-medium text-gray-700 flex-1 mr-2 flex items-center min-w-0 cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 -mx-1 -my-0.5 transition-colors" 
+																	title="Click to copy merchant token: {offer.seller_id}"
+																	on:click={() => copyMerchantToken(offer.seller_id)}
+																	on:keydown={(e) => e.key === 'Enter' && copyMerchantToken(offer.seller_id)}
+																	role="button"
+																	tabindex="0"
+																>
+																	<span class="mr-1 flex-shrink-0">#{index + 1}</span>
+																	<span class="mr-1 flex-shrink-0">{merchantInfo.icon}</span>
+																	<span class="truncate">{merchantInfo.displayName}</span>
+																	<span class="ml-1 text-gray-400 text-xs">📋</span>
 																</div>
 																{#if offer.is_prime}
 																	<span
