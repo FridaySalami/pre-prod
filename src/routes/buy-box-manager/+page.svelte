@@ -353,16 +353,22 @@
 					);
 				}).length,
 				rotation_winners: buyboxData.filter((item) => {
-					// Rotation winners: You win BUT prices are equal (Buy Box rotation scenario)
+					// Rotation winners: Prices are equal (Buy Box rotation scenario) - regardless of current API winner status
 					return (
-						item.is_winner &&
 						item.buybox_price !== null &&
 						item.your_current_price &&
 						Math.abs(item.your_current_price - item.buybox_price) < 0.01
-					); // Within 1p
+					); // Within 1p - rotation scenario detected
 				}).length,
-				losers: buyboxData.filter((item) => item.is_winner === false && item.buybox_price !== null)
-					.length,
+				losers: buyboxData.filter((item) => {
+					// True losers: Not winning AND not in rotation (prices not equal)
+					if (item.is_winner) return false;
+					if (!item.buybox_price || !item.your_current_price) return true; // No pricing data available
+
+					// Exclude rotation scenarios (equal prices) from losers
+					const isRotation = Math.abs(item.your_current_price - item.buybox_price) < 0.01;
+					return !isRotation;
+				}).length,
 				small_gap_losers: buyboxData.filter((item) => {
 					if (item.is_winner) return false;
 
@@ -1982,15 +1988,22 @@
 			case 'rotation_winners':
 				filtered = filtered.filter((item) => {
 					return (
-						item.is_winner &&
 						item.buybox_price !== null &&
 						item.your_current_price !== null &&
-						item.your_current_price === item.buybox_price
-					);
+						Math.abs(item.your_current_price - item.buybox_price) < 0.01
+					); // Within 1p - rotation scenario detected
 				});
 				break;
 			case 'losers':
-				filtered = filtered.filter((item) => !item.is_winner && item.buybox_price !== null);
+				filtered = filtered.filter((item) => {
+					// True losers: Not winning AND not in rotation (prices not equal)
+					if (item.is_winner) return false;
+					if (!item.buybox_price || !item.your_current_price) return item.buybox_price !== null; // No pricing data
+
+					// Exclude rotation scenarios (equal prices) from losers
+					const isRotation = Math.abs(item.your_current_price - item.buybox_price) < 0.01;
+					return !isRotation;
+				});
 				break;
 			case 'small_gap_losers':
 				filtered = filtered.filter((item) => {

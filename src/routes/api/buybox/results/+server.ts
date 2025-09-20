@@ -244,95 +244,145 @@ export async function GET({ url }) {
         console.log(`🔵 [REQ-${requestId}] Fetching competitor offers for ${runIds.length} unique run_ids`);
 
         if (runIds.length > 0) {
-          // Fetch detailed competitor data including raw offer information
-          const { data: competitorOffers, error: competitorError } = await supabaseAdmin
-            .from('buybox_offers')
-            .select('run_id, asin, sku, seller_id, seller_name, listing_price, shipping, is_prime, is_fba, condition, raw_offer')
-            .in('run_id', runIds)
-            .order('listing_price', { ascending: true }) // Order by price to get cheapest first
-            .limit(500); // Limit total competitors to keep response size reasonable
+          // Fetch ALL competitor data using pagination to overcome Supabase 1000 record limit
+          let allCompetitorOffers = [];
+          let currentOffset = 0;
+          const batchSize = 1000;
+          let hasMore = true;
 
-          if (competitorError) {
-            console.error(`🔴 [REQ-${requestId}] Competitor offers error:`, competitorError);
-          } else {
-            console.log(`🔵 [REQ-${requestId}] Fetched ${competitorOffers?.length || 0} competitor offers`);
+          console.log(`🔵 [REQ-${requestId}] Fetching ALL competitor offers for ${runIds.length} run_ids using pagination...`);
 
-            // Group competitor offers by run_id + asin (+ sku if available) and limit to top 3 per listing
-            const offersByKey = new Map();
-            competitorOffers?.forEach(offer => {
-              // Create unique key for each ASIN within this run_id
-              const key = `${offer.run_id}_${offer.asin}${offer.sku ? '_' + offer.sku : ''}`;
+          while (hasMore) {
+            const { data: batchOffers, error: competitorError } = await supabaseAdmin
+              .from('buybox_offers')
+              .select('run_id, asin, sku, seller_id, seller_name, listing_price, shipping, is_prime, is_fba, condition, raw_offer')
+              .in('run_id', runIds)
+              .order('listing_price', { ascending: true })
+              .range(currentOffset, currentOffset + batchSize - 1);
 
-              if (!offersByKey.has(key)) {
-                offersByKey.set(key, []);
-              }
+            if (competitorError) {
+              console.error(`🔴 [REQ-${requestId}] Competitor offers error:`, competitorError);
+              break;
+            }
 
-              // Only keep top 3 competitors per ASIN to reduce data size
-              const currentOffers = offersByKey.get(key);
-              if (currentOffers.length < 3) {
-                // Extract additional data from raw_offer if available
-                let sellerRating = null;
-                let feedbackCount = null;
-                let shippingTime = null;
-                let isPrime = offer.is_prime; // Default to database value
-                let isFba = offer.is_fba; // Default to database value
+            const batchCount = batchOffers?.length || 0;
+            allCompetitorOffers = allCompetitorOffers.concat(batchOffers || []);
 
-                if (offer.raw_offer) {
-                  // Extract seller feedback rating
-                  if (offer.raw_offer.SellerFeedbackRating) {
-                    sellerRating = offer.raw_offer.SellerFeedbackRating.SellerPositiveFeedbackRating;
-                    feedbackCount = offer.raw_offer.SellerFeedbackRating.FeedbackCount;
-                  }
+            console.log(`🔵 [REQ-${requestId}] Fetched batch: ${batchCount} offers (offset: ${currentOffset}), total so far: ${allCompetitorOffers.length}`);
 
-                  // Extract shipping time information
-                  if (offer.raw_offer.ShippingTime) {
-                    const shippingTimeData = offer.raw_offer.ShippingTime;
-                    if (shippingTimeData.maximumHours && shippingTimeData.minimumHours) {
-                      if (shippingTimeData.maximumHours === shippingTimeData.minimumHours) {
-                        shippingTime = `${shippingTimeData.maximumHours}h`;
-                      } else {
-                        shippingTime = `${shippingTimeData.minimumHours}-${shippingTimeData.maximumHours}h`;
-                      }
+            // If we got less than batchSize, we're done
+            hasMore = batchCount === batchSize;
+            currentOffset += batchSize;
+
+            // Safety break to prevent infinite loops
+            if (currentOffset > 10000) {
+              console.log(`� [REQ-${requestId}] Safety limit reached at 10,000 competitive offers`);
+              break;
+            }
+          }
+
+          const competitorOffers = allCompetitorOffers;
+          console.log(`🔵 [REQ-${requestId}] Fetched ${competitorOffers?.length || 0} competitor offers total`);
+
+          // Debug: Check if we found the B01E4KDDV4 competitive offer
+          if (competitorOffers && competitorOffers.length > 0) {
+            const sampleOffer = competitorOffers.find(o => o.asin === 'B01E4KDDV4');
+            if (sampleOffer) {
+              console.log(`🔍 [REQ-${requestId}] DEBUG - Found offer for B01E4KDDV4:`, JSON.stringify(sampleOffer, null, 2));
+            }
+          }
+
+          // Group competitor offers by run_id + asin (+ sku if available) and limit to top 3 per listing
+          const offersByKey = new Map();
+          competitorOffers?.forEach(offer => {
+            // Create unique key for each ASIN within this run_id
+            const key = `${offer.run_id}_${offer.asin}${offer.sku ? '_' + offer.sku : ''}`;
+
+            // Debug for specific ASIN
+            if (offer.asin === 'B01E4KDDV4') {
+              console.log(`🔍 [REQ-${requestId}] DEBUG Offer B01E4KDDV4 - Generated key: ${key}`);
+              console.log(`🔍 [REQ-${requestId}] DEBUG Offer B01E4KDDV4 - run_id: ${offer.run_id}, asin: ${offer.asin}, sku: ${offer.sku}`);
+            }
+
+            if (!offersByKey.has(key)) {
+              offersByKey.set(key, []);
+            }
+
+            // Only keep top 3 competitors per ASIN to reduce data size
+            const currentOffers = offersByKey.get(key);
+            if (currentOffers.length < 3) {
+              // Extract additional data from raw_offer if available
+              let sellerRating = null;
+              let feedbackCount = null;
+              let shippingTime = null;
+              let isPrime = offer.is_prime; // Default to database value
+              let isFba = offer.is_fba; // Default to database value
+
+              if (offer.raw_offer) {
+                // Extract seller feedback rating
+                if (offer.raw_offer.SellerFeedbackRating) {
+                  sellerRating = offer.raw_offer.SellerFeedbackRating.SellerPositiveFeedbackRating;
+                  feedbackCount = offer.raw_offer.SellerFeedbackRating.FeedbackCount;
+                }
+
+                // Extract shipping time information
+                if (offer.raw_offer.ShippingTime) {
+                  const shippingTimeData = offer.raw_offer.ShippingTime;
+                  if (shippingTimeData.maximumHours && shippingTimeData.minimumHours) {
+                    if (shippingTimeData.maximumHours === shippingTimeData.minimumHours) {
+                      shippingTime = `${shippingTimeData.maximumHours}h`;
+                    } else {
+                      shippingTime = `${shippingTimeData.minimumHours}-${shippingTimeData.maximumHours}h`;
                     }
-                  }
-
-                  // Extract Prime information from raw data (more reliable than database field)
-                  if (offer.raw_offer.PrimeInformation) {
-                    isPrime = offer.raw_offer.PrimeInformation.IsPrime || offer.raw_offer.PrimeInformation.IsNationalPrime;
-                  }
-
-                  // Extract FBA information from raw data
-                  if (offer.raw_offer.IsFulfilledByAmazon !== undefined) {
-                    isFba = offer.raw_offer.IsFulfilledByAmazon;
                   }
                 }
 
-                currentOffers.push({
-                  seller_id: offer.seller_id,
-                  seller_name: offer.seller_name,
-                  listing_price: offer.listing_price,
-                  shipping: offer.shipping,
-                  is_prime: isPrime,
-                  is_fba: isFba,
-                  condition: offer.condition,
-                  seller_rating: sellerRating,
-                  feedback_count: feedbackCount,
-                  shipping_time: shippingTime
-                });
+                // Extract Prime information from raw data (more reliable than database field)
+                if (offer.raw_offer.PrimeInformation) {
+                  isPrime = offer.raw_offer.PrimeInformation.IsPrime || offer.raw_offer.PrimeInformation.IsNationalPrime;
+                }
+
+                // Extract FBA information from raw data
+                if (offer.raw_offer.IsFulfilledByAmazon !== undefined) {
+                  isFba = offer.raw_offer.IsFulfilledByAmazon;
+                }
               }
-            });
 
-            // Add competitor offers to each result by matching run_id + asin + sku
-            results = results.map(result => {
-              const key = `${result.run_id}_${result.asin}${result.sku ? '_' + result.sku : ''}`;
-              return {
-                ...result,
-                competitor_offers: offersByKey.get(key) || []
-              };
-            });
+              currentOffers.push({
+                seller_id: offer.seller_id,
+                seller_name: offer.seller_name,
+                listing_price: offer.listing_price,
+                shipping: offer.shipping,
+                is_prime: isPrime,
+                is_fba: isFba,
+                condition: offer.condition,
+                seller_rating: sellerRating,
+                feedback_count: feedbackCount,
+                shipping_time: shippingTime
+              });
+            }
+          });
 
-            console.log(`🔵 [REQ-${requestId}] Added competitor offers to ${results.length} records (max 3 per ASIN/SKU combination)`);
-          }
+          // Add competitor offers to each result by matching run_id + asin + sku
+          results = results.map(result => {
+            const key = `${result.run_id}_${result.asin}${result.sku ? '_' + result.sku : ''}`;
+            const offers = offersByKey.get(key) || [];
+
+            // Debug for specific ASIN
+            if (result.asin === 'B01E4KDDV4') {
+              console.log(`🔍 [REQ-${requestId}] DEBUG B01E4KDDV4 - Key: ${key}, Offers found: ${offers.length}`);
+              if (offers.length > 0) {
+                console.log(`🔍 [REQ-${requestId}] DEBUG B01E4KDDV4 - Sample offer:`, JSON.stringify(offers[0], null, 2));
+              }
+            }
+
+            return {
+              ...result,
+              competitor_offers: offers
+            };
+          });
+
+          console.log(`🔵 [REQ-${requestId}] Added competitor offers to ${results.length} records (max 3 per ASIN/SKU combination)`);
         }
       } catch (competitorError) {
         console.error(`🔴 [REQ-${requestId}] Error fetching competitor offers:`, competitorError);
@@ -341,7 +391,9 @@ export async function GET({ url }) {
     }
 
     const competitorFetchTime = Date.now() - competitorFetchStartTime;
-    console.log(`🔵 [REQ-${requestId}] Competitor offers fetch completed in ${competitorFetchTime}ms`);    // Build total count query with the same filters
+    console.log(`🔵 [REQ-${requestId}] Competitor offers fetch completed in ${competitorFetchTime}ms`);
+
+    // Build total count query with the same filters
     console.log(`🔵 [REQ-${requestId}] Starting count queries...`);
     const countStartTime = Date.now();
 
