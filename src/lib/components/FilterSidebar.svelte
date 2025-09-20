@@ -5,7 +5,6 @@
 	interface CategoryCounts {
 		winners?: number;
 		secure_winners?: number;
-		rotation_winners?: number;
 		only_seller?: number;
 		out_of_stock?: number;
 		losers?: number;
@@ -41,61 +40,92 @@
 
 	const dispatch = createEventDispatcher();
 
-	// Category options - use dynamic counts from actual data
+	// Category options - reorganized for efficient workflow and logical grouping
 	$: categories = [
-		{ value: 'all', label: 'All Categories', count: totalCount },
-		{ value: 'winners', label: 'Buy Box Winners', count: categoryCounts.winners || 0 },
+		// === OVERVIEW ===
+		{ value: 'all', label: 'All Categories', count: totalCount, group: 'overview' },
+
+		// === WINNING SCENARIOS (what's working well) ===
 		{
-			value: 'secure_winners',
-			label: 'Secure Winners (Price Advantage)',
-			count: categoryCounts.secure_winners || 0
+			value: 'winners',
+			label: 'Buy Box Winners',
+			count: categoryCounts.winners || 0,
+			group: 'winning'
 		},
 		{
-			value: 'rotation_winners',
-			label: 'Rotation Winners (Equal Price)',
-			count: categoryCounts.rotation_winners || 0
+			value: 'secure_winners',
+			label: 'Secure Winners (With Competitors)',
+			count: categoryCounts.secure_winners || 0,
+			group: 'winning'
 		},
 		{
 			value: 'only_seller',
 			label: 'Only Seller (No Competitors)',
-			count: categoryCounts.only_seller || 0
+			count: categoryCounts.only_seller || 0,
+			group: 'winning'
 		},
+
+		// === STOCK & AVAILABILITY ISSUES (immediate attention needed) ===
 		{
 			value: 'out_of_stock',
 			label: 'Out of Stock (With Pricing)',
-			count: categoryCounts.out_of_stock || 0
+			count: categoryCounts.out_of_stock || 0,
+			group: 'stock'
 		},
-		{ value: 'losers', label: 'Buy Box Losers', count: categoryCounts.losers || 0 },
+		{
+			value: 'no_buybox',
+			label: 'No Buy Box Available',
+			count: categoryCounts.no_buybox || 0,
+			group: 'stock'
+		},
+
+		// === OPPORTUNITIES (potential wins) ===
 		{
 			value: 'small_gap_losers',
 			label: 'Small Gap Losers (<£0.10)',
-			count: categoryCounts.small_gap_losers || 0
+			count: categoryCounts.small_gap_losers || 0,
+			group: 'opportunities'
 		},
 		{
 			value: 'opportunities_high_margin',
 			label: 'Opportunities Margin +10%',
-			count: categoryCounts.opportunities_high_margin || 0
+			count: categoryCounts.opportunities_high_margin || 0,
+			group: 'opportunities'
 		},
 		{
 			value: 'opportunities_low_margin',
 			label: 'Opportunities Under 10% Margin',
-			count: categoryCounts.opportunities_low_margin || 0
+			count: categoryCounts.opportunities_low_margin || 0,
+			group: 'opportunities'
+		},
+
+		// === PROBLEM AREAS (needs investigation) ===
+		{
+			value: 'losers',
+			label: 'Buy Box Losers',
+			count: categoryCounts.losers || 0,
+			group: 'problems'
 		},
 		{
 			value: 'not_profitable',
 			label: 'Not Profitable to match Buy Box',
-			count: categoryCounts.not_profitable || 0
+			count: categoryCounts.not_profitable || 0,
+			group: 'problems'
 		},
-		{
-			value: 'match_buybox',
-			label: 'Out of Stock - Higher Buy Box Price',
-			count: categoryCounts.match_buybox || 0
-		},
-		{ value: 'no_buybox', label: 'No Buy Box Available', count: categoryCounts.no_buybox || 0 },
 		{
 			value: 'low_margin_sales',
 			label: 'Low Margin Sales (≤10%)',
-			count: categoryCounts.low_margin_sales || 0
+			count: categoryCounts.low_margin_sales || 0,
+			group: 'problems'
+		},
+
+		// === DEPRECATED (keeping for compatibility but hiding) ===
+		{
+			value: 'match_buybox',
+			label: 'Out of Stock - Higher Buy Box Price',
+			count: categoryCounts.match_buybox || 0,
+			group: 'deprecated',
+			hidden: true
 		}
 	];
 
@@ -200,31 +230,12 @@
 		>
 			Category
 		</h3>
-		<div class="space-y-1">
-			{#each categories as category}
+		<div class="space-y-3">
+			<!-- Overview -->
+			{#each categories.filter((c) => c.group === 'overview') as category}
 				<label
 					class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded"
-					title={category.value === 'all'
-						? 'Show all products regardless of category'
-						: category.value === 'winners'
-							? 'Products currently winning the buy box'
-							: category.value === 'losers'
-								? 'Products not winning the buy box'
-								: category.value === 'small_gap_losers'
-									? 'Products losing by less than £0.10 - quick wins'
-									: category.value === 'opportunities_high_margin'
-										? 'Profitable opportunities with 10%+ margin if matched'
-										: category.value === 'opportunities_low_margin'
-											? 'Opportunities with under 10% margin - proceed with caution'
-											: category.value === 'not_profitable'
-												? 'Products that would lose money if matched to buy box price'
-												: category.value === 'match_buybox'
-													? 'Out of stock items where buy box price is higher than your original price - opportunity to restock at lower price or match higher price for better margin'
-													: category.value === 'no_buybox'
-														? 'Products with no competing buy box - you have the market to yourself'
-														: category.value === 'low_margin_sales'
-															? 'Products currently selling with profit margins of 10% or less (including 0% margin) - consider price optimization'
-															: 'Filter products by this category'}
+					title="Show all products regardless of category"
 				>
 					<div class="flex items-center">
 						<input
@@ -235,11 +246,137 @@
 							on:change={() => handleFilterChange('categoryFilter', category.value)}
 							class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
 						/>
-						<span class="ml-2 text-sm text-gray-700">{category.label}</span>
+						<span class="ml-2 text-sm font-medium text-gray-900">{category.label}</span>
 					</div>
-					<span class="text-xs text-gray-500">({category.count})</span>
+					<span class="text-xs text-gray-500 font-medium">({category.count})</span>
 				</label>
 			{/each}
+
+			<!-- Winning Scenarios -->
+			<div class="pt-2">
+				<div class="text-xs font-semibold text-green-700 uppercase tracking-wider mb-2 px-2">
+					Winning Scenarios
+				</div>
+				{#each categories.filter((c) => c.group === 'winning') as category}
+					<label
+						class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded ml-2"
+						title={category.value === 'winners'
+							? 'Products currently winning the buy box'
+							: category.value === 'secure_winners'
+								? 'Winning with competitors present - potential to raise prices'
+								: category.value === 'only_seller'
+									? 'Products with no competing buy box - you have the market to yourself'
+									: 'Filter products by this category'}
+					>
+						<div class="flex items-center">
+							<input
+								type="radio"
+								name="category"
+								value={category.value}
+								checked={categoryFilter === category.value}
+								on:change={() => handleFilterChange('categoryFilter', category.value)}
+								class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
+							/>
+							<span class="ml-2 text-sm text-gray-700">{category.label}</span>
+						</div>
+						<span class="text-xs text-gray-500">({category.count})</span>
+					</label>
+				{/each}
+			</div>
+
+			<!-- Stock & Availability Issues -->
+			<div class="pt-2">
+				<div class="text-xs font-semibold text-orange-700 uppercase tracking-wider mb-2 px-2">
+					Stock & Availability
+				</div>
+				{#each categories.filter((c) => c.group === 'stock') as category}
+					<label
+						class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded ml-2"
+						title={category.value === 'out_of_stock'
+							? 'Products out of stock but with pricing data available'
+							: category.value === 'no_buybox'
+								? 'Products with no competing buy box - you have the market to yourself'
+								: 'Filter products by this category'}
+					>
+						<div class="flex items-center">
+							<input
+								type="radio"
+								name="category"
+								value={category.value}
+								checked={categoryFilter === category.value}
+								on:change={() => handleFilterChange('categoryFilter', category.value)}
+								class="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300"
+							/>
+							<span class="ml-2 text-sm text-gray-700">{category.label}</span>
+						</div>
+						<span class="text-xs text-gray-500">({category.count})</span>
+					</label>
+				{/each}
+			</div>
+
+			<!-- Opportunities -->
+			<div class="pt-2">
+				<div class="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-2 px-2">
+					Opportunities
+				</div>
+				{#each categories.filter((c) => c.group === 'opportunities') as category}
+					<label
+						class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded ml-2"
+						title={category.value === 'small_gap_losers'
+							? 'High-priority opportunities - losing by less than £0.10, quick wins with small price adjustments'
+							: category.value === 'opportunities_high_margin'
+								? 'Profitable opportunities with 10%+ margin if matched'
+								: category.value === 'opportunities_low_margin'
+									? 'Opportunities with under 10% margin - proceed with caution'
+									: 'Filter products by this category'}
+					>
+						<div class="flex items-center">
+							<input
+								type="radio"
+								name="category"
+								value={category.value}
+								checked={categoryFilter === category.value}
+								on:change={() => handleFilterChange('categoryFilter', category.value)}
+								class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+							/>
+							<span class="ml-2 text-sm text-gray-700">{category.label}</span>
+						</div>
+						<span class="text-xs text-gray-500">({category.count})</span>
+					</label>
+				{/each}
+			</div>
+
+			<!-- Problem Areas -->
+			<div class="pt-2">
+				<div class="text-xs font-semibold text-red-700 uppercase tracking-wider mb-2 px-2">
+					Problem Areas
+				</div>
+				{#each categories.filter((c) => c.group === 'problems') as category}
+					<label
+						class="flex items-center justify-between py-1 cursor-pointer hover:bg-gray-50 px-2 rounded ml-2"
+						title={category.value === 'losers'
+							? 'Products not winning the buy box'
+							: category.value === 'not_profitable'
+								? 'Products that would lose money if matched to buy box price'
+								: category.value === 'low_margin_sales'
+									? 'Products currently selling with profit margins of 10% or less'
+									: 'Filter products by this category'}
+					>
+						<div class="flex items-center">
+							<input
+								type="radio"
+								name="category"
+								value={category.value}
+								checked={categoryFilter === category.value}
+								on:change={() => handleFilterChange('categoryFilter', category.value)}
+								class="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300"
+							/>
+							<span class="ml-2 text-sm text-gray-700">{category.label}</span>
+						</div>
+						<span class="text-xs text-gray-500">({category.count})</span>
+					</label>
+				{/each}
+			</div>
 		</div>
 	</div>
 

@@ -559,7 +559,7 @@
 		}
 	}
 
-	let categoryFilter = 'all'; // all, winners, secure_winners, rotation_winners, only_seller, out_of_stock, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
+	let categoryFilter = 'all'; // all, winners, secure_winners, only_seller, out_of_stock, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
 	let shippingFilter = 'all'; // all, prime, standard, oneday
 	let dateRange = 'all'; // all, today, yesterday, week, month
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, price_gap_asc, price_gap_desc, sku_asc, sku_desc
@@ -599,7 +599,6 @@
 	let categoryCounts: {
 		winners?: number;
 		secure_winners?: number;
-		rotation_winners?: number;
 		only_seller?: number;
 		out_of_stock?: number;
 		losers?: number;
@@ -673,22 +672,14 @@
 				winners: buyboxData.filter((item) => item.is_winner === true && item.buybox_price !== null)
 					.length,
 				secure_winners: buyboxData.filter((item) => {
-					// Secure winners: You win AND your price is lower than Buy Box (price advantage)
+					// Secure winners: You win AND have actual competitor offers (not just empty arrays)
 					return (
 						item.is_winner &&
-						item.buybox_price !== null &&
 						item.your_current_price &&
-						item.your_current_price < item.buybox_price
-					);
-				}).length,
-				rotation_winners: buyboxData.filter((item) => {
-					// Rotation winners: Prices are equal (Buy Box rotation scenario) AND there are actual competitors
-					return (
-						item.buybox_price !== null &&
-						item.your_current_price &&
-						Math.abs(item.your_current_price - item.buybox_price) < 0.01 && // Within 1p - rotation scenario detected
+						item.your_current_price > 0 &&
 						item.competitor_offers &&
-						item.competitor_offers.length > 0 // Must have competitors
+						Array.isArray(item.competitor_offers) &&
+						item.competitor_offers.length > 0
 					);
 				}).length,
 				only_seller: buyboxData.filter((item) => {
@@ -722,7 +713,8 @@
 						gap = item.your_current_price - ((item.buybox_price || item.price) ?? 0);
 					}
 
-					return gap && gap > 0 && gap <= 0.1;
+					// Small gap losers: You're losing AND the price difference is small (≤10p regardless of direction)
+					return gap && Math.abs(gap) <= 0.1;
 				}).length,
 				opportunities: buyboxData.filter(
 					(item) =>
@@ -964,11 +956,6 @@
 			name: 'Secure Wins',
 			emoji: '🛡️',
 			filters: { categoryFilter: 'secure_winners', sortBy: 'profit_desc' }
-		},
-		{
-			name: 'Rotation Wins',
-			emoji: '🔄',
-			filters: { categoryFilter: 'rotation_winners', sortBy: 'profit_desc' }
 		},
 		{
 			name: 'Only Seller',
@@ -2329,22 +2316,14 @@
 				break;
 			case 'secure_winners':
 				filtered = filtered.filter((item) => {
+					// Secure winners: You win AND have actual competitor offers (not just empty arrays)
 					return (
 						item.is_winner &&
-						item.buybox_price !== null &&
-						item.your_current_price !== null &&
-						item.your_current_price < item.buybox_price
-					);
-				});
-				break;
-			case 'rotation_winners':
-				filtered = filtered.filter((item) => {
-					return (
-						item.buybox_price !== null &&
-						item.your_current_price !== null &&
-						Math.abs(item.your_current_price - item.buybox_price) < 0.01 && // Within 1p - rotation scenario detected
+						item.your_current_price &&
+						item.your_current_price > 0 &&
 						item.competitor_offers &&
-						item.competitor_offers.length > 0 // Must have competitors
+						Array.isArray(item.competitor_offers) &&
+						item.competitor_offers.length > 0
 					);
 				});
 				break;
@@ -2384,7 +2363,8 @@
 						gap = item.your_current_price - ((item.buybox_price || item.price) ?? 0);
 					}
 
-					return gap && gap > 0 && gap <= 0.1;
+					// Small gap losers: You're losing AND the price difference is small (≤10p regardless of direction)
+					return gap && Math.abs(gap) <= 0.1;
 				});
 				break;
 			case 'opportunities':
@@ -4288,62 +4268,105 @@
 									>
 
 									<!-- Price Analysis -->
-									<td class="py-2 px-4">
-										<div class="text-sm space-y-1">
-											<!-- Our Price -->
-											<div class="font-medium text-gray-900">
-												{#if result.your_current_price === 0}
-													<span class="text-red-600">Out of Stock</span>
-												{:else}
-													Our Price: £{result.your_current_price?.toFixed(2) || 'N/A'}
-												{/if}
-												{#if result.is_winner}
-													<span class="text-green-600 ml-1">🏆</span>
+									<td class="py-2 px-4 w-120">
+										<div class="space-y-3 w-full">
+											<!-- Our Price Section -->
+											<div class="bg-blue-50 rounded-lg p-3 border-l-4 border-blue-500">
+												<div class="flex items-center justify-between">
+													<div class="flex items-center space-x-2">
+														<span class="text-blue-600 font-medium text-xs uppercase tracking-wide"
+															>Your Price</span
+														>
+														{#if result.is_winner}
+															<span
+																class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
+															>
+																Winning
+															</span>
+														{/if}
+													</div>
+													<div class="text-right">
+														{#if result.your_current_price === 0}
+															<span class="text-lg font-bold text-red-600">Out of Stock</span>
+														{:else}
+															<span class="text-lg font-bold text-blue-900"
+																>£{result.your_current_price?.toFixed(2) || 'N/A'}</span
+															>
+														{/if}
+													</div>
+												</div>
+
+												<!-- Last Price Update Info -->
+												{#if formatLastUpdate(result)}
+													{@const updateInfo = formatLastUpdate(result)!}
+													<div class="text-xs text-blue-600 mt-1" title={updateInfo.tooltip}>
+														📅 Updated: {updateInfo.text}
+													</div>
 												{/if}
 											</div>
 
-											<!-- Last Price Update Info -->
-											{#if formatLastUpdate(result)}
-												{@const updateInfo = formatLastUpdate(result)!}
-												<div class="{updateInfo.class} mt-0.5" title={updateInfo.tooltip}>
-													📅 Last updated: {updateInfo.text}
+											<!-- Buy Box Price Section -->
+											<div class="bg-gray-50 rounded-lg p-3 border-l-4 border-gray-400">
+												<div class="flex items-center justify-between">
+													<div class="flex items-center space-x-2">
+														<span class="text-gray-600 font-medium text-xs uppercase tracking-wide"
+															>Buy Box Price</span
+														>
+													</div>
+													<div class="text-right">
+														{#if result.is_winner && result.your_current_price}
+															<!-- You're winning the buy box -->
+															<span class="text-lg font-bold text-green-700"
+																>£{result.your_current_price.toFixed(2)}</span
+															>
+															<div class="text-xs text-green-600">You're winning</div>
+														{:else if !result.is_winner && result.buybox_price && result.buybox_price > 0}
+															<!-- You're losing - show actual buy box price -->
+															<span class="text-lg font-bold text-red-700"
+																>£{result.buybox_price.toFixed(2)}</span
+															>
+															<div class="text-xs text-red-600">Competitor winning</div>
+														{:else if !result.is_winner && result.competitor_price && result.competitor_price > 0}
+															<!-- Fallback: use competitor_price if buybox_price not available -->
+															<span class="text-lg font-bold text-red-700"
+																>£{result.competitor_price.toFixed(2)}</span
+															>
+															<div class="text-xs text-red-600">Competitor winning</div>
+														{:else}
+															<!-- No Buy Box available -->
+															<span class="text-lg font-bold text-orange-600">No Buy Box</span>
+															<div class="text-xs text-orange-500">Market opportunity</div>
+														{/if}
+													</div>
 												</div>
-											{/if}
+											</div>
 
-											<!-- Buy Box Price -->
-											{#if result.is_winner && result.your_current_price}
-												<!-- You're winning the buy box -->
-												<div class="font-medium text-green-700">
-													Buy Box Price: £{result.your_current_price.toFixed(2)} (You)
-												</div>
-											{:else if !result.is_winner && result.buybox_price && result.buybox_price > 0}
-												<!-- You're losing - show actual buy box price -->
-												<div class="font-medium text-red-700">
-													Buy Box Price: £{result.buybox_price.toFixed(2)} (Competitor)
-												</div>
-											{:else if !result.is_winner && result.competitor_price && result.competitor_price > 0}
-												<!-- Fallback: use competitor_price if buybox_price not available -->
-												<div class="font-medium text-red-700">
-													Buy Box Price: £{result.competitor_price.toFixed(2)} (Competitor)
-												</div>
-											{:else}
-												<!-- No Buy Box available -->
-												<div class="font-medium text-orange-600">
-													Buy Box Price: No Buy Box Available
-													<span class="text-xs block text-orange-500"
-														>May be due to listing quality, pricing, or sales history</span
-													>
-												</div>
-											{/if}
+											<!-- Price Gap & Break Even -->
+											<div class="space-y-1">
+												{#if result.price_gap !== null && result.price_gap !== undefined}
+													<div class="flex justify-between items-center text-xs">
+														<span class="text-gray-500">Price Gap:</span>
+														<span
+															class="font-medium {result.price_gap > 0
+																? 'text-red-600'
+																: result.price_gap < 0
+																	? 'text-green-600'
+																	: 'text-gray-600'}"
+														>
+															{result.price_gap > 0 ? '+' : ''}£{result.price_gap.toFixed(2)}
+														</span>
+													</div>
+												{/if}
 
-											<!-- Break Even Price -->
-											{#if result.break_even_price}
-												<div class="font-medium text-gray-600">
-													Break Even Price: £{result.break_even_price.toFixed(2)}
-												</div>
-											{:else}
-												<div class="font-medium text-gray-500">Break Even Price: N/A</div>
-											{/if}
+												{#if result.break_even_price}
+													<div class="flex justify-between items-center text-xs">
+														<span class="text-gray-500">Break Even:</span>
+														<span class="font-medium text-gray-700"
+															>£{result.break_even_price.toFixed(2)}</span
+														>
+													</div>
+												{/if}
+											</div>
 
 											<!-- Data Freshness Warning -->
 											{#if Date.now() - new Date(result.captured_at).getTime() > 24 * 60 * 60 * 1000}
