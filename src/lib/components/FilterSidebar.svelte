@@ -6,6 +6,7 @@
 		winners?: number;
 		secure_winners?: number;
 		rotation_winners?: number;
+		only_seller?: number;
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
@@ -52,6 +53,11 @@
 			value: 'rotation_winners',
 			label: 'Rotation Winners (Equal Price)',
 			count: categoryCounts.rotation_winners || 0
+		},
+		{
+			value: 'only_seller',
+			label: 'Only Seller (No Competitors)',
+			count: categoryCounts.only_seller || 0
 		},
 		{ value: 'losers', label: 'Buy Box Losers', count: categoryCounts.losers || 0 },
 		{

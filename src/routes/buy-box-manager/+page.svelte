@@ -232,7 +232,7 @@
 
 	// Search and filters
 	let searchTerm = ''; // Renamed from searchQuery for FilterSidebar compatibility
-	let categoryFilter = 'all'; // all, winners, secure_winners, rotation_winners, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
+	let categoryFilter = 'all'; // all, winners, secure_winners, rotation_winners, only_seller, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
 	let shippingFilter = 'all'; // all, prime, standard, oneday
 	let dateRange = 'all'; // all, today, yesterday, week, month
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, price_gap_asc, price_gap_desc, sku_asc, sku_desc
@@ -273,6 +273,7 @@
 		winners?: number;
 		secure_winners?: number;
 		rotation_winners?: number;
+		only_seller?: number;
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
@@ -353,12 +354,20 @@
 					);
 				}).length,
 				rotation_winners: buyboxData.filter((item) => {
-					// Rotation winners: Prices are equal (Buy Box rotation scenario) - regardless of current API winner status
+					// Rotation winners: Prices are equal (Buy Box rotation scenario) AND there are actual competitors
 					return (
 						item.buybox_price !== null &&
 						item.your_current_price &&
-						Math.abs(item.your_current_price - item.buybox_price) < 0.01
-					); // Within 1p - rotation scenario detected
+						Math.abs(item.your_current_price - item.buybox_price) < 0.01 && // Within 1p - rotation scenario detected
+						item.competitor_offers && item.competitor_offers.length > 0 // Must have competitors
+					);
+				}).length,
+				only_seller: buyboxData.filter((item) => {
+					// Only seller: You're winning and there are no competitors (monopoly listings)
+					return (
+						item.is_winner &&
+						(!item.competitor_offers || item.competitor_offers.length === 0)
+					);
 				}).length,
 				losers: buyboxData.filter((item) => {
 					// True losers: Not winning AND not in rotation (prices not equal)
@@ -622,6 +631,11 @@
 			name: 'Rotation Wins',
 			emoji: '🔄',
 			filters: { categoryFilter: 'rotation_winners', sortBy: 'profit_desc' }
+		},
+		{
+			name: 'Only Seller',
+			emoji: '👑',
+			filters: { categoryFilter: 'only_seller', sortBy: 'profit_desc' }
 		},
 		{
 			name: 'Prime Shipping',
@@ -1990,8 +2004,17 @@
 					return (
 						item.buybox_price !== null &&
 						item.your_current_price !== null &&
-						Math.abs(item.your_current_price - item.buybox_price) < 0.01
-					); // Within 1p - rotation scenario detected
+						Math.abs(item.your_current_price - item.buybox_price) < 0.01 && // Within 1p - rotation scenario detected
+						item.competitor_offers && item.competitor_offers.length > 0 // Must have competitors
+					);
+				});
+				break;
+			case 'only_seller':
+				filtered = filtered.filter((item) => {
+					return (
+						item.is_winner &&
+						(!item.competitor_offers || item.competitor_offers.length === 0)
+					);
 				});
 				break;
 			case 'losers':
