@@ -254,18 +254,18 @@ class AmazonSPAPI {
       const priceGap = buyBoxPrice ? yourCurrentPrice - buyBoxPrice : 0;
 
       console.log(`Buy Box analysis for ${asin}: Your ID: ${yourSellerId}, Buy Box Owner: ${buyBoxOffer?.SellerId}, Winner: ${isWinner}`);
-      
+
       // Enhanced Buy Box debugging - check if multiple sellers have same price
       const yourOfferPrice = yourOfferFromApi?.ListingPrice?.Amount;
       const buyBoxOfferPrice = buyBoxOffer?.ListingPrice?.Amount;
       const samePriceOffers = offers.filter(offer => offer.ListingPrice?.Amount === buyBoxOfferPrice);
-      
+
       if (samePriceOffers.length > 1 && yourOfferPrice === buyBoxOfferPrice) {
         console.log(`⚠️ POTENTIAL BUY BOX ROTATION: ${samePriceOffers.length} sellers with same price £${buyBoxOfferPrice}`);
         console.log(`🔄 Buy Box may rotate between: ${samePriceOffers.map(o => o.SellerId).join(', ')}`);
         console.log(`📱 Website view might differ from API due to real-time rotation or geographic factors`);
       }
-      
+
       console.log(`Price Gap Debug - Your: ${yourCurrentPrice} (${typeof yourCurrentPrice}), BuyBox: ${buyBoxPrice} (${typeof buyBoxPrice}), Gap: ${priceGap} (${typeof priceGap})`);
       console.log(`Pricing for ${asin}: Your Price: £${yourCurrentPrice}, Buy Box Price: £${buyBoxPrice || 'No Buy Box'}, Gap: £${priceGap.toFixed(2)}`);
 
