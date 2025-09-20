@@ -86,6 +86,7 @@
 	let isFailuresLoading = false;
 	let errorMessage = '';
 	let scanInProgress = false;
+	let isCancelling = false; // Track if cancellation is in progress
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Search functionality
@@ -280,9 +281,16 @@
 
 	// Cancel the current job
 	async function cancelJob(jobId: string): Promise<void> {
-		if (!confirm('Are you sure you want to cancel this job? This will mark it as failed.')) {
+		if (
+			!confirm(
+				'Are you sure you want to cancel this job? The job will stop processing after the current batch completes.'
+			)
+		) {
 			return;
 		}
+
+		isCancelling = true;
+		errorMessage = '';
 
 		try {
 			const response = await fetch(`/api/buybox/jobs/${jobId}/cancel`, {
@@ -298,14 +306,42 @@
 				throw new Error(data.error || 'Failed to cancel job');
 			}
 
-			// Refresh jobs to update the status
+			// Show immediate feedback
+			errorMessage =
+				'✅ Cancel request sent. The job will stop after the current batch completes. This may take a few minutes.';
+
+			// Keep refreshing to show the updated status
 			await fetchJobs();
 
-			// Display success message
-			errorMessage = ''; // Clear any previous error
-			alert('Job cancelled successfully');
+			// Continue polling for a few minutes to show the cancellation progress
+			let pollCount = 0;
+			const maxPolls = 12; // Poll for 2 minutes (12 * 10 seconds)
+			const pollInterval = setInterval(async () => {
+				await fetchJobs();
+				pollCount++;
+
+				// Check if job is actually cancelled (failed status)
+				const currentJob = jobs.find((j) => j.id === jobId);
+				if (currentJob && currentJob.status === 'failed') {
+					clearInterval(pollInterval);
+					errorMessage = '✅ Job successfully cancelled.';
+					isCancelling = false;
+					return;
+				}
+
+				// Stop polling after max attempts
+				if (pollCount >= maxPolls) {
+					clearInterval(pollInterval);
+					isCancelling = false;
+					if (errorMessage.includes('Cancel request sent')) {
+						errorMessage =
+							'⚠️ Cancel request sent, but job may still be processing. Please check back in a few minutes.';
+					}
+				}
+			}, 10000); // Poll every 10 seconds
 		} catch (error: unknown) {
 			console.error('Error cancelling job:', error);
+			isCancelling = false;
 			errorMessage =
 				error instanceof Error ? error.message : 'An error occurred while cancelling the job';
 		}
@@ -506,7 +542,8 @@ You can now start fresh scans without old data.`);
 
 			{#if scanInProgress}
 				<button
-					class="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded mr-2"
+					class="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
+					disabled={isCancelling}
 					on:click={() => {
 						const runningJob = jobs.find((job) => job.status === 'running');
 						if (runningJob) {
@@ -514,7 +551,11 @@ You can now start fresh scans without old data.`);
 						}
 					}}
 				>
-					Cancel Scan
+					{#if isCancelling}
+						Cancelling...
+					{:else}
+						Cancel Scan
+					{/if}
 				</button>
 			{/if}
 
@@ -654,10 +695,15 @@ You can now start fresh scans without old data.`);
 						<span>Job Summary</span>
 						{#if selectedJob && selectedJob.status === 'running'}
 							<button
-								class="bg-red-600 hover:bg-red-700 text-white text-xs py-1 px-2 rounded"
+								class="bg-red-600 hover:bg-red-700 text-white text-xs py-1 px-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+								disabled={isCancelling}
 								on:click={() => selectedJob && cancelJob(selectedJob.id)}
 							>
-								Cancel Job
+								{#if isCancelling}
+									Cancelling...
+								{:else}
+									Cancel Job
+								{/if}
 							</button>
 						{/if}
 					</h2>

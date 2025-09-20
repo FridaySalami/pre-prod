@@ -169,10 +169,24 @@ async function processBulkScan(jobId, asins) {
     let successCount = 0;
     let failCount = 0;
     let pricingUpdateCount = 0;
+    let jobCancelled = false;
     const batches = batchProcessor.createBatches(asins);
     console.log(`Processing ${batches.length} batches for job ${jobId}`);
     rateLimiter.printReport();
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      // Check if job has been cancelled before processing each batch
+      try {
+        const currentJob = await SupabaseService.getJob(jobId);
+        if (currentJob && currentJob.status === 'failed') {
+          console.log(`🛑 Job ${jobId} has been cancelled. Stopping bulk scan at batch ${batchIndex + 1}/${batches.length}`);
+          jobCancelled = true;
+          break;
+        }
+      } catch (statusError) {
+        console.warn(`⚠️ Could not check job status for cancellation: ${statusError.message}`);
+        // Continue processing if we can't check status
+      }
+
       const batch = batches[batchIndex];
       console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} ASINs`);
       // Collect buyBoxData summaries, competitor offers, and pricing data for batch insert
@@ -180,6 +194,21 @@ async function processBulkScan(jobId, asins) {
       const batchOffers = [];
       const batchPricingUpdates = [];
       for (const asin of batch) {
+        // Check for cancellation every 10 ASINs within a batch (to avoid too many DB calls)
+        const asinIndex = batch.indexOf(asin);
+        if (asinIndex % 10 === 0 && asinIndex > 0) {
+          try {
+            const currentJob = await SupabaseService.getJob(jobId);
+            if (currentJob && currentJob.status === 'failed') {
+              console.log(`🛑 Job ${jobId} cancelled during ASIN processing. Stopping at ASIN ${asinIndex + 1}/${batch.length} in batch ${batchIndex + 1}`);
+              jobCancelled = true;
+              break;
+            }
+          } catch (statusError) {
+            console.warn(`⚠️ Could not check job status during ASIN processing: ${statusError.message}`);
+          }
+        }
+
         let retryCount = 0;
         const maxRetries = 3;
         let buyBoxData = null;
@@ -318,6 +347,13 @@ async function processBulkScan(jobId, asins) {
           await new Promise(resolve => setTimeout(resolve, 60000));
         }
       }
+
+      // Check if job was cancelled during ASIN processing
+      if (jobCancelled) {
+        console.log(`🛑 Breaking out of batch processing due to job cancellation`);
+        break;
+      }
+
       // Batch insert for summaries
       if (batchBuyBoxData.length > 0) {
         try {
@@ -372,8 +408,15 @@ async function processBulkScan(jobId, asins) {
       }
     }
     rateLimiter.printReport();
-    await SupabaseService.completeJob(jobId, successCount, failCount);
-    console.log(`Job ${jobId} completed: ${successCount} successful, ${failCount} failed, ${pricingUpdateCount} pricing updates`);
+
+    // Handle job completion based on whether it was cancelled
+    if (jobCancelled) {
+      console.log(`Job ${jobId} was cancelled after processing ${successCount} successful, ${failCount} failed, ${pricingUpdateCount} pricing updates`);
+      // Job is already marked as failed by the cancel endpoint, no need to complete it
+    } else {
+      await SupabaseService.completeJob(jobId, successCount, failCount);
+      console.log(`Job ${jobId} completed: ${successCount} successful, ${failCount} failed, ${pricingUpdateCount} pricing updates`);
+    }
   } catch (error) {
     console.error(`Processing error for job ${jobId}:`, error);
     await SupabaseService.failJob(jobId, error.message);

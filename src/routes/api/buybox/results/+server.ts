@@ -68,6 +68,8 @@ export async function GET({ url }) {
       'id', 'asin', 'sku', 'captured_at', 'run_id',
       // Status flags
       'is_winner', 'opportunity_flag',
+      // Stock and offer tracking
+      'your_offers_count', 'total_offers_count',
       // Pricing fields
       'price', 'your_current_price', 'competitor_price', 'break_even_price', 'buybox_price',
       // Cost breakdown fields

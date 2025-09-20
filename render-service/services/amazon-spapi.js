@@ -314,9 +314,14 @@ class AmazonSPAPI {
       } else {
         console.log(`📭 No competitor offers found for ASIN ${asin} (you are the only seller)`);
       }
+
+      // Calculate offer counts for stock tracking
+      const totalOffersCount = offers.length;
+      const yourOffersCount = offers.length - competitorOffers.length;
+
       console.log(`📊 Full response summary:`, {
-        totalOffers: offers.length,
-        yourOffers: offers.length - competitorOffers.length,
+        totalOffers: totalOffersCount,
+        yourOffers: yourOffersCount,
         competitorOffers: competitorOffers.length,
         competitorSellerIds: competitorOffers.map(o => o.SellerId),
         buyBoxWinners: offers.filter(o => o.IsBuyBoxWinner).length
@@ -344,7 +349,12 @@ class AmazonSPAPI {
         competitor_name: buyBoxOffer?.SellerName || 'Unknown',
         competitor_price: buyBoxPrice, // This will be null when no competition
         opportunity_flag: isOpportunity,
-        total_offers: offers.length,
+
+        // Stock tracking fields
+        total_offers: totalOffersCount,
+        your_offers_count: yourOffersCount,
+        total_offers_count: totalOffersCount, // For consistency with API response field names
+
         captured_at: new Date().toISOString(),
         merchant_token: yourSellerId,
         buybox_merchant_token: buyBoxOffer?.SellerId || null,

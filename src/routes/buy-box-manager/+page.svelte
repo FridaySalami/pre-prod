@@ -163,6 +163,10 @@
 		captured_at: string;
 		merchant_shipping_group?: string; // Prime or Standard shipping type
 
+		// Stock and offer tracking
+		your_offers_count?: number; // Number of your offers found in SP-API (0 = out of stock)
+		total_offers_count?: number; // Total offers on the listing
+
 		// Essential cost fields (others removed to reduce response size)
 		your_cost: number | null;
 		your_shipping_cost: number | null;
@@ -234,70 +238,73 @@
 	let searchTerm = ''; // Renamed from searchQuery for FilterSidebar compatibility
 	// Comprehensive merchant/seller mapping system
 	// This maps seller IDs and merchant tokens to company names and details
-	const merchantMapping: Record<string, {
-		name: string;
-		type: 'amazon' | 'business' | 'individual' | 'wholesale' | 'own';
-		icon?: string;
-		description?: string;
-	}> = {
+	const merchantMapping: Record<
+		string,
+		{
+			name: string;
+			type: 'amazon' | 'business' | 'individual' | 'wholesale' | 'own';
+			icon?: string;
+			description?: string;
+		}
+	> = {
 		// Your own store
-		'A2D8NG39VURSL3': {
+		A2D8NG39VURSL3: {
 			name: 'Your Store',
 			type: 'own',
 			icon: '🏠',
 			description: 'Your Amazon seller account'
 		},
-		
+
 		// Amazon official stores
-		'ATVPDKIKX0DER': {
+		ATVPDKIKX0DER: {
 			name: 'Amazon.com',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon direct sales'
 		},
-		'A3P5ROKL5A1OLE': {
+		A3P5ROKL5A1OLE: {
 			name: 'Amazon EU',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon Europe'
 		},
-		'A1F83G8C2ARO7P': {
+		A1F83G8C2ARO7P: {
 			name: 'Amazon UK',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon United Kingdom'
 		},
-		'A13V1IB3VIYZZH': {
+		A13V1IB3VIYZZH: {
 			name: 'Amazon.de',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon Germany'
 		},
-		'A1PA6795UKMFR9': {
+		A1PA6795UKMFR9: {
 			name: 'Amazon.de',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon Germany (Alt)'
 		},
-		'A1RKKUPIHCS9HS': {
+		A1RKKUPIHCS9HS: {
 			name: 'Amazon.es',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon Spain'
 		},
-		'A13BTO71TTSMC6': {
+		A13BTO71TTSMC6: {
 			name: 'Amazon.ca',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon Canada'
 		},
-		'A1VC38T7YXB528': {
+		A1VC38T7YXB528: {
 			name: 'Amazon.co.jp',
 			type: 'amazon',
 			icon: '🏪',
 			description: 'Amazon Japan'
 		},
-		'AFKAY3F4D44F5': {
+		AFKAY3F4D44F5: {
 			name: 'Amazon Business',
 			type: 'amazon',
 			icon: '🏪',
@@ -314,120 +321,123 @@
 		// },
 
 		// Real merchant mappings for testing
-		'A3TP6UW8QITUQR': {
+		A3TP6UW8QITUQR: {
 			name: 'MMJ ENTERPRISE LIMITED',
 			type: 'business',
 			icon: '🏢',
 			description: 'MMJ Enterprise Limited - Business seller'
 		},
-		'AAQW3RYFVYMNP': {
+		AAQW3RYFVYMNP: {
 			name: 'Wildflower Trading Ltd',
 			type: 'business',
 			icon: '🏢',
 			description: 'Wildflower Trading Ltd - Trading company'
 		},
-		'A2X8YYA8M6A8UN': {
+		A2X8YYA8M6A8UN: {
 			name: 'Asetena Pa',
 			type: 'business',
 			icon: '🏢',
 			description: 'Asetena Pa - Business seller'
 		},
-		'A3NOZPPWLQBAFB': {
+		A3NOZPPWLQBAFB: {
 			name: 'FoodServiceDirect',
 			type: 'wholesale',
 			icon: '📦',
 			description: 'FoodServiceDirect - Wholesale food service supplier'
 		},
-		'A2NRJ9BW85H5AC': {
+		A2NRJ9BW85H5AC: {
 			name: 'SLR SUPPLIES LTD',
 			type: 'business',
 			icon: '🏢',
 			description: 'SLR Supplies Ltd - Business supplies company'
 		},
-		'A2ED42H88SXFIJ': {
+		A2ED42H88SXFIJ: {
 			name: 'CFW Catering Supplies',
 			type: 'wholesale',
 			icon: '📦',
 			description: 'CFW Catering Supplies - Catering equipment supplier'
 		},
-		'A24VQX7LPBJ2BC': {
+		A24VQX7LPBJ2BC: {
 			name: 'Cooking Marvellous',
 			type: 'business',
 			icon: '🏢',
 			description: 'Cooking Marvellous - Cooking supplies retailer'
 		},
-		'A3PYC4L15PN3U8': {
+		A3PYC4L15PN3U8: {
 			name: 'Blossom & Bramble',
 			type: 'business',
 			icon: '🏢',
 			description: 'Blossom & Bramble - Retail business'
 		},
-		'AOX23X2X27TEJ': {
+		AOX23X2X27TEJ: {
 			name: 'YesChef!',
 			type: 'business',
 			icon: '🏢',
 			description: 'YesChef! - Culinary products retailer'
 		},
-		'A1SQL9R21PZQ7E': {
+		A1SQL9R21PZQ7E: {
 			name: 'Drinks & FMCG',
 			type: 'wholesale',
 			icon: '📦',
 			description: 'Drinks & FMCG - Fast-moving consumer goods wholesaler'
 		},
-		'A1CC0AP45VV6J9': {
+		A1CC0AP45VV6J9: {
 			name: 'Universal Product Solutions',
 			type: 'business',
 			icon: '🏢',
 			description: 'Universal Product Solutions - Product solutions company'
 		},
-		'A34V35WF4RSA9Q': {
+		A34V35WF4RSA9Q: {
 			name: 'Right Price To You',
 			type: 'business',
 			icon: '🏢',
 			description: 'Right Price To You - Retail business'
 		},
-		'ATUCW8T149Y55': {
+		ATUCW8T149Y55: {
 			name: 'UK Business Supplies',
 			type: 'business',
 			icon: '🏢',
 			description: 'UK Business Supplies - Business supply company'
 		},
-		'A1J0XS2PVZ4CF1': {
+		A1J0XS2PVZ4CF1: {
 			name: 'SPECIAL INGREDIENTS',
 			type: 'wholesale',
 			icon: '📦',
 			description: 'Special Ingredients - Specialty ingredients supplier'
 		},
-		'AW413N7QKQ9T1': {
+		AW413N7QKQ9T1: {
 			name: 'VRSH Express',
 			type: 'business',
 			icon: '🏢',
 			description: 'VRSH Express - Express delivery business'
 		},
-		'A3TM04D9JZ956I': {
+		A3TM04D9JZ956I: {
 			name: 'Papaval Retail',
 			type: 'business',
 			icon: '🏢',
 			description: 'Papaval Retail - Retail business'
 		},
-		'ACJZ1FPSBEO7J': {
+		ACJZ1FPSBEO7J: {
 			name: '2Door24',
 			type: 'business',
 			icon: '🏢',
 			description: '2Door24 - Online retail business'
 		},
-		'A2HL1N2RC3M8N8': {
+		A2HL1N2RC3M8N8: {
 			name: 'E.U. Xtores',
 			type: 'business',
 			icon: '🏢',
 			description: 'E.U. Xtores - European retail stores'
-		},
+		}
 	};
 
 	/**
 	 * Get merchant information from seller ID or merchant token
 	 */
-	function getMerchantInfo(sellerId: string, sellerName?: string): {
+	function getMerchantInfo(
+		sellerId: string,
+		sellerName?: string
+	): {
 		displayName: string;
 		icon: string;
 		type: string;
@@ -448,7 +458,7 @@
 		if (sellerName && sellerName.trim() && sellerName !== sellerId) {
 			const cleanName = cleanSellerName(sellerName);
 			const detectedType = detectSellerType(sellerName);
-			
+
 			return {
 				displayName: cleanName,
 				icon: getDefaultIcon(detectedType),
@@ -481,16 +491,29 @@
 	 * Detect seller type from seller name
 	 */
 	function detectSellerType(sellerName: string): 'business' | 'individual' | 'wholesale' {
-		const businessIndicators = ['Ltd', 'LLC', 'Corp', 'Inc', 'Limited', 'Company', 'Co.', 'Trading', 'Wholesale', 'Distribution', 'Supply', 'Enterprise'];
+		const businessIndicators = [
+			'Ltd',
+			'LLC',
+			'Corp',
+			'Inc',
+			'Limited',
+			'Company',
+			'Co.',
+			'Trading',
+			'Wholesale',
+			'Distribution',
+			'Supply',
+			'Enterprise'
+		];
 		const name = sellerName.toLowerCase();
-		
-		if (businessIndicators.some(indicator => name.includes(indicator.toLowerCase()))) {
+
+		if (businessIndicators.some((indicator) => name.includes(indicator.toLowerCase()))) {
 			if (name.includes('wholesale') || name.includes('distribution') || name.includes('supply')) {
 				return 'wholesale';
 			}
 			return 'business';
 		}
-		
+
 		return 'individual';
 	}
 
@@ -499,12 +522,18 @@
 	 */
 	function getDefaultIcon(type: string): string {
 		switch (type) {
-			case 'amazon': return '🏪';
-			case 'own': return '🏠';
-			case 'business': return '🏢';
-			case 'wholesale': return '📦';
-			case 'individual': return '👤';
-			default: return '👤';
+			case 'amazon':
+				return '🏪';
+			case 'own':
+				return '🏠';
+			case 'business':
+				return '🏢';
+			case 'wholesale':
+				return '📦';
+			case 'individual':
+				return '👤';
+			default:
+				return '👤';
 		}
 	}
 
@@ -530,7 +559,7 @@
 		}
 	}
 
-	let categoryFilter = 'all'; // all, winners, secure_winners, rotation_winners, only_seller, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
+	let categoryFilter = 'all'; // all, winners, secure_winners, rotation_winners, only_seller, out_of_stock, losers, small_gap_losers, opportunities, opportunities_high_margin, opportunities_low_margin, not_profitable, raise_price, reduce_price, match_buybox, investigate
 	let shippingFilter = 'all'; // all, prime, standard, oneday
 	let dateRange = 'all'; // all, today, yesterday, week, month
 	let sortBy = 'profit_desc'; // profit_desc, profit_asc, margin_desc, margin_asc, profit_difference_desc, profit_difference_asc, margin_difference_desc, margin_difference_asc, price_gap_asc, price_gap_desc, sku_asc, sku_desc
@@ -572,6 +601,7 @@
 		secure_winners?: number;
 		rotation_winners?: number;
 		only_seller?: number;
+		out_of_stock?: number;
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
@@ -657,14 +687,21 @@
 						item.buybox_price !== null &&
 						item.your_current_price &&
 						Math.abs(item.your_current_price - item.buybox_price) < 0.01 && // Within 1p - rotation scenario detected
-						item.competitor_offers && item.competitor_offers.length > 0 // Must have competitors
+						item.competitor_offers &&
+						item.competitor_offers.length > 0 // Must have competitors
 					);
 				}).length,
 				only_seller: buyboxData.filter((item) => {
 					// Only seller: You're winning and there are no competitors (monopoly listings)
+					return item.is_winner && (!item.competitor_offers || item.competitor_offers.length === 0);
+				}).length,
+				out_of_stock: buyboxData.filter((item) => {
+					// Out of stock: You have no offers in SP-API (your_offers_count = 0) but have pricing data
 					return (
-						item.is_winner &&
-						(!item.competitor_offers || item.competitor_offers.length === 0)
+						item.your_offers_count !== undefined &&
+						item.your_offers_count === 0 &&
+						item.your_current_price &&
+						item.your_current_price > 0
 					);
 				}).length,
 				losers: buyboxData.filter((item) => {
@@ -690,18 +727,21 @@
 				opportunities: buyboxData.filter(
 					(item) =>
 						!item.is_winner &&
+						(item.your_offers_count ?? 0) > 0 &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price > 0
 				).length,
 				opportunities_high_margin: buyboxData.filter(
 					(item) =>
 						!item.is_winner &&
+						(item.your_offers_count ?? 0) > 0 &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price >= 10
 				).length,
 				opportunities_low_margin: buyboxData.filter(
 					(item) =>
 						!item.is_winner &&
+						(item.your_offers_count ?? 0) > 0 &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price > 0 &&
 						item.margin_percent_at_buybox_price < 10
@@ -2303,15 +2343,23 @@
 						item.buybox_price !== null &&
 						item.your_current_price !== null &&
 						Math.abs(item.your_current_price - item.buybox_price) < 0.01 && // Within 1p - rotation scenario detected
-						item.competitor_offers && item.competitor_offers.length > 0 // Must have competitors
+						item.competitor_offers &&
+						item.competitor_offers.length > 0 // Must have competitors
 					);
 				});
 				break;
 			case 'only_seller':
 				filtered = filtered.filter((item) => {
+					return item.is_winner && (!item.competitor_offers || item.competitor_offers.length === 0);
+				});
+				break;
+			case 'out_of_stock':
+				filtered = filtered.filter((item) => {
 					return (
-						item.is_winner &&
-						(!item.competitor_offers || item.competitor_offers.length === 0)
+						item.your_offers_count !== undefined &&
+						item.your_offers_count === 0 &&
+						item.your_current_price &&
+						item.your_current_price > 0
 					);
 				});
 				break;
@@ -2343,6 +2391,7 @@
 				filtered = filtered.filter(
 					(item) =>
 						!item.is_winner &&
+						(item.your_offers_count ?? 0) > 0 &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price > 0
 				);
@@ -2351,6 +2400,7 @@
 				filtered = filtered.filter(
 					(item) =>
 						!item.is_winner &&
+						(item.your_offers_count ?? 0) > 0 &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price >= 10
 				);
@@ -2359,6 +2409,7 @@
 				filtered = filtered.filter(
 					(item) =>
 						!item.is_winner &&
+						(item.your_offers_count ?? 0) > 0 &&
 						item.margin_percent_at_buybox_price !== null &&
 						item.margin_percent_at_buybox_price > 0 &&
 						item.margin_percent_at_buybox_price < 10
@@ -4329,15 +4380,19 @@
 												</div>
 												<div class="grid gap-1.5">
 													{#each result.competitor_offers.slice(0, 3) as offer, index}
-														{@const merchantInfo = getMerchantInfo(offer.seller_id, offer.seller_name)}
+														{@const merchantInfo = getMerchantInfo(
+															offer.seller_id,
+															offer.seller_name
+														)}
 														<div class="border border-gray-200 rounded px-2 py-1.5 bg-gray-50">
 															<!-- Header with seller name and fulfillment -->
 															<div class="flex items-center justify-between mb-1">
-																<div 
-																	class="text-xs font-medium text-gray-700 flex-1 mr-2 flex items-center min-w-0 cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 -mx-1 -my-0.5 transition-colors" 
+																<div
+																	class="text-xs font-medium text-gray-700 flex-1 mr-2 flex items-center min-w-0 cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5 -mx-1 -my-0.5 transition-colors"
 																	title="Click to copy merchant token: {offer.seller_id}"
 																	on:click={() => copyMerchantToken(offer.seller_id)}
-																	on:keydown={(e) => e.key === 'Enter' && copyMerchantToken(offer.seller_id)}
+																	on:keydown={(e) =>
+																		e.key === 'Enter' && copyMerchantToken(offer.seller_id)}
 																	role="button"
 																	tabindex="0"
 																>

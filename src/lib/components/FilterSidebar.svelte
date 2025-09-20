@@ -7,6 +7,7 @@
 		secure_winners?: number;
 		rotation_winners?: number;
 		only_seller?: number;
+		out_of_stock?: number;
 		losers?: number;
 		small_gap_losers?: number;
 		opportunities?: number;
@@ -58,6 +59,11 @@
 			value: 'only_seller',
 			label: 'Only Seller (No Competitors)',
 			count: categoryCounts.only_seller || 0
+		},
+		{
+			value: 'out_of_stock',
+			label: 'Out of Stock (With Pricing)',
+			count: categoryCounts.out_of_stock || 0
 		},
 		{ value: 'losers', label: 'Buy Box Losers', count: categoryCounts.losers || 0 },
 		{
