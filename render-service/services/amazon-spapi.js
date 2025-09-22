@@ -205,8 +205,52 @@ class AmazonSPAPI {
       // Find Buy Box winner
       const buyBoxOffer = offers.find(offer => offer.IsBuyBoxWinner === true);
 
-      // Find YOUR current offer from competitive pricing
-      const yourOfferFromApi = offers.find(offer => offer.SellerId === yourSellerId);
+      // Find YOUR current offer from competitive pricing - enhanced for multi-SKU scenarios
+      let yourOfferFromApi = offers.find(offer => offer.SellerId === yourSellerId);
+
+      // If you have multiple SKUs for the same ASIN, try to match by fulfillment type from amazon_listings
+      const yourOffers = offers.filter(offer => offer.SellerId === yourSellerId);
+      if (yourOffers.length > 1) {
+        console.log(`🔍 Multiple offers found for your seller ID (${yourOffers.length} SKUs for same ASIN)`);
+
+        // Use amazon_listings data to determine correct fulfillment matching
+        if (skuPricingData && skuPricingData.shippingGroup) {
+          const shippingGroup = skuPricingData.shippingGroup.toLowerCase();
+          console.log(`📋 SKU "${sku}" shipping group from database: "${skuPricingData.shippingGroup}"`);
+
+          // Match based on shipping group/fulfillment type from amazon_listings
+          if (shippingGroup.includes('prime') || shippingGroup.includes('fba') || shippingGroup.includes('nationwide prime')) {
+            const primeOffer = yourOffers.find(offer =>
+              offer.IsFulfilledByAmazon === true ||
+              offer.PrimeInformation?.IsPrime === true ||
+              offer.FulfillmentChannel === 'AMAZON'
+            );
+            if (primeOffer) {
+              yourOfferFromApi = primeOffer;
+              console.log(`✅ Matched Prime SKU "${sku}" (${skuPricingData.shippingGroup}) to Prime offer: £${primeOffer.ListingPrice?.Amount}`);
+            }
+          } else if (shippingGroup.includes('standard') || shippingGroup.includes('uk shipping') || shippingGroup.includes('merchant')) {
+            const standardOffer = yourOffers.find(offer =>
+              offer.IsFulfilledByAmazon === false ||
+              offer.PrimeInformation?.IsPrime === false ||
+              offer.FulfillmentChannel === 'MERCHANT'
+            );
+            if (standardOffer) {
+              yourOfferFromApi = standardOffer;
+              console.log(`✅ Matched Standard SKU "${sku}" (${skuPricingData.shippingGroup}) to Standard offer: £${standardOffer.ListingPrice?.Amount}`);
+            }
+          } else {
+            console.warn(`⚠️ Unknown shipping group "${skuPricingData.shippingGroup}" for SKU "${sku}" - using first offer`);
+          }
+        } else {
+          console.warn(`⚠️ No shipping group data found for SKU "${sku}" - using first offer`);
+        }
+
+        // Log all your offers for debugging
+        yourOffers.forEach((offer, index) => {
+          console.log(`📋 Your Offer ${index + 1}: £${offer.ListingPrice?.Amount}, Prime: ${offer.PrimeInformation?.IsPrime}, FBA: ${offer.IsFulfilledByAmazon}, Channel: ${offer.FulfillmentChannel}`);
+        });
+      }
 
       // Get SKU-specific pricing from our listings data
       const { SupabaseService } = require('./supabase-client');
@@ -225,6 +269,11 @@ class AmazonSPAPI {
         // Log price discrepancy if database price differs significantly
         if (dbPrice > 0 && Math.abs(apiPrice - dbPrice) > 0.01) {
           console.warn(`⚠️ Price mismatch for ${sku}: API=£${apiPrice}, DB=£${dbPrice}, Diff=£${(apiPrice - dbPrice).toFixed(2)}`);
+        }
+
+        // Log SKU-specific matching info
+        if (yourOffers && yourOffers.length > 1) {
+          console.log(`📊 SKU Match Result: "${sku}" matched to £${apiPrice} (out of ${yourOffers.length} possible offers)`);
         }
       } else if (dbPrice > 0) {
         // Fall back to database price only if API doesn't have pricing
