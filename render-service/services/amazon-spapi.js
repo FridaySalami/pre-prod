@@ -212,14 +212,27 @@ class AmazonSPAPI {
       const { SupabaseService } = require('./supabase-client');
       const skuPricingData = await SupabaseService.getSkuPricing(sku);
 
-      // Use SKU-specific pricing if available, otherwise fall back to API data
+      // Prioritize live SP-API data over cached database data for accuracy
       let yourCurrentPrice;
-      if (skuPricingData && skuPricingData.price > 0) {
-        yourCurrentPrice = skuPricingData.price;
-        console.log(`Using SKU-specific pricing for ${sku}: £${yourCurrentPrice}`);
+      const apiPrice = yourOfferFromApi?.ListingPrice?.Amount || 0;
+      const dbPrice = skuPricingData?.price || 0;
+
+      if (apiPrice > 0) {
+        // Use live API price when available (most accurate)
+        yourCurrentPrice = apiPrice;
+        console.log(`Using live SP-API pricing for ${sku}: £${yourCurrentPrice}`);
+
+        // Log price discrepancy if database price differs significantly
+        if (dbPrice > 0 && Math.abs(apiPrice - dbPrice) > 0.01) {
+          console.warn(`⚠️ Price mismatch for ${sku}: API=£${apiPrice}, DB=£${dbPrice}, Diff=£${(apiPrice - dbPrice).toFixed(2)}`);
+        }
+      } else if (dbPrice > 0) {
+        // Fall back to database price only if API doesn't have pricing
+        yourCurrentPrice = dbPrice;
+        console.log(`Using fallback DB pricing for ${sku}: £${yourCurrentPrice} (no API price available)`);
       } else {
-        yourCurrentPrice = yourOfferFromApi?.ListingPrice?.Amount || 0;
-        console.log(`Using SP-API pricing for ${sku}: £${yourCurrentPrice}`);
+        yourCurrentPrice = 0;
+        console.warn(`⚠️ No pricing data available for ${sku} from either API or database`);
       }
 
       // Get all competitor prices for analysis

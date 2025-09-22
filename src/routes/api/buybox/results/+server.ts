@@ -4,6 +4,21 @@ import { supabaseAdmin } from '$lib/supabaseAdmin';
 // Request tracking for debugging
 let requestCounter = 0;
 
+// Type definition for competitor offers from buybox_offers table
+interface CompetitorOffer {
+  run_id: string;
+  asin: string;
+  sku: string;
+  seller_id: string;
+  seller_name: string;
+  listing_price: number;
+  shipping: number;
+  is_prime: boolean;
+  is_fba: boolean;
+  condition: string;
+  raw_offer: any;
+}
+
 /**
  * Get Buy Box job results with comprehensive debugging
  */
@@ -247,7 +262,7 @@ export async function GET({ url }) {
 
         if (runIds.length > 0) {
           // Fetch ALL competitor data using pagination to overcome Supabase 1000 record limit
-          let allCompetitorOffers = [];
+          let allCompetitorOffers: CompetitorOffer[] = [];
           let currentOffset = 0;
           const batchSize = 1000;
           let hasMore = true;
