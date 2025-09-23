@@ -8,7 +8,7 @@
  */
 
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
+import type { RequestEvent } from '@sveltejs/kit';
 
 interface BatchPriceUpdateRequest {
   items: Array<{
@@ -59,7 +59,7 @@ function recordSubmission(userEmail: string) {
   submissionHistory.set(userEmail, userHistory);
 }
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST = async ({ request, locals }: RequestEvent) => {
   try {
     console.log('🛒 Batch Price Update API called');
 
@@ -197,7 +197,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   }
 };
 
-export const GET: RequestHandler = async ({ url, locals }) => {
+export const GET = async ({ url, locals }: RequestEvent) => {
   // Get batch submission history and rate limit status
   const { user } = locals;
   if (!user) {
