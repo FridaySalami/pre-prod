@@ -56,11 +56,11 @@ export const basketSummary = derived(basketItems, ($items): BasketSummary => {
   };
 });
 
-export const activeItems = derived(basketItems, ($items) => 
+export const activeItems = derived(basketItems, ($items) =>
   $items.filter(item => item.status === 'pending' || item.status === 'processing')
 );
 
-export const recentHistory = derived(historyItems, ($history) => 
+export const recentHistory = derived(historyItems, ($history) =>
   $history
     .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
     .slice(0, 20) // Show last 20 completed items
@@ -110,7 +110,7 @@ export const basketActions = {
     basketItems.update(items => {
       const itemsToMove = items.filter(item => itemIds.includes(item.id));
       const remainingItems = items.filter(item => !itemIds.includes(item.id));
-      
+
       // Add completed items to history
       historyItems.update(history => [
         ...history,
@@ -120,10 +120,10 @@ export const basketActions = {
           status: item.status as 'completed' | 'failed' | 'cancelled'
         }))
       ]);
-      
+
       return remainingItems;
     });
-    
+
     // Remove moved items from selection
     selectedItems.update(selected => {
       itemIds.forEach(id => selected.delete(id));
@@ -142,7 +142,7 @@ export const basketActions = {
         const completedIds = items
           .filter(item => item.status === 'completed' || item.status === 'failed')
           .map(item => item.id);
-        
+
         if (completedIds.length > 0) {
           basketActions.moveToHistory(completedIds);
         }
