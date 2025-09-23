@@ -189,6 +189,69 @@ class AmazonSPAPI {
   }
 
   /**
+   * Get competitive pricing data for multiple ASINs/SKUs (batch processing)
+   * Can process up to 20 items per request
+   */
+  async getCompetitivePricingBatch(items, itemType = 'Asin') {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'POST';
+    const path = '/products/pricing/v0/competitive-price';
+
+    // Prepare request body
+    const requestBody = {
+      Asins: itemType === 'Asin' ? items : undefined,
+      Skus: itemType === 'Sku' ? items : undefined,
+      MarketplaceId: this.config.marketplace,
+      ItemType: itemType,
+      CustomerType: 'Consumer'
+    };
+
+    const bodyString = JSON.stringify(requestBody);
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(bodyString).digest('hex'),
+      'content-type': 'application/json'
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, {}, headers, bodyString);
+
+    const url = `${this.config.endpoint}${path}`;
+
+    try {
+      console.log(`📡 Batch Competitive Pricing Request for ${items.length} ${itemType}s at ${new Date().toISOString()}`);
+      console.log(`📋 Items: ${items.slice(0, 5).join(', ')}${items.length > 5 ? ` ... (+${items.length - 5} more)` : ''}`);
+
+      const response = await axios.post(url, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+
+      console.log(`✅ Batch Competitive Pricing Response received for ${items.length} ${itemType}s at ${new Date().toISOString()}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Batch Competitive Pricing API error for ${itemType}s ${items.join(', ')}:`, error.response?.data || error.message);
+
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ITEMS_NOT_FOUND');
+      } else if (error.response?.data?.errors?.[0]?.code === 'QuotaExceeded') {
+        throw new Error('RATE_LIMITED');
+      } else {
+        throw new Error(`BATCH_COMPETITIVE_PRICING_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
    * Transform SP-API pricing response into our database format
    */
   async transformPricingData(pricingData, asin, sku, runId, productTitle = null) {

@@ -308,6 +308,86 @@
 		showPasswordBanner = false;
 	}
 
+	// Function to restore window layout when using Chrome extension
+	function restoreWindowLayout(): void {
+		console.log('🪟 Restore window layout requested');
+
+		// Type guard for Chrome extension API
+		const chromeApi = (window as any).chrome;
+
+		// More detailed checking
+		console.log('🔍 Checking Chrome API availability:', {
+			chromeExists: !!chromeApi,
+			runtimeExists: !!(chromeApi && chromeApi.runtime),
+			extensionId: chromeApi?.runtime?.id
+		});
+
+		if (browser && chromeApi && chromeApi.runtime && chromeApi.runtime.id) {
+			try {
+				console.log('🔌 Attempting to send message to extension...');
+
+				// Send message to Chrome extension to restore layout
+				chromeApi.runtime.sendMessage({ action: 'restoreWindowLayout' }, (response: any) => {
+					console.log('📨 Extension response received:', response);
+
+					if (chromeApi.runtime.lastError) {
+						console.log('❌ Extension error:', chromeApi.runtime.lastError.message);
+						showToast('Extension error: ' + chromeApi.runtime.lastError.message, 'error');
+					} else if (response && response.success) {
+						console.log('✅ Window layout restore successful');
+						showToast('Window layout restored', 'success');
+
+						// Hide the restore button after use
+						const restoreBtn = document.getElementById('restore-window-btn');
+						if (restoreBtn) {
+							restoreBtn.style.display = 'none';
+						}
+					} else {
+						console.log('⚠️ Extension response indicates failure:', response);
+						showToast('Extension did not confirm restore', 'warning');
+					}
+				});
+			} catch (error) {
+				console.error('❌ Error sending message to extension:', error);
+				showToast('Failed to communicate with extension', 'error');
+			}
+		} else {
+			const reason = !browser
+				? 'not in browser'
+				: !chromeApi
+					? 'Chrome API not found'
+					: !chromeApi.runtime
+						? 'Chrome runtime not found'
+						: !chromeApi.runtime.id
+							? 'Extension not active'
+							: 'unknown';
+
+			console.log('❌ Extension not available:', reason);
+			showToast(`Extension not available: ${reason}`, 'info');
+		}
+	}
+
+	// Show/hide restore button based on extension activity
+	$effect(() => {
+		if (browser) {
+			// Listen for messages from Chrome extension
+			const handleExtensionMessage = (event: any) => {
+				if (event.data?.type === 'EXTENSION_WINDOW_SPLIT') {
+					const restoreBtn = document.getElementById('restore-window-btn');
+					if (restoreBtn) {
+						restoreBtn.style.display = 'inline-flex';
+					}
+				}
+			};
+
+			window.addEventListener('message', handleExtensionMessage);
+
+			return () => {
+				window.removeEventListener('message', handleExtensionMessage);
+			};
+		}
+	});
+
 	// Make sure this reactive statement is typed properly
 	$effect(() => {
 		if (browser) {
@@ -341,6 +421,15 @@
 			<header class="site-header">
 				<div class="header-left">
 					<Sidebar.Trigger class="" onclick={() => {}} />
+					<button
+						class="restore-window-button"
+						onclick={restoreWindowLayout}
+						title="Restore Original Window Layout"
+						style="display: none;"
+						id="restore-window-btn"
+					>
+						<i class="material-icons-outlined">restore</i>
+					</button>
 				</div>
 				<div class="header-right">
 					<!-- Command Menu Button Container -->
@@ -457,6 +546,37 @@
 		display: flex;
 		align-items: center;
 		gap: 16px;
+	}
+
+	.restore-window-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		border: 1px solid #e5e7eb;
+		border-radius: 6px;
+		background: white;
+		color: #6b7280;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		font-size: 14px;
+		padding: 0;
+	}
+
+	.restore-window-button:hover {
+		background: #f9fafb;
+		color: #374151;
+		border-color: #d1d5db;
+	}
+
+	.restore-window-button:active {
+		background: #f3f4f6;
+		transform: translateY(1px);
+	}
+
+	.restore-window-button i {
+		font-size: 18px;
 	}
 
 	.header-divider {

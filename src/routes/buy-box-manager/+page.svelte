@@ -4142,6 +4142,12 @@
 									${recentlyUpdatedItems.has(result.id) ? 'recently-updated-bypass' : ''}
 									${livePricingUpdates.get(result.id)?.isUpdating ? 'updating-row' : ''}
 								`}
+									data-asin={result.asin}
+									data-sku={result.sku}
+									data-title={result.sku}
+									data-price={result.your_current_price
+										? `£${result.your_current_price.toFixed(2)}`
+										: 'N/A'}
 								>
 									<!-- Selection Checkbox -->
 									<td class="py-4 px-3">
@@ -4212,7 +4218,7 @@
 													{result.sku} 📝
 												</a>
 											</div>
-											<div>
+											<div class="flex items-center space-x-2">
 												<a
 													href="https://amazon.co.uk/dp/{result.asin}"
 													target="_blank"
@@ -4222,47 +4228,59 @@
 												>
 													{result.asin} →
 												</a>
-												{#if !showLatestOnly}
-													{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-													<div class="text-xs text-purple-600 font-medium mt-1">
-														📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
-														{new Date(result.captured_at).toLocaleTimeString([], {
-															hour: '2-digit',
-															minute: '2-digit'
-														})}
-														{#if totalEntries > 1}
-															<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
-																{totalEntries} entries
-															</span>
-														{/if}
-													</div>
+												<button
+													class="amazon-preview-btn inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 hover:border-blue-300 transition-colors"
+													title="Preview Amazon page in side panel"
+													data-asin={result.asin}
+													data-sku={result.sku}
+													data-title={result.item_name || result.sku}
+													data-price={result.your_current_price
+														? `£${result.your_current_price.toFixed(2)}`
+														: 'N/A'}
+												>
+													👁️ Preview
+												</button>
+											</div>
+											{#if !showLatestOnly}
+												{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+												<div class="text-xs text-purple-600 font-medium mt-1">
+													📅 Scan: {new Date(result.captured_at).toLocaleDateString()}
+													{new Date(result.captured_at).toLocaleTimeString([], {
+														hour: '2-digit',
+														minute: '2-digit'
+													})}
+													{#if totalEntries > 1}
+														<span class="bg-purple-100 text-purple-800 px-1 rounded text-xs ml-1">
+															{totalEntries} entries
+														</span>
+													{/if}
+												</div>
+											{/if}
+											<div class="mt-1">
+												{#if result.is_winner}
+													<span
+														class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+													>
+														🏆 Buy Box Winner
+													</span>
+												{:else if result.opportunity_flag}
+													<span
+														class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+													>
+														⚡ Opportunity
+													</span>
 												{/if}
-												<div class="mt-1">
-													{#if result.is_winner}
-														<span
-															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
-														>
-															🏆 Buy Box Winner
-														</span>
-													{:else if result.opportunity_flag}
-														<span
-															class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
-														>
-															⚡ Opportunity
+											</div>
+											<div class="text-xs text-gray-400 mt-1">
+												Last checked: {formatDate(result.captured_at)}
+												{#if showLatestOnly}
+													{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
+													{#if totalEntries > 1}
+														<span class="text-blue-600 ml-1">
+															(Latest of {totalEntries} scans)
 														</span>
 													{/if}
-												</div>
-												<div class="text-xs text-gray-400 mt-1">
-													Last checked: {formatDate(result.captured_at)}
-													{#if showLatestOnly}
-														{@const totalEntries = getHistoricalCount(result.sku, allRawData)}
-														{#if totalEntries > 1}
-															<span class="text-blue-600 ml-1">
-																(Latest of {totalEntries} scans)
-															</span>
-														{/if}
-													{/if}
-												</div>
+												{/if}
 											</div>
 										</div></td
 									>

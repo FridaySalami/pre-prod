@@ -26,6 +26,7 @@ const livePricingRoute = require('./routes/live-pricing');
 const buyboxRecordRoute = require('./routes/buybox-record');
 const debugRoute = require('./routes/debug');
 const emergencyRoute = require('./routes/emergency');
+const testCompetitivePricingRoute = require('./routes/test-competitive-pricing');
 const { SupabaseService } = require('./services/supabase-client');
 
 // Create Express app
@@ -55,6 +56,7 @@ app.use('/api/live-pricing', livePricingRoute);
 app.use('/api', buyboxRecordRoute);
 app.use('/api/debug', debugRoute);
 app.use('/api/emergency', emergencyRoute.router);
+app.use('/test-competitive-pricing', testCompetitivePricingRoute);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -106,8 +108,9 @@ app.listen(PORT, () => {
   console.log(`🚀 Buy Box Render Service started on port ${PORT}`);
   console.log(`📊 Ready to process up to 3,477 ASINs`);
   console.log(`⏰ Estimated max processing time: 2-3 hours`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`📈 Service info: http://localhost:${PORT}/`);
+  console.log(`🔗 Health check: /health`);
+  console.log(`📈 Service info: /`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
 // Graceful shutdown
