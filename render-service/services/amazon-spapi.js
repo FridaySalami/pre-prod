@@ -994,7 +994,7 @@ class AmazonSPAPI {
     const method = 'POST';
     const path = '/feeds/2021-06-30/documents';
     const requestBody = {
-      feedType: 'JSON_LISTINGS_FEED'
+      contentType: 'application/json; charset=utf-8'
     };
 
     const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
@@ -1007,12 +1007,20 @@ class AmazonSPAPI {
 
     const signedHeaders = this.createSignature(method, path, {}, headers, JSON.stringify(requestBody));
 
-    const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
-      headers: signedHeaders,
-      timeout: 30000
-    });
+    try {
+      const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
 
-    return response.data;
+      return response.data;
+    } catch (error) {
+      console.error('❌ Feed document creation failed:', error.response?.data);
+      if (error.response?.data?.errors) {
+        console.error('📋 Amazon API errors:', JSON.stringify(error.response.data.errors, null, 2));
+      }
+      throw error;
+    }
   }
 
   /**
