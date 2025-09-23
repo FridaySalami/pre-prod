@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 
 export interface BasketItem {
   id: string;
@@ -13,6 +13,8 @@ export interface BasketItem {
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   createdAt: Date;
   errorMessage?: string;
+  feedId?: string;
+  submittedAt?: Date;
 }
 
 export interface BasketSummary {
@@ -139,19 +141,163 @@ export const basketActions = {
   submitChanges: async () => {
     isProcessing.set(true);
 
-    // Process changes immediately
-    selectedItems.subscribe(selected => {
+    try {
+      // Get current state
+      const currentBasketItems = get(basketItems);
+      const currentSelectedItems = get(selectedItems);
+      const currentUserEmail = get(userEmail);
+
+      // Filter selected pending items
+      const itemsToSubmit = currentBasketItems.filter(item =>
+        currentSelectedItems.has(item.id) && item.status === 'pending'
+      );
+
+      if (itemsToSubmit.length === 0) {
+        console.warn('No items selected for submission');
+        isProcessing.set(false);
+        return;
+      }
+
+      console.log(`🛒 Submitting ${itemsToSubmit.length} items to batch price update API`);
+
+      // Mark items as processing
       basketItems.update(items =>
         items.map(item =>
-          selected.has(item.id) && item.status === 'pending'
-            ? { ...item, status: 'completed' as const }
+          currentSelectedItems.has(item.id) && item.status === 'pending'
+            ? { ...item, status: 'processing' as const }
             : item
         )
       );
-    })();
 
-    selectedItems.set(new Set());
-    isProcessing.set(false);
+      // Call the batch price update API
+      const response = await fetch('/api/batch-price-update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: itemsToSubmit.map(item => ({
+            id: item.id,
+            sku: item.sku,
+            asin: item.asin,
+            currentPrice: item.currentPrice,
+            targetPrice: item.targetPrice,
+            reason: item.reason
+          })),
+          userEmail: currentUserEmail
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ Batch submission successful:', result);
+
+        // Mark submitted items as completed
+        basketItems.update(items =>
+          items.map(item =>
+            currentSelectedItems.has(item.id) && item.status === 'processing'
+              ? {
+                ...item,
+                status: 'completed' as const,
+                feedId: result.feedId,
+                submittedAt: new Date()
+              }
+              : item
+          )
+        );
+
+        // Show success notification (if toast function is available)
+        if (typeof window !== 'undefined' && (window as any).showSuccessToast) {
+          (window as any).showSuccessToast(
+            'Batch Submitted Successfully',
+            `${itemsToSubmit.length} price updates submitted to Amazon. Feed ID: ${result.feedId}`,
+            8000
+          );
+        }
+
+      } else {
+        console.error('❌ Batch submission failed:', result);
+
+        // Handle rate limiting
+        if (result.code === 'RATE_LIMITED') {
+          const waitMinutes = Math.ceil((result.waitTime || 0) / 60000);
+
+          // Mark items back to pending
+          basketItems.update(items =>
+            items.map(item =>
+              currentSelectedItems.has(item.id) && item.status === 'processing'
+                ? {
+                  ...item,
+                  status: 'pending' as const,
+                  errorMessage: `Rate limited. Wait ${waitMinutes} minutes.`
+                }
+                : item
+            )
+          );
+
+          if (typeof window !== 'undefined' && (window as any).showWarningToast) {
+            (window as any).showWarningToast(
+              'Rate Limit Exceeded',
+              `Please wait ${waitMinutes} minutes before submitting another batch. Amazon allows 5 submissions per 5 minutes.`,
+              10000
+            );
+          }
+
+        } else {
+          // Mark items as failed
+          basketItems.update(items =>
+            items.map(item =>
+              currentSelectedItems.has(item.id) && item.status === 'processing'
+                ? {
+                  ...item,
+                  status: 'failed' as const,
+                  errorMessage: result.error || 'Submission failed'
+                }
+                : item
+            )
+          );
+
+          if (typeof window !== 'undefined' && (window as any).showErrorToast) {
+            (window as any).showErrorToast(
+              'Batch Submission Failed',
+              result.error || 'Failed to submit price updates to Amazon',
+              8000
+            );
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Batch submission error:', error);
+
+      // Mark items as failed
+      selectedItems.subscribe(currentSelectedItems => {
+        basketItems.update(items =>
+          items.map(item =>
+            currentSelectedItems.has(item.id) && item.status === 'processing'
+              ? {
+                ...item,
+                status: 'failed' as const,
+                errorMessage: 'Network error during submission'
+              }
+              : item
+          )
+        );
+      })();
+
+      if (typeof window !== 'undefined' && (window as any).showErrorToast) {
+        (window as any).showErrorToast(
+          'Submission Error',
+          'Network error occurred while submitting to Amazon',
+          8000
+        );
+      }
+    } finally {
+      // Clear selection and stop processing
+      selectedItems.set(new Set());
+      isProcessing.set(false);
+    }
   },
 
   deleteSelected: () => {

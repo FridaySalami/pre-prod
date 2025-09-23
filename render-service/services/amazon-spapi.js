@@ -417,6 +417,52 @@ class AmazonSPAPI {
 
       console.log(`Buy Box analysis for ${asin}: Your ID: ${yourSellerId}, Buy Box Owner: ${buyBoxOffer?.SellerId}, Winner: ${isWinner}`);
 
+      // 🚨 ENHANCED BUY BOX DEBUGGING - Prime vs Non-Prime Analysis
+      console.log(`\n🔍 PRIME BUY BOX ANALYSIS for ${asin}:`);
+
+      // Analyze your offer
+      const yourIsPrime = yourOfferFromApi?.PrimeInformation?.IsPrime === true || yourOfferFromApi?.IsFulfilledByAmazon === true;
+      const buyBoxIsPrime = buyBoxOffer?.PrimeInformation?.IsPrime === true || buyBoxOffer?.IsFulfilledByAmazon === true;
+
+      console.log(`📦 Your Offer: £${yourCurrentPrice}, Prime: ${yourIsPrime}, FBA: ${yourOfferFromApi?.IsFulfilledByAmazon}`);
+      console.log(`🏆 Buy Box Winner: £${buyBoxPrice}, Prime: ${buyBoxIsPrime}, FBA: ${buyBoxOffer?.IsFulfilledByAmazon}`);
+
+      // Check if you're the lowest Prime offer
+      const primeOffers = offers.filter(offer =>
+        offer.PrimeInformation?.IsPrime === true || offer.IsFulfilledByAmazon === true
+      );
+      const nonPrimeOffers = offers.filter(offer =>
+        offer.PrimeInformation?.IsPrime !== true && offer.IsFulfilledByAmazon !== true
+      );
+
+      console.log(`🎯 Prime offers: ${primeOffers.length}, Non-Prime offers: ${nonPrimeOffers.length}`);
+
+      if (primeOffers.length > 0) {
+        const lowestPrimePrice = Math.min(...primeOffers.map(o => o.ListingPrice?.Amount || Infinity));
+        const yourPrimePosition = primeOffers.find(o => o.SellerId === yourSellerId);
+
+        if (yourPrimePosition && yourCurrentPrice === lowestPrimePrice) {
+          console.log(`🥇 YOU ARE THE LOWEST PRIME OFFER at £${yourCurrentPrice}!`);
+          console.log(`🌟 Prime customers likely see YOU as Buy Box winner`);
+          console.log(`📱 Website (showing Prime view) vs API (generic view) discrepancy explained`);
+        } else if (yourIsPrime) {
+          console.log(`🥈 You have Prime but not lowest Prime price. Lowest Prime: £${lowestPrimePrice}`);
+        }
+      }
+
+      if (nonPrimeOffers.length > 0) {
+        const lowestNonPrimePrice = Math.min(...nonPrimeOffers.map(o => o.ListingPrice?.Amount || Infinity));
+        console.log(`💰 Lowest Non-Prime price: £${lowestNonPrimePrice}`);
+      }
+
+      // API vs Website discrepancy warning
+      if (!isWinner && yourIsPrime && !buyBoxIsPrime) {
+        console.log(`\n⚠️  POTENTIAL API vs WEBSITE DISCREPANCY DETECTED:`);
+        console.log(`   📊 API shows: Non-Prime seller ${buyBoxOffer?.SellerId} winning at £${buyBoxPrice}`);
+        console.log(`   🌐 Website might show: You (Prime) winning for Prime customers`);
+        console.log(`   🎯 Reason: Amazon shows different Buy Box to Prime vs non-Prime customers`);
+      }
+
       // Enhanced Buy Box debugging - check if multiple sellers have same price
       const yourOfferPrice = yourOfferFromApi?.ListingPrice?.Amount;
       const buyBoxOfferPrice = buyBoxOffer?.ListingPrice?.Amount;
@@ -867,6 +913,210 @@ class AmazonSPAPI {
       } else {
         throw new Error(`CATALOG_API_ERROR: ${error.message}`);
       }
+    }
+  }
+
+  /**
+   * Update product price using Amazon Feeds API
+   * Single SKU price update with comprehensive error handling
+   */
+  async updatePrice(asin, newPrice, currentPrice = null, sku = null) {
+    console.log(`🎯 Starting price update for ASIN: ${asin} to £${newPrice}`);
+
+    try {
+      const accessToken = await this.getAccessToken();
+      const finalSku = sku || asin;
+
+      console.log('🎯 Price Update Details:');
+      console.log(`   🔸 ASIN: ${asin}`);
+      console.log(`   🔸 SKU: ${finalSku}`);
+      console.log(`   🔸 Current price: ${currentPrice !== null ? `£${currentPrice.toFixed(2)}` : 'Unknown'}`);
+      console.log(`   🔸 New price: £${newPrice.toFixed(2)}`);
+
+      // Step 1: Create feed document
+      console.log('📄 Step 1: Creating feed document...');
+      const feedDocument = await this.createFeedDocument(accessToken);
+      console.log('✅ Feed document created:', feedDocument.feedDocumentId);
+
+      // Step 2: Upload pricing data (JSON format)
+      console.log('📤 Step 2: Uploading pricing data...');
+      await this.uploadPricingData(feedDocument.url, asin, finalSku, newPrice);
+      console.log('✅ Pricing data uploaded successfully');
+
+      // Step 3: Submit feed
+      console.log('🚀 Step 3: Submitting feed...');
+      const feed = await this.submitFeed(accessToken, feedDocument.feedDocumentId);
+      console.log('✅ Feed submitted:', feed.feedId);
+
+      // Step 4: Log to database (optional - catches errors gracefully)
+      try {
+        await this.logPriceUpdate(asin, finalSku, newPrice, currentPrice, feed);
+      } catch (logError) {
+        console.warn('⚠️ Failed to log price update to database:', logError.message);
+      }
+
+      return {
+        success: true,
+        status: 200,
+        data: feed,
+        asin: asin,
+        sku: finalSku,
+        newPrice: parseFloat(newPrice.toFixed(2)),
+        currentPrice: currentPrice,
+        feedId: feed.feedId,
+        message: `Price update feed submitted successfully for ASIN ${asin} (SKU: ${finalSku}). New price: £${newPrice.toFixed(2)}`,
+        feedStatus: 'SUBMITTED',
+        feedType: 'JSON_LISTINGS_FEED',
+        nextSteps: 'Feed is being processed by Amazon. Check status in 5-15 minutes using the Feed Status API.',
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ Price update failed:', error);
+      return {
+        success: false,
+        status: 500,
+        error: error.message,
+        asin: asin,
+        sku: sku || asin,
+        newPrice: newPrice,
+        currentPrice: currentPrice,
+        message: `Failed to update price for ASIN ${asin}: ${error.message}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Create feed document for price updates
+   */
+  async createFeedDocument(accessToken) {
+    const method = 'POST';
+    const path = '/feeds/2021-06-30/documents';
+    const requestBody = {
+      feedType: 'JSON_LISTINGS_FEED'
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(JSON.stringify(requestBody)).digest('hex')
+    };
+
+    const signedHeaders = this.createSignature(method, path, {}, headers, JSON.stringify(requestBody));
+
+    const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
+      headers: signedHeaders,
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  /**
+   * Upload pricing data to Amazon
+   */
+  async uploadPricingData(uploadUrl, asin, sku, price) {
+    const jsonData = {
+      "header": {
+        "sellerId": process.env.AMAZON_SELLER_ID || "A2D8NG39VURSL3",
+        "version": "2.0"
+      },
+      "messages": [
+        {
+          "messageId": 1,
+          "sku": sku,
+          "operationType": "PARTIAL_UPDATE",
+          "productType": "GROCERY", // Default - should be detected dynamically in production
+          "attributes": {
+            "purchasable_offer": [
+              {
+                "marketplace_id": this.config.marketplace,
+                "currency": "GBP",
+                "our_price": [
+                  {
+                    "schedule": [
+                      {
+                        "value_with_tax": price.toFixed(2)
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    };
+
+    const response = await axios.put(uploadUrl, jsonData, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    });
+
+    if (!response.status === 200) {
+      throw new Error(`Failed to upload pricing data: ${response.status}`);
+    }
+  }
+
+  /**
+   * Submit feed to Amazon
+   */
+  async submitFeed(accessToken, feedDocumentId) {
+    const method = 'POST';
+    const path = '/feeds/2021-06-30/feeds';
+    const requestBody = {
+      feedType: 'JSON_LISTINGS_FEED',
+      marketplaceIds: [this.config.marketplace],
+      feedDocumentId: feedDocumentId
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(JSON.stringify(requestBody)).digest('hex')
+    };
+
+    const signedHeaders = this.createSignature(method, path, {}, headers, JSON.stringify(requestBody));
+
+    const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
+      headers: signedHeaders,
+      timeout: 30000
+    });
+
+    return response.data;
+  }
+
+  /**
+   * Log price update to database (optional logging)
+   */
+  async logPriceUpdate(asin, sku, newPrice, currentPrice, feedResult) {
+    try {
+      const { SupabaseService } = require('./supabase-client');
+
+      await SupabaseService.client
+        .from('price_updates')
+        .insert({
+          asin: asin,
+          sku: sku,
+          old_price: currentPrice,
+          new_price: newPrice,
+          feed_id: feedResult.feedId,
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+          source: 'sp-api-feeds'
+        });
+
+      console.log('💾 Price update logged to database');
+    } catch (error) {
+      console.warn('⚠️ Database logging failed:', error.message);
+      // Don't throw - this is optional logging
     }
   }
 }
