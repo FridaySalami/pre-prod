@@ -197,17 +197,20 @@ async function uploadBatchPricingData(uploadUrl, items) {
     messageId: 1
   });
 
-  const axios = require('axios');
-  const response = await axios.put(uploadUrl, jsonData, {
+  const response = await fetch(uploadUrl, {
+    method: 'PUT',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json; charset=utf-8'
     },
-    timeout: 60000 // 60 seconds for large batches
+    body: JSON.stringify(jsonData)
   });
 
-  if (response.status !== 200) {
-    throw new Error(`Failed to upload batch pricing data: ${response.status}`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to upload batch pricing data: ${response.status} ${response.statusText} - ${errorText}`);
   }
+
+  console.log('✅ Batch pricing data uploaded to S3');
 }
 
 /**
