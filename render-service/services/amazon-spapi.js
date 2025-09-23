@@ -265,6 +265,10 @@ class AmazonSPAPI {
       // Get your seller ID for comparison
       const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID;
 
+      // Get SKU-specific pricing from our listings data FIRST (before using it)
+      const { SupabaseService } = require('./supabase-client');
+      const skuPricingData = await SupabaseService.getSkuPricing(sku);
+
       // Find Buy Box winner
       const buyBoxOffer = offers.find(offer => offer.IsBuyBoxWinner === true);
 
@@ -314,10 +318,6 @@ class AmazonSPAPI {
           console.log(`📋 Your Offer ${index + 1}: £${offer.ListingPrice?.Amount}, Prime: ${offer.PrimeInformation?.IsPrime}, FBA: ${offer.IsFulfilledByAmazon}, Channel: ${offer.FulfillmentChannel}`);
         });
       }
-
-      // Get SKU-specific pricing from our listings data
-      const { SupabaseService } = require('./supabase-client');
-      const skuPricingData = await SupabaseService.getSkuPricing(sku);
 
       // Prioritize live SP-API data over cached database data for accuracy
       let yourCurrentPrice;
