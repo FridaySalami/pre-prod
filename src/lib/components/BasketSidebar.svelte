@@ -121,7 +121,6 @@
 				{/if}
 			</div>
 		{/if}
-		</div>
 	</div>
 
 	<!-- Batch Controls - Positioned above pending items -->
