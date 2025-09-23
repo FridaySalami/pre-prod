@@ -1,4 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
+import { supabase } from '$lib/supabaseClient';
+import { browser } from '$app/environment';
 
 export interface BasketItem {
   id: string;
@@ -21,6 +23,22 @@ export interface BasketItem {
 export interface HistoryItem extends BasketItem {
   status: 'completed' | 'failed' | 'cancelled';
   completedAt: Date;
+  batchId?: string;
+  feedId?: string;
+}
+
+export interface BatchHistoryRecord {
+  id: string;
+  user_email: string;
+  item_count: number;
+  feed_id: string | null;
+  status: string;
+  submitted_at: string;
+  completed_at: string | null;
+  source: string;
+  total_price_change: number;
+  items: any[];
+  error_message: string | null;
 }
 
 export interface BasketSummary {
@@ -372,5 +390,83 @@ export const basketActions = {
       );
     })();
     selectedItems.set(new Set());
+  },
+
+  loadHistoryFromSupabase: async () => {
+    if (!browser) return; // Only run in browser
+
+    try {
+      const currentUserEmail = get(userEmail);
+      if (!currentUserEmail) return;
+
+      console.log('📊 Loading batch history from Supabase...');
+
+      // Fetch recent batch updates for the user
+      const { data: batchHistory, error } = await supabase
+        .from('batch_price_updates')
+        .select('*')
+        .eq('user_email', currentUserEmail)
+        .order('submitted_at', { ascending: false })
+        .limit(100); // Get last 100 batch submissions
+
+      if (error) {
+        console.error('❌ Error loading batch history:', error);
+        return;
+      }
+
+      if (!batchHistory || batchHistory.length === 0) {
+        console.log('📭 No batch history found for user');
+        return;
+      }
+
+      console.log(`✅ Loaded ${batchHistory.length} batch records from Supabase`);
+
+      // Convert batch records to history items
+      const historyItemsFromDb: HistoryItem[] = [];
+
+      batchHistory.forEach((batch: BatchHistoryRecord) => {
+        if (batch.items && Array.isArray(batch.items)) {
+          batch.items.forEach((item: any, index: number) => {
+            historyItemsFromDb.push({
+              id: `${batch.id}_${index}`,
+              sku: item.sku || item.SKU || 'Unknown',
+              asin: item.asin || item.ASIN || 'Unknown',
+              itemName: item.itemName || item.name || 'Unknown Item',
+              currentPrice: parseFloat(item.currentPrice || item.old_price || '0'),
+              targetPrice: parseFloat(item.targetPrice || item.newPrice || item.new_price || '0'),
+              priceChangeAmount: parseFloat(item.targetPrice || item.newPrice || '0') - parseFloat(item.currentPrice || item.old_price || '0'),
+              marginAtTarget: 0, // Not stored in batch data
+              reason: item.reason || 'Batch price update',
+              status: batch.status === 'completed' ? 'completed' : 
+                     batch.status === 'failed' ? 'failed' : 'completed',
+              createdAt: new Date(batch.submitted_at),
+              completedAt: new Date(batch.completed_at || batch.submitted_at),
+              batchId: batch.id,
+              feedId: batch.feed_id || undefined,
+              submittedAt: new Date(batch.submitted_at)
+            });
+          });
+        }
+      });
+
+      // Update the history store
+      historyItems.set(historyItemsFromDb);
+      console.log(`✅ Loaded ${historyItemsFromDb.length} individual price updates into history`);
+
+    } catch (error) {
+      console.error('❌ Error loading history from Supabase:', error);
+    }
+  },
+
+  refreshHistory: async () => {
+    await basketActions.loadHistoryFromSupabase();
   }
 };
+
+// Auto-load history when the store initializes (browser only)
+if (browser) {
+  // Load history after a short delay to ensure everything is initialized
+  setTimeout(() => {
+    basketActions.loadHistoryFromSupabase();
+  }, 1000);
+}

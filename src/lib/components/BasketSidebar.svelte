@@ -12,6 +12,8 @@
 	} from '$lib/stores/pricingBasketStore';
 	import { formatCurrency } from '$lib/utils/format';
 
+	let isLoadingHistory = false;
+
 	// Handle submit changes
 	const handleSubmitChanges = async () => {
 		if ($selectedItems.size === 0) return;
@@ -27,6 +29,16 @@
 	// Handle retry failed item
 	const handleRetry = (id: string) => {
 		basketActions.retryItem(id);
+	};
+
+	// Handle refresh history
+	const handleRefreshHistory = async () => {
+		isLoadingHistory = true;
+		try {
+			await basketActions.refreshHistory();
+		} finally {
+			isLoadingHistory = false;
+		}
 	};
 
 	// Get status color
@@ -111,14 +123,27 @@
 					<span>Total History:</span>
 					<span class="font-medium">{$historyItems.length}</span>
 				</div>
-				{#if $historyItems.length > 0}
+				<div class="flex gap-1 mt-1">
 					<button
-						on:click={basketActions.clearHistory}
-						class="w-full text-xs px-2 py-1 mt-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
+						on:click={handleRefreshHistory}
+						disabled={isLoadingHistory}
+						class="flex-1 text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50"
 					>
-						Clear History
+						{#if isLoadingHistory}
+							Refreshing...
+						{:else}
+							🔄 Refresh
+						{/if}
 					</button>
-				{/if}
+					{#if $historyItems.length > 0}
+						<button
+							on:click={basketActions.clearHistory}
+							class="flex-1 text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
+						>
+							Clear Local
+						</button>
+					{/if}
+				</div>
 			</div>
 		{/if}
 	</div>
@@ -263,7 +288,12 @@
 			{/if}
 		{:else}
 			<!-- History Items -->
-			{#if $recentHistory.length === 0}
+			{#if isLoadingHistory}
+				<div class="p-4 text-center text-gray-500">
+					<div class="text-2xl mb-2">⏳</div>
+					<p class="text-sm">Loading history from database...</p>
+				</div>
+			{:else if $recentHistory.length === 0}
 				<div class="p-4 text-center text-gray-500">
 					<div class="text-2xl mb-2">📋</div>
 					<p class="text-sm">No completed price updates</p>
