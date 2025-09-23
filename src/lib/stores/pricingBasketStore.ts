@@ -12,9 +12,15 @@ export interface BasketItem {
   reason: string;
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   createdAt: Date;
+  completedAt?: Date;
   errorMessage?: string;
   feedId?: string;
   submittedAt?: Date;
+}
+
+export interface HistoryItem extends BasketItem {
+  status: 'completed' | 'failed' | 'cancelled';
+  completedAt: Date;
 }
 
 export interface BasketSummary {
@@ -27,9 +33,11 @@ export interface BasketSummary {
 
 // Stores - Initialize with empty basket for production
 export const basketItems = writable<BasketItem[]>([]);
+export const historyItems = writable<HistoryItem[]>([]);
 export const selectedItems = writable<Set<string>>(new Set());
 export const isProcessing = writable<boolean>(false);
 export const userEmail = writable<string>('jack@example.com');
+export const showHistory = writable<boolean>(false);
 
 // Derived stores
 export const basketSummary = derived(basketItems, ($items): BasketSummary => {
@@ -47,6 +55,16 @@ export const basketSummary = derived(basketItems, ($items): BasketSummary => {
     estimatedProcessingTime: pendingItems.length * 2 // 2 seconds per item estimate
   };
 });
+
+export const activeItems = derived(basketItems, ($items) => 
+  $items.filter(item => item.status === 'pending' || item.status === 'processing')
+);
+
+export const recentHistory = derived(historyItems, ($history) => 
+  $history
+    .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
+    .slice(0, 20) // Show last 20 completed items
+);
 
 export const shortEmail = derived(userEmail, ($email): string => {
   if (!$email) return 'Guest';
@@ -86,6 +104,50 @@ export const basketActions = {
   clearBasket: () => {
     basketItems.set([]);
     selectedItems.set(new Set());
+  },
+
+  moveToHistory: (itemIds: string[]) => {
+    basketItems.update(items => {
+      const itemsToMove = items.filter(item => itemIds.includes(item.id));
+      const remainingItems = items.filter(item => !itemIds.includes(item.id));
+      
+      // Add completed items to history
+      historyItems.update(history => [
+        ...history,
+        ...itemsToMove.map(item => ({
+          ...item,
+          completedAt: new Date(),
+          status: item.status as 'completed' | 'failed' | 'cancelled'
+        }))
+      ]);
+      
+      return remainingItems;
+    });
+    
+    // Remove moved items from selection
+    selectedItems.update(selected => {
+      itemIds.forEach(id => selected.delete(id));
+      return selected;
+    });
+  },
+
+  clearHistory: () => {
+    historyItems.set([]);
+  },
+
+  autoCleanupCompleted: () => {
+    // Automatically move completed/failed items to history after a delay
+    setTimeout(() => {
+      basketItems.subscribe(items => {
+        const completedIds = items
+          .filter(item => item.status === 'completed' || item.status === 'failed')
+          .map(item => item.id);
+        
+        if (completedIds.length > 0) {
+          basketActions.moveToHistory(completedIds);
+        }
+      })();
+    }, 3000); // 3 second delay to let user see the success
   },
 
   toggleSelection: (id: string) => {
@@ -206,6 +268,9 @@ export const basketActions = {
               : item
           )
         );
+
+        // Auto-cleanup completed items after a delay
+        basketActions.autoCleanupCompleted();
 
         // Show success notification (if toast function is available)
         if (typeof window !== 'undefined' && (window as any).showSuccessToast) {
