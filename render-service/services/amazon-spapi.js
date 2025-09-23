@@ -280,43 +280,80 @@ class AmazonSPAPI {
       if (yourOffers.length > 1) {
         console.log(`🔍 Multiple offers found for your seller ID (${yourOffers.length} SKUs for same ASIN)`);
 
-        // Use amazon_listings data to determine correct fulfillment matching
-        if (skuPricingData && skuPricingData.shippingGroup) {
-          const shippingGroup = skuPricingData.shippingGroup.toLowerCase();
-          console.log(`📋 SKU "${sku}" shipping group from database: "${skuPricingData.shippingGroup}"`);
+        // Enhanced matching logic - prioritize SKU name over potentially outdated database shipping group
+        const skuNameLower = sku.toLowerCase();
+        const isPrimeFromSku = skuNameLower.includes('prime') || skuNameLower.includes('fba');
+        const isStandardFromSku = skuNameLower.includes('standard') || skuNameLower.includes('merchant');
 
-          // Match based on shipping group/fulfillment type from amazon_listings
-          if (shippingGroup.includes('prime') || shippingGroup.includes('fba') || shippingGroup.includes('nationwide prime')) {
-            const primeOffer = yourOffers.find(offer =>
-              offer.IsFulfilledByAmazon === true ||
-              offer.PrimeInformation?.IsPrime === true ||
-              offer.FulfillmentChannel === 'AMAZON'
-            );
-            if (primeOffer) {
-              yourOfferFromApi = primeOffer;
-              console.log(`✅ Matched Prime SKU "${sku}" (${skuPricingData.shippingGroup}) to Prime offer: £${primeOffer.ListingPrice?.Amount}`);
-            }
-          } else if (shippingGroup.includes('standard') || shippingGroup.includes('uk shipping') || shippingGroup.includes('merchant')) {
-            const standardOffer = yourOffers.find(offer =>
-              offer.IsFulfilledByAmazon === false ||
-              offer.PrimeInformation?.IsPrime === false ||
-              offer.FulfillmentChannel === 'MERCHANT'
-            );
-            if (standardOffer) {
-              yourOfferFromApi = standardOffer;
-              console.log(`✅ Matched Standard SKU "${sku}" (${skuPricingData.shippingGroup}) to Standard offer: £${standardOffer.ListingPrice?.Amount}`);
-            }
-          } else {
-            console.warn(`⚠️ Unknown shipping group "${skuPricingData.shippingGroup}" for SKU "${sku}" - using first offer`);
-          }
-        } else {
-          console.warn(`⚠️ No shipping group data found for SKU "${sku}" - using first offer`);
-        }
+        console.log(`🔍 SKU Analysis: "${sku}" -> Prime from name: ${isPrimeFromSku}, Standard from name: ${isStandardFromSku}`);
 
-        // Log all your offers for debugging
+        // Log all your offers for better debugging
         yourOffers.forEach((offer, index) => {
           console.log(`📋 Your Offer ${index + 1}: £${offer.ListingPrice?.Amount}, Prime: ${offer.PrimeInformation?.IsPrime}, FBA: ${offer.IsFulfilledByAmazon}, Channel: ${offer.FulfillmentChannel}`);
         });
+
+        // Primary matching: Use SKU name as most reliable indicator
+        if (isPrimeFromSku) {
+          const primeOffer = yourOffers.find(offer =>
+            offer.IsFulfilledByAmazon === true ||
+            offer.PrimeInformation?.IsPrime === true ||
+            offer.FulfillmentChannel === 'AMAZON'
+          );
+          if (primeOffer) {
+            yourOfferFromApi = primeOffer;
+            console.log(`✅ SKU NAME MATCH: "${sku}" matched to Prime offer: £${primeOffer.ListingPrice?.Amount}`);
+          } else {
+            console.warn(`⚠️ SKU "${sku}" suggests Prime but no Prime offer found - using fallback logic`);
+          }
+        } else if (isStandardFromSku) {
+          const standardOffer = yourOffers.find(offer =>
+            offer.IsFulfilledByAmazon === false ||
+            offer.PrimeInformation?.IsPrime === false ||
+            offer.FulfillmentChannel === 'MERCHANT'
+          );
+          if (standardOffer) {
+            yourOfferFromApi = standardOffer;
+            console.log(`✅ SKU NAME MATCH: "${sku}" matched to Standard offer: £${standardOffer.ListingPrice?.Amount}`);
+          }
+        } else {
+          // Fallback to database shipping group if SKU name is ambiguous
+          if (skuPricingData && skuPricingData.shippingGroup) {
+            const shippingGroup = skuPricingData.shippingGroup.toLowerCase();
+            console.log(`📋 SKU "${sku}" shipping group from database: "${skuPricingData.shippingGroup}" (fallback matching)`);
+
+            if (shippingGroup.includes('prime') || shippingGroup.includes('fba') || shippingGroup.includes('nationwide prime')) {
+              const primeOffer = yourOffers.find(offer =>
+                offer.IsFulfilledByAmazon === true ||
+                offer.PrimeInformation?.IsPrime === true ||
+                offer.FulfillmentChannel === 'AMAZON'
+              );
+              if (primeOffer) {
+                yourOfferFromApi = primeOffer;
+                console.log(`✅ DATABASE MATCH: "${sku}" (${skuPricingData.shippingGroup}) to Prime offer: £${primeOffer.ListingPrice?.Amount}`);
+              }
+            } else if (shippingGroup.includes('standard') || shippingGroup.includes('uk shipping') || shippingGroup.includes('merchant')) {
+              const standardOffer = yourOffers.find(offer =>
+                offer.IsFulfilledByAmazon === false ||
+                offer.PrimeInformation?.IsPrime === false ||
+                offer.FulfillmentChannel === 'MERCHANT'
+              );
+              if (standardOffer) {
+                yourOfferFromApi = standardOffer;
+                console.log(`✅ DATABASE MATCH: "${sku}" (${skuPricingData.shippingGroup}) to Standard offer: £${standardOffer.ListingPrice?.Amount}`);
+              }
+            } else {
+              console.warn(`⚠️ Unknown shipping group "${skuPricingData.shippingGroup}" for SKU "${sku}" - using first offer`);
+            }
+          } else {
+            console.warn(`⚠️ No shipping group data found for SKU "${sku}" - using first offer`);
+          }
+        }
+
+        // Final fallback - use first offer if no match found
+        if (!yourOfferFromApi && yourOffers.length > 0) {
+          yourOfferFromApi = yourOffers[0];
+          console.warn(`⚠️ No specific match found for "${sku}" - using first available offer: £${yourOfferFromApi.ListingPrice?.Amount}`);
+        }
       }
 
       // Prioritize live SP-API data over cached database data for accuracy
