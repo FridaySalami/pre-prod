@@ -1080,7 +1080,7 @@ class AmazonSPAPI {
     const requestBody = {
       feedType: 'JSON_LISTINGS_FEED',
       marketplaceIds: [this.config.marketplace],
-      feedDocumentId: feedDocumentId
+      inputFeedDocumentId: feedDocumentId
     };
 
     const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
@@ -1093,12 +1093,20 @@ class AmazonSPAPI {
 
     const signedHeaders = this.createSignature(method, path, {}, headers, JSON.stringify(requestBody));
 
-    const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
-      headers: signedHeaders,
-      timeout: 30000
-    });
+    try {
+      const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
 
-    return response.data;
+      return response.data;
+    } catch (error) {
+      console.error('❌ Feed submission failed:', error.response?.data);
+      if (error.response?.data?.errors) {
+        console.error('📋 Amazon feed submission errors:', JSON.stringify(error.response.data.errors, null, 2));
+      }
+      throw error;
+    }
   }
 
   /**
