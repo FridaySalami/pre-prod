@@ -41,6 +41,16 @@
 		}
 	};
 
+	// Debug function to test Supabase connection
+	const handleTestConnection = async () => {
+		const result = await basketActions.testSupabaseConnection();
+		if (result) {
+			alert('✅ Supabase connection successful!');
+		} else {
+			alert('❌ Supabase connection failed. Check console for details.');
+		}
+	};
+
 	// Get status color
 	const getStatusColor = (status: string) => {
 		switch (status) {
@@ -83,19 +93,23 @@
 			<div class="flex gap-1">
 				<button
 					on:click={() => showHistory.set(false)}
-					class="px-2 py-1 text-xs rounded {!$showHistory ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-100'}"
+					class="px-2 py-1 text-xs rounded {!$showHistory
+						? 'bg-blue-600 text-white'
+						: 'text-blue-600 hover:bg-blue-100'}"
 				>
 					Active
 				</button>
 				<button
 					on:click={() => showHistory.set(true)}
-					class="px-2 py-1 text-xs rounded {$showHistory ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-100'}"
+					class="px-2 py-1 text-xs rounded {$showHistory
+						? 'bg-blue-600 text-white'
+						: 'text-blue-600 hover:bg-blue-100'}"
 				>
 					History ({$historyItems.length})
 				</button>
 			</div>
 		</div>
-		
+
 		{#if !$showHistory}
 			<div class="text-xs text-blue-700 space-y-1">
 				<div class="flex justify-between">
@@ -144,6 +158,14 @@
 						</button>
 					{/if}
 				</div>
+				<!-- Debug button (development only) -->
+				<button
+					on:click={handleTestConnection}
+					class="w-full text-xs px-2 py-1 mt-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+					title="Test Supabase connection"
+				>
+					🔍 Test DB Connection
+				</button>
 			</div>
 		{/if}
 	</div>
@@ -253,7 +275,9 @@
 								<div class="flex justify-between items-center text-sm">
 									<span class="text-gray-600">Price:</span>
 									<div class="text-right">
-										<div class="line-through text-gray-400">{formatCurrency(item.currentPrice)}</div>
+										<div class="line-through text-gray-400">
+											{formatCurrency(item.currentPrice)}
+										</div>
 										<div class="font-medium">{formatCurrency(item.targetPrice)}</div>
 									</div>
 								</div>
@@ -309,7 +333,11 @@
 									{item.status}
 								</span>
 								<div class="text-xs text-gray-500">
-									{new Date(item.completedAt).toLocaleDateString()} {new Date(item.completedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+									{new Date(item.completedAt).toLocaleDateString()}
+									{new Date(item.completedAt).toLocaleTimeString([], {
+										hour: '2-digit',
+										minute: '2-digit'
+									})}
 								</div>
 							</div>
 
@@ -326,7 +354,9 @@
 								<div class="flex justify-between items-center text-sm">
 									<span class="text-gray-600">Price:</span>
 									<div class="text-right">
-										<div class="line-through text-gray-400">{formatCurrency(item.currentPrice)}</div>
+										<div class="line-through text-gray-400">
+											{formatCurrency(item.currentPrice)}
+										</div>
 										<div class="font-medium">{formatCurrency(item.targetPrice)}</div>
 									</div>
 								</div>
@@ -373,11 +403,11 @@
 			<div class="text-xs text-gray-600 space-y-1">
 				<div class="flex justify-between">
 					<span>Completed:</span>
-					<span>{$historyItems.filter(item => item.status === 'completed').length}</span>
+					<span>{$historyItems.filter((item) => item.status === 'completed').length}</span>
 				</div>
 				<div class="flex justify-between">
 					<span>Failed:</span>
-					<span>{$historyItems.filter(item => item.status === 'failed').length}</span>
+					<span>{$historyItems.filter((item) => item.status === 'failed').length}</span>
 				</div>
 			</div>
 		{/if}

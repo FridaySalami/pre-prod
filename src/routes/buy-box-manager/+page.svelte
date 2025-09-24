@@ -2290,22 +2290,77 @@
 	function applyFilters(preservePage = false): void {
 		let filtered = [...buyboxData];
 
-		// Enhanced search filter - searches across multiple fields
+		// Enhanced multi-term search filter with fuzzy matching
 		if (searchTerm.trim()) {
 			const query = searchTerm.toLowerCase().trim();
-			filtered = filtered.filter((item) => {
-				// Helper function to safely check if a field contains the query
-				const contains = (field: string | null | undefined): boolean => {
-					if (!field) return false;
-					return field.toLowerCase().includes(query);
+			// Split search query into individual terms for multi-term matching
+			const searchTerms = query.split(/\s+/).filter((term) => term.length > 0);
+
+			// Helper function for fuzzy matching (handles typos and variations)
+			const fuzzyMatch = (searchTerm: string, text: string): boolean => {
+				if (text.includes(searchTerm)) return true; // Exact match first
+
+				// Handle common weight/size variations
+				const weightVariations: Record<string, string[]> = {
+					kg: ['kilo', 'kilogram', 'kilos'],
+					g: ['gram', 'grams', 'gr'],
+					ml: ['millilitre', 'milliliter'],
+					l: ['litre', 'liter', 'litres', 'liters']
 				};
 
-				// Search across multiple product fields using correct database column names
-				const matchesSku = contains(item.sku);
-				const matchesAsin = contains(item.asin);
-				const matchesItemName = contains(item.item_name); // This is the product title
+				// Check if search term is a weight/measurement that might have variations
+				for (const [short, variations] of Object.entries(weightVariations)) {
+					if (searchTerm.includes(short)) {
+						// Try variations: "2.5kg" -> also try "2.5 kg", "2.5kilo", etc.
+						const baseNumber = searchTerm.replace(short, '');
+						for (const variation of variations) {
+							if (
+								text.includes(baseNumber + variation) ||
+								text.includes(baseNumber + ' ' + variation)
+							) {
+								return true;
+							}
+						}
+					}
+				}
 
-				return matchesSku || matchesAsin || matchesItemName;
+				// Simple character distance for typos (for terms longer than 3 chars)
+				if (searchTerm.length > 3) {
+					const words = text.split(/\s+/);
+					for (const word of words) {
+						if (word.length >= searchTerm.length - 1 && word.length <= searchTerm.length + 1) {
+							let differences = 0;
+							const maxLength = Math.max(searchTerm.length, word.length);
+							const minLength = Math.min(searchTerm.length, word.length);
+
+							// Allow 1 character difference for words > 3 chars
+							for (let i = 0; i < minLength; i++) {
+								if (searchTerm[i] !== word[i]) differences++;
+							}
+							differences += maxLength - minLength; // Add length difference
+
+							if (differences <= 1) return true; // Allow 1 typo
+						}
+					}
+				}
+
+				return false;
+			};
+
+			filtered = filtered.filter((item) => {
+				// Combine all searchable fields into one string for comprehensive search
+				const searchableContent = [item.sku || '', item.asin || '', item.item_name || '']
+					.join(' ')
+					.toLowerCase();
+
+				// For multi-term search: ALL terms must be found somewhere in the searchable content
+				// This allows "callebaut 2.5kg" to match "Callebaut Dark Chocolate Couverture 2.5kg Block"
+				if (searchTerms.length > 1) {
+					return searchTerms.every((term) => fuzzyMatch(term, searchableContent));
+				}
+
+				// For single term search: use fuzzy matching
+				return fuzzyMatch(query, searchableContent);
 			});
 		}
 

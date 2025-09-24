@@ -393,13 +393,19 @@ export const basketActions = {
   },
 
   loadHistoryFromSupabase: async () => {
-    if (!browser) return; // Only run in browser
+    if (!browser) {
+      console.log('📱 Not in browser, skipping history load');
+      return; // Only run in browser
+    }
 
     try {
       const currentUserEmail = get(userEmail);
-      if (!currentUserEmail) return;
+      if (!currentUserEmail) {
+        console.log('❌ No user email set, cannot load history');
+        return;
+      }
 
-      console.log('📊 Loading batch history from Supabase...');
+      console.log(`📊 Loading batch history from Supabase for user: ${currentUserEmail}`);
 
       // Fetch recent batch updates for the user
       const { data: batchHistory, error } = await supabase
@@ -419,7 +425,7 @@ export const basketActions = {
         return;
       }
 
-      console.log(`✅ Loaded ${batchHistory.length} batch records from Supabase`);
+      console.log(`✅ Loaded ${batchHistory.length} batch records from Supabase`, batchHistory);
 
       // Convert batch records to history items
       const historyItemsFromDb: HistoryItem[] = [];
@@ -437,8 +443,8 @@ export const basketActions = {
               priceChangeAmount: parseFloat(item.targetPrice || item.newPrice || '0') - parseFloat(item.currentPrice || item.old_price || '0'),
               marginAtTarget: 0, // Not stored in batch data
               reason: item.reason || 'Batch price update',
-              status: batch.status === 'completed' ? 'completed' : 
-                     batch.status === 'failed' ? 'failed' : 'completed',
+              status: batch.status === 'completed' ? 'completed' :
+                batch.status === 'failed' ? 'failed' : 'completed',
               createdAt: new Date(batch.submitted_at),
               completedAt: new Date(batch.completed_at || batch.submitted_at),
               batchId: batch.id,
@@ -460,13 +466,49 @@ export const basketActions = {
 
   refreshHistory: async () => {
     await basketActions.loadHistoryFromSupabase();
+  },
+
+  testSupabaseConnection: async () => {
+    if (!browser) return;
+
+    try {
+      console.log('🔍 Testing Supabase connection...');
+      const { data, error } = await supabase
+        .from('batch_price_updates')
+        .select('count(*)')
+        .limit(1);
+
+      if (error) {
+        console.error('❌ Supabase connection test failed:', error);
+        return false;
+      }
+
+      console.log('✅ Supabase connection successful', data);
+      return true;
+    } catch (error) {
+      console.error('❌ Supabase connection error:', error);
+      return false;
+    }
   }
 };
 
 // Auto-load history when the store initializes (browser only)
 if (browser) {
+  console.log('🚀 Initializing pricing basket store in browser');
+
   // Load history after a short delay to ensure everything is initialized
   setTimeout(() => {
+    console.log('⏰ Auto-loading history from Supabase...');
     basketActions.loadHistoryFromSupabase();
   }, 1000);
+
+  // Also load when user email changes
+  userEmail.subscribe(($email) => {
+    if ($email && $email !== 'jack@example.com') {
+      console.log(`👤 User email changed to: ${$email}, reloading history`);
+      setTimeout(() => {
+        basketActions.loadHistoryFromSupabase();
+      }, 500);
+    }
+  });
 }
