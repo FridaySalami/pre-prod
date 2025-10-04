@@ -1,8 +1,12 @@
 <script lang="ts">
-	// Svelte 5 with runes - Real-time Amazon SP-API Notifications
+	// Svelte 5 with runes - Real-time Amazon Buy Box Alerts from Database
 	import { onMount } from 'svelte';
 	import { slide, fade, fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
+	import type { PageData } from './$types';
+
+	// Get server-loaded data from database
+	let { data }: { data: PageData } = $props();
 
 	// Types for Amazon SP-API notifications (comprehensive structure)
 	interface AnyOfferChangedNotification {
@@ -130,12 +134,14 @@
 	}
 
 	// Reactive state using Svelte 5 runes
+	// Initialize with server-loaded data from database
+	let alerts = $state(data.alerts || []);
 	let notifications = $state<SpApiNotification[]>([]);
 	let isPolling = $state(false);
-	let lastPollTime = $state<Date | null>(null);
+	let lastPollTime = $state<Date | null>(data.lastUpdated ? new Date(data.lastUpdated) : null);
 	let errorMessage = $state<string | null>(null);
-	let connectionStatus = $state<'connected' | 'disconnected' | 'polling'>('disconnected');
-	let stats = $state({
+	let connectionStatus = $state<'connected' | 'disconnected' | 'polling'>('connected');
+	let stats = $state(data.stats || {
 		totalNotifications: 0,
 		uniqueAsins: new Set<string>(),
 		lastHour: 0
@@ -1216,15 +1222,37 @@
 		}
 	}
 
+	// Refresh data from database (replaces SQS polling)
+	async function refreshFromDatabase() {
+		try {
+			connectionStatus = 'polling';
+			
+			const response = await fetch('/api/buy-box-alerts/current-state');
+			const result = await response.json();
+
+			if (result.alerts) {
+				alerts = result.alerts;
+				stats = result.stats;
+				lastPollTime = new Date();
+				connectionStatus = 'connected';
+				errorMessage = null;
+			}
+		} catch (error) {
+			console.error('Error refreshing from database:', error);
+			errorMessage = 'Failed to refresh alerts from database';
+			connectionStatus = 'disconnected';
+		}
+	}
+
 	// Start/stop polling
 	function startPolling() {
 		if (pollInterval) {
 			clearInterval(pollInterval);
 		}
 
-		// Poll immediately, then set interval
-		pollNotifications();
-		pollInterval = setInterval(pollNotifications, POLL_INTERVAL);
+		// Refresh immediately, then set interval (every 30 seconds for database polling)
+		refreshFromDatabase();
+		pollInterval = setInterval(refreshFromDatabase, 30000); // 30 seconds
 		connectionStatus = 'connected';
 	}
 
@@ -1264,16 +1292,8 @@
 
 	// Lifecycle
 	onMount(() => {
-		if (!isManualMode) {
-			startPolling();
-		} else {
-			// In manual mode, load initial data but don't start auto-polling
-			pollNotifications();
-			lastManualRefresh = new Date();
-		}
-
-		// Initial prefetch of product names for any existing notifications
-		prefetchProductNames();
+		// Start auto-refresh from database every 30 seconds
+		startPolling();
 
 		return () => {
 			stopPolling();
