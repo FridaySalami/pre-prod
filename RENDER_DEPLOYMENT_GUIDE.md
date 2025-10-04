@@ -33,7 +33,25 @@ psql postgresql://buybox_notifications_user:xxx@xxx.render.com/buybox_notificati
   -c "$(cat render-service/sql/init-notification-worker-db.sql)"
 ```
 
-**Option C: Using Render's psql command (Recommended)**
+**Option C: Using Render CLI (Easiest with psql installed)**
+
+If you have the Render CLI installed:
+```bash
+# Install Render CLI (one time setup)
+brew tap render-oss/render && brew install render
+
+# Login to Render (one time setup)
+render login
+# This opens a browser - authorize the CLI
+
+# Connect to your database (replace with your database ID)
+render psql dpg-d3gdjlb3fgac738tk6c0-a
+
+# Once connected, run:
+\i render-service/sql/init-notification-worker-db.sql
+```
+
+**Option D: Using Render's manual psql command**
 
 Render provides a pre-configured connection command:
 1. Go to Buybox_notifications database > Connect tab
@@ -50,7 +68,11 @@ PGPASSWORD=xxx psql -h xxx.render.com -U buybox_notifications_user buybox_notifi
 **Note:** If you get "command not found: psql", install PostgreSQL client:
 ```bash
 # macOS
-brew install postgresql
+brew install postgresql@14
+
+# Add to PATH
+echo 'export PATH="/opt/homebrew/opt/postgresql@14/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 
 # The SQL file will still work - just use Option A (web console) instead
 ```
@@ -406,17 +428,17 @@ Once this is running smoothly for a week:
 ## Quick Commands
 
 ```bash
-# View worker logs (last 100 lines)
-render logs notification-processor --tail 100
+# Render CLI (after running 'render login')
+render psql dpg-d3gdjlb3fgac738tk6c0-a  # Connect to database
+render logs notification-processor --tail 100  # View worker logs
+render services list  # List all your services
+render deploys list notification-processor  # View deploy history
 
-# Check database
+# Direct psql (using connection string from Render dashboard)
 psql $DATABASE_URL -c "SELECT * FROM worker_health;"
 
-# Send test notification
-node test-notifications.cjs
-
-# Force redeploy
-render deploy notification-processor
+# Testing
+node test-notifications.cjs  # Send test notification to SQS
 ```
 
 ---
