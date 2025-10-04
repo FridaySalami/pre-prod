@@ -243,3 +243,13 @@ BEGIN
     SELECT * FROM with_growth;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Function to increment check_count for price monitoring config
+CREATE OR REPLACE FUNCTION increment_check_count(config_id INTEGER)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE price_monitoring_config 
+    SET check_count = check_count + 1 
+    WHERE id = config_id;
+END;
+$$ LANGUAGE plpgsql;

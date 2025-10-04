@@ -38,7 +38,9 @@ const ROUTE_PROTECTION = {
     '/api/audit-log', // Temporarily public for debugging
     '/api/feed-status', // Temporarily public for debugging
     '/api/quick-price-check', // Temporarily public for debugging
-    '/api/daily-report' // Public for Make.com integration
+    '/api/daily-report', // Public for Make.com integration
+    '/api/product-lookup', // Public for internal product lookups
+    '/api/product-lookup/test' // Public for testing
     // Note: '/' is NOT public - it should redirect to login if not authenticated
   ],
 

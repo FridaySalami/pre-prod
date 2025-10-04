@@ -3,171 +3,134 @@
 ✅ Single ASIN: Amazon SP-API client initialized
 ✅ Single ASIN: Cost calculator initialized
 ✅ Live Pricing API: Services initialized successfully
+[CostCalculator] Warning: No Supabase client provided, cost calculations will be unavailable
+✅ Batch Price Update: Amazon SP-API initialized
+✅ Amazon SP-API client initialized for testing
+✅ All routes and services loaded successfully
 🚀 Buy Box Render Service started on port 3001
 📊 Ready to process up to 3,477 ASINs
 ⏰ Estimated max processing time: 2-3 hours
-🔗 Health check: http://localhost:3001/health
-📈 Service info: http://localhost:3001/
-2025-08-09T09:14:47.877Z - GET /health
-2025-08-09T09:14:56.631Z - POST /api/bulk-scan/start
-Starting bulk scan with parameters: {
-  source: 'test_fixed_offers_insert',
-  filterType: 'active',
-  maxAsins: 3,
-  notes: 'Testing fix for buybox_offers insert issue',
-  customAsins: undefined
+🔗 Health check: /health
+📈 Service info: /
+🌍 Environment: production
+2025-09-24T12:19:19.763Z - GET /
+2025-09-24T12:19:25.252Z - GET /test-competitive-pricing/sample
+2025-09-24T12:19:34.023Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 2 ASINs
+📋 ASINs: B0D45C1HQP, B0D3LZHNGZ
+🔬 Test type: both
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B0D45C1HQP...
+📡 SP-API Request for B0D45C1HQP at 2025-09-24T12:19:34.379Z
+✅ SP-API Response received for B0D45C1HQP at 2025-09-24T12:19:34.566Z
+📡 Current API: Fetching B0D3LZHNGZ...
+📡 SP-API Request for B0D3LZHNGZ at 2025-09-24T12:19:36.669Z
+SP-API error for ASIN B0D3LZHNGZ: {
+  errors: [
+    {
+      code: 'QuotaExceeded',
+      message: 'You exceeded your quota for the requested resource.',
+      details: ''
+    }
+  ]
 }
-📊 Fetching all active ASINs from database (may take a moment)...
-📄 Fetched page 1: 1000 ASINs (total: 1000)
-📄 Fetched page 2: 1000 ASINs (total: 2000)
-📄 Fetched page 3: 1000 ASINs (total: 3000)
-📄 Fetched page 4: 477 ASINs (total: 3477)
-✅ Fetched 3477 active ASINs from database (4 pages)
-Found 3 ASINs to process
-Created job 95182096-1820-4687-9bc0-9a526d90b8f9 for 3 ASINs
-Starting background processing for job 95182096-1820-4687-9bc0-9a526d90b8f9 with 3 ASINs
-Processing 1 batches for job 95182096-1820-4687-9bc0-9a526d90b8f9
-
-📊 RATE LIMITING PERFORMANCE REPORT
-====================================
-📈 Success Rate: 0%
-🚫 Rate Limit Rate: 0%
-📊 Total Requests: 0
-✅ Successful: 0
-❌ Rate Limited: 0
-🔄 Consecutive Rate Limits: 0
-⏰ Current Adaptive Delay: 2500ms
-📅 Daily Quota Used: 0
-🕐 Last Request: 1970-01-01T00:00:00.000Z
-⏳ Time Since Last: 1754730897076ms
-🔄 Quota Resets: 2025-08-10T00:00:00.000Z
-====================================
-
-Processing batch 1/1 with 3 ASINs
-Fetching Buy Box data for ASIN: B0D45C1HQP, SKU: 0X-U12R-J16J
-Product title for 0X-U12R-J16J/B0D45C1HQP: REGGIA - Cannelloni Tubes - 6 x 250gm
-Found SKU pricing in database for 0X-U12R-J16J: £14.4
-Using SKU-specific pricing for 0X-U12R-J16J: £14.4
-Buy Box analysis for B0D45C1HQP: Your ID: A2D8NG39VURSL3, Buy Box Owner: A2D8NG39VURSL3, Winner: true
-Price Gap Debug - Your: 14.4 (number), BuyBox: 14.4 (number), Gap: 0 (number)
-Pricing for B0D45C1HQP: Your Price: £14.4, Buy Box Price: £14.4, Gap: £0.00
-🏷️ ASIN B0D45C1HQP: Raw offers from Amazon SP-API: 1
-🎯 Normalized offers created: 1
-📋 Sample offer data: {
-  asin: 'B0D45C1HQP',
-  seller_id: 'A2D8NG39VURSL3',
-  price: 14.4,
-  is_buybox: true
+❌ Current API test failed: RATE_LIMITED
+🚀 Testing batch API (getCompetitivePricing)...
+📡 Batch API: Fetching 2 ASINs in one request...
+📡 Batch Competitive Pricing Request for 2 Asins at 2025-09-24T12:19:36.717Z
+📋 Items: B0D45C1HQP, B0D3LZHNGZ
+Batch Competitive Pricing API error for Asins B0D45C1HQP, B0D3LZHNGZ: {
+  errors: [
+    {
+      code: 'Unauthorized',
+      message: 'Access to requested resource is denied.',
+      details: ''
+    }
+  ]
 }
-[CostCalculator] Calculating costs for SKU: 0X-U12R-J16J
-[CostCalculator] Looking up shipping group and item name for SKU: 0X-U12R-J16J
-[CostCalculator] SKU mapping found for 0X-U12R-J16J
-[CostCalculator] SKU: 0X-U12R-J16J, Shipping Group from DB: 'Nationwide Prime'
-[CostCalculator] SKU: 0X-U12R-J16J, Final Shipping: Nationwide Prime, Shipping Type: Prime
-[CostCalculator] Costs for 0X-U12R-J16J: {
-  baseCost: 4.62,
-  boxCost: 0.72,
-  materialCost: 0.2,
-  fragileCharge: 0,
-  vatAmount: 0,
-  shippingCost: 5.12,
-  materialTotalCost: 5.54
+❌ Batch API test failed: ACCESS_DENIED
+🎯 Test completed for 2 ASINs
+2025-09-24T12:20:42.485Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 9 ASINs
+📋 ASINs: B0BGPMD867, B0B46GGBBP, B0DVS6YBJW, B09RQS4SBQ, B0B8XHPF85, B004BTED72, B0DPLFN2WF, B0F7MNF5WY, B0DPJ458LV
+🔬 Test type: batch
+🚀 Testing batch API (getCompetitivePricing)...
+📡 Batch API: Fetching 9 ASINs in one request...
+📡 Batch Competitive Pricing Request for 9 Asins at 2025-09-24T12:20:42.485Z
+📋 Items: B0BGPMD867, B0B46GGBBP, B0DVS6YBJW, B09RQS4SBQ, B0B8XHPF85 ... (+4 more)
+Batch Competitive Pricing API error for Asins B0BGPMD867, B0B46GGBBP, B0DVS6YBJW, B09RQS4SBQ, B0B8XHPF85, B004BTED72, B0DPLFN2WF, B0F7MNF5WY, B0DPJ458LV: {
+  errors: [
+    {
+      code: 'Unauthorized',
+      message: 'Access to requested resource is denied.',
+      details: ''
+    }
+  ]
 }
-Successfully processed ASIN B0D45C1HQP: Buy Box owned by Unknown, margin: 12.32%
-🔍 ASIN B0D45C1HQP: API result structure: {
-  hasSummary: true,
-  hasOffers: true,
-  offersCount: 1,
-  offersType: 'object'
-}
-📊 Found 1 competitor offers for ASIN B0D45C1HQP
-✅ Stored data for ASIN B0D45C1HQP, SKU: 0X-U12R-J16J
-⏳ Rate limiting: waiting 1762ms before next request (adaptive: 2500ms)
-Fetching Buy Box data for ASIN: B0D3LZHNGZ, SKU: 16-Z607-5QGL
-Product title for 16-Z607-5QGL/B0D3LZHNGZ: Knorr Curry Paste Bundle - KORMA, MADRAS, TIKKA MASALA - 3 x 1kg
-Found SKU pricing in database for 16-Z607-5QGL: £52.3
-Using SKU-specific pricing for 16-Z607-5QGL: £52.3
-Buy Box analysis for B0D3LZHNGZ: Your ID: A2D8NG39VURSL3, Buy Box Owner: A2D8NG39VURSL3, Winner: true
-Price Gap Debug - Your: 52.3 (number), BuyBox: 52.3 (number), Gap: 0 (number)
-Pricing for B0D3LZHNGZ: Your Price: £52.3, Buy Box Price: £52.3, Gap: £0.00
-🏷️ ASIN B0D3LZHNGZ: Raw offers from Amazon SP-API: 1
-🎯 Normalized offers created: 1
-📋 Sample offer data: {
-  asin: 'B0D3LZHNGZ',
-  seller_id: 'A2D8NG39VURSL3',
-  price: 52.3,
-  is_buybox: true
-}
-[CostCalculator] Calculating costs for SKU: 16-Z607-5QGL
-[CostCalculator] Product not found: 16-Z607-5QGL
-[CostCalculator] No cost data available for SKU: 16-Z607-5QGL
-Successfully processed ASIN B0D3LZHNGZ: Buy Box owned by Unknown, margin: 0%
-🔍 ASIN B0D3LZHNGZ: API result structure: {
-  hasSummary: true,
-  hasOffers: true,
-  offersCount: 1,
-  offersType: 'object'
-}
-📊 Found 1 competitor offers for ASIN B0D3LZHNGZ
-✅ Stored data for ASIN B0D3LZHNGZ, SKU: 16-Z607-5QGL
-⏳ Rate limiting: waiting 2316ms before next request (adaptive: 2500ms)
-Fetching Buy Box data for ASIN: B0DHVZRSR2, SKU: 28-U59T-IUF2
-Product title for 28-U59T-IUF2/B0DHVZRSR2: Rummo Premium Italian GLUTEN FREE Bundle
-Found SKU pricing in database for 28-U59T-IUF2: £14.43
-Using SKU-specific pricing for 28-U59T-IUF2: £14.43
-Buy Box analysis for B0DHVZRSR2: Your ID: A2D8NG39VURSL3, Buy Box Owner: A2D8NG39VURSL3, Winner: true
-Price Gap Debug - Your: 14.43 (number), BuyBox: 14.43 (number), Gap: 0 (number)
-Pricing for B0DHVZRSR2: Your Price: £14.43, Buy Box Price: £14.43, Gap: £0.00
-🏷️ ASIN B0DHVZRSR2: Raw offers from Amazon SP-API: 1
-🎯 Normalized offers created: 1
-📋 Sample offer data: {
-  asin: 'B0DHVZRSR2',
-  seller_id: 'A2D8NG39VURSL3',
-  price: 14.43,
-  is_buybox: true
-}
-[CostCalculator] Calculating costs for SKU: 28-U59T-IUF2
-[CostCalculator] Looking up shipping group and item name for SKU: 28-U59T-IUF2
-[CostCalculator] SKU mapping found for 28-U59T-IUF2
-[CostCalculator] SKU: 28-U59T-IUF2, Shipping Group from DB: 'Nationwide Prime'
-[CostCalculator] SKU: 28-U59T-IUF2, Final Shipping: Nationwide Prime, Shipping Type: Prime
-[CostCalculator] Costs for 28-U59T-IUF2: {
-  baseCost: 6.17,
-  boxCost: 0.26,
-  materialCost: 0.2,
-  fragileCharge: 0,
-  vatAmount: 0,
-  shippingCost: 3.6,
-  materialTotalCost: 6.63
-}
-Successfully processed ASIN B0DHVZRSR2: Buy Box owned by Unknown, margin: 16.42%
-🔍 ASIN B0DHVZRSR2: API result structure: {
-  hasSummary: true,
-  hasOffers: true,
-  offersCount: 1,
-  offersType: 'object'
-}
-📊 Found 1 competitor offers for ASIN B0DHVZRSR2
-✅ Stored data for ASIN B0DHVZRSR2, SKU: 28-U59T-IUF2
-❌ Batch insert error (offers): Failed to insert competitor offers: invalid input syntax for type integer: "95182096-1820-4687-9bc0-9a526d90b8f9"
-
-📊 RATE LIMITING PERFORMANCE REPORT
-====================================
-📈 Success Rate: 100.0%
-🚫 Rate Limit Rate: 0.0%
-📊 Total Requests: 3
-✅ Successful: 3
-❌ Rate Limited: 0
-🔄 Consecutive Rate Limits: 0
-⏰ Current Adaptive Delay: 2500ms
-📅 Daily Quota Used: 3
-🕐 Last Request: 2025-08-09T09:15:02.079Z
-⏳ Time Since Last: 477ms
-🔄 Quota Resets: 2025-08-10T00:00:00.000Z
-====================================
-
-Job 95182096-1820-4687-9bc0-9a526d90b8f9 completed: 3 successful, 0 failed
-2025-08-09T09:15:38.015Z - GET /api/bulk-scan/status/95182096-1820-4687-9bc0-9a526d90b8f9
-2025-08-09T09:16:02.025Z - GET /api/bulk-scan/status/92ea18d0-280c-45db-aa40-7d65809f5728
-2025-08-09T09:17:53.810Z - GET /health
+❌ Batch API test failed: ACCESS_DENIED
+🎯 Test completed for 9 ASINs
+2025-09-24T12:20:52.274Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 3 ASINs
+📋 ASINs: B0BGPMD867, B0B46GGBBP, B0DVS6YBJW
+🔬 Test type: current
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B0BGPMD867...
+📡 SP-API Request for B0BGPMD867 at 2025-09-24T12:20:52.274Z
+✅ SP-API Response received for B0BGPMD867 at 2025-09-24T12:20:52.426Z
+📡 Current API: Fetching B0B46GGBBP...
+📡 SP-API Request for B0B46GGBBP at 2025-09-24T12:20:54.529Z
+✅ SP-API Response received for B0B46GGBBP at 2025-09-24T12:20:54.611Z
+📡 Current API: Fetching B0DVS6YBJW...
+📡 SP-API Request for B0DVS6YBJW at 2025-09-24T12:20:56.714Z
+✅ SP-API Response received for B0DVS6YBJW at 2025-09-24T12:20:56.800Z
+✅ Current API completed in 6627ms
+🎯 Test completed for 3 ASINs
+2025-09-24T12:21:13.404Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 3 ASINs
+📋 ASINs: B09RQS4SBQ, B0B8XHPF85, B004BTED72
+🔬 Test type: current
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B09RQS4SBQ...
+📡 SP-API Request for B09RQS4SBQ at 2025-09-24T12:21:13.404Z
+✅ SP-API Response received for B09RQS4SBQ at 2025-09-24T12:21:13.524Z
+📡 Current API: Fetching B0B8XHPF85...
+📡 SP-API Request for B0B8XHPF85 at 2025-09-24T12:21:15.627Z
+✅ SP-API Response received for B0B8XHPF85 at 2025-09-24T12:21:15.731Z
+📡 Current API: Fetching B004BTED72...
+📡 SP-API Request for B004BTED72 at 2025-09-24T12:21:17.833Z
+✅ SP-API Response received for B004BTED72 at 2025-09-24T12:21:17.915Z
+✅ Current API completed in 6612ms
+🎯 Test completed for 3 ASINs
+2025-09-24T12:21:27.538Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 3 ASINs
+📋 ASINs: B0DPLFN2WF, B0F7MNF5WY, B0DPJ458LV
+🔬 Test type: current
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B0DPLFN2WF...
+📡 SP-API Request for B0DPLFN2WF at 2025-09-24T12:21:27.538Z
+✅ SP-API Response received for B0DPLFN2WF at 2025-09-24T12:21:27.670Z
+📡 Current API: Fetching B0F7MNF5WY...
+📡 SP-API Request for B0F7MNF5WY at 2025-09-24T12:21:29.772Z
+✅ SP-API Response received for B0F7MNF5WY at 2025-09-24T12:21:29.839Z
+📡 Current API: Fetching B0DPJ458LV...
+📡 SP-API Request for B0DPJ458LV at 2025-09-24T12:21:31.942Z
+✅ SP-API Response received for B0DPJ458LV at 2025-09-24T12:21:32.044Z
+✅ Current API completed in 6608ms
+🎯 Test completed for 3 ASINs
+2025-09-24T12:44:05.724Z - GET /api/monitoring-job/status
+2025-09-24T12:44:05.730Z - GET /api/monitoring-job/statistics
+2025-09-24T12:44:05.732Z - GET /api/monitoring-job/logs
+2025-09-24T12:44:05.733Z - GET /api/monitoring-job/active-configs
+2025-09-24T12:44:10.969Z - GET /api/monitoring-job/status
+2025-09-24T12:44:10.976Z - GET /api/monitoring-job/statistics
+2025-09-24T12:44:10.978Z - GET /api/monitoring-job/logs
+2025-09-24T12:44:10.979Z - GET /api/monitoring-job/active-configs
+2025-09-24T12:44:24.929Z - POST /api/monitoring-job/start
+2025-09-24T12:44:32.675Z - POST /api/monitoring-job/run-cycle
+2025-09-24T12:44:35.753Z - GET /api/monitoring-job/status
+2025-09-24T12:44:35.764Z - GET /api/monitoring-job/statistics
+2025-09-24T12:44:35.794Z - GET /api/monitoring-job/logs
+2025-09-24T12:44:35.797Z - GET /api/monitoring-job/active-configs
+2025-09-24T12:49:14.884Z - GET /api/monitoring-job/status
+2025-09-24T12:49:21.488Z - GET /
 🛑 SIGTERM received, shutting down gracefully...

@@ -252,6 +252,69 @@ class AmazonSPAPI {
   }
 
   /**
+   * Get competitive summary data for ASINs (v2022-05-01 endpoint)
+   * More detailed competitive analysis but slower (0.033 req/sec)
+   */
+  async getCompetitiveSummary(asins, itemType = 'Asin') {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'POST';
+    const path = '/products/pricing/2022-05-01/competitive-summary';
+
+    // Prepare request body
+    const requestBody = {
+      requests: asins.map(asin => ({
+        uri: `/products/pricing/2022-05-01/items/${asin}/competitive-summary`,
+        method: 'GET',
+        MarketplaceId: this.config.marketplace
+      }))
+    };
+
+    const bodyString = JSON.stringify(requestBody);
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(bodyString).digest('hex'),
+      'content-type': 'application/json'
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, {}, headers, bodyString);
+
+    const url = `${this.config.endpoint}${path}`;
+
+    try {
+      console.log(`📊 Competitive Summary Request for ${asins.length} ASINs at ${new Date().toISOString()}`);
+      console.log(`📋 ASINs: ${asins.slice(0, 3).join(', ')}${asins.length > 3 ? ` ... (+${asins.length - 3} more)` : ''}`);
+
+      const response = await axios.post(url, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+
+      console.log(`✅ Competitive Summary Response received for ${asins.length} ASINs`);
+      return response.data;
+    } catch (error) {
+      console.error(`Competitive Summary API error for ASINs ${asins.join(', ')}:`, error.response?.data || error.message);
+
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ASINS_NOT_FOUND');
+      } else if (error.response?.data?.errors?.[0]?.code === 'QuotaExceeded') {
+        throw new Error('RATE_LIMITED');
+      } else {
+        throw new Error(`COMPETITIVE_SUMMARY_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
    * Transform SP-API pricing response into our database format
    */
   async transformPricingData(pricingData, asin, sku, runId, productTitle = null) {

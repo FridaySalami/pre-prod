@@ -33,7 +33,7 @@ ${colorConfig
 	{#key id}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 		{@html `<style>
-${themeContents}
-</style>`}
+		${themeContents}
+		</style>`}
 	{/key}
 {/if}

@@ -154,6 +154,12 @@
 			requiredRole: 'user' // Changed from admin to user
 		},
 		{
+			title: 'Real-time Buy Box',
+			url: '/buy-box-alerts/real-time',
+			icon: 'speed',
+			requiredRole: 'user'
+		},
+		{
 			title: 'Pricer Tool',
 			url: '/pricer',
 			icon: 'calculate',
