@@ -57,15 +57,12 @@ class CompetitiveAnalyzer {
       return null;
     }
 
-    const summary = offerChange.offerChangeSummary ||
-      offerChange.OfferChangeSummary;
+    // Get ASIN from OfferChangeTrigger
+    const trigger = offerChange.offerChangeTrigger || offerChange.OfferChangeTrigger;
+    const asin = trigger ? (trigger.asin || trigger.ASIN) : null;
 
-    if (!summary) {
-      return null;
-    }
-
-    // Parse offers
-    const offers = summary.offers || summary.Offers || [];
+    // Parse offers - they're directly in offerChange, not in summary
+    const offers = offerChange.offers || offerChange.Offers || [];
 
     if (offers.length === 0) {
       return null;
@@ -108,7 +105,7 @@ class CompetitiveAnalyzer {
       false;
 
     return {
-      asin: offerChange.asin || offerChange.ASIN,
+      asin: asin,
       yourPrice,
       yourPosition,
       buyBoxWinner,

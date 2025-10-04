@@ -104,8 +104,8 @@ class Database {
    * Update current_state table with latest competitive data
    * @param {Object} params - State update parameters
    */
-  async updateCurrentState({ 
-    asin, 
+  async updateCurrentState({
+    asin,
     severity,
     your_price,
     market_low,

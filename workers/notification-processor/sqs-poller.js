@@ -135,10 +135,18 @@ class SQSPoller {
 
     if (!payload) return null;
 
-    // Handle different notification types
+    // Handle ANY_OFFER_CHANGED notification
     const offerChange = payload.anyOfferChangedNotification ||
       payload.AnyOfferChangedNotification;
+    
     if (offerChange) {
+      // Check OfferChangeTrigger first (most common location)
+      const trigger = offerChange.offerChangeTrigger || offerChange.OfferChangeTrigger;
+      if (trigger && (trigger.asin || trigger.ASIN)) {
+        return trigger.asin || trigger.ASIN;
+      }
+      
+      // Fallback to direct ASIN field
       return offerChange.asin || offerChange.ASIN;
     }
 
