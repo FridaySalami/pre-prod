@@ -13,8 +13,8 @@ let pool: pg.Pool | null = null;
 function getPool() {
   if (!pool) {
     // Try multiple environment variable names for flexibility
-    const dbUrl = 
-      process.env.RENDER_DATABASE_URL || 
+    const dbUrl =
+      process.env.RENDER_DATABASE_URL ||
       process.env.BUYBOX_DATABASE_URL ||
       process.env.WORKER_DATABASE_URL;
 
