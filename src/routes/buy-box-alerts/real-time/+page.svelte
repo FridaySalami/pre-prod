@@ -57,7 +57,7 @@
 
 	let refreshInterval: NodeJS.Timeout | null = null;
 	const REFRESH_INTERVAL = 30000; // 30 seconds
-	const API_BASE_URL = 'http://localhost:3001'; // Your Express server
+	const API_BASE_URL = ''; // Use relative URLs for production compatibility
 
 	// Load dashboard data
 	async function loadDashboard() {

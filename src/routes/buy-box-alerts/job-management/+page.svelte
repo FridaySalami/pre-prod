@@ -61,7 +61,7 @@
 	let showManualCheck = false;
 	let showLogsModal = false;
 
-	const API_BASE = 'http://localhost:3001';
+	const API_BASE = ''; // Use relative URLs for production compatibility
 
 	onMount(async () => {
 		await loadJobStatus();

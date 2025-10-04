@@ -30,7 +30,7 @@
 	}
 
 	// API Configuration
-	const API_BASE_URL = 'http://localhost:3001'; // Render service
+	const API_BASE_URL = ''; // Use relative URLs for production compatibility
 
 	let availableAsins: any[] = [];
 	let monitoringConfigs: MonitoringConfig[] = [];
