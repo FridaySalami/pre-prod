@@ -141,13 +141,19 @@
 	let lastPollTime = $state<Date | null>(data.lastUpdated ? new Date(data.lastUpdated) : null);
 	let errorMessage = $state<string | null>(null);
 	let connectionStatus = $state<'connected' | 'disconnected' | 'polling'>('connected');
-	let stats = $state(
-		data.stats || {
-			totalNotifications: 0,
-			uniqueAsins: new Set<string>(),
-			lastHour: 0
-		}
-	);
+	
+	// Initialize stats from server data
+	const uniqueAsins = new Set(data.alerts?.map((a: any) => a.asin) || []);
+	const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+	const lastHourCount = data.alerts?.filter((a: any) => 
+		new Date(a.lastUpdated) > oneHourAgo
+	).length || 0;
+	
+	let stats = $state({
+		totalNotifications: data.alerts?.length || 0,
+		uniqueAsins: uniqueAsins,
+		lastHour: lastHourCount
+	});
 
 	// Product information cache
 	let productCache = $state<Map<string, any>>(new Map());
