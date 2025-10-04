@@ -141,11 +141,13 @@
 	let lastPollTime = $state<Date | null>(data.lastUpdated ? new Date(data.lastUpdated) : null);
 	let errorMessage = $state<string | null>(null);
 	let connectionStatus = $state<'connected' | 'disconnected' | 'polling'>('connected');
-	let stats = $state(data.stats || {
-		totalNotifications: 0,
-		uniqueAsins: new Set<string>(),
-		lastHour: 0
-	});
+	let stats = $state(
+		data.stats || {
+			totalNotifications: 0,
+			uniqueAsins: new Set<string>(),
+			lastHour: 0
+		}
+	);
 
 	// Product information cache
 	let productCache = $state<Map<string, any>>(new Map());
@@ -1226,7 +1228,7 @@
 	async function refreshFromDatabase() {
 		try {
 			connectionStatus = 'polling';
-			
+
 			const response = await fetch('/api/buy-box-alerts/current-state');
 			const result = await response.json();
 

@@ -11,31 +11,31 @@ const { Pool } = pg;
 let pool: pg.Pool | null = null;
 
 function getPool() {
-	if (!pool) {
-		const dbUrl = process.env.RENDER_DATABASE_URL || process.env.DATABASE_URL;
-		
-		if (!dbUrl) {
-			throw new Error('RENDER_DATABASE_URL or DATABASE_URL environment variable required');
-		}
-		
-		pool = new Pool({
-			connectionString: dbUrl,
-			ssl: {
-				rejectUnauthorized: false
-			},
-			max: 5,
-			idleTimeoutMillis: 30000
-		});
-	}
-	return pool;
+  if (!pool) {
+    const dbUrl = process.env.RENDER_DATABASE_URL || process.env.DATABASE_URL;
+
+    if (!dbUrl) {
+      throw new Error('RENDER_DATABASE_URL or DATABASE_URL environment variable required');
+    }
+
+    pool = new Pool({
+      connectionString: dbUrl,
+      ssl: {
+        rejectUnauthorized: false
+      },
+      max: 5,
+      idleTimeoutMillis: 30000
+    });
+  }
+  return pool;
 }
 
 export const GET: RequestHandler = async () => {
-	try {
-		const db = getPool();
+  try {
+    const db = getPool();
 
-		// Query current_state table for all ASINs
-		const result = await db.query(`
+    // Query current_state table for all ASINs
+    const result = await db.query(`
 			SELECT 
 				asin,
 				severity,
@@ -61,47 +61,47 @@ export const GET: RequestHandler = async () => {
 				last_updated DESC
 		`);
 
-		// Calculate stats
-		const stats = result.rows.reduce(
-			(acc, row) => {
-				acc.total++;
-				if (row.severity === 'critical') acc.critical++;
-				else if (row.severity === 'high') acc.high++;
-				else if (row.severity === 'warning') acc.warning++;
-				else if (row.severity === 'success') acc.success++;
-				return acc;
-			},
-			{ total: 0, critical: 0, high: 0, warning: 0, success: 0 }
-		);
+    // Calculate stats
+    const stats = result.rows.reduce(
+      (acc, row) => {
+        acc.total++;
+        if (row.severity === 'critical') acc.critical++;
+        else if (row.severity === 'high') acc.high++;
+        else if (row.severity === 'warning') acc.warning++;
+        else if (row.severity === 'success') acc.success++;
+        return acc;
+      },
+      { total: 0, critical: 0, high: 0, warning: 0, success: 0 }
+    );
 
-		// Transform data for UI
-		const alerts = result.rows.map((row) => ({
-			asin: row.asin,
-			severity: row.severity,
-			yourPrice: row.your_price ? parseFloat(row.your_price) : null,
-			marketLow: row.market_low ? parseFloat(row.market_low) : null,
-			primeLow: row.prime_low ? parseFloat(row.prime_low) : null,
-			yourPosition: row.your_position,
-			totalOffers: row.total_offers,
-			buyBoxWinner: row.buy_box_winner,
-			lastNotification: row.last_notification_data,
-			lastUpdated: row.last_updated,
-			createdAt: row.created_at
-		}));
+    // Transform data for UI
+    const alerts = result.rows.map((row) => ({
+      asin: row.asin,
+      severity: row.severity,
+      yourPrice: row.your_price ? parseFloat(row.your_price) : null,
+      marketLow: row.market_low ? parseFloat(row.market_low) : null,
+      primeLow: row.prime_low ? parseFloat(row.prime_low) : null,
+      yourPosition: row.your_position,
+      totalOffers: row.total_offers,
+      buyBoxWinner: row.buy_box_winner,
+      lastNotification: row.last_notification_data,
+      lastUpdated: row.last_updated,
+      createdAt: row.created_at
+    }));
 
-		return json({
-			alerts,
-			stats,
-			lastUpdated: new Date().toISOString()
-		});
-	} catch (error) {
-		console.error('Database query error:', error);
-		return json(
-			{
-				error: 'Failed to fetch alerts from database',
-				details: error instanceof Error ? error.message : 'Unknown error'
-			},
-			{ status: 500 }
-		);
-	}
+    return json({
+      alerts,
+      stats,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Database query error:', error);
+    return json(
+      {
+        error: 'Failed to fetch alerts from database',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
 };
