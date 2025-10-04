@@ -98,7 +98,7 @@ export const GET: RequestHandler = async () => {
           }
         };
       }
-      
+
       // Fallback: construct a basic notification structure if we don't have full data
       return {
         messageId: `db-${row.asin}`,

@@ -1237,20 +1237,20 @@
 			if (result.alerts) {
 				alerts = result.alerts;
 				notifications = result.alerts; // Update notifications array for UI display
-				
+
 				// Recalculate stats from the fresh alerts data
 				const uniqueAsins = new Set(result.alerts.map((a: any) => a.asin));
 				const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-				const lastHourCount = result.alerts.filter((a: any) => 
-					new Date(a.lastUpdated) > oneHourAgo
+				const lastHourCount = result.alerts.filter(
+					(a: any) => new Date(a.lastUpdated) > oneHourAgo
 				).length;
-				
+
 				stats = {
 					totalNotifications: result.alerts.length,
 					uniqueAsins: uniqueAsins,
 					lastHour: lastHourCount
 				};
-				
+
 				lastPollTime = new Date();
 				connectionStatus = 'connected';
 				errorMessage = null;
