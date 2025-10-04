@@ -1770,12 +1770,20 @@
 														<!-- Product name and details on first line -->
 														<div class="flex items-center justify-between flex-wrap">
 															<div class="flex items-center space-x-2 flex-wrap">
-																<span class="font-mono text-sm font-medium text-gray-900">
+																<!-- Clickable Product Name/ASIN - links to product analysis page -->
+																<a
+																	href="/buy-box-alerts/product/{summary.asin}"
+																	onclick={(e) => e.stopPropagation()}
+																	class="font-mono text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+																>
 																	{#if productNames.get(summary.asin)}
 																		{productNames.get(summary.asin)}
 																	{:else}
 																		{summary.asin}
 																	{/if}
+																</a>
+																<span class="text-xs text-gray-400 font-mono">
+																	{summary.asin}
 																</span>
 
 																<!-- Product info inline with ASIN -->

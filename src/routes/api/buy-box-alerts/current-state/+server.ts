@@ -45,21 +45,21 @@ export const GET: RequestHandler = async ({ url }) => {
     // Build WHERE clause if filtering by severity or time
     const whereConditions: string[] = [];
     const queryParams: any[] = [];
-    
+
     if (severityFilter) {
       whereConditions.push(`severity = $${queryParams.length + 1}`);
       queryParams.push(severityFilter);
     }
-    
+
     if (hoursFilter) {
       const hours = parseInt(hoursFilter);
       whereConditions.push(`last_updated > NOW() - INTERVAL '${hours} hours'`);
     }
-    
-    const whereClause = whereConditions.length > 0 
+
+    const whereClause = whereConditions.length > 0
       ? 'WHERE ' + whereConditions.join(' AND ')
       : '';
-    
+
     // Add limit and offset to query params
     queryParams.push(limit, offset);    // Query current_state table for all ASINs
     const result = await db.query(`
