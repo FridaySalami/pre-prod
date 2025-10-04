@@ -206,11 +206,55 @@ function calculateAnalytics(history: any[]) {
 // Extract competitor activity from historical data
 function extractCompetitorActivity(history: any[]) {
   const competitorMap = new Map<string, any>();
+  const OUR_SELLER_ID = 'A2D8NG39VURSL3';
 
   // Process each historical notification
   history.forEach((record, index) => {
     const timestamp = record.timestamp;
 
+    // Add YOUR offer data
+    if (record.yourOffer) {
+      const yourData = {
+        seller: OUR_SELLER_ID,
+        landedPrice: record.yourOffer.landedPrice,
+        isFBA: true, // Assuming you use FBA
+        isBuyBox: record.yourOffer.isBuyBoxWinner
+      };
+
+      if (!competitorMap.has(OUR_SELLER_ID)) {
+        competitorMap.set(OUR_SELLER_ID, {
+          sellerId: OUR_SELLER_ID,
+          firstSeen: timestamp,
+          lastSeen: timestamp,
+          prices: [],
+          buyBoxWins: 0,
+          appearances: 0,
+          isFBA: true,
+          priceChanges: 0,
+          isYou: true
+        });
+      }
+
+      const yourCompetitor = competitorMap.get(OUR_SELLER_ID);
+      yourCompetitor.lastSeen = timestamp;
+      yourCompetitor.appearances++;
+      yourCompetitor.prices.push(yourData.landedPrice);
+
+      if (yourData.isBuyBox) {
+        yourCompetitor.buyBoxWins++;
+      }
+
+      // Count price changes
+      if (yourCompetitor.prices.length > 1) {
+        const prevPrice = yourCompetitor.prices[yourCompetitor.prices.length - 2];
+        const currentPrice = yourData.landedPrice;
+        if (Math.abs(prevPrice - currentPrice) > 0.01) {
+          yourCompetitor.priceChanges++;
+        }
+      }
+    }
+
+    // Add competitor data
     record.competitorPrices?.forEach((comp: any) => {
       const sellerId = comp.seller;
 
@@ -261,9 +305,14 @@ function extractCompetitorActivity(history: any[]) {
     buyBoxWinRate: (comp.buyBoxWins / comp.appearances) * 100,
     priceChanges: comp.priceChanges,
     isFBA: comp.isFBA,
-    currentlyActive: comp.lastSeen === history[0]?.timestamp // Active in most recent notification
+    currentlyActive: comp.lastSeen === history[0]?.timestamp, // Active in most recent notification
+    isYou: comp.isYou || false
   }));
 
-  // Sort by most active (appearances DESC)
-  return competitors.sort((a, b) => b.appearances - a.appearances);
+  // Sort by most active (appearances DESC), but put "YOU" first
+  return competitors.sort((a, b) => {
+    if (a.isYou) return -1;
+    if (b.isYou) return 1;
+    return b.appearances - a.appearances;
+  });
 }

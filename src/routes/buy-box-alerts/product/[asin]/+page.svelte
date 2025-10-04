@@ -771,26 +771,26 @@
 						</thead>
 						<tbody class="bg-white divide-y divide-gray-200">
 							{#each data.competitors as competitor}
-								<tr class="hover:bg-gray-50">
-									<td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-										{competitor.sellerId}
+								<tr class="hover:bg-gray-50 {competitor.isYou ? 'bg-green-50' : ''}">
+									<td class="px-6 py-4 whitespace-nowrap text-sm font-mono {competitor.isYou ? 'text-green-700 font-bold' : 'text-gray-900'}">
+										{competitor.isYou ? 'YOU (' + competitor.sellerId + ')' : competitor.sellerId}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
+									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700 font-bold' : 'text-gray-900 font-semibold'}">
 										{formatPrice(competitor.lowestPrice)}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
 										{formatPrice(competitor.highestPrice)}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
 										{formatPrice(competitor.avgPrice)}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
 										{competitor.appearances}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
 										{competitor.buyBoxWins} ({competitor.buyBoxWinRate.toFixed(0)}%)
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
 										{competitor.priceChanges}
 									</td>
 									<td class="px-6 py-4 whitespace-nowrap">
