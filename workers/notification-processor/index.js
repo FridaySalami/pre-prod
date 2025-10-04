@@ -62,6 +62,9 @@ class NotificationWorker {
       throw new Error('SQS_QUEUE_URL environment variable is required');
     }
 
+    // Connect to database
+    await this.database.connect();
+
     // Start health server
     const healthApp = startHealthServer(
       this.config.healthPort,

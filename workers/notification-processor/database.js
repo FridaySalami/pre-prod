@@ -54,11 +54,11 @@ class Database {
   }
 
   /**
-   * Store raw notification with idempotency check
+   * Store notification with idempotency check
    * @param {Object} params - Notification parameters
-   * @returns {Object} - Inserted or existing notification record
+   * @returns {boolean} - true if duplicate, false if new
    */
-  async storeNotification({ messageId, dedupeHash, rawNotification, traceId, workerId }) {
+  async storeNotification({ asin, notification_data, dedupe_hash, severity, metadata }) {
     const query = `
       INSERT INTO worker_notifications (
         message_id, 
@@ -67,39 +67,33 @@ class Database {
         notification_type,
         event_time,
         asin,
-        trace_id,
         worker_id,
         status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'processing')
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'processed')
       RETURNING *
     `;
 
     const values = [
-      messageId,
-      dedupeHash,
-      rawNotification,
-      rawNotification.notificationType || rawNotification.NotificationType,
-      rawNotification.eventTime || rawNotification.EventTime,
-      this.extractAsin(rawNotification),
-      traceId,
-      workerId
+      dedupe_hash.substring(0, 36), // Use dedupe hash as message ID
+      dedupe_hash,
+      notification_data,
+      notification_data.notificationType || notification_data.NotificationType || 'UNKNOWN',
+      notification_data.eventTime || notification_data.EventTime || new Date().toISOString(),
+      asin,
+      process.env.WORKER_ID || 'notification-processor-1'
     ];
 
     try {
-      const result = await this.pool.query(query, values);
-      return result.rows[0];
+      await this.pool.query(query, values);
+      return false; // Not a duplicate
     } catch (error) {
       // Check if it's a duplicate (unique constraint violation)
       if (error.code === '23505') {
-        logger.warn('⚠️ Duplicate message detected (idempotency working!)', {
-          messageId,
-          dedupeHash
+        logger.debug('⚠️ Duplicate message (idempotency working)', {
+          asin,
+          dedupeHash: dedupe_hash.substring(0, 12)
         });
-
-        // Fetch existing record
-        const existingQuery = 'SELECT * FROM worker_notifications WHERE message_id = $1';
-        const existing = await this.pool.query(existingQuery, [messageId]);
-        return existing.rows[0];
+        return true; // Is a duplicate
       }
 
       throw error;
@@ -110,7 +104,17 @@ class Database {
    * Update current_state table with latest competitive data
    * @param {Object} params - State update parameters
    */
-  async updateCurrentState({ asin, marketplace, notificationId, ...analysis }) {
+  async updateCurrentState({ 
+    asin, 
+    severity,
+    your_price,
+    market_low,
+    prime_low,
+    total_offers,
+    your_position,
+    buy_box_winner,
+    last_notification_data
+  }) {
     const query = `
       INSERT INTO current_state (
         asin,
@@ -122,7 +126,7 @@ class Database {
         total_offers,
         buy_box_winner,
         severity,
-        last_notification_id,
+        last_notification_data,
         last_updated
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       ON CONFLICT (asin, marketplace) 
@@ -134,22 +138,22 @@ class Database {
         total_offers = EXCLUDED.total_offers,
         buy_box_winner = EXCLUDED.buy_box_winner,
         severity = EXCLUDED.severity,
-        last_notification_id = EXCLUDED.last_notification_id,
+        last_notification_data = EXCLUDED.last_notification_data,
         last_updated = NOW()
       RETURNING *
     `;
 
     const values = [
       asin,
-      marketplace || 'A1F83G8C2ARO7P', // UK marketplace default
-      analysis.yourPrice,
-      analysis.marketLow,
-      analysis.primeLow,
-      analysis.yourPosition,
-      analysis.totalOffers,
-      analysis.buyBoxWinner,
-      analysis.severity,
-      notificationId
+      'A1F83G8C2ARO7P', // UK marketplace default
+      your_price,
+      market_low,
+      prime_low,
+      your_position,
+      total_offers,
+      buy_box_winner,
+      severity,
+      last_notification_data
     ];
 
     const result = await this.pool.query(query, values);
@@ -171,10 +175,10 @@ class Database {
   }
 
   /**
-   * Store failed message in DLQ table
+   * Store failed message in dead letter queue
    * @param {Object} params - Failure parameters
    */
-  async storeFailed({ messageId, rawMessage, errorType, errorMessage, stackTrace }) {
+  async storeFailed({ asin, notification_data, error_message, error_stack }) {
     const query = `
       INSERT INTO worker_failures (
         message_id,
@@ -187,11 +191,11 @@ class Database {
     `;
 
     const values = [
-      messageId,
-      rawMessage,
-      errorType,
-      errorMessage,
-      stackTrace
+      `failed-${Date.now()}`,
+      notification_data,
+      'PROCESSING_ERROR',
+      error_message,
+      error_stack
     ];
 
     try {

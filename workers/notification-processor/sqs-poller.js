@@ -63,7 +63,7 @@ class SQSPoller {
         code: error.code,
         stack: error.stack
       });
-      
+
       // Return empty array on error
       return [];
     }
