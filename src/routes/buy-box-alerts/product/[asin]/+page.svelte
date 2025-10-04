@@ -1,99 +1,126 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
-	import type { PageData } from './$types';
-	import { Chart, registerables } from 'chart.js';
+	import Chart from 'chart.js/auto';
 	import 'chartjs-adapter-date-fns';
-
-	// Register Chart.js components
-	Chart.register(...registerables);
+	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	// Reactive state
-	let timeRange = $state<'24h' | '7d' | '30d' | 'all'>('7d');
-	let chartCanvas = $state<HTMLCanvasElement>();
-	let priceChart: Chart | null = null;
-	let selectedPoint = $state<any>(null);
+	// State
+	let activeTab = $state<'sales' | 'price' | 'reviews'>('price');
+	let timeRange = $state<'week' | 'month' | '3month' | '6month'>('month');
+	let chartCanvas = $state<HTMLCanvasElement | null>(null);
+	let chartInstance = $state<Chart | null>(null);
 
-	// Get filtered history based on time range
-	function getFilteredHistory() {
-		if (!data.history || data.history.length === 0) return [];
+	const OUR_SELLER_ID = 'A2D8NG39VURSL3';
 
-		const now = new Date();
-		const cutoffTimes = {
-			'24h': new Date(now.getTime() - 24 * 60 * 60 * 1000),
-			'7d': new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
-			'30d': new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
-			all: new Date(0)
-		};
+	// Placeholder data (will be populated from APIs later)
+	const placeholderMetrics = {
+		revenue30d: '$23,556.35',
+		unitSales30d: '45,875',
+		currentRating: 3.5,
+		totalReviews: 1430,
+		listingHealthScore: 9.0,
+		fbaFee: '$14.02',
+		competitiveFbaOffers: 5,
+		totalPrimeOffers: 10
+	};
 
-		return data.history.filter((h: any) => new Date(h.timestamp) >= cutoffTimes[timeRange]);
+	// Get product info
+	const productInfo = data.productInfo || {
+		item_name: data.asin,
+		category: 'Unknown'
+	};
+
+	// Get current state metrics
+	const currentState = data.currentState || {};
+	const yourPrice = currentState.your_price || 0;
+	const marketLow = currentState.market_low || 0;
+	const yourPosition = currentState.your_position || 0;
+	const totalOffers = currentState.total_offers || 0;
+
+	// Calculate price gap percentage
+	const priceGap = yourPrice && marketLow
+		? (((yourPrice - marketLow) / marketLow) * 100).toFixed(1)
+		: '0.0';
+
+	// Format currency
+	function formatPrice(price: number): string {
+		return new Intl.NumberFormat('en-GB', {
+			style: 'currency',
+			currency: 'GBP'
+		}).format(price);
 	}
 
-	// Create price chart
+	// Create the main chart
 	function createChart() {
-		if (!chartCanvas || !data.history) return;
-
-		const history = getFilteredHistory();
-
-		if (history.length === 0) {
-			console.warn('No data to display in chart');
+		if (!chartCanvas || !data.history || data.history.length === 0) {
+			console.log('No canvas or history data for chart');
 			return;
 		}
 
-		// Prepare data for chart (reverse to show chronological order)
-		const reversedHistory = [...history].reverse();
-		const timestamps = reversedHistory.map((h: any) => new Date(h.timestamp));
-
-		const yourPrices = reversedHistory.map((h: any) => h.yourOffer?.landedPrice || null);
-		const marketLows = reversedHistory.map((h: any) => h.marketLow);
-		const marketHighs = reversedHistory.map((h: any) => h.marketHigh);
-
-		// Destroy existing chart if it exists
-		if (priceChart) {
-			priceChart.destroy();
+		// Destroy existing chart
+		if (chartInstance) {
+			chartInstance.destroy();
 		}
 
-		// Create new chart
-		priceChart = new Chart(chartCanvas, {
+		const ctx = chartCanvas.getContext('2d');
+		if (!ctx) return;
+
+		// Prepare data based on active tab
+		let datasets: any[] = [];
+
+		if (activeTab === 'price') {
+			// Price & BSR chart
+			datasets = [
+				{
+					label: 'Your Price',
+					data: data.history.map((h: any) => ({
+						x: new Date(h.timestamp),
+						y: h.yourOffer?.landedPrice || h.yourPrice || 0
+					})),
+					borderColor: 'rgb(34, 197, 94)',
+					backgroundColor: 'rgba(34, 197, 94, 0.1)',
+					borderWidth: 3,
+					pointRadius: 4,
+					pointHoverRadius: 6,
+					tension: 0.4,
+					yAxisID: 'yPrice'
+				},
+				{
+					label: 'Market Low',
+					data: data.history.map((h: any) => ({
+						x: new Date(h.timestamp),
+						y: h.marketLow || 0
+					})),
+					borderColor: 'rgb(59, 130, 246)',
+					backgroundColor: 'rgba(59, 130, 246, 0.1)',
+					borderWidth: 2,
+					pointRadius: 3,
+					pointHoverRadius: 5,
+					tension: 0.4,
+					yAxisID: 'yPrice'
+				},
+				{
+					label: 'Prime Low',
+					data: data.history.map((h: any) => ({
+						x: new Date(h.timestamp),
+						y: h.primeLow || h.marketLow || 0
+					})),
+					borderColor: 'rgb(168, 85, 247)',
+					backgroundColor: 'rgba(168, 85, 247, 0.1)',
+					borderWidth: 2,
+					pointRadius: 3,
+					pointHoverRadius: 5,
+					tension: 0.4,
+					yAxisID: 'yPrice'
+				}
+			];
+		}
+
+		chartInstance = new Chart(ctx, {
 			type: 'line',
-			data: {
-				labels: timestamps,
-				datasets: [
-					{
-						label: 'Your Price',
-						data: yourPrices,
-						borderColor: 'rgb(34, 197, 94)',
-						backgroundColor: 'rgba(34, 197, 94, 0.1)',
-						borderWidth: 2,
-						pointRadius: 4,
-						pointHoverRadius: 6,
-						tension: 0.1
-					},
-					{
-						label: 'Market Low',
-						data: marketLows,
-						borderColor: 'rgb(59, 130, 246)',
-						backgroundColor: 'rgba(59, 130, 246, 0.1)',
-						borderWidth: 2,
-						pointRadius: 3,
-						pointHoverRadius: 5,
-						tension: 0.1
-					},
-					{
-						label: 'Market High',
-						data: marketHighs,
-						borderColor: 'rgb(239, 68, 68)',
-						backgroundColor: 'rgba(239, 68, 68, 0.1)',
-						borderWidth: 1,
-						borderDash: [5, 5],
-						pointRadius: 2,
-						pointHoverRadius: 4,
-						tension: 0.1
-					}
-				]
-			},
+			data: { datasets },
 			options: {
 				responsive: true,
 				maintainAspectRatio: false,
@@ -102,64 +129,52 @@
 					intersect: false
 				},
 				plugins: {
-					title: {
+					legend: {
 						display: true,
-						text: 'Price History',
-						font: { size: 16, weight: 'bold' }
+						position: 'top',
+						labels: {
+							usePointStyle: true,
+							padding: 15,
+							font: { size: 12 }
+						}
 					},
 					tooltip: {
+						backgroundColor: 'rgba(0, 0, 0, 0.8)',
+						padding: 12,
+						titleFont: { size: 13, weight: 'bold' },
+						bodyFont: { size: 12 },
 						callbacks: {
-							title: (context) => {
-								const date = new Date(context[0].parsed.x);
-								return date.toLocaleString();
-							},
 							label: (context) => {
 								const label = context.dataset.label || '';
 								const value = context.parsed.y;
-								return `${label}: £${value?.toFixed(2) || 'N/A'}`;
-							},
-							afterLabel: (context) => {
-								const index = context.dataIndex;
-								const historyItem = reversedHistory[index];
-								if (historyItem && historyItem.yourOffer) {
-									return [
-										`Position: #${historyItem.yourOffer.position}`,
-										`Total Offers: ${historyItem.offerCount}`,
-										`Buy Box: ${historyItem.yourOffer.isBuyBoxWinner ? 'Won ✓' : 'Lost'}`
-									];
-								}
-								return [];
+								return `${label}: ${formatPrice(value)}`;
 							}
 						}
-					},
-					legend: {
-						display: true,
-						position: 'top'
 					}
 				},
 				scales: {
 					x: {
 						type: 'time',
 						time: {
-							unit: timeRange === '24h' ? 'hour' : timeRange === '7d' ? 'day' : 'day',
+							unit: 'day',
 							displayFormats: {
-								hour: 'HH:mm',
 								day: 'MMM d'
 							}
 						},
-						title: {
-							display: true,
-							text: 'Time'
+						grid: {
+							display: false
 						}
 					},
-					y: {
-						beginAtZero: false,
+					yPrice: {
+						type: 'linear',
+						display: true,
+						position: 'left',
 						title: {
 							display: true,
 							text: 'Price (£)'
 						},
 						ticks: {
-							callback: (value) => `£${value}`
+							callback: (value) => formatPrice(Number(value))
 						}
 					}
 				}
@@ -167,260 +182,419 @@
 		});
 	}
 
-	// Update chart when time range changes
-	$effect(() => {
-		if (chartCanvas && data.history) {
-			createChart();
-		}
-	});
+	// Change time range filter
+	function changeTimeRange(range: typeof timeRange) {
+		timeRange = range;
+		createChart();
+	}
 
-	// Initialize chart on mount
+	// Change tab
+	function changeTab(tab: typeof activeTab) {
+		activeTab = tab;
+		createChart();
+	}
+
+	// Mount chart
 	onMount(() => {
-		if (chartCanvas && data.history) {
+		if (chartCanvas && data.history && data.history.length > 0) {
 			createChart();
 		}
+
+		return () => {
+			if (chartInstance) {
+				chartInstance.destroy();
+			}
+		};
 	});
-
-	// Format currency
-	function formatPrice(amount: number): string {
-		return new Intl.NumberFormat('en-GB', {
-			style: 'currency',
-			currency: 'GBP'
-		}).format(amount);
-	}
-
-	// Format date
-	function formatDate(dateString: string): string {
-		return new Date(dateString).toLocaleString();
-	}
-
-	// Format relative time
-	function formatRelativeTime(dateString: string): string {
-		const date = new Date(dateString);
-		const now = new Date();
-		const diffMs = now.getTime() - date.getTime();
-		const diffMins = Math.floor(diffMs / 60000);
-
-		if (diffMins < 1) return 'Just now';
-		if (diffMins < 60) return `${diffMins}m ago`;
-		const diffHours = Math.floor(diffMins / 60);
-		if (diffHours < 24) return `${diffHours}h ago`;
-		const diffDays = Math.floor(diffHours / 24);
-		return `${diffDays}d ago`;
-	}
 </script>
 
-<div class="container mx-auto px-4 py-6 max-w-7xl">
-	<!-- Header -->
-	<div class="mb-6">
+<!-- Helium 10 Style Layout -->
+<div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-6">
+	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+		<!-- Back Button -->
 		<a
 			href="/buy-box-alerts/live"
-			class="inline-flex items-center text-blue-600 hover:text-blue-800 mb-4"
+			class="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-4"
 		>
-			← Back to Live Alerts
+			<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M10 19l-7-7m0 0l7-7m-7 7h18"
+				/>
+			</svg>
+			Back to Live Alerts
 		</a>
-		<h1 class="text-3xl font-bold text-gray-900">Product Analysis: {data.asin}</h1>
-		{#if data.productInfo}
-			<p class="text-gray-600 mt-2">{data.productInfo.item_name || 'Product Details'}</p>
-		{/if}
-	</div>
 
-	{#if !data.currentState && (!data.history || data.history.length === 0)}
-		<!-- No data available -->
-		<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-			<h2 class="text-xl font-semibold text-yellow-800 mb-2">No Data Available</h2>
-			<p class="text-yellow-700">
-				No historical notifications found for ASIN <strong>{data.asin}</strong>.
-			</p>
-			<p class="text-yellow-600 mt-2">
-				This product may not be actively monitored, or notifications haven't been received yet.
-			</p>
+		<!-- Header -->
+		<div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+			<div class="flex items-start justify-between">
+				<div class="flex-1">
+					<div class="flex items-center space-x-3 mb-2">
+						<svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+						</svg>
+						<h1 class="text-2xl font-bold text-gray-900">
+							Product Summary for "{data.asin}"
+						</h1>
+						<button class="text-gray-400 hover:text-gray-600" aria-label="Copy ASIN">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+							</svg>
+						</button>
+					</div>
+					<p class="text-sm text-gray-600">{productInfo.item_name || 'Loading product info...'}</p>
+				</div>
+				<div class="flex space-x-3">
+					<button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+						</svg>
+						<span>Track Competitor</span>
+					</button>
+					<button class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center space-x-2">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+						</svg>
+						<span>Save Product</span>
+					</button>
+				</div>
+			</div>
 		</div>
-	{:else}
-		<!-- Current State Card -->
-		{#if data.currentState}
-			<div class="bg-white rounded-lg shadow-md p-6 mb-6">
-				<h2 class="text-xl font-semibold mb-4">Current State</h2>
-				<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-					<div class="text-center p-4 bg-green-50 rounded-lg">
-						<div class="text-sm text-gray-600 mb-1">Your Price</div>
-						<div class="text-2xl font-bold text-green-600">
-							{formatPrice(parseFloat(data.currentState.your_price))}
-						</div>
-					</div>
-					<div class="text-center p-4 bg-blue-50 rounded-lg">
-						<div class="text-sm text-gray-600 mb-1">Market Low</div>
-						<div class="text-2xl font-bold text-blue-600">
-							{formatPrice(parseFloat(data.currentState.market_low))}
-						</div>
-					</div>
-					<div class="text-center p-4 bg-purple-50 rounded-lg">
-						<div class="text-sm text-gray-600 mb-1">Position</div>
-						<div class="text-2xl font-bold text-purple-600">
-							#{data.currentState.your_position}
-						</div>
-					</div>
-					<div class="text-center p-4 bg-gray-50 rounded-lg">
-						<div class="text-sm text-gray-600 mb-1">Total Offers</div>
-						<div class="text-2xl font-bold text-gray-600">
-							{data.currentState.total_offers}
-						</div>
-					</div>
+
+		<!-- Summary Cards Row -->
+		<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+			<!-- 30-Day Revenue (Placeholder) -->
+			<div class="bg-white rounded-lg shadow p-6">
+				<div class="text-sm text-gray-600 mb-1">30-Day Revenue</div>
+				<div class="text-3xl font-bold text-gray-900 mb-1">{placeholderMetrics.revenue30d}</div>
+				<div class="text-xs text-gray-500">Unit Sales: {placeholderMetrics.unitSales30d}</div>
+				<div class="mt-2 flex items-center text-green-600 text-sm">
+					<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+					</svg>
+					<span class="text-xs">Data from Amazon Reports API (Coming Soon)</span>
 				</div>
-				<div class="mt-4 flex items-center justify-between">
-					<div class="flex items-center gap-4">
-						<span class="text-sm text-gray-600">
-							Severity:
-							<span
-								class="font-semibold"
-								class:text-red-600={data.currentState.severity === 'critical'}
-								class:text-orange-600={data.currentState.severity === 'high'}
-								class:text-yellow-600={data.currentState.severity === 'warning'}
-								class:text-green-600={data.currentState.severity === 'success'}
+			</div>
+
+			<!-- Current Rating (Placeholder) -->
+			<div class="bg-white rounded-lg shadow p-6">
+				<div class="text-sm text-gray-600 mb-1">Current Rating</div>
+				<div class="flex items-center space-x-2 mb-1">
+					<div class="flex items-center">
+						{#each Array(5) as _, i}
+							<svg
+								class="w-5 h-5 {i < Math.floor(placeholderMetrics.currentRating) ? 'text-yellow-400' : i < placeholderMetrics.currentRating ? 'text-yellow-400' : 'text-gray-300'}"
+								fill="currentColor"
+								viewBox="0 0 20 20"
 							>
-								{data.currentState.severity?.toUpperCase()}
-							</span>
-						</span>
-						<span class="text-sm text-gray-600">
-							Buy Box:
-							<span
-								class:text-green-600={data.currentState.buy_box_winner}
-								class:text-gray-500={!data.currentState.buy_box_winner}
+								<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+							</svg>
+						{/each}
+					</div>
+					<span class="text-2xl font-bold">{placeholderMetrics.currentRating}</span>
+					<span class="text-sm text-gray-500">({placeholderMetrics.totalReviews.toLocaleString()})</span>
+				</div>
+				<button class="text-sm text-blue-600 hover:underline">Analyze Reviews</button>
+			</div>
+
+			<!-- Listing Health Score (Placeholder) -->
+			<div class="bg-white rounded-lg shadow p-6">
+				<div class="text-sm text-gray-600 mb-1">Listing Health Score</div>
+				<div class="flex items-center space-x-3">
+					<div class="text-4xl font-bold text-green-600">{placeholderMetrics.listingHealthScore}</div>
+					<div class="flex-1">
+						<div class="w-full bg-gray-200 rounded-full h-2">
+							<div
+								class="bg-green-500 h-2 rounded-full"
+								style="width: {(placeholderMetrics.listingHealthScore / 10) * 100}%"
+							></div>
+						</div>
+					</div>
+				</div>
+				<button class="text-sm text-blue-600 hover:underline mt-2 inline-block">Analyze LHS</button>
+			</div>
+
+			<!-- Top Keywords (Placeholder) -->
+			<div class="bg-white rounded-lg shadow p-6">
+				<div class="text-sm text-gray-600 mb-2">Top Keywords</div>
+				<div class="text-xs text-gray-700 mb-1">Phone Charger, Portable, Household, Magnet, USB</div>
+				<button class="text-sm text-blue-600 hover:underline">See All Keywords</button>
+			</div>
+		</div>
+
+		<!-- Main Content Grid -->
+		<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+			<!-- Sidebar - Product Details -->
+			<div class="lg:col-span-1 space-y-4">
+				<!-- Product Details Card -->
+				<div class="bg-white rounded-lg shadow p-6">
+					<h3 class="font-semibold text-gray-900 mb-4">Product Details</h3>
+					
+					<div class="space-y-3 text-sm">
+						<div class="flex justify-between">
+							<span class="text-gray-600">FBA Fee</span>
+							<span class="font-semibold">{placeholderMetrics.fbaFee}</span>
+						</div>
+						<div class="flex justify-between">
+							<span class="text-gray-600">Total Prime Offers</span>
+							<span class="font-semibold">{placeholderMetrics.totalPrimeOffers}</span>
+						</div>
+						<div class="flex justify-between">
+							<span class="text-gray-600">Competitive FBA Offers</span>
+							<span class="font-semibold">{placeholderMetrics.competitiveFbaOffers}</span>
+						</div>
+						<div class="border-t pt-3 mt-3">
+							<button class="text-blue-600 hover:underline text-sm">Estimate Net/Margin</button>
+						</div>
+						<div>
+							<button class="text-blue-600 hover:underline text-sm">Estimate Sales</button>
+						</div>
+					</div>
+
+					<div class="mt-6 pt-6 border-t">
+						<h4 class="text-sm font-semibold text-gray-900 mb-3">Current Pricing</h4>
+						<div class="space-y-2 text-sm">
+							<div class="flex justify-between">
+								<span class="text-gray-600">Your Price</span>
+								<span class="font-bold text-green-600">{formatPrice(yourPrice)}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-gray-600">Market Low</span>
+								<span class="font-semibold text-blue-600">{formatPrice(marketLow)}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-gray-600">Price Gap</span>
+								<span class="font-semibold {parseFloat(priceGap) > 0 ? 'text-red-600' : 'text-green-600'}">
+									{priceGap}%
+								</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-gray-600">Your Position</span>
+								<span class="font-semibold">#{yourPosition}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-gray-600">Total Offers</span>
+								<span class="font-semibold">{totalOffers}</span>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Competitor Activity Summary -->
+				{#if data.competitors && data.competitors.length > 0}
+					<div class="bg-white rounded-lg shadow p-6">
+						<h3 class="font-semibold text-gray-900 mb-4">Active Competitors</h3>
+						<div class="space-y-2 text-xs">
+							{#each data.competitors.slice(0, 5) as competitor}
+								<div class="flex justify-between items-center py-2 border-b border-gray-100">
+									<span class="text-gray-700 font-mono text-xs">
+										{competitor.sellerId.substring(0, 10)}...
+									</span>
+									<span class="text-gray-900 font-semibold">{formatPrice(competitor.lowestPrice)}</span>
+								</div>
+							{/each}
+						</div>
+						<a href="#competitors" class="text-sm text-blue-600 hover:underline mt-3 inline-block">
+							View All {data.competitors.length} Competitors
+						</a>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Main Chart Area -->
+			<div class="lg:col-span-3">
+				<!-- Tab Navigation -->
+				<div class="bg-white rounded-t-lg shadow">
+					<div class="border-b border-gray-200">
+						<nav class="flex -mb-px">
+							<button
+								onclick={() => changeTab('sales')}
+								class="px-6 py-4 text-sm font-medium border-b-2 {activeTab === 'sales'
+									? 'border-blue-600 text-blue-600'
+									: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 							>
-								{data.currentState.buy_box_winner ? 'Won ✓' : 'Not Won'}
-							</span>
-						</span>
+								Sales
+							</button>
+							<button
+								onclick={() => changeTab('price')}
+								class="px-6 py-4 text-sm font-medium border-b-2 {activeTab === 'price'
+									? 'border-blue-600 text-blue-600'
+									: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+							>
+								Price & BSR
+							</button>
+							<button
+								onclick={() => changeTab('reviews')}
+								class="px-6 py-4 text-sm font-medium border-b-2 {activeTab === 'reviews'
+									? 'border-blue-600 text-blue-600'
+									: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+							>
+								Rating & Reviews
+							</button>
+						</nav>
 					</div>
-					<div class="text-sm text-gray-500">
-						Updated {formatRelativeTime(data.currentState.last_updated)}
+				</div>
+
+				<!-- Chart Content -->
+				<div class="bg-white rounded-b-lg shadow p-6">
+					<!-- Time Range Selector -->
+					<div class="flex justify-between items-center mb-6">
+						<div class="flex space-x-2">
+							<button
+								onclick={() => changeTimeRange('week')}
+								class="px-3 py-1 text-sm rounded {timeRange === 'week'
+									? 'bg-blue-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								Weekly
+							</button>
+							<button
+								onclick={() => changeTimeRange('month')}
+								class="px-3 py-1 text-sm rounded {timeRange === 'month'
+									? 'bg-blue-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								Last Month
+							</button>
+							<button
+								onclick={() => changeTimeRange('3month')}
+								class="px-3 py-1 text-sm rounded {timeRange === '3month'
+									? 'bg-blue-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								3 Months
+							</button>
+							<button
+								onclick={() => changeTimeRange('6month')}
+								class="px-3 py-1 text-sm rounded {timeRange === '6month'
+									? 'bg-blue-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								6 Months
+							</button>
+						</div>
+					</div>
+
+					<!-- Chart Canvas -->
+					<div class="relative" style="height: 400px;">
+						{#if data.history && data.history.length > 0}
+							<canvas bind:this={chartCanvas}></canvas>
+						{:else}
+							<div class="flex items-center justify-center h-full bg-gray-50 rounded-lg">
+								<div class="text-center">
+									<svg
+										class="mx-auto h-12 w-12 text-gray-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+										/>
+									</svg>
+									<h3 class="mt-2 text-sm font-medium text-gray-900">No historical data yet</h3>
+									<p class="mt-1 text-sm text-gray-500">
+										Price tracking data will appear here as notifications are processed
+									</p>
+								</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
-		{/if}
+		</div>
 
-		<!-- Analytics Cards -->
-		{#if data.analytics}
-			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-				<div class="bg-white rounded-lg shadow p-4">
-					<div class="text-xs text-gray-500 mb-1">Avg Price</div>
-					<div class="text-lg font-bold">{formatPrice(data.analytics.avgPrice)}</div>
-				</div>
-				<div class="bg-white rounded-lg shadow p-4">
-					<div class="text-xs text-gray-500 mb-1">Price Changes</div>
-					<div class="text-lg font-bold">{data.analytics.priceChanges}</div>
-				</div>
-				<div class="bg-white rounded-lg shadow p-4">
-					<div class="text-xs text-gray-500 mb-1">Buy Box Win Rate</div>
-					<div class="text-lg font-bold">{data.analytics.buyBoxWinRate.toFixed(1)}%</div>
-				</div>
-				<div class="bg-white rounded-lg shadow p-4">
-					<div class="text-xs text-gray-500 mb-1">Avg Competitors</div>
-					<div class="text-lg font-bold">{data.analytics.avgCompetitors.toFixed(1)}</div>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Price Chart -->
-		{#if data.history && data.history.length > 0}
-			<div class="bg-white rounded-lg shadow-md p-6 mb-6">
-				<div class="flex items-center justify-between mb-4">
-					<h2 class="text-xl font-semibold">Price History</h2>
-					<div class="flex gap-2">
-						<button
-							onclick={() => (timeRange = '24h')}
-							class="px-3 py-1 rounded text-sm {timeRange === '24h'
-								? 'bg-blue-600 text-white'
-								: 'bg-gray-200 text-gray-700'}"
-						>
-							24h
-						</button>
-						<button
-							onclick={() => (timeRange = '7d')}
-							class="px-3 py-1 rounded text-sm {timeRange === '7d'
-								? 'bg-blue-600 text-white'
-								: 'bg-gray-200 text-gray-700'}"
-						>
-							7d
-						</button>
-						<button
-							onclick={() => (timeRange = '30d')}
-							class="px-3 py-1 rounded text-sm {timeRange === '30d'
-								? 'bg-blue-600 text-white'
-								: 'bg-gray-200 text-gray-700'}"
-						>
-							30d
-						</button>
-						<button
-							onclick={() => (timeRange = 'all')}
-							class="px-3 py-1 rounded text-sm {timeRange === 'all'
-								? 'bg-blue-600 text-white'
-								: 'bg-gray-200 text-gray-700'}"
-						>
-							All
-						</button>
-					</div>
-				</div>
-				<div class="h-96">
-					<canvas bind:this={chartCanvas}></canvas>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Competitor Activity -->
+		<!-- Competitor Details Table -->
 		{#if data.competitors && data.competitors.length > 0}
-			<div class="bg-white rounded-lg shadow-md p-6 mb-6">
-				<h2 class="text-xl font-semibold mb-4">Competitor Activity</h2>
+			<div id="competitors" class="mt-6 bg-white rounded-lg shadow overflow-hidden">
+				<div class="px-6 py-4 border-b border-gray-200">
+					<h3 class="text-lg font-semibold text-gray-900">
+						Competitor Activity ({data.competitors.length} competitors)
+					</h3>
+					<p class="text-sm text-gray-500 mt-1">
+						Based on {data.history?.length || 0} historical notifications
+					</p>
+				</div>
 				<div class="overflow-x-auto">
-					<table class="w-full">
-						<thead>
-							<tr class="border-b">
-								<th class="text-left py-2 px-4">Seller ID</th>
-								<th class="text-left py-2 px-4">Status</th>
-								<th class="text-right py-2 px-4">Lowest Price</th>
-								<th class="text-right py-2 px-4">Highest Price</th>
-								<th class="text-right py-2 px-4">Appearances</th>
-								<th class="text-right py-2 px-4">Price Changes</th>
-								<th class="text-center py-2 px-4">FBA</th>
-								<th class="text-right py-2 px-4">Buy Box Wins</th>
+					<table class="min-w-full divide-y divide-gray-200">
+						<thead class="bg-gray-50">
+							<tr>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Seller ID
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Lowest Price
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Highest Price
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Avg Price
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Appearances
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Buy Box Wins
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Price Changes
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Type
+								</th>
+								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									Status
+								</th>
 							</tr>
 						</thead>
-						<tbody>
+						<tbody class="bg-white divide-y divide-gray-200">
 							{#each data.competitors as competitor}
-								<tr class="border-b hover:bg-gray-50">
-									<td class="py-2 px-4 font-mono text-sm"
-										>{competitor.sellerId.substring(0, 10)}...</td
-									>
-									<td class="py-2 px-4">
-										{#if competitor.currentlyActive}
-											<span
-												class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800"
-											>
-												Active
-											</span>
-										{:else}
-											<span
-												class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600"
-											>
-												Inactive
-											</span>
-										{/if}
+								<tr class="hover:bg-gray-50">
+									<td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+										{competitor.sellerId}
 									</td>
-									<td class="py-2 px-4 text-right">{formatPrice(competitor.lowestPrice)}</td>
-									<td class="py-2 px-4 text-right">{formatPrice(competitor.highestPrice)}</td>
-									<td class="py-2 px-4 text-right">{competitor.appearances}</td>
-									<td class="py-2 px-4 text-right">{competitor.priceChanges}</td>
-									<td class="py-2 px-4 text-center">
-										{#if competitor.isFBA}
-											<span class="text-blue-600">✓</span>
-										{:else}
-											<span class="text-gray-400">—</span>
-										{/if}
+									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
+										{formatPrice(competitor.lowestPrice)}
 									</td>
-									<td class="py-2 px-4 text-right">
-										{competitor.buyBoxWins}
-										<span class="text-xs text-gray-500"
-											>({competitor.buyBoxWinRate.toFixed(0)}%)</span
+									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+										{formatPrice(competitor.highestPrice)}
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+										{formatPrice(competitor.avgPrice)}
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+										{competitor.appearances}
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+										{competitor.buyBoxWins} ({competitor.buyBoxWinRate.toFixed(0)}%)
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+										{competitor.priceChanges}
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap">
+										<span
+											class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {competitor.isFBA
+												? 'bg-purple-100 text-purple-800'
+												: 'bg-gray-100 text-gray-800'}"
 										>
+											{competitor.isFBA ? 'FBA' : 'FBM'}
+										</span>
+									</td>
+									<td class="px-6 py-4 whitespace-nowrap">
+										<span
+											class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {competitor.currentlyActive
+												? 'bg-green-100 text-green-800'
+												: 'bg-gray-100 text-gray-600'}"
+										>
+											{competitor.currentlyActive ? 'Active' : 'Inactive'}
+										</span>
 									</td>
 								</tr>
 							{/each}
@@ -428,53 +602,30 @@
 					</table>
 				</div>
 			</div>
-		{/if}
-
-		<!-- Recent Notifications -->
-		{#if data.history && data.history.length > 0}
-			<div class="bg-white rounded-lg shadow-md p-6">
-				<h2 class="text-xl font-semibold mb-4">Recent Notifications ({data.meta.totalRecords})</h2>
-				<div class="space-y-3 max-h-96 overflow-y-auto">
-					{#each data.history.slice(0, 20) as notification}
-						<div class="border rounded-lg p-4 hover:bg-gray-50">
-							<div class="flex items-start justify-between">
-								<div class="flex-1">
-									<div class="text-sm text-gray-500">{formatDate(notification.timestamp)}</div>
-									<div class="mt-2 grid grid-cols-4 gap-4 text-sm">
-										<div>
-											<span class="text-gray-600">Your Price:</span>
-											<span class="font-semibold">
-												{notification.yourOffer
-													? formatPrice(notification.yourOffer.landedPrice)
-													: 'N/A'}
-											</span>
-										</div>
-										<div>
-											<span class="text-gray-600">Position:</span>
-											<span class="font-semibold">
-												{notification.yourOffer ? `#${notification.yourOffer.position}` : 'N/A'}
-											</span>
-										</div>
-										<div>
-											<span class="text-gray-600">Market Low:</span>
-											<span class="font-semibold">{formatPrice(notification.marketLow)}</span>
-										</div>
-										<div>
-											<span class="text-gray-600">Offers:</span>
-											<span class="font-semibold">{notification.offerCount}</span>
-										</div>
-									</div>
-								</div>
-								{#if notification.yourOffer?.isBuyBoxWinner}
-									<span class="ml-4 px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
-										Buy Box ✓
-									</span>
-								{/if}
-							</div>
-						</div>
-					{/each}
+		{:else}
+			<!-- No competitors message -->
+			<div class="mt-6 bg-white rounded-lg shadow p-8">
+				<div class="text-center">
+					<svg
+						class="mx-auto h-12 w-12 text-gray-400"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+						/>
+					</svg>
+					<h3 class="mt-2 text-sm font-medium text-gray-900">No competitor data yet</h3>
+					<p class="mt-1 text-sm text-gray-500">
+						Competitor activity will appear here as historical notifications are collected.<br />
+						Current notifications: {data.history?.length || 0}
+					</p>
 				</div>
 			</div>
 		{/if}
-	{/if}
+	</div>
 </div>

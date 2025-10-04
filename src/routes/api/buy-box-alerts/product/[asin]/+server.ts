@@ -44,9 +44,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			SELECT 
 				id,
 				received_at,
-				raw_notification
+				raw_notification,
+				asin
 			FROM worker_notifications
-			WHERE raw_notification->'Payload'->'AnyOfferChangedNotification'->>'ASIN' = $1
+			WHERE asin = $1
 			ORDER BY received_at ASC
 		`,
       [asin]
