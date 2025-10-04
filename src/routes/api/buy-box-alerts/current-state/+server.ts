@@ -12,10 +12,14 @@ let pool: pg.Pool | null = null;
 
 function getPool() {
   if (!pool) {
-    const dbUrl = process.env.RENDER_DATABASE_URL || process.env.DATABASE_URL;
+    // Try multiple environment variable names for flexibility
+    const dbUrl = 
+      process.env.RENDER_DATABASE_URL || 
+      process.env.BUYBOX_DATABASE_URL ||
+      process.env.WORKER_DATABASE_URL;
 
     if (!dbUrl) {
-      throw new Error('RENDER_DATABASE_URL or DATABASE_URL environment variable required');
+      throw new Error('Database URL not found. Set RENDER_DATABASE_URL, BUYBOX_DATABASE_URL, or WORKER_DATABASE_URL environment variable');
     }
 
     pool = new Pool({
