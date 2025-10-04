@@ -7,7 +7,8 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ fetch }) => {
   try {
     // Call our API endpoint that queries the database
-    const response = await fetch('/api/buy-box-alerts/current-state');
+    // Fetch last 24 hours of notifications (max 100) to ensure we see recent activity
+    const response = await fetch('/api/buy-box-alerts/current-state?hours=24&limit=100');
 
     if (!response.ok) {
       throw new Error(`Failed to fetch alerts: ${response.statusText}`);

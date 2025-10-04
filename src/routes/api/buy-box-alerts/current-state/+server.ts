@@ -40,17 +40,28 @@ export const GET: RequestHandler = async ({ url }) => {
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100); // Max 100 items
     const offset = parseInt(url.searchParams.get('offset') || '0');
     const severityFilter = url.searchParams.get('severity'); // Optional severity filter
+    const hoursFilter = url.searchParams.get('hours'); // Optional time filter (e.g., ?hours=24)
 
-    // Build WHERE clause if filtering by severity
-    let whereClause = '';
-    const queryParams: any[] = [limit, offset];
-
+    // Build WHERE clause if filtering by severity or time
+    const whereConditions: string[] = [];
+    const queryParams: any[] = [];
+    
     if (severityFilter) {
-      whereClause = 'WHERE severity = $3';
+      whereConditions.push(`severity = $${queryParams.length + 1}`);
       queryParams.push(severityFilter);
     }
-
-    // Query current_state table for all ASINs
+    
+    if (hoursFilter) {
+      const hours = parseInt(hoursFilter);
+      whereConditions.push(`last_updated > NOW() - INTERVAL '${hours} hours'`);
+    }
+    
+    const whereClause = whereConditions.length > 0 
+      ? 'WHERE ' + whereConditions.join(' AND ')
+      : '';
+    
+    // Add limit and offset to query params
+    queryParams.push(limit, offset);    // Query current_state table for all ASINs
     const result = await db.query(`
 			SELECT 
 				asin,
@@ -67,16 +78,8 @@ export const GET: RequestHandler = async ({ url }) => {
 			FROM current_state
 			${whereClause}
 			ORDER BY 
-				CASE severity
-					WHEN 'critical' THEN 1
-					WHEN 'high' THEN 2
-					WHEN 'warning' THEN 3
-					WHEN 'info' THEN 4
-					WHEN 'success' THEN 5
-					ELSE 6
-				END,
 				last_updated DESC
-			LIMIT $1 OFFSET $2
+			LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}
 		`, queryParams);
 
     // Get total count and stats (separate query for accuracy)

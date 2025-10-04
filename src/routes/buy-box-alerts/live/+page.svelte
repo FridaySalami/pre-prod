@@ -801,13 +801,13 @@
 		notifications.forEach((notification: SpApiNotification) => {
 			// Prefer _dbMetadata.asin for performance (already parsed)
 			let asin = notification._dbMetadata?.asin;
-			
+
 			// Fallback: parse from notification payload
 			if (!asin) {
 				const offerData = getOfferData(notification);
 				asin = extractAsin(offerData);
 			}
-			
+
 			if (asin && asin !== 'Unknown') {
 				allAsins.add(asin);
 			}
@@ -1312,7 +1312,9 @@
 		try {
 			connectionStatus = 'polling';
 
-			const response = await fetch('/api/buy-box-alerts/current-state');
+			// Fetch last 24 hours of notifications (unlimited within that window)
+			// This ensures we always see recent notifications even if there are 100+ total
+			const response = await fetch('/api/buy-box-alerts/current-state?hours=24&limit=100');
 			const result = await response.json();
 
 			if (result.alerts) {
