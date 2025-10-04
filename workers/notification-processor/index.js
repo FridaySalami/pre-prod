@@ -105,7 +105,7 @@ class NotificationWorker {
             logger.error('❌ Error processing message', {
               error: error.message,
               stack: error.stack,
-              messageId: message.messageId
+              MessageId: message.MessageId
             });
 
             // Store in dead letter queue
@@ -145,16 +145,16 @@ class NotificationWorker {
    * @param {Object} message - Parsed message from SQS
    */
   async processMessage(message) {
-    const { asin, notificationData, dedupeHash } = message;
+    const { asin, parsedBody, dedupeHash } = message;
 
     logger.info('Processing notification', {
       asin,
       dedupeHash: dedupeHash.substring(0, 12),
-      messageId: message.messageId
+      MessageId: message.MessageId
     });
 
     // Analyze competitive data
-    const analysis = this.analyzer.analyze(notificationData);
+    const analysis = this.analyzer.analyze(parsedBody);
 
     logger.info('Analysis complete', {
       asin,
@@ -167,7 +167,7 @@ class NotificationWorker {
     // Store notification in database
     const isDuplicate = await this.database.storeNotification({
       asin,
-      notification_data: notificationData,
+      notification_data: parsedBody,
       dedupe_hash: dedupeHash,
       severity: analysis.severity,
       metadata: {
@@ -196,7 +196,7 @@ class NotificationWorker {
       total_offers: analysis.totalOffers,
       your_position: analysis.yourPosition,
       buy_box_winner: analysis.buyBoxWinner,
-      last_notification_data: notificationData
+      last_notification_data: parsedBody
     });
 
     this.stats.processed++;
@@ -216,7 +216,7 @@ class NotificationWorker {
     try {
       await this.database.storeFailed({
         asin: message.asin || 'unknown',
-        notification_data: message.notificationData,
+        notification_data: message.parsedBody,
         error_message: error.message,
         error_stack: error.stack
       });

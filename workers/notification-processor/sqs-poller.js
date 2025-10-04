@@ -8,18 +8,14 @@ const crypto = require('crypto');
 const logger = require('../shared/logger');
 
 class SQSPoller {
-  constructor(config) {
-    this.queueUrl = config.queueUrl;
-    this.batchSize = config.batchSize || 10;
-    this.pollInterval = config.pollInterval || 1000;
-    this.visibilityTimeout = config.visibilityTimeout || 120;
-    this.isPolling = false;
-    this.messageHandlers = [];
-    this.pollTimeoutId = null;
+  constructor(queueUrl, region = 'eu-west-1') {
+    this.queueUrl = queueUrl;
+    this.batchSize = 10;
+    this.visibilityTimeout = 120;
 
     // Configure AWS SQS client
     this.sqs = new AWS.SQS({
-      region: process.env.AWS_REGION || 'eu-west-1',
+      region: region,
       accessKeyId: process.env.AWS_ACCESS_KEY_ID,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
       httpOptions: {
@@ -30,41 +26,16 @@ class SQSPoller {
     });
 
     logger.info('SQS Poller initialized', {
-      queueUrl: this.queueUrl,
       batchSize: this.batchSize,
       visibilityTimeout: this.visibilityTimeout
     });
   }
 
   /**
-   * Register a message handler function
-   * @param {function} handler - Async function to process messages
-   */
-  onMessage(handler) {
-    this.messageHandlers.push(handler);
-  }
-
-  /**
-   * Start polling for messages
-   */
-  async start() {
-    if (this.isPolling) {
-      logger.warn('⚠️ Already polling');
-      return;
-    }
-
-    this.isPolling = true;
-    logger.info('🔄 Starting SQS polling', { queueUrl: this.queueUrl });
-
-    this.poll();
-  }
-
-  /**
-   * Poll for messages (internal method)
+   * Poll for messages and return them
+   * @returns {Promise<Array>} - Array of parsed messages
    */
   async poll() {
-    if (!this.isPolling) return;
-
     try {
       const params = {
         QueueUrl: this.queueUrl,
@@ -78,48 +49,24 @@ class SQSPoller {
       const result = await this.sqs.receiveMessage(params).promise();
 
       if (result.Messages && result.Messages.length > 0) {
-        logger.info(`📬 Received ${result.Messages.length} message(s)`);
-
         // Parse messages
         const parsedMessages = result.Messages.map(msg => this.parseMessage(msg));
-
-        // Call all registered handlers
-        for (const handler of this.messageHandlers) {
-          try {
-            await handler(parsedMessages);
-          } catch (error) {
-            logger.error('❌ Message handler failed', {
-              error: error.message,
-              stack: error.stack
-            });
-            // Continue processing other messages
-          }
-        }
-
-        // Delete successfully processed messages
-        const messagesToDelete = parsedMessages.map(m => ({
-          Id: m.MessageId,
-          ReceiptHandle: m.ReceiptHandle
-        }));
-
-        await this.deleteMessages(messagesToDelete);
-      } else {
-        // No messages - this is normal with long polling
-        logger.debug('📭 No messages in queue');
+        return parsedMessages;
       }
+
+      // No messages - return empty array
+      return [];
 
     } catch (error) {
       logger.error('❌ SQS polling error', {
         error: error.message,
-        code: error.code
+        code: error.code,
+        stack: error.stack
       });
-
-      // Back off on errors
-      await this.sleep(5000);
+      
+      // Return empty array on error
+      return [];
     }
-
-    // Continue polling
-    this.pollTimeoutId = setTimeout(() => this.poll(), this.pollInterval);
   }
 
   /**
@@ -207,12 +154,17 @@ class SQSPoller {
 
   /**
    * Delete messages from SQS queue
-   * @param {Array} entries - Array of {Id, ReceiptHandle}
+   * @param {Array} messages - Array of parsed messages with MessageId and ReceiptHandle
    */
-  async deleteMessages(entries) {
-    if (entries.length === 0) return;
+  async deleteMessages(messages) {
+    if (!messages || messages.length === 0) return;
 
     try {
+      const entries = messages.map(m => ({
+        Id: m.MessageId,
+        ReceiptHandle: m.ReceiptHandle
+      }));
+
       await this.sqs.deleteMessageBatch({
         QueueUrl: this.queueUrl,
         Entries: entries
@@ -222,39 +174,24 @@ class SQSPoller {
     } catch (error) {
       logger.error('❌ Failed to delete messages', {
         error: error.message,
-        count: entries.length
+        count: messages.length
       });
       // Don't throw - messages will become visible again after timeout
     }
   }
 
   /**
-   * Stop polling
+   * Stop polling (no-op for stateless poller)
    */
   async stop() {
-    logger.info('🛑 Stopping SQS polling...');
-    this.isPolling = false;
-
-    if (this.pollTimeoutId) {
-      clearTimeout(this.pollTimeoutId);
-      this.pollTimeoutId = null;
-    }
+    logger.info('🛑 SQS poller stopped');
   }
 
   /**
-   * Check if poller is connected/running
-   * @returns {boolean}
+   * Stop polling (no-op for stateless poller)
    */
-  isConnected() {
-    return this.isPolling;
-  }
-
-  /**
-   * Helper to sleep
-   * @param {number} ms - Milliseconds to sleep
-   */
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  async stop() {
+    logger.info('🛑 SQS poller stopped');
   }
 }
 
