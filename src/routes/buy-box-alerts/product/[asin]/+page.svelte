@@ -14,6 +14,33 @@
 
 	const OUR_SELLER_ID = 'A2D8NG39VURSL3';
 
+	// Filter history based on selected time range
+	const filteredHistory = $derived.by(() => {
+		if (!data.history || data.history.length === 0) return [];
+
+		const now = new Date();
+		let cutoffDate: Date;
+
+		switch (timeRange) {
+			case 'week':
+				cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+				break;
+			case 'month':
+				cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+				break;
+			case '3month':
+				cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+				break;
+			case '6month':
+				cutoffDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+				break;
+			default:
+				return data.history;
+		}
+
+		return data.history.filter((h: any) => new Date(h.timestamp) >= cutoffDate);
+	});
+
 	// Placeholder data (will be populated from APIs later)
 	const placeholderMetrics = {
 		revenue30d: '$23,556.35',
@@ -40,9 +67,8 @@
 	const totalOffers = currentState.total_offers || 0;
 
 	// Calculate price gap percentage
-	const priceGap = yourPrice && marketLow
-		? (((yourPrice - marketLow) / marketLow) * 100).toFixed(1)
-		: '0.0';
+	const priceGap =
+		yourPrice && marketLow ? (((yourPrice - marketLow) / marketLow) * 100).toFixed(1) : '0.0';
 
 	// Format currency
 	function formatPrice(price: number): string {
@@ -50,6 +76,30 @@
 			style: 'currency',
 			currency: 'GBP'
 		}).format(price);
+	}
+
+	// Get seller display name
+	function getSellerDisplayName(sellerId: string): string {
+		if (sellerId === OUR_SELLER_ID) return 'YOU';
+		// Truncate long seller IDs for readability
+		return sellerId.length > 12 ? `${sellerId.substring(0, 10)}...` : sellerId;
+	}
+
+	// Generate a consistent color for each seller
+	function getSellerColor(sellerId: string, index: number): string {
+		const colors = [
+			'rgb(255, 99, 132)', // red
+			'rgb(54, 162, 235)', // blue
+			'rgb(255, 206, 86)', // yellow
+			'rgb(75, 192, 192)', // teal
+			'rgb(153, 102, 255)', // purple
+			'rgb(255, 159, 64)', // orange
+			'rgb(199, 199, 199)', // gray
+			'rgb(83, 102, 255)', // indigo
+			'rgb(255, 99, 255)', // pink
+			'rgb(99, 255, 132)' // green
+		];
+		return colors[index % colors.length];
 	}
 
 	// Create the main chart
@@ -99,23 +149,70 @@
 					pointRadius: 3,
 					pointHoverRadius: 5,
 					tension: 0.4,
-					yAxisID: 'yPrice'
-				},
-				{
-					label: 'Prime Low',
-					data: data.history.map((h: any) => ({
-						x: new Date(h.timestamp),
-						y: h.primeLow || h.marketLow || 0
-					})),
-					borderColor: 'rgb(168, 85, 247)',
-					backgroundColor: 'rgba(168, 85, 247, 0.1)',
-					borderWidth: 2,
-					pointRadius: 3,
-					pointHoverRadius: 5,
-					tension: 0.4,
-					yAxisID: 'yPrice'
+					yAxisID: 'yPrice',
+					borderDash: [5, 5]
 				}
 			];
+
+			// Add individual competitor price lines
+			if (data.competitors && data.competitors.length > 0) {
+				console.log('Adding competitor lines for', data.competitors.length, 'competitors');
+
+				// Generate distinct colors for competitors
+				const competitorColors = [
+					'rgb(239, 68, 68)', // Red
+					'rgb(251, 146, 60)', // Orange
+					'rgb(234, 179, 8)', // Yellow
+					'rgb(34, 197, 94)', // Green (lighter)
+					'rgb(14, 165, 233)', // Light Blue
+					'rgb(168, 85, 247)', // Purple (lighter)
+					'rgb(236, 72, 153)', // Pink
+					'rgb(163, 163, 163)', // Gray
+					'rgb(251, 191, 36)', // Amber
+					'rgb(132, 204, 22)' // Lime
+				];
+
+				// Create a line for each competitor
+				data.competitors.slice(0, 10).forEach((competitor: any, index: number) => {
+					// Extract this competitor's prices from history
+					const competitorPrices = data.history
+						.map((h: any) => {
+							// Find this competitor in the sellers array of this historical record
+							const sellerData = h.competitorPrices?.find(
+								(cp: any) => cp.seller === competitor.sellerId
+							);
+							return {
+								x: new Date(h.timestamp),
+								y: sellerData?.landedPrice || null
+							};
+						})
+						.filter((point: any) => point.y !== null);
+
+					console.log(
+						`Competitor ${competitor.sellerId}: ${competitorPrices.length} price points`,
+						competitorPrices
+					);
+
+					// Only add line if competitor has price data
+					if (competitorPrices.length > 0) {
+						const color = competitorColors[index % competitorColors.length];
+						datasets.push({
+							label: getSellerDisplayName(competitor.sellerId),
+							data: competitorPrices,
+							borderColor: color,
+							backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+							borderWidth: 2,
+							pointRadius: 3,
+							pointHoverRadius: 5,
+							tension: 0.4,
+							yAxisID: 'yPrice',
+							borderDash: [2, 2]
+						});
+					}
+				});
+
+				console.log('Total datasets:', datasets.length);
+			}
 		}
 
 		chartInstance = new Chart(ctx, {
@@ -139,15 +236,58 @@
 						}
 					},
 					tooltip: {
-						backgroundColor: 'rgba(0, 0, 0, 0.8)',
-						padding: 12,
-						titleFont: { size: 13, weight: 'bold' },
-						bodyFont: { size: 12 },
+						backgroundColor: 'rgba(0, 0, 0, 0.9)',
+						padding: 16,
+						titleFont: { size: 14, weight: 'bold' },
+						bodyFont: { size: 13 },
+						bodySpacing: 6,
+						borderColor: 'rgba(255, 255, 255, 0.1)',
+						borderWidth: 1,
+						displayColors: true,
 						callbacks: {
+							title: (tooltipItems) => {
+								// Show the timestamp
+								const dataIndex = tooltipItems[0].dataIndex;
+								const timestamp = new Date(filteredHistory[dataIndex].timestamp);
+								return timestamp.toLocaleString('en-GB', {
+									month: 'short',
+									day: 'numeric',
+									hour: '2-digit',
+									minute: '2-digit'
+								});
+							},
+							afterTitle: (tooltipItems) => {
+								// Show total offers count
+								const dataIndex = tooltipItems[0].dataIndex;
+								const record = filteredHistory[dataIndex];
+								return `${record.offerCount} total offers`;
+							},
 							label: (context) => {
 								const label = context.dataset.label || '';
 								const value = context.parsed.y;
 								return `${label}: ${formatPrice(value)}`;
+							},
+							afterBody: (tooltipItems) => {
+								// Show position and buy box info for "Your Price" line
+								const dataIndex = tooltipItems[0].dataIndex;
+								const record = filteredHistory[dataIndex];
+
+								if (!record.yourOffer) return [];
+
+								const lines = [];
+								lines.push(''); // Empty line for spacing
+								lines.push(`Position: #${record.yourOffer.position}`);
+
+								if (record.yourOffer.isBuyBoxWinner) {
+									lines.push('🏆 Buy Box Winner');
+								} else {
+									const winner = record.buyBoxWinner;
+									if (winner) {
+										lines.push(`Buy Box: ${getSellerDisplayName(winner)}`);
+									}
+								}
+
+								return lines;
 							}
 						}
 					}
@@ -232,31 +372,65 @@
 			<div class="flex items-start justify-between">
 				<div class="flex-1">
 					<div class="flex items-center space-x-3 mb-2">
-						<svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+						<svg
+							class="w-8 h-8 text-blue-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+							/>
 						</svg>
 						<h1 class="text-2xl font-bold text-gray-900">
 							Product Summary for "{data.asin}"
 						</h1>
 						<button class="text-gray-400 hover:text-gray-600" aria-label="Copy ASIN">
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+								/>
 							</svg>
 						</button>
 					</div>
 					<p class="text-sm text-gray-600">{productInfo.item_name || 'Loading product info...'}</p>
 				</div>
 				<div class="flex space-x-3">
-					<button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2">
+					<button
+						class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+					>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+							/>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+							/>
 						</svg>
 						<span>Track Competitor</span>
 					</button>
-					<button class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center space-x-2">
+					<button
+						class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+					>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+							/>
 						</svg>
 						<span>Save Product</span>
 					</button>
@@ -273,7 +447,12 @@
 				<div class="text-xs text-gray-500">Unit Sales: {placeholderMetrics.unitSales30d}</div>
 				<div class="mt-2 flex items-center text-green-600 text-sm">
 					<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+						/>
 					</svg>
 					<span class="text-xs">Data from Amazon Reports API (Coming Soon)</span>
 				</div>
@@ -286,16 +465,24 @@
 					<div class="flex items-center">
 						{#each Array(5) as _, i}
 							<svg
-								class="w-5 h-5 {i < Math.floor(placeholderMetrics.currentRating) ? 'text-yellow-400' : i < placeholderMetrics.currentRating ? 'text-yellow-400' : 'text-gray-300'}"
+								class="w-5 h-5 {i < Math.floor(placeholderMetrics.currentRating)
+									? 'text-yellow-400'
+									: i < placeholderMetrics.currentRating
+										? 'text-yellow-400'
+										: 'text-gray-300'}"
 								fill="currentColor"
 								viewBox="0 0 20 20"
 							>
-								<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+								<path
+									d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"
+								/>
 							</svg>
 						{/each}
 					</div>
 					<span class="text-2xl font-bold">{placeholderMetrics.currentRating}</span>
-					<span class="text-sm text-gray-500">({placeholderMetrics.totalReviews.toLocaleString()})</span>
+					<span class="text-sm text-gray-500"
+						>({placeholderMetrics.totalReviews.toLocaleString()})</span
+					>
 				</div>
 				<button class="text-sm text-blue-600 hover:underline">Analyze Reviews</button>
 			</div>
@@ -304,7 +491,9 @@
 			<div class="bg-white rounded-lg shadow p-6">
 				<div class="text-sm text-gray-600 mb-1">Listing Health Score</div>
 				<div class="flex items-center space-x-3">
-					<div class="text-4xl font-bold text-green-600">{placeholderMetrics.listingHealthScore}</div>
+					<div class="text-4xl font-bold text-green-600">
+						{placeholderMetrics.listingHealthScore}
+					</div>
 					<div class="flex-1">
 						<div class="w-full bg-gray-200 rounded-full h-2">
 							<div
@@ -320,7 +509,9 @@
 			<!-- Top Keywords (Placeholder) -->
 			<div class="bg-white rounded-lg shadow p-6">
 				<div class="text-sm text-gray-600 mb-2">Top Keywords</div>
-				<div class="text-xs text-gray-700 mb-1">Phone Charger, Portable, Household, Magnet, USB</div>
+				<div class="text-xs text-gray-700 mb-1">
+					Phone Charger, Portable, Household, Magnet, USB
+				</div>
 				<button class="text-sm text-blue-600 hover:underline">See All Keywords</button>
 			</div>
 		</div>
@@ -332,7 +523,7 @@
 				<!-- Product Details Card -->
 				<div class="bg-white rounded-lg shadow p-6">
 					<h3 class="font-semibold text-gray-900 mb-4">Product Details</h3>
-					
+
 					<div class="space-y-3 text-sm">
 						<div class="flex justify-between">
 							<span class="text-gray-600">FBA Fee</span>
@@ -367,7 +558,11 @@
 							</div>
 							<div class="flex justify-between">
 								<span class="text-gray-600">Price Gap</span>
-								<span class="font-semibold {parseFloat(priceGap) > 0 ? 'text-red-600' : 'text-green-600'}">
+								<span
+									class="font-semibold {parseFloat(priceGap) > 0
+										? 'text-red-600'
+										: 'text-green-600'}"
+								>
 									{priceGap}%
 								</span>
 							</div>
@@ -393,7 +588,9 @@
 									<span class="text-gray-700 font-mono text-xs">
 										{competitor.sellerId.substring(0, 10)}...
 									</span>
-									<span class="text-gray-900 font-semibold">{formatPrice(competitor.lowestPrice)}</span>
+									<span class="text-gray-900 font-semibold"
+										>{formatPrice(competitor.lowestPrice)}</span
+									>
 								</div>
 							{/each}
 						</div>
@@ -525,31 +722,49 @@
 					<table class="min-w-full divide-y divide-gray-200">
 						<thead class="bg-gray-50">
 							<tr>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Seller ID
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Lowest Price
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Highest Price
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Avg Price
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Appearances
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Buy Box Wins
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Price Changes
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Type
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Status
 								</th>
 							</tr>
