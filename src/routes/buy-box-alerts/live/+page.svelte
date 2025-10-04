@@ -125,6 +125,7 @@
 		receiptHandle: string;
 		receivedAt?: string;
 		_dbMetadata?: {
+			asin: string;
 			severity: string;
 			yourPrice: number | null;
 			marketLow: number | null;
@@ -798,8 +799,15 @@
 
 		// Collect all unique ASINs from current notifications
 		notifications.forEach((notification: SpApiNotification) => {
-			const offerData = getOfferData(notification);
-			const asin = extractAsin(offerData);
+			// Prefer _dbMetadata.asin for performance (already parsed)
+			let asin = notification._dbMetadata?.asin;
+			
+			// Fallback: parse from notification payload
+			if (!asin) {
+				const offerData = getOfferData(notification);
+				asin = extractAsin(offerData);
+			}
+			
 			if (asin && asin !== 'Unknown') {
 				allAsins.add(asin);
 			}
@@ -964,9 +972,8 @@
 	} {
 		// Prefer database metadata for performance
 		if (notification._dbMetadata) {
-			const offerData = getOfferData(notification);
 			return {
-				asin: extractAsin(offerData),
+				asin: notification._dbMetadata.asin,
 				yourPrice: notification._dbMetadata.yourPrice,
 				marketLow: notification._dbMetadata.marketLow,
 				primeLow: notification._dbMetadata.primeLow,
@@ -1312,6 +1319,9 @@
 				alerts = result.alerts;
 				notifications = result.alerts; // Update notifications array for UI display
 
+				// Prefetch product names for all ASINs (for collapsed view display)
+				prefetchProductNames();
+
 				// Recalculate stats from the fresh alerts data
 				const uniqueAsins = new Set(result.alerts.map((a: any) => a.asin));
 				const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -1384,6 +1394,11 @@
 
 	// Lifecycle
 	onMount(() => {
+		// Prefetch product names for initial server-loaded data
+		if (notifications.length > 0) {
+			prefetchProductNames();
+		}
+
 		// Start auto-refresh from database every 30 seconds
 		startPolling();
 

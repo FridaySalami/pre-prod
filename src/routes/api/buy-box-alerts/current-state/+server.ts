@@ -129,6 +129,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
         // Direct database fields for immediate UI display (avoid parsing JSONB)
         _dbMetadata: {
+          asin: row.asin,
           severity: row.severity,
           yourPrice: row.your_price ? parseFloat(row.your_price) : null,
           marketLow: row.market_low ? parseFloat(row.market_low) : null,
