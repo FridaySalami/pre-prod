@@ -12,8 +12,14 @@ let pool: pg.Pool | null = null;
 
 function getPool() {
 	if (!pool) {
+		const dbUrl = process.env.RENDER_DATABASE_URL || process.env.DATABASE_URL;
+		
+		if (!dbUrl) {
+			throw new Error('RENDER_DATABASE_URL or DATABASE_URL environment variable required');
+		}
+		
 		pool = new Pool({
-			connectionString: process.env.DATABASE_URL,
+			connectionString: dbUrl,
 			ssl: {
 				rejectUnauthorized: false
 			},
