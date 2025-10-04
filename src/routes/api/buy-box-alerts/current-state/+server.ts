@@ -3,7 +3,7 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { RENDER_DATABASE_URL } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -13,8 +13,8 @@ let pool: pg.Pool | null = null;
 
 function getPool() {
   if (!pool) {
-    // Use the SvelteKit environment variable
-    const dbUrl = RENDER_DATABASE_URL;
+    // Use the SvelteKit environment variable (runtime)
+    const dbUrl = env.RENDER_DATABASE_URL;
 
     if (!dbUrl) {
       throw new Error('RENDER_DATABASE_URL environment variable required');
