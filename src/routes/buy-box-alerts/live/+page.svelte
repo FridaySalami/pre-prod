@@ -124,6 +124,16 @@
 		messageId: string;
 		receiptHandle: string;
 		receivedAt?: string;
+		_dbMetadata?: {
+			severity: string;
+			yourPrice: number | null;
+			marketLow: number | null;
+			primeLow: number | null;
+			yourPosition: number | null;
+			totalOffers: number;
+			buyBoxWinner: boolean;
+			lastUpdated?: string;
+		};
 	}
 
 	interface AlertLevel {
@@ -941,43 +951,107 @@
 		return expandedCards.has(messageId);
 	}
 
+	// Helper: Get data from _dbMetadata if available, otherwise parse notification
+	function getQuickData(notification: SpApiNotification): {
+		asin: string;
+		yourPrice: number | null;
+		marketLow: number | null;
+		primeLow: number | null;
+		position: number | null;
+		totalOffers: number;
+		buyBoxWinner: boolean;
+		severity: string;
+	} {
+		// Prefer database metadata for performance
+		if (notification._dbMetadata) {
+			const offerData = getOfferData(notification);
+			return {
+				asin: extractAsin(offerData),
+				yourPrice: notification._dbMetadata.yourPrice,
+				marketLow: notification._dbMetadata.marketLow,
+				primeLow: notification._dbMetadata.primeLow,
+				position: notification._dbMetadata.yourPosition,
+				totalOffers: notification._dbMetadata.totalOffers || 0,
+				buyBoxWinner: notification._dbMetadata.buyBoxWinner || false,
+				severity: notification._dbMetadata.severity || 'unknown'
+			};
+		}
+
+		// Fallback: Parse from notification payload
+		const offerData = getOfferData(notification);
+		const asin = extractAsin(offerData);
+		const offers = offerData?.Offers || offerData?.offers || [];
+		const yourOffer = offers.find((offer: any) => offer.SellerId === OUR_SELLER_ID);
+		const position = offers.findIndex((offer: any) => offer.SellerId === OUR_SELLER_ID) + 1;
+
+		const landedPrices = offers.map((offer: any) =>
+			calculateLandedPrice(
+				offer.ListingPrice?.Amount || offer.listingPrice?.amount || 0,
+				offer.Shipping?.Amount || offer.shipping?.amount || 0
+			)
+		);
+		const marketLow = landedPrices.length > 0 ? Math.min(...landedPrices) : null;
+
+		const primeOffers = offers.filter(
+			(offer: any) => offer.IsFulfilledByAmazon || offer.isFulfilledByAmazon
+		);
+		const primeLow =
+			primeOffers.length > 0
+				? Math.min(
+						...primeOffers.map((o: any) =>
+							calculateLandedPrice(
+								o.ListingPrice?.Amount || o.listingPrice?.amount || 0,
+								o.Shipping?.Amount || o.shipping?.amount || 0
+							)
+						)
+					)
+				: null;
+
+		return {
+			asin,
+			yourPrice: yourOffer
+				? calculateLandedPrice(yourOffer.ListingPrice?.Amount || 0, yourOffer.Shipping?.Amount || 0)
+				: null,
+			marketLow,
+			primeLow,
+			position: position > 0 ? position : null,
+			totalOffers: offers.length,
+			buyBoxWinner: yourOffer?.IsBuyBoxWinner || false,
+			severity: 'unknown'
+		};
+	}
+
 	// Get collapsed summary for notification
 	function getCollapsedSummary(notification: SpApiNotification): {
 		asin: string;
 		summary: string;
 		priceGap: string;
 	} {
-		const offerData = getOfferData(notification);
-		const asin = extractAsin(offerData);
-		const offers = offerData?.Offers || offerData?.offers || [];
-		const yourOffer = offers.find((offer: any) => offer.SellerId === OUR_SELLER_ID);
-		const targets = yourOffer ? calculateCompetitiveTargets(offers, yourOffer) : null;
+		// Use optimized helper to get data
+		const quickData = getQuickData(notification);
 
 		let priceGap = '';
 		let summary = '';
 
-		if (yourOffer && targets) {
-			const yourLanded = calculateLandedPrice(
-				yourOffer.ListingPrice?.Amount || 0,
-				yourOffer.Shipping?.Amount || 0
-			);
-			const gap = yourLanded - targets.marketLow;
-			const gapPercentage = (gap / targets.marketLow) * 100;
+		if (quickData.yourPrice && quickData.marketLow) {
+			const gap = quickData.yourPrice - quickData.marketLow;
+			const gapPercentage = (gap / quickData.marketLow) * 100;
 
 			priceGap =
 				gapPercentage > 0 ? `+${gapPercentage.toFixed(1)}%` : `${gapPercentage.toFixed(1)}%`;
 
-			if (yourOffer.IsBuyBoxWinner) {
+			if (quickData.buyBoxWinner) {
 				summary = `Buy Box Winner`;
+			} else if (quickData.position) {
+				summary = `Position #${quickData.position}`;
 			} else {
-				const position = offers.findIndex((offer: any) => offer.SellerId === OUR_SELLER_ID) + 1;
-				summary = `Position #${position}`;
+				summary = `${quickData.totalOffers} offers`;
 			}
 		} else {
-			summary = `${offers.length} offers`;
+			summary = `${quickData.totalOffers} offers`;
 		}
 
-		return { asin, summary, priceGap };
+		return { asin: quickData.asin, summary, priceGap };
 	}
 
 	// Group notifications by severity for better visual organization

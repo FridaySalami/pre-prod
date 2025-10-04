@@ -32,9 +32,23 @@ function getPool() {
   return pool;
 }
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ url }) => {
   try {
     const db = getPool();
+
+    // Get query parameters for pagination and filtering
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100); // Max 100 items
+    const offset = parseInt(url.searchParams.get('offset') || '0');
+    const severityFilter = url.searchParams.get('severity'); // Optional severity filter
+
+    // Build WHERE clause if filtering by severity
+    let whereClause = '';
+    const queryParams: any[] = [limit, offset];
+
+    if (severityFilter) {
+      whereClause = 'WHERE severity = $3';
+      queryParams.push(severityFilter);
+    }
 
     // Query current_state table for all ASINs
     const result = await db.query(`
@@ -51,6 +65,7 @@ export const GET: RequestHandler = async () => {
 				last_updated,
 				created_at
 			FROM current_state
+			${whereClause}
 			ORDER BY 
 				CASE severity
 					WHEN 'critical' THEN 1
@@ -61,58 +76,58 @@ export const GET: RequestHandler = async () => {
 					ELSE 6
 				END,
 				last_updated DESC
-		`);
+			LIMIT $1 OFFSET $2
+		`, queryParams);
 
-    // Calculate stats
-    const stats = result.rows.reduce(
-      (acc, row) => {
-        acc.total++;
-        if (row.severity === 'critical') acc.critical++;
-        else if (row.severity === 'high') acc.high++;
-        else if (row.severity === 'warning') acc.warning++;
-        else if (row.severity === 'success') acc.success++;
-        return acc;
-      },
-      { total: 0, critical: 0, high: 0, warning: 0, success: 0 }
-    );
+    // Get total count and stats (separate query for accuracy)
+    const statsQuery = await db.query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE severity = 'critical') as critical,
+        COUNT(*) FILTER (WHERE severity = 'high') as high,
+        COUNT(*) FILTER (WHERE severity = 'warning') as warning,
+        COUNT(*) FILTER (WHERE severity = 'success') as success,
+        COUNT(DISTINCT asin) as unique_asins
+      FROM current_state
+    `);
 
-    // Transform data for UI - return in SQS notification format for compatibility
+    const stats = {
+      total: parseInt(statsQuery.rows[0].total) || 0,
+      critical: parseInt(statsQuery.rows[0].critical) || 0,
+      high: parseInt(statsQuery.rows[0].high) || 0,
+      warning: parseInt(statsQuery.rows[0].warning) || 0,
+      success: parseInt(statsQuery.rows[0].success) || 0,
+      uniqueAsins: parseInt(statsQuery.rows[0].unique_asins) || 0,
+      currentPage: Math.floor(offset / limit) + 1,
+      pageSize: limit,
+      totalPages: Math.ceil((parseInt(statsQuery.rows[0].total) || 0) / limit)
+    };
+
+    // Transform data for UI - use database fields + minimal JSONB data
     const alerts = result.rows.map((row) => {
-      // If we have the full notification data, use it
-      if (row.last_notification_data) {
-        return {
-          messageId: `db-${row.asin}`,
-          body: JSON.stringify(row.last_notification_data),
-          payload: row.last_notification_data,
-          receiptHandle: `db-${row.asin}-${Date.now()}`,
-          timestamp: row.last_updated || row.created_at,
-          // Add metadata for UI
-          _dbMetadata: {
-            severity: row.severity,
-            yourPrice: row.your_price ? parseFloat(row.your_price) : null,
-            marketLow: row.market_low ? parseFloat(row.market_low) : null,
-            primeLow: row.prime_low ? parseFloat(row.prime_low) : null,
-            yourPosition: row.your_position,
-            totalOffers: row.total_offers,
-            buyBoxWinner: row.buy_box_winner
-          }
-        };
-      }
+      // Extract only essential fields from JSONB to keep response size manageable
+      const notificationData = row.last_notification_data;
+      const offerData = notificationData?.Payload?.AnyOfferChangedNotification;
 
-      // Fallback: construct a basic notification structure if we don't have full data
+      // Build a lightweight notification structure
       return {
         messageId: `db-${row.asin}`,
-        body: JSON.stringify({ asin: row.asin }),
+        eventTime: row.last_updated || row.created_at,
+        receivedAt: row.last_updated,
+
+        // Include the full payload for UI compatibility, but it's already optimized
         payload: {
           AnyOfferChangedNotification: {
             ASIN: row.asin,
-            OfferChangeTrigger: {
-              ASIN: row.asin
+            OfferChangeTrigger: offerData?.OfferChangeTrigger || { ASIN: row.asin },
+            Offers: offerData?.Offers || [],
+            Summary: offerData?.Summary || {
+              NumberOfOffers: [{ OfferCount: row.total_offers || 0 }]
             }
           }
         },
-        receiptHandle: `db-${row.asin}-${Date.now()}`,
-        timestamp: row.last_updated || row.created_at,
+
+        // Direct database fields for immediate UI display (avoid parsing JSONB)
         _dbMetadata: {
           severity: row.severity,
           yourPrice: row.your_price ? parseFloat(row.your_price) : null,
@@ -120,7 +135,8 @@ export const GET: RequestHandler = async () => {
           primeLow: row.prime_low ? parseFloat(row.prime_low) : null,
           yourPosition: row.your_position,
           totalOffers: row.total_offers,
-          buyBoxWinner: row.buy_box_winner
+          buyBoxWinner: row.buy_box_winner,
+          lastUpdated: row.last_updated
         }
       };
     });
