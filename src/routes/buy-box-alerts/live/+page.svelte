@@ -144,7 +144,7 @@
 
 	// Initialize stats from server data
 	const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-	
+
 	let stats = $state({
 		totalNotifications: data.alerts?.length || 0,
 		uniqueAsins: new Set(data.alerts?.map((a: any) => a.asin) || []),
@@ -1405,7 +1405,7 @@
 					<div class="text-sm text-blue-700">Total Notifications</div>
 				</div>
 				<div class="bg-green-50 border border-green-200 rounded-lg p-4">
-					<div class="text-2xl font-bold text-green-600">{stats.uniqueAsins.size}</div>
+					<div class="text-2xl font-bold text-green-600">{stats?.uniqueAsins?.size ?? 0}</div>
 					<div class="text-sm text-green-700">Unique ASINs</div>
 				</div>
 				<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
