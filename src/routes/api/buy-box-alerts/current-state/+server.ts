@@ -76,20 +76,54 @@ export const GET: RequestHandler = async () => {
       { total: 0, critical: 0, high: 0, warning: 0, success: 0 }
     );
 
-    // Transform data for UI
-    const alerts = result.rows.map((row) => ({
-      asin: row.asin,
-      severity: row.severity,
-      yourPrice: row.your_price ? parseFloat(row.your_price) : null,
-      marketLow: row.market_low ? parseFloat(row.market_low) : null,
-      primeLow: row.prime_low ? parseFloat(row.prime_low) : null,
-      yourPosition: row.your_position,
-      totalOffers: row.total_offers,
-      buyBoxWinner: row.buy_box_winner,
-      lastNotification: row.last_notification_data,
-      lastUpdated: row.last_updated,
-      createdAt: row.created_at
-    }));
+    // Transform data for UI - return in SQS notification format for compatibility
+    const alerts = result.rows.map((row) => {
+      // If we have the full notification data, use it
+      if (row.last_notification_data) {
+        return {
+          messageId: `db-${row.asin}`,
+          body: JSON.stringify(row.last_notification_data),
+          payload: row.last_notification_data,
+          receiptHandle: `db-${row.asin}-${Date.now()}`,
+          timestamp: row.last_updated || row.created_at,
+          // Add metadata for UI
+          _dbMetadata: {
+            severity: row.severity,
+            yourPrice: row.your_price ? parseFloat(row.your_price) : null,
+            marketLow: row.market_low ? parseFloat(row.market_low) : null,
+            primeLow: row.prime_low ? parseFloat(row.prime_low) : null,
+            yourPosition: row.your_position,
+            totalOffers: row.total_offers,
+            buyBoxWinner: row.buy_box_winner
+          }
+        };
+      }
+      
+      // Fallback: construct a basic notification structure if we don't have full data
+      return {
+        messageId: `db-${row.asin}`,
+        body: JSON.stringify({ asin: row.asin }),
+        payload: {
+          AnyOfferChangedNotification: {
+            ASIN: row.asin,
+            OfferChangeTrigger: {
+              ASIN: row.asin
+            }
+          }
+        },
+        receiptHandle: `db-${row.asin}-${Date.now()}`,
+        timestamp: row.last_updated || row.created_at,
+        _dbMetadata: {
+          severity: row.severity,
+          yourPrice: row.your_price ? parseFloat(row.your_price) : null,
+          marketLow: row.market_low ? parseFloat(row.market_low) : null,
+          primeLow: row.prime_low ? parseFloat(row.prime_low) : null,
+          yourPosition: row.your_position,
+          totalOffers: row.total_offers,
+          buyBoxWinner: row.buy_box_winner
+        }
+      };
+    });
 
     return json({
       alerts,

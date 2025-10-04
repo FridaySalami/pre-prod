@@ -136,7 +136,7 @@
 	// Reactive state using Svelte 5 runes
 	// Initialize with server-loaded data from database
 	let alerts = $state(data.alerts || []);
-	let notifications = $state<SpApiNotification[]>([]);
+	let notifications = $state<SpApiNotification[]>(data.alerts || []);
 	let isPolling = $state(false);
 	let lastPollTime = $state<Date | null>(data.lastUpdated ? new Date(data.lastUpdated) : null);
 	let errorMessage = $state<string | null>(null);
@@ -1236,7 +1236,21 @@
 
 			if (result.alerts) {
 				alerts = result.alerts;
-				stats = result.stats;
+				notifications = result.alerts; // Update notifications array for UI display
+				
+				// Recalculate stats from the fresh alerts data
+				const uniqueAsins = new Set(result.alerts.map((a: any) => a.asin));
+				const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+				const lastHourCount = result.alerts.filter((a: any) => 
+					new Date(a.lastUpdated) > oneHourAgo
+				).length;
+				
+				stats = {
+					totalNotifications: result.alerts.length,
+					uniqueAsins: uniqueAsins,
+					lastHour: lastHourCount
+				};
+				
 				lastPollTime = new Date();
 				connectionStatus = 'connected';
 				errorMessage = null;
