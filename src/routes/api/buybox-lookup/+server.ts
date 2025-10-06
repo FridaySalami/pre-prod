@@ -22,15 +22,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
     console.log(`Looking up ASIN: ${asin}`);
 
-    // Query buybox_data table for ASIN to get SKU and product name
+    // Query buybox_data table for ASIN to get SKU, product name, and cost analysis data
     const { data, error } = await supabase
       .from('buybox_data')
-      .select('asin, sku, item_name, price, is_winner')
+      .select('asin, sku, item_name, price, your_current_price, is_winner, your_cost, your_shipping_cost, your_material_total_cost, your_box_cost, your_vat_amount, your_fragile_charge, material_cost_only, total_operating_cost, your_margin_at_current_price, your_margin_percent_at_current_price, margin_at_buybox_price, margin_percent_at_buybox_price, margin_difference, profit_opportunity, current_actual_profit, buybox_actual_profit, total_offers, category, brand, competitor_price, competitor_name, competitor_id, opportunity_flag, captured_at')
       .eq('asin', asin)
+      .order('captured_at', { ascending: false })
       .limit(1)
-      .single();
-
-    console.log('Supabase query result:', { data, error });
+      .single(); console.log('Supabase query result:', { data, error });
 
     if (error) {
       console.error('Supabase error details:', error);
@@ -48,7 +47,36 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         sku: data.sku,
         item_name: data.item_name,
         price: data.price,
-        is_winner: data.is_winner
+        your_current_price: data.your_current_price,
+        is_winner: data.is_winner,
+        // Cost breakdown
+        your_cost: data.your_cost,
+        your_shipping_cost: data.your_shipping_cost,
+        your_material_total_cost: data.your_material_total_cost,
+        your_box_cost: data.your_box_cost,
+        your_vat_amount: data.your_vat_amount,
+        your_fragile_charge: data.your_fragile_charge,
+        material_cost_only: data.material_cost_only,
+        total_operating_cost: data.total_operating_cost,
+        // Margin analysis
+        your_margin_at_current_price: data.your_margin_at_current_price,
+        your_margin_percent_at_current_price: data.your_margin_percent_at_current_price,
+        margin_at_buybox_price: data.margin_at_buybox_price,
+        margin_percent_at_buybox_price: data.margin_percent_at_buybox_price,
+        margin_difference: data.margin_difference,
+        profit_opportunity: data.profit_opportunity,
+        // Profit breakdown
+        current_actual_profit: data.current_actual_profit,
+        buybox_actual_profit: data.buybox_actual_profit,
+        // Competitor data
+        total_offers: data.total_offers,
+        category: data.category,
+        brand: data.brand,
+        competitor_price: data.competitor_price,
+        competitor_name: data.competitor_name,
+        competitor_id: data.competitor_id,
+        opportunity_flag: data.opportunity_flag,
+        captured_at: data.captured_at
       }
     });
 

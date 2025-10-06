@@ -52,6 +52,7 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
       history: alertData.history || [],
       analytics: alertData.analytics || {},
       competitors: alertData.competitors || [],
+      currentBuyBoxWinner: alertData.currentBuyBoxWinner || null,
       meta: alertData.meta || {},
       productInfo,
       daysRequested: parseInt(days)

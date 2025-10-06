@@ -4283,6 +4283,15 @@
 												>
 													{result.asin} →
 												</a>
+												<a
+													href="/buy-box-alerts/product/{result.asin}"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="inline-flex items-center px-2 py-1 text-xs font-medium text-purple-600 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors"
+													title="View detailed product analysis and competitor activity"
+												>
+													📊 Analysis
+												</a>
 												<button
 													class="amazon-preview-btn inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 hover:border-blue-300 transition-colors"
 													title="Preview Amazon page in side panel"

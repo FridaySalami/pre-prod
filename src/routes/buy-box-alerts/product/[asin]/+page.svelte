@@ -78,6 +78,20 @@
 		}).format(price);
 	}
 
+	// Format shipping time
+	function formatShippingTime(minHours?: number, maxHours?: number): string {
+		if (!maxHours && !minHours) return '';
+
+		const hours = maxHours || minHours || 0;
+
+		if (hours <= 24) return '1 day';
+		if (hours <= 48) return '1-2 days';
+		if (hours <= 72) return '2-3 days';
+		if (hours <= 120) return '3-5 days';
+		if (hours <= 168) return '5-7 days';
+		return '7+ days';
+	}
+
 	// Get seller display name
 	function getSellerDisplayName(sellerId: string): string {
 		if (sellerId === OUR_SELLER_ID) return 'YOU';
@@ -537,12 +551,6 @@
 							<span class="text-gray-600">Competitive FBA Offers</span>
 							<span class="font-semibold">{placeholderMetrics.competitiveFbaOffers}</span>
 						</div>
-						<div class="border-t pt-3 mt-3">
-							<button class="text-blue-600 hover:underline text-sm">Estimate Net/Margin</button>
-						</div>
-						<div>
-							<button class="text-blue-600 hover:underline text-sm">Estimate Sales</button>
-						</div>
 					</div>
 
 					<div class="mt-6 pt-6 border-t">
@@ -576,29 +584,96 @@
 							</div>
 						</div>
 					</div>
-				</div>
 
-				<!-- Competitor Activity Summary -->
-				{#if data.competitors && data.competitors.length > 0}
-					<div class="bg-white rounded-lg shadow p-6">
-						<h3 class="font-semibold text-gray-900 mb-4">Active Competitors</h3>
-						<div class="space-y-2 text-xs">
-							{#each data.competitors.slice(0, 5) as competitor}
-								<div class="flex justify-between items-center py-2 border-b border-gray-100">
-									<span class="text-gray-700 font-mono text-xs">
-										{competitor.sellerId.substring(0, 10)}...
-									</span>
-									<span class="text-gray-900 font-semibold"
-										>{formatPrice(competitor.lowestPrice)}</span
-									>
+					{#if data.productInfo && data.productInfo.data}
+						<!-- Cost Analysis Section -->
+						<div class="mt-6 pt-6 border-t">
+							<h4 class="text-sm font-semibold text-gray-900 mb-3">Cost Analysis</h4>
+							<div class="space-y-2 text-sm">
+								{#if data.productInfo.min_profitable_price}
+									<div class="flex justify-between">
+										<span class="text-gray-600">Min Profitable Price</span>
+										<span class="font-semibold text-orange-600"
+											>{formatPrice(data.productInfo.min_profitable_price)}</span
+										>
+									</div>
+								{/if}
+								{#if data.productInfo.margin_at_buybox !== null && data.productInfo.margin_at_buybox !== undefined}
+									<div class="flex justify-between">
+										<span class="text-gray-600">Margin @ Buy Box</span>
+										<span
+											class="font-semibold {data.productInfo.margin_at_buybox >= 0
+												? 'text-green-600'
+												: 'text-red-600'}"
+										>
+											{formatPrice(data.productInfo.margin_at_buybox)}
+										</span>
+									</div>
+								{/if}
+								{#if data.productInfo.margin_percent_at_buybox !== null && data.productInfo.margin_percent_at_buybox !== undefined}
+									<div class="flex justify-between">
+										<span class="text-gray-600">Margin %</span>
+										<span
+											class="font-semibold {data.productInfo.margin_percent_at_buybox >= 0
+												? 'text-green-600'
+												: 'text-red-600'}"
+										>
+											{data.productInfo.margin_percent_at_buybox.toFixed(1)}%
+										</span>
+									</div>
+								{/if}
+								{#if data.productInfo.opportunity_flag}
+									<div class="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+										<div class="flex items-start space-x-2">
+											<svg
+												class="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
+												fill="currentColor"
+												viewBox="0 0 20 20"
+											>
+												<path
+													fill-rule="evenodd"
+													d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+													clip-rule="evenodd"
+												></path>
+											</svg>
+											<div>
+												<p class="text-xs font-semibold text-green-800">Profit Opportunity!</p>
+												<p class="text-xs text-green-700 mt-1">
+													You can profitably win the Buy Box
+												</p>
+											</div>
+										</div>
+									</div>
+								{/if}
+								{#if data.productInfo.competitor_price}
+									<div class="mt-3 pt-3 border-t">
+										<div class="flex justify-between">
+											<span class="text-gray-600">Current Buy Box</span>
+											<span class="font-semibold"
+												>{formatPrice(data.productInfo.competitor_price)}</span
+											>
+										</div>
+										{#if data.productInfo.competitor_name}
+											<div class="text-xs text-gray-500 mt-1 text-right">
+												{data.productInfo.competitor_name}
+											</div>
+										{/if}
+									</div>
+								{/if}
+								<div class="mt-3 text-xs text-gray-500">
+									Last updated: {data.productInfo.captured_at
+										? new Date(data.productInfo.captured_at).toLocaleString('en-GB', {
+												day: '2-digit',
+												month: 'short',
+												hour: '2-digit',
+												minute: '2-digit'
+											})
+										: 'N/A'}
 								</div>
-							{/each}
+							</div>
 						</div>
-						<a href="#competitors" class="text-sm text-blue-600 hover:underline mt-3 inline-block">
-							View All {data.competitors.length} Competitors
-						</a>
-					</div>
-				{/if}
+					{/if}
+				</div>
 			</div>
 
 			<!-- Main Chart Area -->
@@ -730,6 +805,11 @@
 								<th
 									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
 								>
+									Current Price
+								</th>
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+								>
 									Lowest Price
 								</th>
 								<th
@@ -765,32 +845,91 @@
 								<th
 									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
 								>
-									Status
+									Shipping
 								</th>
 							</tr>
 						</thead>
 						<tbody class="bg-white divide-y divide-gray-200">
 							{#each data.competitors as competitor}
 								<tr class="hover:bg-gray-50 {competitor.isYou ? 'bg-green-50' : ''}">
-									<td class="px-6 py-4 whitespace-nowrap text-sm font-mono {competitor.isYou ? 'text-green-700 font-bold' : 'text-gray-900'}">
-										{competitor.isYou ? 'YOU (' + competitor.sellerId + ')' : competitor.sellerId}
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm font-mono {competitor.isYou
+											? 'text-green-700 font-bold'
+											: 'text-gray-900'}"
+									>
+										<div class="flex items-center space-x-2">
+											<div class="flex flex-col">
+												<span>
+													{competitor.isYou
+														? 'YOU (' + competitor.sellerId + ')'
+														: competitor.sellerId}
+												</span>
+												{#if competitor.shippingType}
+													<span class="text-xs text-gray-400 mt-0.5">{competitor.shippingType}</span
+													>
+												{/if}
+											</div>
+											{#if competitor.isCurrentBuyBoxWinner}
+												<span
+													class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm"
+													title="Current Buy Box Winner"
+												>
+													<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+														<path
+															d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"
+														/>
+													</svg>
+												</span>
+											{/if}
+										</div>
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700 font-bold' : 'text-gray-900 font-semibold'}">
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou
+											? 'text-green-700 font-bold'
+											: 'text-blue-600 font-bold'}"
+									>
+										{formatPrice(competitor.currentPrice)}
+									</td>
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou
+											? 'text-green-700 font-bold'
+											: 'text-gray-900 font-semibold'}"
+									>
 										{formatPrice(competitor.lowestPrice)}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou
+											? 'text-green-700'
+											: 'text-gray-600'}"
+									>
 										{formatPrice(competitor.highestPrice)}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou
+											? 'text-green-700'
+											: 'text-gray-600'}"
+									>
 										{formatPrice(competitor.avgPrice)}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou
+											? 'text-green-700'
+											: 'text-gray-600'}"
+									>
 										{competitor.appearances}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou
+											? 'text-green-700'
+											: 'text-gray-600'}"
+									>
 										{competitor.buyBoxWins} ({competitor.buyBoxWinRate.toFixed(0)}%)
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou ? 'text-green-700' : 'text-gray-600'}">
+									<td
+										class="px-6 py-4 whitespace-nowrap text-sm {competitor.isYou
+											? 'text-green-700'
+											: 'text-gray-600'}"
+									>
 										{competitor.priceChanges}
 									</td>
 									<td class="px-6 py-4 whitespace-nowrap">
@@ -802,14 +941,40 @@
 											{competitor.isFBA ? 'FBA' : 'FBM'}
 										</span>
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap">
-										<span
-											class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {competitor.currentlyActive
-												? 'bg-green-100 text-green-800'
-												: 'bg-gray-100 text-gray-600'}"
-										>
-											{competitor.currentlyActive ? 'Active' : 'Inactive'}
-										</span>
+									<td class="px-6 py-4 whitespace-nowrap text-xs">
+										<div class="flex flex-col space-y-1">
+											<div class="flex items-center space-x-1">
+												{#if competitor.isPrime}
+													<span
+														class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800"
+													>
+														<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+															<path
+																d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"
+															/>
+														</svg>
+														Prime
+													</span>
+												{:else}
+													<span class="text-gray-500">Standard</span>
+												{/if}
+											</div>
+											<div
+												class={competitor.isYou ? 'text-green-700 font-semibold' : 'text-gray-600'}
+											>
+												{competitor.currentShipping === 0
+													? 'FREE'
+													: formatPrice(competitor.currentShipping)}
+											</div>
+											{#if competitor.shippingMaxHours}
+												<div class="text-gray-500">
+													{formatShippingTime(
+														competitor.shippingMinHours,
+														competitor.shippingMaxHours
+													)}
+												</div>
+											{/if}
+										</div>
 									</td>
 								</tr>
 							{/each}
