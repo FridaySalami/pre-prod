@@ -8,7 +8,7 @@
 
 	// State
 	let activeTab = $state<'sales' | 'price' | 'reviews'>('price');
-	let timeRange = $state<'week' | 'month' | '3month' | '6month'>('month');
+	let timeRange = $state<'1hour' | '12hours' | '1day' | '7days' | '30days'>('1day');
 	let chartCanvas = $state<HTMLCanvasElement | null>(null);
 	let chartInstance = $state<Chart | null>(null);
 
@@ -22,17 +22,20 @@
 		let cutoffDate: Date;
 
 		switch (timeRange) {
-			case 'week':
+			case '1hour':
+				cutoffDate = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+				break;
+			case '12hours':
+				cutoffDate = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+				break;
+			case '1day':
+				cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+				break;
+			case '7days':
 				cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 				break;
-			case 'month':
+			case '30days':
 				cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-				break;
-			case '3month':
-				cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-				break;
-			case '6month':
-				cutoffDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
 				break;
 			default:
 				return data.history;
@@ -118,8 +121,8 @@
 
 	// Create the main chart
 	function createChart() {
-		if (!chartCanvas || !data.history || data.history.length === 0) {
-			console.log('No canvas or history data for chart');
+		if (!chartCanvas || !filteredHistory || filteredHistory.length === 0) {
+			console.log('No canvas or filtered history data for chart');
 			return;
 		}
 
@@ -135,15 +138,20 @@
 		let datasets: any[] = [];
 
 		if (activeTab === 'price') {
+			// Calculate absolute market low across filtered history
+			const absoluteMarketLow = Math.min(
+				...filteredHistory.map((h: any) => h.marketLow || Infinity)
+			);
+
 			// Price & BSR chart
 			datasets = [
 				{
 					label: 'Your Price',
-					data: data.history.map((h: any) => ({
+					data: filteredHistory.map((h: any) => ({
 						x: new Date(h.timestamp),
 						y: h.yourOffer?.landedPrice || h.yourPrice || 0
 					})),
-					borderColor: 'rgb(34, 197, 94)',
+					borderColor: 'rgb(34, 197, 94)', // Green
 					backgroundColor: 'rgba(34, 197, 94, 0.1)',
 					borderWidth: 3,
 					pointRadius: 4,
@@ -153,18 +161,18 @@
 				},
 				{
 					label: 'Market Low',
-					data: data.history.map((h: any) => ({
+					data: filteredHistory.map((h: any) => ({
 						x: new Date(h.timestamp),
-						y: h.marketLow || 0
+						y: absoluteMarketLow
 					})),
-					borderColor: 'rgb(59, 130, 246)',
-					backgroundColor: 'rgba(59, 130, 246, 0.1)',
+					borderColor: 'rgb(220, 38, 38)', // Red
+					backgroundColor: 'rgba(220, 38, 38, 0.05)',
 					borderWidth: 2,
-					pointRadius: 3,
-					pointHoverRadius: 5,
-					tension: 0.4,
+					pointRadius: 0,
+					pointHoverRadius: 0,
+					tension: 0,
 					yAxisID: 'yPrice',
-					borderDash: [5, 5]
+					borderDash: [8, 4]
 				}
 			];
 
@@ -172,24 +180,24 @@
 			if (data.competitors && data.competitors.length > 0) {
 				console.log('Adding competitor lines for', data.competitors.length, 'competitors');
 
-				// Generate distinct colors for competitors
+				// Generate distinct colors for competitors (excluding green)
 				const competitorColors = [
 					'rgb(239, 68, 68)', // Red
 					'rgb(251, 146, 60)', // Orange
 					'rgb(234, 179, 8)', // Yellow
-					'rgb(34, 197, 94)', // Green (lighter)
 					'rgb(14, 165, 233)', // Light Blue
-					'rgb(168, 85, 247)', // Purple (lighter)
+					'rgb(168, 85, 247)', // Purple
 					'rgb(236, 72, 153)', // Pink
 					'rgb(163, 163, 163)', // Gray
 					'rgb(251, 191, 36)', // Amber
-					'rgb(132, 204, 22)' // Lime
+					'rgb(59, 130, 246)', // Blue
+					'rgb(217, 70, 239)' // Magenta
 				];
 
 				// Create a line for each competitor
 				data.competitors.slice(0, 10).forEach((competitor: any, index: number) => {
-					// Extract this competitor's prices from history
-					const competitorPrices = data.history
+					// Extract this competitor's prices from filtered history
+					const competitorPrices = filteredHistory
 						.map((h: any) => {
 							// Find this competitor in the sellers array of this historical record
 							const sellerData = h.competitorPrices?.find(
@@ -339,13 +347,23 @@
 	// Change time range filter
 	function changeTimeRange(range: typeof timeRange) {
 		timeRange = range;
-		createChart();
+		// Use setTimeout to ensure state update completes before chart recreation
+		setTimeout(() => {
+			if (chartCanvas) {
+				createChart();
+			}
+		}, 0);
 	}
 
 	// Change tab
 	function changeTab(tab: typeof activeTab) {
 		activeTab = tab;
-		createChart();
+		// Use setTimeout to ensure state update completes before chart recreation
+		setTimeout(() => {
+			if (chartCanvas) {
+				createChart();
+			}
+		}, 0);
 	}
 
 	// Mount chart
@@ -716,36 +734,44 @@
 					<div class="flex justify-between items-center mb-6">
 						<div class="flex space-x-2">
 							<button
-								onclick={() => changeTimeRange('week')}
-								class="px-3 py-1 text-sm rounded {timeRange === 'week'
+								onclick={() => changeTimeRange('1hour')}
+								class="px-3 py-1 text-sm rounded {timeRange === '1hour'
 									? 'bg-blue-600 text-white'
 									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
 							>
-								Weekly
+								1 Hour
 							</button>
 							<button
-								onclick={() => changeTimeRange('month')}
-								class="px-3 py-1 text-sm rounded {timeRange === 'month'
+								onclick={() => changeTimeRange('12hours')}
+								class="px-3 py-1 text-sm rounded {timeRange === '12hours'
 									? 'bg-blue-600 text-white'
 									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
 							>
-								Last Month
+								12 Hours
 							</button>
 							<button
-								onclick={() => changeTimeRange('3month')}
-								class="px-3 py-1 text-sm rounded {timeRange === '3month'
+								onclick={() => changeTimeRange('1day')}
+								class="px-3 py-1 text-sm rounded {timeRange === '1day'
 									? 'bg-blue-600 text-white'
 									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
 							>
-								3 Months
+								1 Day
 							</button>
 							<button
-								onclick={() => changeTimeRange('6month')}
-								class="px-3 py-1 text-sm rounded {timeRange === '6month'
+								onclick={() => changeTimeRange('7days')}
+								class="px-3 py-1 text-sm rounded {timeRange === '7days'
 									? 'bg-blue-600 text-white'
 									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
 							>
-								6 Months
+								7 Days
+							</button>
+							<button
+								onclick={() => changeTimeRange('30days')}
+								class="px-3 py-1 text-sm rounded {timeRange === '30days'
+									? 'bg-blue-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								30 Days
 							</button>
 						</div>
 					</div>
