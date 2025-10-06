@@ -156,8 +156,9 @@
 					borderWidth: 3,
 					pointRadius: 4,
 					pointHoverRadius: 6,
-					tension: 0.4,
-					yAxisID: 'yPrice'
+					tension: 0, // No curve - straight lines between points
+					yAxisID: 'yPrice',
+					stepped: false
 				},
 				{
 					label: 'Market Low',
@@ -226,7 +227,7 @@
 							borderWidth: 2,
 							pointRadius: 3,
 							pointHoverRadius: 5,
-							tension: 0.4,
+							tension: 0, // No curve - straight lines between points
 							yAxisID: 'yPrice',
 							borderDash: [2, 2]
 						});
