@@ -6,6 +6,7 @@ import type { PageServerLoad } from './$types';
 import { SPAPIClient } from '$lib/amazon/sp-api-client';
 import { CatalogService } from '$lib/amazon/catalog-service';
 import { FeesService } from '$lib/amazon/fees-service';
+import { calculateListingHealth, type CompetitorData, type BuyBoxData } from '$lib/amazon/listing-health';
 import {
   AMAZON_CLIENT_ID,
   AMAZON_CLIENT_SECRET,
@@ -99,6 +100,35 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
       }
     }
 
+    // Calculate listing health score
+    let healthScore = null;
+    if (catalogData) {
+      try {
+        // Prepare competitor data
+        const competitorData: CompetitorData | undefined = alertData.currentState ? {
+          yourRank: alertData.currentState.your_position,
+          totalOffers: alertData.currentState.total_offers || 0,
+          lowestPrice: alertData.currentState.market_low || 0,
+          yourPrice: alertData.currentState.your_price || 0
+        } : undefined;
+
+        // Prepare buy box data
+        const buyBoxData: BuyBoxData | undefined = alertData.currentState ? {
+          currentlyHasBuyBox: alertData.currentState.has_buy_box || false,
+          winRate: alertData.analytics?.buybox_win_rate || 0,
+          totalChecks: alertData.history?.length || 0,
+          isFBA: alertData.currentState.is_fba || false,
+          isPrime: alertData.currentState.is_prime || false
+        } : undefined;
+
+        healthScore = calculateListingHealth(catalogData, competitorData, buyBoxData);
+        console.log(`✅ Calculated health score for ${asin}: ${healthScore.overall}/10 (${healthScore.grade})`);
+      } catch (healthErr) {
+        console.error(`Failed to calculate health score for ${asin}:`, healthErr);
+        // Continue without health score
+      }
+    }
+
     return {
       asin,
       currentState: alertData.currentState,
@@ -111,6 +141,7 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
       productInfo,
       catalogData, // NEW: Catalog API data
       feesData, // NEW: Fees API data
+      healthScore, // NEW: Listing health score
       daysRequested: parseInt(days)
     };
   } catch (err) {

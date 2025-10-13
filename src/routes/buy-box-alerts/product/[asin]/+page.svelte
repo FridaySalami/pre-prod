@@ -77,6 +77,9 @@
 	// Get fees data from Amazon Fees API
 	const feesData = data.feesData || null;
 
+	// Get listing health score
+	const healthScore = data.healthScore || null;
+
 	// Get current state metrics
 	const currentState = data.currentState || {};
 	const yourPrice =
@@ -619,23 +622,135 @@
 				<button class="text-sm text-blue-600 hover:underline">Analyze Reviews</button>
 			</div>
 
-			<!-- Listing Health Score (Placeholder) -->
+			<!-- Listing Health Score -->
 			<div class="bg-white rounded-lg shadow p-6">
 				<div class="text-sm text-gray-600 mb-1">Listing Health Score</div>
-				<div class="flex items-center space-x-3">
-					<div class="text-4xl font-bold text-green-600">
-						{placeholderMetrics.listingHealthScore}
-					</div>
-					<div class="flex-1">
-						<div class="w-full bg-gray-200 rounded-full h-2">
-							<div
-								class="bg-green-500 h-2 rounded-full"
-								style="width: {(placeholderMetrics.listingHealthScore / 10) * 100}%"
-							></div>
+				{#if healthScore}
+					<div class="flex items-center space-x-3 mb-3">
+						<div
+							class="text-4xl font-bold {healthScore.overall >= 8
+								? 'text-green-600'
+								: healthScore.overall >= 6
+									? 'text-blue-600'
+									: healthScore.overall >= 4
+										? 'text-yellow-600'
+										: 'text-red-600'}"
+						>
+							{healthScore.overall.toFixed(1)}
+						</div>
+						<div class="flex-1">
+							<div class="w-full bg-gray-200 rounded-full h-2">
+								<div
+									class="{healthScore.overall >= 8
+										? 'bg-green-500'
+										: healthScore.overall >= 6
+											? 'bg-blue-500'
+											: healthScore.overall >= 4
+												? 'bg-yellow-500'
+												: 'bg-red-500'} h-2 rounded-full transition-all"
+									style="width: {(healthScore.overall / 10) * 100}%"
+								></div>
+							</div>
+							<div class="text-xs text-gray-500 mt-1">
+								{'●'.repeat(Math.round(healthScore.overall))}{'○'.repeat(
+									10 - Math.round(healthScore.overall)
+								)}
+								<span class="ml-2 font-medium">{healthScore.grade}</span>
+							</div>
 						</div>
 					</div>
-				</div>
-				<button class="text-sm text-blue-600 hover:underline mt-2 inline-block">Analyze LHS</button>
+
+					<!-- Component Breakdown -->
+					<div class="space-y-2 text-xs">
+						<div class="flex justify-between items-center">
+							<span class="text-gray-600">Content</span>
+							<span
+								class="font-medium {healthScore.breakdown.content.percentage >= 80
+									? 'text-green-600'
+									: healthScore.breakdown.content.percentage >= 60
+										? 'text-blue-600'
+										: 'text-yellow-600'}"
+							>
+								{healthScore.breakdown.content.score}/{healthScore.breakdown.content.maxScore}
+								({healthScore.breakdown.content.percentage}%)
+							</span>
+						</div>
+						<div class="flex justify-between items-center">
+							<span class="text-gray-600">Images</span>
+							<span
+								class="font-medium {healthScore.breakdown.images.percentage >= 80
+									? 'text-green-600'
+									: healthScore.breakdown.images.percentage >= 60
+										? 'text-blue-600'
+										: 'text-yellow-600'}"
+							>
+								{healthScore.breakdown.images.score}/{healthScore.breakdown.images.maxScore}
+								({healthScore.breakdown.images.percentage}%)
+							</span>
+						</div>
+						<div class="flex justify-between items-center">
+							<span class="text-gray-600">Competitive</span>
+							<span
+								class="font-medium {healthScore.breakdown.competitive.percentage >= 70
+									? 'text-green-600'
+									: healthScore.breakdown.competitive.percentage >= 50
+										? 'text-blue-600'
+										: 'text-yellow-600'}"
+							>
+								{healthScore.breakdown.competitive.score}/{healthScore.breakdown.competitive
+									.maxScore}
+								({healthScore.breakdown.competitive.percentage}%)
+							</span>
+						</div>
+						<div class="flex justify-between items-center">
+							<span class="text-gray-600">Buy Box</span>
+							<span
+								class="font-medium {healthScore.breakdown.buybox.percentage >= 70
+									? 'text-green-600'
+									: healthScore.breakdown.buybox.percentage >= 50
+										? 'text-blue-600'
+										: 'text-yellow-600'}"
+							>
+								{healthScore.breakdown.buybox.score}/{healthScore.breakdown.buybox.maxScore}
+								({healthScore.breakdown.buybox.percentage}%)
+							</span>
+						</div>
+					</div>
+
+					<!-- Top Recommendations -->
+					{#if healthScore.recommendations && healthScore.recommendations.length > 0}
+						<div class="mt-4 pt-4 border-t">
+							<div class="text-xs font-semibold text-gray-700 mb-2">Top Improvements:</div>
+							<div class="space-y-1">
+								{#each healthScore.recommendations.slice(0, 2) as rec}
+									<div class="flex items-start space-x-2">
+										<span
+											class="inline-block w-2 h-2 rounded-full mt-1 {rec.priority === 'high'
+												? 'bg-red-500'
+												: rec.priority === 'medium'
+													? 'bg-yellow-500'
+													: 'bg-blue-500'}"
+										></span>
+										<div class="flex-1">
+											<div class="text-xs font-medium text-gray-800">{rec.title}</div>
+											<div class="text-xs text-gray-500">{rec.impact}</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				{:else}
+					<div class="flex items-center space-x-3">
+						<div class="text-4xl font-bold text-gray-400">—</div>
+						<div class="flex-1">
+							<div class="w-full bg-gray-200 rounded-full h-2">
+								<div class="bg-gray-300 h-2 rounded-full" style="width: 0%"></div>
+							</div>
+							<div class="text-xs text-gray-400 mt-1">Calculating...</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<!-- Top Keywords -->
