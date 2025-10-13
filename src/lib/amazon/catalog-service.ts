@@ -47,7 +47,7 @@ export interface CatalogProduct {
   itemClassification?: string; // BASE_PRODUCT, VARIATION_PARENT, etc.
   variationTheme?: string;
   parentAsin?: string;
-  keywords?: ExtractedKeywords; // NEW: Extracted keywords
+  keywords?: ExtractedKeywords; // Extracted keywords
 }
 
 export class CatalogService {
@@ -174,7 +174,7 @@ export class CatalogService {
       itemClassification: summary.itemClassification,
       variationTheme: summary.variationTheme,
       parentAsin: summary.parentAsin,
-      keywords // NEW: Extracted keywords
+      keywords // Extracted keywords
     };
   }
 

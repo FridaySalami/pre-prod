@@ -44,13 +44,6 @@
 		return data.history.filter((h: any) => new Date(h.timestamp) >= cutoffDate);
 	});
 
-	// Placeholder data (will be populated from APIs later)
-	const placeholderMetrics = {
-		currentRating: 3.5,
-		totalReviews: 1430,
-		fbaFee: '$14.02'
-	};
-
 	// Get real offer metrics from API
 	const offerMetrics = data.offerMetrics || {};
 	const totalPrimeOffers = offerMetrics.totalPrimeOffers || 0;
@@ -611,37 +604,8 @@
 				</div>
 			</div>
 
-			<!-- Current Rating (Placeholder) -->
-			<div class="bg-white rounded-lg shadow p-6">
-				<div class="text-sm text-gray-600 mb-1">Current Rating</div>
-				<div class="flex items-center space-x-2 mb-1">
-					<div class="flex items-center">
-						{#each Array(5) as _, i}
-							<svg
-								class="w-5 h-5 {i < Math.floor(placeholderMetrics.currentRating)
-									? 'text-yellow-400'
-									: i < placeholderMetrics.currentRating
-										? 'text-yellow-400'
-										: 'text-gray-300'}"
-								fill="currentColor"
-								viewBox="0 0 20 20"
-							>
-								<path
-									d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"
-								/>
-							</svg>
-						{/each}
-					</div>
-					<span class="text-2xl font-bold">{placeholderMetrics.currentRating}</span>
-					<span class="text-sm text-gray-500"
-						>({placeholderMetrics.totalReviews.toLocaleString()})</span
-					>
-				</div>
-				<button class="text-sm text-blue-600 hover:underline">Analyze Reviews</button>
-			</div>
-
 			<!-- Listing Health Score -->
-			<div class="bg-white rounded-lg shadow p-6">
+			<div class="bg-white rounded-lg shadow p-6 md:col-span-2">
 				<div class="text-sm text-gray-600 mb-1">Listing Health Score</div>
 				{#if healthScore}
 					<div class="flex items-center space-x-3 mb-3">
@@ -678,8 +642,8 @@
 						</div>
 					</div>
 
-					<!-- Component Breakdown -->
-					<div class="space-y-2 text-xs">
+					<!-- Component Breakdown - Two Column Layout -->
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-xs">
 						<div class="flex justify-between items-center">
 							<span class="text-gray-600">Content</span>
 							<span
@@ -919,11 +883,95 @@
 						</div>
 					</div>
 
-					{#if data.productInfo && data.productInfo.data}
+					{#if data.productInfo}
 						<!-- Cost Analysis Section -->
 						<div class="mt-6 pt-6 border-t">
-							<h4 class="text-sm font-semibold text-gray-900 mb-3">Cost Analysis</h4>
+							<h4 class="text-sm font-semibold text-gray-900 mb-3">Cost & Margin Analysis</h4>
+
+							<!-- Cost Breakdown -->
+							{#if data.productInfo.your_cost || data.productInfo.material_cost_only}
+								<div class="mb-4 pb-3 border-b">
+									<div class="text-xs font-semibold text-gray-700 mb-2">Cost Breakdown</div>
+									<div class="space-y-1.5 text-xs">
+										{#if data.productInfo.material_cost_only}
+											<div class="flex justify-between">
+												<span class="text-gray-600">Material Cost</span>
+												<span class="font-medium"
+													>{formatPrice(data.productInfo.material_cost_only)}</span
+												>
+											</div>
+										{/if}
+										{#if data.productInfo.your_shipping_cost}
+											<div class="flex justify-between">
+												<span class="text-gray-600">Shipping Cost</span>
+												<span class="font-medium"
+													>{formatPrice(data.productInfo.your_shipping_cost)}</span
+												>
+											</div>
+										{/if}
+										{#if data.productInfo.your_box_cost}
+											<div class="flex justify-between">
+												<span class="text-gray-600">Box/Packaging</span>
+												<span class="font-medium"
+													>{formatPrice(data.productInfo.your_box_cost)}</span
+												>
+											</div>
+										{/if}
+										{#if data.productInfo.your_fragile_charge}
+											<div class="flex justify-between">
+												<span class="text-gray-600">Fragile Charge</span>
+												<span class="font-medium"
+													>{formatPrice(data.productInfo.your_fragile_charge)}</span
+												>
+											</div>
+										{/if}
+										{#if data.productInfo.your_vat_amount}
+											<div class="flex justify-between">
+												<span class="text-gray-600">VAT</span>
+												<span class="font-medium"
+													>{formatPrice(data.productInfo.your_vat_amount)}</span
+												>
+											</div>
+										{/if}
+										{#if data.productInfo.total_operating_cost}
+											<div class="flex justify-between font-semibold pt-1.5 border-t">
+												<span class="text-gray-900">Total Cost</span>
+												<span class="text-orange-600"
+													>{formatPrice(data.productInfo.total_operating_cost)}</span
+												>
+											</div>
+										{/if}
+									</div>
+								</div>
+							{/if}
+
+							<!-- Margin Analysis -->
 							<div class="space-y-2 text-sm">
+								{#if data.productInfo.your_margin_at_current_price !== null && data.productInfo.your_margin_at_current_price !== undefined}
+									<div class="flex justify-between">
+										<span class="text-gray-600">Current Margin</span>
+										<span
+											class="font-semibold {data.productInfo.your_margin_at_current_price >= 0
+												? 'text-green-600'
+												: 'text-red-600'}"
+										>
+											{formatPrice(data.productInfo.your_margin_at_current_price)}
+										</span>
+									</div>
+								{/if}
+								{#if data.productInfo.your_margin_percent_at_current_price !== null && data.productInfo.your_margin_percent_at_current_price !== undefined}
+									<div class="flex justify-between">
+										<span class="text-gray-600">Current Margin %</span>
+										<span
+											class="font-semibold {data.productInfo.your_margin_percent_at_current_price >=
+											0
+												? 'text-green-600'
+												: 'text-red-600'}"
+										>
+											{data.productInfo.your_margin_percent_at_current_price.toFixed(1)}%
+										</span>
+									</div>
+								{/if}
 								{#if data.productInfo.min_profitable_price}
 									<div class="flex justify-between">
 										<span class="text-gray-600">Min Profitable Price</span>
@@ -932,78 +980,102 @@
 										>
 									</div>
 								{/if}
-								{#if data.productInfo.margin_at_buybox !== null && data.productInfo.margin_at_buybox !== undefined}
-									<div class="flex justify-between">
-										<span class="text-gray-600">Margin @ Buy Box</span>
-										<span
-											class="font-semibold {data.productInfo.margin_at_buybox >= 0
-												? 'text-green-600'
-												: 'text-red-600'}"
-										>
-											{formatPrice(data.productInfo.margin_at_buybox)}
-										</span>
-									</div>
-								{/if}
-								{#if data.productInfo.margin_percent_at_buybox !== null && data.productInfo.margin_percent_at_buybox !== undefined}
-									<div class="flex justify-between">
-										<span class="text-gray-600">Margin %</span>
-										<span
-											class="font-semibold {data.productInfo.margin_percent_at_buybox >= 0
-												? 'text-green-600'
-												: 'text-red-600'}"
-										>
-											{data.productInfo.margin_percent_at_buybox.toFixed(1)}%
-										</span>
-									</div>
-								{/if}
-								{#if data.productInfo.opportunity_flag}
-									<div class="mt-3 p-3 bg-green-50 border border-green-200 rounded">
-										<div class="flex items-start space-x-2">
-											<svg
-												class="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
-												fill="currentColor"
-												viewBox="0 0 20 20"
-											>
-												<path
-													fill-rule="evenodd"
-													d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-													clip-rule="evenodd"
-												></path>
-											</svg>
-											<div>
-												<p class="text-xs font-semibold text-green-800">Profit Opportunity!</p>
-												<p class="text-xs text-green-700 mt-1">
-													You can profitably win the Buy Box
-												</p>
-											</div>
-										</div>
-									</div>
-								{/if}
-								{#if data.productInfo.competitor_price}
-									<div class="mt-3 pt-3 border-t">
+							</div>
+
+							<!-- Buy Box Margin -->
+							{#if data.productInfo.margin_at_buybox_price !== null && data.productInfo.margin_at_buybox_price !== undefined}
+								<div class="mt-3 pt-3 border-t">
+									<div class="text-xs font-semibold text-gray-700 mb-2">If Matching Buy Box</div>
+									<div class="space-y-1.5 text-sm">
 										<div class="flex justify-between">
-											<span class="text-gray-600">Current Buy Box</span>
-											<span class="font-semibold"
-												>{formatPrice(data.productInfo.competitor_price)}</span
+											<span class="text-gray-600">Margin @ Buy Box</span>
+											<span
+												class="font-semibold {data.productInfo.margin_at_buybox_price >= 0
+													? 'text-green-600'
+													: 'text-red-600'}"
 											>
+												{formatPrice(data.productInfo.margin_at_buybox_price)}
+											</span>
 										</div>
-										{#if data.productInfo.competitor_name}
-											<div class="text-xs text-gray-500 mt-1 text-right">
-												{data.productInfo.competitor_name}
+										{#if data.productInfo.margin_percent_at_buybox_price !== null && data.productInfo.margin_percent_at_buybox_price !== undefined}
+											<div class="flex justify-between">
+												<span class="text-gray-600">Margin %</span>
+												<span
+													class="font-semibold {data.productInfo.margin_percent_at_buybox_price >= 0
+														? 'text-green-600'
+														: 'text-red-600'}"
+												>
+													{data.productInfo.margin_percent_at_buybox_price.toFixed(1)}%
+												</span>
+											</div>
+										{/if}
+										{#if data.productInfo.profit_opportunity}
+											<div class="flex justify-between">
+												<span class="text-gray-600">Profit Impact</span>
+												<span
+													class="font-semibold {data.productInfo.profit_opportunity >= 0
+														? 'text-green-600'
+														: 'text-red-600'}"
+												>
+													{data.productInfo.profit_opportunity >= 0 ? '+' : ''}{formatPrice(
+														data.productInfo.profit_opportunity
+													)}
+												</span>
 											</div>
 										{/if}
 									</div>
-								{/if}
-								<div class="mt-3 text-xs text-gray-500">
-									Last updated: {data.productInfo.captured_at
-										? new Date(data.productInfo.captured_at).toLocaleString('en-GB', {
-												day: '2-digit',
-												month: 'short',
-												hour: '2-digit',
-												minute: '2-digit'
-											})
-										: 'N/A'}
 								</div>
+							{/if}
+
+							<!-- Opportunity Flag -->
+							{#if data.productInfo.opportunity_flag}
+								<div class="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+									<div class="flex items-start space-x-2">
+										<svg
+											class="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
+											fill="currentColor"
+											viewBox="0 0 20 20"
+										>
+											<path
+												fill-rule="evenodd"
+												d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+												clip-rule="evenodd"
+											></path>
+										</svg>
+										<div>
+											<p class="text-xs font-semibold text-green-800">Profit Opportunity!</p>
+											<p class="text-xs text-green-700 mt-1">You can profitably win the Buy Box</p>
+										</div>
+									</div>
+								</div>
+							{/if}
+
+							<!-- Competitor Info -->
+							{#if data.productInfo.competitor_price}
+								<div class="mt-3 pt-3 border-t">
+									<div class="flex justify-between text-sm">
+										<span class="text-gray-600">Current Buy Box</span>
+										<span class="font-semibold"
+											>{formatPrice(data.productInfo.competitor_price)}</span
+										>
+									</div>
+									{#if data.productInfo.competitor_name}
+										<div class="text-xs text-gray-500 mt-1 text-right">
+											{data.productInfo.competitor_name}
+										</div>
+									{/if}
+								</div>
+							{/if}
+
+							<div class="mt-3 text-xs text-gray-500">
+								Last updated: {data.productInfo.captured_at
+									? new Date(data.productInfo.captured_at).toLocaleString('en-GB', {
+											day: '2-digit',
+											month: 'short',
+											hour: '2-digit',
+											minute: '2-digit'
+										})
+									: 'N/A'}
 							</div>
 						</div>
 					{/if}

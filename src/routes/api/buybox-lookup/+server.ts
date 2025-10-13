@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     // Query buybox_data table for ASIN to get SKU, product name, and cost analysis data
     const { data, error } = await supabase
       .from('buybox_data')
-      .select('asin, sku, item_name, price, your_current_price, is_winner, your_cost, your_shipping_cost, your_material_total_cost, your_box_cost, your_vat_amount, your_fragile_charge, material_cost_only, total_operating_cost, your_margin_at_current_price, your_margin_percent_at_current_price, margin_at_buybox_price, margin_percent_at_buybox_price, margin_difference, profit_opportunity, current_actual_profit, buybox_actual_profit, total_offers, category, brand, competitor_price, competitor_name, competitor_id, opportunity_flag, captured_at')
+      .select('asin, sku, item_name, price, your_current_price, is_winner, your_cost, your_shipping_cost, your_material_total_cost, your_box_cost, your_vat_amount, your_fragile_charge, material_cost_only, total_operating_cost, your_margin_at_current_price, your_margin_percent_at_current_price, margin_at_buybox_price, margin_percent_at_buybox_price, margin_difference, profit_opportunity, current_actual_profit, buybox_actual_profit, total_offers, competitor_price, competitor_name, competitor_id, opportunity_flag, captured_at')
       .eq('asin', asin)
       .order('captured_at', { ascending: false })
       .limit(1)
@@ -70,8 +70,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         buybox_actual_profit: data.buybox_actual_profit,
         // Competitor data
         total_offers: data.total_offers,
-        category: data.category,
-        brand: data.brand,
         competitor_price: data.competitor_price,
         competitor_name: data.competitor_name,
         competitor_id: data.competitor_id,
