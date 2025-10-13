@@ -129,7 +129,7 @@ async function finalDiagnostic() {
     console.log('   • Show ALL permission checkboxes');
     console.log('   • Look for separate "Catalog" permission');
     console.log('   • URL: https://sellercentral.amazon.co.uk/apps/authorize/consent');
-    console.log('           ?application_id=amzn1.application-oa2-client.86a5e69c4a884eab8d37ff6f28fc6ff4\n');
+    console.log('           ?application_id=amzn1.application-oa2-client.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n');
 
     console.log('3. Check Account Type Requirements');
     console.log('   • Verify Professional Seller account (not Individual)');

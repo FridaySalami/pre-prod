@@ -247,7 +247,7 @@ async function testAllAPIs() {
     console.log('3. Authorization was done on wrong Seller Central (US vs UK)');
     console.log('\n🔄 SOLUTION: Re-authorize the app and ensure ALL roles are checked:\n');
     console.log('   Go to: https://sellercentral.amazon.co.uk/apps/authorize/consent');
-    console.log('   URL: ?application_id=amzn1.application-oa2-client.86a5e69c4a884eab8d37ff6f28fc6ff4');
+    console.log('   URL: ?application_id=amzn1.application-oa2-client.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
     console.log('   Make sure to check EVERY permission box!');
   } else if (working.some(r => r.api.includes('Catalog'))) {
     console.log('✅ CATALOG API WORKS!\n');

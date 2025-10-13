@@ -84,6 +84,6 @@ console.log('   Look for "Catalog" vs "Listings" distinction\n');
 
 console.log('Authorization URL:');
 console.log('https://sellercentral.amazon.co.uk/apps/authorize/consent');
-console.log('?application_id=amzn1.application-oa2-client.86a5e69c4a884eab8d37ff6f28fc6ff4\n');
+console.log('?application_id=amzn1.application-oa2-client.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n');
 
 console.log('═══════════════════════════════════════════════════════════\n');
