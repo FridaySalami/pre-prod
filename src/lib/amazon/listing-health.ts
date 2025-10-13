@@ -142,8 +142,8 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
     message: titlePassed
       ? `✅ ${titleLength} characters (optimal)`
       : titleLength >= 50
-      ? `⚠️ ${titleLength} characters (add ${80 - titleLength} more)`
-      : `❌ ${titleLength} characters (too short)`
+        ? `⚠️ ${titleLength} characters (add ${80 - titleLength} more)`
+        : `❌ ${titleLength} characters (too short)`
   });
 
   // 5 bullet points filled: 0.6 pts
@@ -174,8 +174,8 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
     message: descPassed
       ? `✅ ${descLength} characters (detailed)`
       : descLength >= 250
-      ? `⚠️ ${descLength} characters (expand by ${500 - descLength})`
-      : `❌ ${descLength} characters (needs description)`
+        ? `⚠️ ${descLength} characters (expand by ${500 - descLength})`
+        : `❌ ${descLength} characters (needs description)`
   });
 
   // Brand name present: 0.6 pts
@@ -203,10 +203,10 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
     message: hasCategory && hasDimensions
       ? '✅ Category and dimensions provided'
       : hasCategory
-      ? '⚠️ Missing dimensions'
-      : hasDimensions
-      ? '⚠️ Missing category'
-      : '❌ Missing category and dimensions'
+        ? '⚠️ Missing dimensions'
+        : hasDimensions
+          ? '⚠️ Missing category'
+          : '❌ Missing category and dimensions'
   });
 
   return {
@@ -250,8 +250,8 @@ function calculateImagesScore(catalogData: CatalogProduct): ComponentScore {
     message: countPassed
       ? `✅ ${imageCount} images (excellent)`
       : imageCount >= 5
-      ? `⚠️ ${imageCount} images (add ${7 - imageCount} more)`
-      : `❌ ${imageCount} images (minimum 7 recommended)`
+        ? `⚠️ ${imageCount} images (add ${7 - imageCount} more)`
+        : `❌ ${imageCount} images (minimum 7 recommended)`
   });
 
   // Has lifestyle images (not just MAIN): 0.5 pts
@@ -280,8 +280,8 @@ function calculateImagesScore(catalogData: CatalogProduct): ComponentScore {
     message: hasHighRes
       ? '✅ High resolution images (≥1000px)'
       : catalogData.images?.length > 0
-      ? '⚠️ Images below 1000px (use higher resolution)'
-      : '❌ No images to evaluate'
+        ? '⚠️ Images below 1000px (use higher resolution)'
+        : '❌ No images to evaluate'
   });
 
   // Has infographic/A+ content indicator: 0.5 pts
@@ -297,8 +297,8 @@ function calculateImagesScore(catalogData: CatalogProduct): ComponentScore {
     message: hasPTImages >= 3
       ? `✅ ${hasPTImages} infographic images`
       : hasPTImages > 0
-      ? `⚠️ ${hasPTImages} infographic (add ${3 - hasPTImages} more)`
-      : '❌ No infographic images (add product features)'
+        ? `⚠️ ${hasPTImages} infographic (add ${3 - hasPTImages} more)`
+        : '❌ No infographic images (add product features)'
   });
 
   return {
@@ -357,8 +357,8 @@ function calculateCompetitiveScore(competitorData?: CompetitorData): ComponentSc
     message: rankPassed
       ? `✅ Rank #${yourRank} (top 3)`
       : yourRank <= 10
-      ? `⚠️ Rank #${yourRank} (improve to top 3)`
-      : `❌ Rank #${yourRank} (not competitive)`
+        ? `⚠️ Rank #${yourRank} (improve to top 3)`
+        : `❌ Rank #${yourRank} (not competitive)`
   });
 
   // Price within 10% of market low: 0.8 pts
@@ -374,8 +374,8 @@ function calculateCompetitiveScore(competitorData?: CompetitorData): ComponentSc
     message: priceCompetitive
       ? `✅ ${priceDiff.toFixed(1)}% above lowest (competitive)`
       : priceDiff <= 20
-      ? `⚠️ ${priceDiff.toFixed(1)}% above lowest (reduce slightly)`
-      : `❌ ${priceDiff.toFixed(1)}% above lowest (too high)`
+        ? `⚠️ ${priceDiff.toFixed(1)}% above lowest (reduce slightly)`
+        : `❌ ${priceDiff.toFixed(1)}% above lowest (too high)`
   });
 
   // Total offers (less competition is better): 0.7 pts
@@ -391,10 +391,10 @@ function calculateCompetitiveScore(competitorData?: CompetitorData): ComponentSc
     message: offerCount < 10
       ? `✅ ${offerCount} offers (low competition)`
       : offerCount < 15
-      ? `✅ ${offerCount} offers (moderate competition)`
-      : offerCount < 25
-      ? `⚠️ ${offerCount} offers (high competition)`
-      : `❌ ${offerCount} offers (very high competition)`
+        ? `✅ ${offerCount} offers (moderate competition)`
+        : offerCount < 25
+          ? `⚠️ ${offerCount} offers (high competition)`
+          : `❌ ${offerCount} offers (very high competition)`
   });
 
   return {
@@ -455,8 +455,8 @@ function calculateBuyBoxScore(buyBoxData?: BuyBoxData): ComponentScore {
     message: winRatePassed
       ? `✅ ${winRate.toFixed(1)}% win rate (excellent)`
       : winRate >= 50
-      ? `⚠️ ${winRate.toFixed(1)}% win rate (improve pricing/fulfillment)`
-      : `❌ ${winRate.toFixed(1)}% win rate (needs attention)`
+        ? `⚠️ ${winRate.toFixed(1)}% win rate (improve pricing/fulfillment)`
+        : `❌ ${winRate.toFixed(1)}% win rate (needs attention)`
   });
 
   // Currently has buy box: 0.5 pts

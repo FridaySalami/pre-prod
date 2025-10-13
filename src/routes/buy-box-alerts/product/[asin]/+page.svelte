@@ -46,11 +46,8 @@
 
 	// Placeholder data (will be populated from APIs later)
 	const placeholderMetrics = {
-		revenue30d: '$23,556.35',
-		unitSales30d: '45,875',
 		currentRating: 3.5,
 		totalReviews: 1430,
-		listingHealthScore: 9.0,
 		fbaFee: '$14.02'
 	};
 
@@ -123,6 +120,22 @@
 		if (hours <= 120) return '3-5 days';
 		if (hours <= 168) return '5-7 days';
 		return '7+ days';
+	}
+
+	// Convert weight to kg
+	function convertToKg(value: number, unit: string): number {
+		const lowerUnit = unit.toLowerCase();
+		if (lowerUnit === 'kg' || lowerUnit === 'kilograms') {
+			return value;
+		} else if (lowerUnit === 'g' || lowerUnit === 'grams') {
+			return value / 1000;
+		} else if (lowerUnit === 'lb' || lowerUnit === 'lbs' || lowerUnit === 'pounds') {
+			return value * 0.453592;
+		} else if (lowerUnit === 'oz' || lowerUnit === 'ounces') {
+			return value * 0.0283495;
+		}
+		// Default: assume it's already in kg
+		return value;
 	}
 
 	// Get seller display name
@@ -575,21 +588,26 @@
 				</div>
 			{/if}
 
-			<!-- 30-Day Revenue (Placeholder) -->
-			<div class="bg-white rounded-lg shadow p-6">
+			<!-- 30-Day Revenue (Coming Soon) -->
+			<div class="bg-white rounded-lg shadow p-6 border-2 border-dashed border-gray-300">
 				<div class="text-sm text-gray-600 mb-1">30-Day Revenue</div>
-				<div class="text-3xl font-bold text-gray-900 mb-1">{placeholderMetrics.revenue30d}</div>
-				<div class="text-xs text-gray-500">Unit Sales: {placeholderMetrics.unitSales30d}</div>
-				<div class="mt-2 flex items-center text-green-600 text-sm">
-					<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<div class="text-2xl font-semibold text-gray-400 mb-2">—</div>
+				<div class="text-xs text-gray-500 mb-3">Unit Sales: —</div>
+				<div class="mt-2 flex items-center text-blue-600 text-sm bg-blue-50 p-2 rounded">
+					<svg
+						class="w-4 h-4 mr-2 flex-shrink-0"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
 							stroke-width="2"
-							d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+							d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
 						/>
 					</svg>
-					<span class="text-xs">Data from Amazon Reports API (Coming Soon)</span>
+					<span class="text-xs">Amazon Reports API Integration - To Be Implemented</span>
 				</div>
 			</div>
 
@@ -798,12 +816,15 @@
 							{#if catalogData.dimensions}
 								<div class="text-xs text-gray-500 mt-2">
 									{#if catalogData.dimensions.weight}
-										Weight: {catalogData.dimensions.weight.value}{catalogData.dimensions.weight
-											.unit}
+										Weight: {convertToKg(
+											catalogData.dimensions.weight.value,
+											catalogData.dimensions.weight.unit
+										).toFixed(1)}kg
 									{/if}
 									{#if catalogData.dimensions.length && catalogData.dimensions.width && catalogData.dimensions.height}
-										<br />Size: {catalogData.dimensions.length.value} × {catalogData.dimensions
-											.width.value} × {catalogData.dimensions.height.value}
+										<br />Size: {catalogData.dimensions.length.value.toFixed(1)} × {catalogData.dimensions.width.value.toFixed(
+											1
+										)} × {catalogData.dimensions.height.value.toFixed(1)}
 										{catalogData.dimensions.length.unit}
 									{/if}
 								</div>
