@@ -115,16 +115,15 @@ export const GET: RequestHandler = async ({ params, url }) => {
               ) + 1,
             isBuyBoxWinner: yourOffer.IsBuyBoxWinner || false,
             isFBA: yourOffer.IsFulfilledByAmazon || false,
-            shippingPrice: yourOffer.Shipping?.Amount || 0,
             shipsFrom: yourOffer.ShipsFrom?.Country || 'UK',
             isPrime: yourOffer.PrimeInformation?.IsOfferPrime || false,
             shippingMinHours: yourOffer.ShippingTime?.MinimumHours,
             shippingMaxHours: yourOffer.ShippingTime?.MaximumHours
           }
           : null,
-        marketLow: Math.min(...allPrices.map((p) => p.landedPrice)),
-        marketHigh: Math.max(...allPrices.map((p) => p.landedPrice)),
-        competitorPrices: allPrices.filter((p) => p.seller !== 'A2D8NG39VURSL3'),
+        marketLow: Math.min(...allPrices.map((p: any) => p.landedPrice)),
+        marketHigh: Math.max(...allPrices.map((p: any) => p.landedPrice)),
+        competitorPrices: allPrices.filter((p: any) => p.seller !== 'A2D8NG39VURSL3'),
         buyBoxWinner: offers.find((o: any) => o.IsBuyBoxWinner)?.SellerId || null,
         buyBoxWinnerIsPrime: offers.find((o: any) => o.IsBuyBoxWinner)?.PrimeInformation?.IsOfferPrime || false
       };
@@ -139,6 +138,36 @@ export const GET: RequestHandler = async ({ params, url }) => {
     // Get current buy box winner from most recent notification
     const currentBuyBoxWinner = history[0]?.buyBoxWinner || null;
 
+    // Calculate current offer metrics from most recent notification
+    const latestNotification = history[0];
+    let totalPrimeOffers = 0;
+    let totalFbaOffers = 0;
+    let competitiveFbaOffers = 0;
+
+    if (latestNotification) {
+      // Count your offer if Prime
+      if (latestNotification.yourOffer?.isPrime) {
+        totalPrimeOffers++;
+      }
+      // Count your offer if FBA
+      if (latestNotification.yourOffer?.isFBA) {
+        totalFbaOffers++;
+      }
+
+      // Count competitor Prime offers
+      const competitorPrimeCount = latestNotification.competitorPrices?.filter(
+        (c: any) => c.isPrime
+      ).length || 0;
+      totalPrimeOffers += competitorPrimeCount;
+
+      // Count competitor FBA offers (these are competitive by definition)
+      const competitorFbaCount = latestNotification.competitorPrices?.filter(
+        (c: any) => c.isFBA
+      ).length || 0;
+      totalFbaOffers += competitorFbaCount;
+      competitiveFbaOffers = competitorFbaCount;
+    }
+
     return json({
       asin,
       currentState: currentStateQuery.rows[0] || null,
@@ -146,6 +175,12 @@ export const GET: RequestHandler = async ({ params, url }) => {
       analytics,
       competitors,
       currentBuyBoxWinner,
+      offerMetrics: {
+        totalPrimeOffers,
+        totalFbaOffers,
+        competitiveFbaOffers,
+        totalOffers: latestNotification?.offerCount || 0
+      },
       meta: {
         totalRecords: historyResult.rows.length,
         daysRequested: days,

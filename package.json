@@ -41,8 +41,11 @@
 		"vite": "^6.0.0"
 	},
 	"dependencies": {
+		"@aws-sdk/client-sts": "^3.908.0",
 		"@azure/msal-browser": "^4.14.0",
 		"@prisma/client": "^6.11.0",
+		"@sp-api-sdk/auth": "^2.2.13",
+		"@sp-api-sdk/catalog-items-api-2022-04-01": "^4.2.0",
 		"@supabase/auth-helpers-sveltekit": "^0.13.0",
 		"@supabase/ssr": "^0.5.2",
 		"@supabase/supabase-js": "^2.50.5",

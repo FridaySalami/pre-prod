@@ -51,10 +51,14 @@
 		currentRating: 3.5,
 		totalReviews: 1430,
 		listingHealthScore: 9.0,
-		fbaFee: '$14.02',
-		competitiveFbaOffers: 5,
-		totalPrimeOffers: 10
+		fbaFee: '$14.02'
 	};
+
+	// Get real offer metrics from API
+	const offerMetrics = data.offerMetrics || {};
+	const totalPrimeOffers = offerMetrics.totalPrimeOffers || 0;
+	const competitiveFbaOffers = offerMetrics.competitiveFbaOffers || 0;
+	const totalFbaOffers = offerMetrics.totalFbaOffers || 0;
 
 	// Get product info
 	const productInfo = data.productInfo || {
@@ -62,12 +66,35 @@
 		category: 'Unknown'
 	};
 
+	// Get catalog data from Amazon Catalog API
+	const catalogData = data.catalogData || null;
+	const productTitle = catalogData?.title || productInfo.item_name || data.asin;
+	const productBrand = catalogData?.brand || 'Unknown Brand';
+	const productCategory = catalogData?.category || productInfo.category || 'Unknown';
+	const productImages = catalogData?.images || [];
+	const mainProductImage = catalogData?.mainImage || productImages[0]?.link;
+
+	// Get fees data from Amazon Fees API
+	const feesData = data.feesData || null;
+
 	// Get current state metrics
 	const currentState = data.currentState || {};
-	const yourPrice = currentState.your_price || 0;
-	const marketLow = currentState.market_low || 0;
-	const yourPosition = currentState.your_position || 0;
-	const totalOffers = currentState.total_offers || 0;
+	const yourPrice =
+		typeof currentState.your_price === 'number'
+			? currentState.your_price
+			: parseFloat(currentState.your_price) || 0;
+	const marketLow =
+		typeof currentState.market_low === 'number'
+			? currentState.market_low
+			: parseFloat(currentState.market_low) || 0;
+	const yourPosition =
+		typeof currentState.your_position === 'number'
+			? currentState.your_position
+			: parseInt(currentState.your_position) || 0;
+	const totalOffers =
+		typeof currentState.total_offers === 'number'
+			? currentState.total_offers
+			: parseInt(currentState.total_offers) || 0;
 
 	// Calculate price gap percentage
 	const priceGap =
@@ -403,36 +430,89 @@
 		<!-- Header -->
 		<div class="bg-white rounded-lg shadow-lg p-6 mb-6">
 			<div class="flex items-start justify-between">
-				<div class="flex-1">
-					<div class="flex items-center space-x-3 mb-2">
-						<svg
-							class="w-8 h-8 text-blue-600"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+				<div class="flex items-start space-x-4 flex-1">
+					<!-- Product Image -->
+					{#if mainProductImage}
+						<div class="flex-shrink-0">
+							<img
+								src={mainProductImage}
+								alt={productTitle}
+								class="w-24 h-24 object-contain rounded-lg border border-gray-200"
 							/>
-						</svg>
-						<h1 class="text-2xl font-bold text-gray-900">
-							Product Summary for "{data.asin}"
-						</h1>
-						<button class="text-gray-400 hover:text-gray-600" aria-label="Copy ASIN">
-							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						</div>
+					{:else}
+						<div
+							class="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center"
+						>
+							<svg
+								class="w-12 h-12 text-gray-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
 								<path
 									stroke-linecap="round"
 									stroke-linejoin="round"
 									stroke-width="2"
-									d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+									d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
 								/>
 							</svg>
-						</button>
+						</div>
+					{/if}
+
+					<!-- Product Info -->
+					<div class="flex-1">
+						<div class="flex items-center space-x-3 mb-2">
+							<h1 class="text-2xl font-bold text-gray-900">
+								{productTitle}
+							</h1>
+							<button class="text-gray-400 hover:text-gray-600" aria-label="Copy ASIN">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+									/>
+								</svg>
+							</button>
+						</div>
+						<div class="flex items-center space-x-4 text-sm text-gray-600">
+							<span class="flex items-center">
+								<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+									/>
+								</svg>
+								ASIN: {data.asin}
+							</span>
+							<span class="flex items-center">
+								<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+									/>
+								</svg>
+								{productBrand}
+							</span>
+							<span class="flex items-center">
+								<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+									/>
+								</svg>
+								{productCategory}
+							</span>
+						</div>
 					</div>
-					<p class="text-sm text-gray-600">{productInfo.item_name || 'Loading product info...'}</p>
 				</div>
 				<div class="flex space-x-3">
 					<button
@@ -473,6 +553,25 @@
 
 		<!-- Summary Cards Row -->
 		<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+			<!-- Product Images Gallery (if available) -->
+			{#if productImages.length > 1}
+				<div class="md:col-span-4 bg-white rounded-lg shadow p-6">
+					<h3 class="font-semibold text-gray-900 mb-4">Product Images</h3>
+					<div class="flex space-x-4 overflow-x-auto pb-2">
+						{#each productImages.slice(0, 8) as image}
+							<div class="flex-shrink-0">
+								<img
+									src={image.link}
+									alt="{productTitle} - {image.variant}"
+									class="w-32 h-32 object-contain rounded-lg border border-gray-200 hover:border-blue-500 cursor-pointer transition-colors"
+									title={image.variant}
+								/>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			<!-- 30-Day Revenue (Placeholder) -->
 			<div class="bg-white rounded-lg shadow p-6">
 				<div class="text-sm text-gray-600 mb-1">30-Day Revenue</div>
@@ -539,13 +638,28 @@
 				<button class="text-sm text-blue-600 hover:underline mt-2 inline-block">Analyze LHS</button>
 			</div>
 
-			<!-- Top Keywords (Placeholder) -->
+			<!-- Top Keywords -->
 			<div class="bg-white rounded-lg shadow p-6">
 				<div class="text-sm text-gray-600 mb-2">Top Keywords</div>
-				<div class="text-xs text-gray-700 mb-1">
-					Phone Charger, Portable, Household, Magnet, USB
-				</div>
-				<button class="text-sm text-blue-600 hover:underline">See All Keywords</button>
+				{#if catalogData?.keywords}
+					<div class="flex flex-wrap gap-2 mb-3">
+						{#each catalogData.keywords.primary as keyword}
+							<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+								{keyword.charAt(0).toUpperCase() + keyword.slice(1)}
+							</span>
+						{/each}
+					</div>
+					{#if catalogData.keywords.secondary.length > 0}
+						<div class="text-xs text-gray-500 mb-2">
+							Related: {catalogData.keywords.secondary
+								.slice(0, 3)
+								.map((k) => k.charAt(0).toUpperCase() + k.slice(1))
+								.join(', ')}
+						</div>
+					{/if}
+				{:else}
+					<div class="text-xs text-gray-400 mb-1">No keywords extracted yet</div>
+				{/if}
 			</div>
 		</div>
 
@@ -557,18 +671,83 @@
 				<div class="bg-white rounded-lg shadow p-6">
 					<h3 class="font-semibold text-gray-900 mb-4">Product Details</h3>
 
+					<!-- Amazon Catalog Data -->
+					{#if catalogData}
+						<div class="mb-4 pb-4 border-b">
+							{#if catalogData.packageQuantity}
+								<div class="flex justify-between text-sm mb-2">
+									<span class="text-gray-600">Package Quantity</span>
+									<span class="font-semibold">{catalogData.packageQuantity}</span>
+								</div>
+							{/if}
+							{#if catalogData.dimensions}
+								<div class="text-xs text-gray-500 mt-2">
+									{#if catalogData.dimensions.weight}
+										Weight: {catalogData.dimensions.weight.value}{catalogData.dimensions.weight
+											.unit}
+									{/if}
+									{#if catalogData.dimensions.length && catalogData.dimensions.width && catalogData.dimensions.height}
+										<br />Size: {catalogData.dimensions.length.value} × {catalogData.dimensions
+											.width.value} × {catalogData.dimensions.height.value}
+										{catalogData.dimensions.length.unit}
+									{/if}
+								</div>
+							{/if}
+						</div>
+					{/if}
+
+					<!-- Fees from Amazon Fees API -->
+					{#if feesData}
+						<div class="mb-4 pb-4 border-b">
+							<h4 class="text-sm font-semibold text-gray-900 mb-3">
+								Fee Breakdown @ £{(yourPrice || 0).toFixed(2)}
+								<span class="text-xs font-normal text-gray-500">
+									({feesData.fbaFee > 0 ? 'FBA' : 'FBM'})
+								</span>
+							</h4>
+							<div class="space-y-2 text-sm">
+								{#if feesData.fbaFee > 0}
+									<div class="flex justify-between">
+										<span class="text-gray-600">FBA Fee</span>
+										<span class="font-semibold text-orange-600">{formatPrice(feesData.fbaFee)}</span
+										>
+									</div>
+								{/if}
+								<div class="flex justify-between">
+									<span class="text-gray-600">Referral Fee</span>
+									<span class="font-semibold text-purple-600"
+										>{formatPrice(feesData.referralFee)}</span
+									>
+								</div>
+								{#if feesData.variableClosingFee > 0}
+									<div class="flex justify-between">
+										<span class="text-gray-600">Closing Fee</span>
+										<span class="font-semibold text-gray-600"
+											>{formatPrice(feesData.variableClosingFee)}</span
+										>
+									</div>
+								{/if}
+								<div class="flex justify-between font-bold pt-2 border-t">
+									<span class="text-gray-900">Total Fees</span>
+									<span class="text-red-600">{formatPrice(feesData.totalFees)}</span>
+								</div>
+								<div class="flex justify-between font-bold">
+									<span class="text-gray-900">You Receive</span>
+									<span class="text-green-600">{formatPrice(feesData.estimatedProceeds)}</span>
+								</div>
+							</div>
+						</div>
+					{/if}
+
+					<!-- Market Metrics -->
 					<div class="space-y-3 text-sm">
 						<div class="flex justify-between">
-							<span class="text-gray-600">FBA Fee</span>
-							<span class="font-semibold">{placeholderMetrics.fbaFee}</span>
-						</div>
-						<div class="flex justify-between">
 							<span class="text-gray-600">Total Prime Offers</span>
-							<span class="font-semibold">{placeholderMetrics.totalPrimeOffers}</span>
+							<span class="font-semibold">{totalPrimeOffers}</span>
 						</div>
 						<div class="flex justify-between">
 							<span class="text-gray-600">Competitive FBA Offers</span>
-							<span class="font-semibold">{placeholderMetrics.competitiveFbaOffers}</span>
+							<span class="font-semibold">{competitiveFbaOffers}</span>
 						</div>
 					</div>
 
@@ -806,6 +985,31 @@
 						{/if}
 					</div>
 				</div>
+
+				<!-- Product Features (from Catalog API) -->
+				{#if catalogData?.bulletPoints && catalogData.bulletPoints.length > 0}
+					<div class="bg-white rounded-lg shadow p-6">
+						<h3 class="font-semibold text-gray-900 mb-4">Product Features</h3>
+						<ul class="space-y-2">
+							{#each catalogData.bulletPoints.slice(0, 5) as bulletPoint}
+								<li class="text-sm text-gray-700 flex items-start">
+									<svg
+										class="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0"
+										fill="currentColor"
+										viewBox="0 0 20 20"
+									>
+										<path
+											fill-rule="evenodd"
+											d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+											clip-rule="evenodd"
+										/>
+									</svg>
+									<span>{bulletPoint}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
 			</div>
 		</div>
 
