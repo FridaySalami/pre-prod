@@ -18,6 +18,43 @@ import type { CatalogProduct } from './catalog-service';
 // Type Definitions
 // ============================================================================
 
+/**
+ * Amazon Listing Optimization Standards
+ * Based on Amazon best practices and SEO guidelines
+ */
+const AMAZON_STANDARDS = {
+  title: {
+    min: 60,          // Minimum acceptable
+    ideal: 80,        // Ideal range start (recommended)
+    idealMax: 100,    // Ideal range end (recommended)
+    max: 200          // Hard limit
+  },
+  bulletPoint: {
+    min: 100,         // Minimum useful length
+    ideal: 150,       // Ideal range start
+    idealMax: 200,    // Ideal range end  
+    max: 500          // Hard limit per bullet
+  },
+  description: {
+    min: 500,         // Minimum for decent SEO
+    ideal: 1000,      // Ideal range start
+    idealMax: 2000,   // Ideal range end (also max)
+    max: 2000         // Hard limit
+  },
+  backendTerms: {
+    max: 249          // Strict byte cap (not checked in catalog data)
+  },
+  bulletCount: {
+    min: 3,           // Minimum acceptable
+    ideal: 5          // Recommended count
+  },
+  images: {
+    min: 1,           // Required (main image)
+    recommended: 6,   // Target for good listings
+    ideal: 6          // Optimal count
+  }
+};
+
 export interface ListingHealthScore {
   overall: number; // 0-10
   breakdown: {
@@ -129,53 +166,130 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
   let score = 0;
   const maxScore = 3.0;
 
-  // Title length >= 80 chars: 0.6 pts
+  // Title length (0.6 pts) - Recommended: 80-100 chars
   const titleLength = catalogData.title?.length || 0;
-  const titlePassed = titleLength >= 80;
-  const titlePoints = titlePassed ? 0.6 : (titleLength >= 50 ? 0.3 : 0);
+  const titleInIdealRange = titleLength >= AMAZON_STANDARDS.title.ideal && titleLength <= AMAZON_STANDARDS.title.idealMax;
+  const titleAboveMin = titleLength >= AMAZON_STANDARDS.title.min;
+  const titleTooLong = titleLength > AMAZON_STANDARDS.title.max;
+  
+  const titlePoints = titleTooLong 
+    ? 0.4  // Penalize for exceeding max
+    : titleInIdealRange 
+      ? 0.6  // Perfect
+      : titleAboveMin 
+        ? 0.5  // Good but not ideal
+        : titleLength >= 40 
+          ? 0.3  // Acceptable
+          : 0;   // Too short
+  
   score += titlePoints;
   details.push({
     criterion: 'Title Length',
     points: titlePoints,
     maxPoints: 0.6,
-    passed: titlePassed,
-    message: titlePassed
-      ? `✅ ${titleLength} characters (optimal)`
-      : titleLength >= 50
-        ? `⚠️ ${titleLength} characters (add ${80 - titleLength} more)`
-        : `❌ ${titleLength} characters (too short)`
+    passed: titleInIdealRange,
+    message: titleTooLong
+      ? `⚠️ ${titleLength} chars (over ${AMAZON_STANDARDS.title.max} limit, reduce by ${titleLength - AMAZON_STANDARDS.title.max})`
+      : titleInIdealRange
+        ? `✅ ${titleLength} chars (ideal: ${AMAZON_STANDARDS.title.ideal}-${AMAZON_STANDARDS.title.idealMax})`
+        : titleAboveMin
+          ? `⚠️ ${titleLength} chars (expand to ${AMAZON_STANDARDS.title.ideal}+ for ideal)`
+          : titleLength >= 40
+            ? `⚠️ ${titleLength} chars (expand to ${AMAZON_STANDARDS.title.min}+ minimum)`
+            : `❌ ${titleLength} chars (too short, need ${AMAZON_STANDARDS.title.min}+)`
   });
 
   // 5 bullet points filled: 0.6 pts
-  const bulletCount = catalogData.bulletPoints?.length || 0;
-  const bulletsPassed = bulletCount >= 5;
-  const bulletPoints = bulletCount >= 5 ? 0.6 : bulletCount >= 3 ? 0.4 : bulletCount * 0.2;
+  const bulletPointsArray = catalogData.bulletPoints || [];
+  const bulletCount = bulletPointsArray.length;
+  const hasFiveBullets = bulletCount >= AMAZON_STANDARDS.bulletCount.ideal;
+  
+  // Check bullet point lengths - Amazon standards: 150-200 chars each ideal
+  let bulletsInIdealRange = 0;
+  let bulletsAboveMin = 0;
+  bulletPointsArray.forEach(bullet => {
+    const len = bullet.length;
+    if (len >= AMAZON_STANDARDS.bulletPoint.ideal && len <= AMAZON_STANDARDS.bulletPoint.idealMax) {
+      bulletsInIdealRange++;
+    } else if (len >= AMAZON_STANDARDS.bulletPoint.min) {
+      bulletsAboveMin++;
+    }
+  });
+  
+  const bulletLengthQuality = bulletCount > 0 
+    ? (bulletsInIdealRange + bulletsAboveMin * 0.7) / bulletCount 
+    : 0;
+  
+  const bulletPoints = hasFiveBullets 
+    ? 0.6 * bulletLengthQuality  // Scale by quality
+    : bulletCount >= AMAZON_STANDARDS.bulletCount.min 
+      ? 0.4 * bulletLengthQuality  // Partial credit for 3-4 bullets
+      : 0;
+  
   score += bulletPoints;
   details.push({
     criterion: 'Bullet Points',
     points: bulletPoints,
     maxPoints: 0.6,
-    passed: bulletsPassed,
-    message: bulletsPassed
-      ? `✅ ${bulletCount} bullet points (complete)`
-      : `⚠️ ${bulletCount}/5 bullet points (add ${5 - bulletCount} more)`
+    passed: hasFiveBullets && bulletLengthQuality >= 0.8,
+    message: bulletCount === 0
+      ? `❌ No bullet points (need ${AMAZON_STANDARDS.bulletCount.ideal})`
+      : hasFiveBullets
+        ? bulletsInIdealRange >= 4
+          ? `✅ ${bulletCount} bullets, ${bulletsInIdealRange} ideal length (${AMAZON_STANDARDS.bulletPoint.ideal}-${AMAZON_STANDARDS.bulletPoint.idealMax} chars)`
+          : bulletsInIdealRange > 0
+            ? `⚠️ ${bulletCount} bullets, only ${bulletsInIdealRange} in ideal range (expand others to ${AMAZON_STANDARDS.bulletPoint.ideal}+ chars)`
+            : `⚠️ ${bulletCount} bullets, all need expansion (${AMAZON_STANDARDS.bulletPoint.ideal}-${AMAZON_STANDARDS.bulletPoint.idealMax} chars ideal)`
+        : bulletCount >= AMAZON_STANDARDS.bulletCount.min
+          ? `⚠️ ${bulletCount} bullets (add ${AMAZON_STANDARDS.bulletCount.ideal - bulletCount} more, ${AMAZON_STANDARDS.bulletPoint.ideal}-${AMAZON_STANDARDS.bulletPoint.idealMax} chars each)`
+          : `❌ ${bulletCount} bullets (need ${AMAZON_STANDARDS.bulletCount.ideal}, ${AMAZON_STANDARDS.bulletPoint.ideal}-${AMAZON_STANDARDS.bulletPoint.idealMax} chars each)`
   });
 
-  // Description >= 500 chars: 0.6 pts
+  // Description length: 0.6 pts - Amazon standards: 1000-2000 ideal
+  // NOTE: Many grocery/food products don't have descriptions in Catalog API (only bullet points)
+  // If no description but has 5 bullets, give partial credit (API limitation, not seller's fault)
   const descLength = catalogData.description?.length || 0;
-  const descPassed = descLength >= 500;
-  const descPoints = descPassed ? 0.6 : descLength >= 250 ? 0.3 : 0;
+  const descInIdealRange = descLength >= AMAZON_STANDARDS.description.ideal && descLength <= AMAZON_STANDARDS.description.idealMax;
+  const descAboveMin = descLength >= AMAZON_STANDARDS.description.min;
+  const descTooLong = descLength > AMAZON_STANDARDS.description.max;
+  
+  // Many products (esp. grocery) don't return descriptions via Catalog API
+  // Give partial credit if they have 5 bullets (indicates complete listing)
+  const hasFullBullets = hasFiveBullets;
+  
+  const descPoints = descTooLong
+    ? 0.4  // Penalize for exceeding max
+    : descInIdealRange
+      ? 0.6  // Perfect
+      : descAboveMin
+        ? 0.5  // Good but not ideal
+        : descLength >= 250
+          ? 0.3  // Acceptable
+          : descLength === 0 && hasFullBullets
+            ? 0.3  // Give partial credit if has 5 bullets (API may not return description)
+            : descLength === 0
+              ? 0    // No description and incomplete bullets
+              : 0.2; // Very short description
+  
   score += descPoints;
   details.push({
     criterion: 'Description',
     points: descPoints,
     maxPoints: 0.6,
-    passed: descPassed,
-    message: descPassed
-      ? `✅ ${descLength} characters (detailed)`
-      : descLength >= 250
-        ? `⚠️ ${descLength} characters (expand by ${500 - descLength})`
-        : `❌ ${descLength} characters (needs description)`
+    passed: descInIdealRange,
+    message: descTooLong
+      ? `⚠️ ${descLength} chars (over ${AMAZON_STANDARDS.description.max} limit, reduce by ${descLength - AMAZON_STANDARDS.description.max})`
+      : descInIdealRange
+        ? `✅ ${descLength} chars (ideal: ${AMAZON_STANDARDS.description.ideal}-${AMAZON_STANDARDS.description.idealMax})`
+        : descAboveMin
+          ? `⚠️ ${descLength} chars (expand to ${AMAZON_STANDARDS.description.ideal}+ for ideal)`
+          : descLength >= 250
+            ? `⚠️ ${descLength} chars (expand to ${AMAZON_STANDARDS.description.min}+ minimum)`
+            : descLength === 0 && hasFullBullets
+              ? `⚠️ No description (optional for some products - may not be in API)`
+              : descLength === 0
+                ? `❌ No description (add ${AMAZON_STANDARDS.description.min}+ chars)`
+                : `⚠️ ${descLength} chars (too short, expand to ${AMAZON_STANDARDS.description.min}+)`
   });
 
   // Brand name present: 0.6 pts
@@ -231,12 +345,12 @@ function calculateImagesScore(catalogData: CatalogProduct): ComponentScore {
   // Image count: up to 1.0 pt
   let countPoints = 0;
   let countPassed = false;
-  if (imageCount >= 7) {
+  if (imageCount >= 6) {
     countPoints = 1.0;
     countPassed = true;
-  } else if (imageCount >= 5) {
+  } else if (imageCount >= 4) {
     countPoints = 0.7;
-  } else if (imageCount >= 3) {
+  } else if (imageCount >= 2) {
     countPoints = 0.4;
   } else if (imageCount > 0) {
     countPoints = 0.2;
@@ -249,9 +363,9 @@ function calculateImagesScore(catalogData: CatalogProduct): ComponentScore {
     passed: countPassed,
     message: countPassed
       ? `✅ ${imageCount} images (excellent)`
-      : imageCount >= 5
-        ? `⚠️ ${imageCount} images (add ${7 - imageCount} more)`
-        : `❌ ${imageCount} images (minimum 7 recommended)`
+      : imageCount >= 4
+        ? `⚠️ ${imageCount} images (add ${6 - imageCount} more for target)`
+        : `❌ ${imageCount} images (target: 6 images)`
   });
 
   // Has lifestyle images (not just MAIN): 0.5 pts
@@ -407,12 +521,13 @@ function calculateCompetitiveScore(competitorData?: CompetitorData): ComponentSc
 }
 
 /**
- * Buy Box Performance Score (0-2.0 points, 20% of total)
+ * Buy Box Performance Score (0-1.5 points, 20% of total)
+ * Removed FBA requirement as per user request
  */
 function calculateBuyBoxScore(buyBoxData?: BuyBoxData): ComponentScore {
   const details: ScoreDetail[] = [];
   let score = 0;
-  const maxScore = 2.0;
+  const maxScore = 1.5;
 
   if (!buyBoxData) {
     // No buy box data available
@@ -455,7 +570,7 @@ function calculateBuyBoxScore(buyBoxData?: BuyBoxData): ComponentScore {
     message: winRatePassed
       ? `✅ ${winRate.toFixed(1)}% win rate (excellent)`
       : winRate >= 50
-        ? `⚠️ ${winRate.toFixed(1)}% win rate (improve pricing/fulfillment)`
+        ? `⚠️ ${winRate.toFixed(1)}% win rate (improve pricing & stock)`
         : `❌ ${winRate.toFixed(1)}% win rate (needs attention)`
   });
 
@@ -471,22 +586,6 @@ function calculateBuyBoxScore(buyBoxData?: BuyBoxData): ComponentScore {
     message: hasBuyBox
       ? '✅ Currently winning Buy Box'
       : '❌ Not currently winning Buy Box'
-  });
-
-  // FBA/Prime enabled: 0.5 pts
-  const hasFBA = buyBoxData.isFBA || buyBoxData.isPrime;
-  const fbaPoints = hasFBA ? 0.5 : 0;
-  score += fbaPoints;
-  details.push({
-    criterion: 'Fulfillment',
-    points: fbaPoints,
-    maxPoints: 0.5,
-    passed: hasFBA,
-    message: hasFBA
-      ? buyBoxData.isPrime
-        ? '✅ Prime eligible (FBA)'
-        : '✅ FBA enabled'
-      : '❌ Not using FBA (consider switching)'
   });
 
   return {
@@ -513,34 +612,87 @@ function generateRecommendations(
   // Content recommendations
   if (breakdown.content.percentage < 80) {
     const titleLength = catalogData.title?.length || 0;
-    if (titleLength < 80) {
+    if (titleLength < AMAZON_STANDARDS.title.ideal) {
+      const targetLength = titleLength < AMAZON_STANDARDS.title.min 
+        ? AMAZON_STANDARDS.title.min 
+        : AMAZON_STANDARDS.title.ideal;
       recommendations.push({
         category: 'content',
-        priority: 'high',
+        priority: titleLength < AMAZON_STANDARDS.title.min ? 'high' : 'medium',
         title: 'Optimize Product Title',
-        description: `Expand title to 80+ characters (currently ${titleLength}). Include key features and benefits.`,
-        impact: '+0.3 to +0.6 points'
+        description: `Recommended length: ${AMAZON_STANDARDS.title.ideal}–${AMAZON_STANDARDS.title.idealMax} characters (currently ${titleLength}). Include key features, benefits, and search terms.`,
+        impact: titleLength < AMAZON_STANDARDS.title.min ? '+0.6 points' : '+0.1 to +0.3 points'
+      });
+    } else if (titleLength > AMAZON_STANDARDS.title.max) {
+      recommendations.push({
+        category: 'content',
+        priority: 'medium',
+        title: 'Shorten Product Title',
+        description: `Reduce title to ${AMAZON_STANDARDS.title.max} characters or less (currently ${titleLength}). Amazon may truncate overly long titles.`,
+        impact: '+0.2 points'
       });
     }
 
-    const bulletCount = catalogData.bulletPoints?.length || 0;
-    if (bulletCount < 5) {
+    const bulletPoints = catalogData.bulletPoints || [];
+    const bulletCount = bulletPoints.length;
+    if (bulletCount < AMAZON_STANDARDS.bulletCount.ideal) {
       recommendations.push({
         category: 'content',
         priority: 'high',
         title: 'Add More Bullet Points',
-        description: `Add ${5 - bulletCount} more bullet point${5 - bulletCount > 1 ? 's' : ''} to highlight key features.`,
+        description: `Add ${AMAZON_STANDARDS.bulletCount.ideal - bulletCount} more bullet point${AMAZON_STANDARDS.bulletCount.ideal - bulletCount > 1 ? 's' : ''} (${AMAZON_STANDARDS.bulletPoint.ideal}-${AMAZON_STANDARDS.bulletPoint.idealMax} characters each) to highlight key features.`,
         impact: '+0.2 to +0.6 points'
       });
     }
-
-    if (!catalogData.description || catalogData.description.length < 500) {
+    
+    // Check bullet lengths
+    const shortBullets = bulletPoints.filter(b => b.length < AMAZON_STANDARDS.bulletPoint.min).length;
+    if (shortBullets > 0 && bulletCount >= AMAZON_STANDARDS.bulletCount.min) {
       recommendations.push({
         category: 'content',
         priority: 'medium',
-        title: 'Enhance Product Description',
-        description: 'Write a detailed 500+ character description with product benefits and use cases.',
-        impact: '+0.3 to +0.6 points'
+        title: 'Expand Bullet Points',
+        description: `Expand ${shortBullets} bullet point${shortBullets > 1 ? 's' : ''} to ${AMAZON_STANDARDS.bulletPoint.ideal}-${AMAZON_STANDARDS.bulletPoint.idealMax} characters. Early bullets are weighted more heavily for SEO.`,
+        impact: '+0.1 to +0.3 points'
+      });
+    }
+
+    const descLength = catalogData.description?.length || 0;
+    const hasFullBullets = bulletCount >= AMAZON_STANDARDS.bulletCount.ideal;
+    
+    // Only recommend description if it's missing AND bullets aren't complete
+    // (Many products don't provide descriptions via Catalog API even if they exist on site)
+    if (descLength < AMAZON_STANDARDS.description.ideal && !(descLength === 0 && hasFullBullets)) {
+      const targetLength = descLength < AMAZON_STANDARDS.description.min 
+        ? AMAZON_STANDARDS.description.min 
+        : AMAZON_STANDARDS.description.ideal;
+      
+      const priority = descLength === 0 && !hasFullBullets 
+        ? 'high' 
+        : descLength < AMAZON_STANDARDS.description.min 
+          ? 'medium' 
+          : 'low';
+      
+      recommendations.push({
+        category: 'content',
+        priority,
+        title: descLength === 0 ? 'Add Product Description' : 'Enhance Product Description',
+        description: descLength === 0
+          ? `Add a detailed product description (${AMAZON_STANDARDS.description.ideal}-${AMAZON_STANDARDS.description.idealMax} characters). This helps with SEO and conversions.`
+          : `Expand description to ${AMAZON_STANDARDS.description.ideal}-${AMAZON_STANDARDS.description.idealMax} characters (currently ${descLength}). Balance SEO keywords with persuasive copy.`,
+        impact: descLength === 0 && !hasFullBullets 
+          ? '+0.3 to +0.6 points' 
+          : descLength < AMAZON_STANDARDS.description.min 
+            ? '+0.3 to +0.5 points' 
+            : '+0.1 to +0.3 points'
+      });
+    } else if (descLength > AMAZON_STANDARDS.description.max) {
+      recommendations.push({
+        category: 'content',
+        priority: 'low',
+        title: 'Optimize Description Length',
+        description: `Consider condensing description to ${AMAZON_STANDARDS.description.max} characters or less (currently ${descLength}). Focus on most impactful content.`,
+        impact: '+0.2 points'
       });
     }
   }
@@ -548,12 +700,12 @@ function generateRecommendations(
   // Image recommendations
   if (breakdown.images.percentage < 80) {
     const imageCount = catalogData.images?.length || 0;
-    if (imageCount < 7) {
+    if (imageCount < AMAZON_STANDARDS.images.recommended) {
       recommendations.push({
         category: 'images',
         priority: 'high',
         title: 'Add More Product Images',
-        description: `Upload ${7 - imageCount} more image${7 - imageCount > 1 ? 's' : ''} including lifestyle shots and detail views.`,
+        description: `Upload ${AMAZON_STANDARDS.images.recommended - imageCount} more image${AMAZON_STANDARDS.images.recommended - imageCount > 1 ? 's' : ''} (target: ${AMAZON_STANDARDS.images.recommended} total). Include lifestyle shots, detail views, and size comparisons.`,
         impact: '+0.3 to +1.0 points'
       });
     }
@@ -564,7 +716,7 @@ function generateRecommendations(
         category: 'images',
         priority: 'medium',
         title: 'Create Infographic Images',
-        description: 'Add 3+ infographic images showing key features, dimensions, and benefits.',
+        description: 'Add 3+ infographic images (PT variants) showing key features, dimensions, and benefits. These drive higher conversion.',
         impact: '+0.25 to +0.5 points'
       });
     }
@@ -602,18 +754,8 @@ function generateRecommendations(
         category: 'buybox',
         priority: 'high',
         title: 'Improve Buy Box Win Rate',
-        description: `Currently at ${buyBoxData.winRate.toFixed(1)}%. Consider FBA, competitive pricing, and maintaining stock.`,
+        description: `Currently at ${buyBoxData.winRate.toFixed(1)}%. Focus on competitive pricing and maintaining consistent stock levels.`,
         impact: '+0.3 to +1.0 points'
-      });
-    }
-
-    if (!buyBoxData.isFBA && !buyBoxData.isPrime) {
-      recommendations.push({
-        category: 'buybox',
-        priority: 'medium',
-        title: 'Enable FBA/Prime',
-        description: 'Switch to FBA to qualify for Prime shipping and improve Buy Box chances.',
-        impact: '+0.5 points'
       });
     }
   }

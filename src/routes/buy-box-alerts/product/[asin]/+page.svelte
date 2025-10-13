@@ -703,19 +703,24 @@
 					{#if healthScore.recommendations && healthScore.recommendations.length > 0}
 						<div class="mt-4 pt-4 border-t">
 							<div class="text-xs font-semibold text-gray-700 mb-2">Top Improvements:</div>
-							<div class="space-y-1">
-								{#each healthScore.recommendations.slice(0, 2) as rec}
+							<div class="space-y-2">
+								{#each healthScore.recommendations.slice(0, 3) as rec}
 									<div class="flex items-start space-x-2">
 										<span
-											class="inline-block w-2 h-2 rounded-full mt-1 {rec.priority === 'high'
+											class="inline-block w-2 h-2 rounded-full mt-1.5 flex-shrink-0 {rec.priority === 'high'
 												? 'bg-red-500'
 												: rec.priority === 'medium'
 													? 'bg-yellow-500'
 													: 'bg-blue-500'}"
 										></span>
-										<div class="flex-1">
+										<div class="flex-1 min-w-0">
 											<div class="text-xs font-medium text-gray-800">{rec.title}</div>
-											<div class="text-xs text-gray-500">{rec.impact}</div>
+											<div class="text-xs text-gray-600 mt-0.5 leading-relaxed">{rec.description}</div>
+											<div class="flex items-center mt-1 space-x-2">
+												<span class="text-xs text-green-600 font-medium">{rec.impact}</span>
+												<span class="text-xs text-gray-400">•</span>
+												<span class="text-xs text-gray-500 capitalize">{rec.priority} priority</span>
+											</div>
 										</div>
 									</div>
 								{/each}
