@@ -171,17 +171,17 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
   const titleInIdealRange = titleLength >= AMAZON_STANDARDS.title.ideal && titleLength <= AMAZON_STANDARDS.title.idealMax;
   const titleAboveMin = titleLength >= AMAZON_STANDARDS.title.min;
   const titleTooLong = titleLength > AMAZON_STANDARDS.title.max;
-  
-  const titlePoints = titleTooLong 
+
+  const titlePoints = titleTooLong
     ? 0.4  // Penalize for exceeding max
-    : titleInIdealRange 
+    : titleInIdealRange
       ? 0.6  // Perfect
-      : titleAboveMin 
+      : titleAboveMin
         ? 0.5  // Good but not ideal
-        : titleLength >= 40 
+        : titleLength >= 40
           ? 0.3  // Acceptable
           : 0;   // Too short
-  
+
   score += titlePoints;
   details.push({
     criterion: 'Title Length',
@@ -203,7 +203,7 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
   const bulletPointsArray = catalogData.bulletPoints || [];
   const bulletCount = bulletPointsArray.length;
   const hasFiveBullets = bulletCount >= AMAZON_STANDARDS.bulletCount.ideal;
-  
+
   // Check bullet point lengths - Amazon standards: 150-200 chars each ideal
   let bulletsInIdealRange = 0;
   let bulletsAboveMin = 0;
@@ -215,17 +215,17 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
       bulletsAboveMin++;
     }
   });
-  
-  const bulletLengthQuality = bulletCount > 0 
-    ? (bulletsInIdealRange + bulletsAboveMin * 0.7) / bulletCount 
+
+  const bulletLengthQuality = bulletCount > 0
+    ? (bulletsInIdealRange + bulletsAboveMin * 0.7) / bulletCount
     : 0;
-  
-  const bulletPoints = hasFiveBullets 
+
+  const bulletPoints = hasFiveBullets
     ? 0.6 * bulletLengthQuality  // Scale by quality
-    : bulletCount >= AMAZON_STANDARDS.bulletCount.min 
+    : bulletCount >= AMAZON_STANDARDS.bulletCount.min
       ? 0.4 * bulletLengthQuality  // Partial credit for 3-4 bullets
       : 0;
-  
+
   score += bulletPoints;
   details.push({
     criterion: 'Bullet Points',
@@ -252,11 +252,11 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
   const descInIdealRange = descLength >= AMAZON_STANDARDS.description.ideal && descLength <= AMAZON_STANDARDS.description.idealMax;
   const descAboveMin = descLength >= AMAZON_STANDARDS.description.min;
   const descTooLong = descLength > AMAZON_STANDARDS.description.max;
-  
+
   // Many products (esp. grocery) don't return descriptions via Catalog API
   // Give partial credit if they have 5 bullets (indicates complete listing)
   const hasFullBullets = hasFiveBullets;
-  
+
   const descPoints = descTooLong
     ? 0.4  // Penalize for exceeding max
     : descInIdealRange
@@ -270,7 +270,7 @@ function calculateContentScore(catalogData: CatalogProduct): ComponentScore {
             : descLength === 0
               ? 0    // No description and incomplete bullets
               : 0.2; // Very short description
-  
+
   score += descPoints;
   details.push({
     criterion: 'Description',
@@ -613,8 +613,8 @@ function generateRecommendations(
   if (breakdown.content.percentage < 80) {
     const titleLength = catalogData.title?.length || 0;
     if (titleLength < AMAZON_STANDARDS.title.ideal) {
-      const targetLength = titleLength < AMAZON_STANDARDS.title.min 
-        ? AMAZON_STANDARDS.title.min 
+      const targetLength = titleLength < AMAZON_STANDARDS.title.min
+        ? AMAZON_STANDARDS.title.min
         : AMAZON_STANDARDS.title.ideal;
       recommendations.push({
         category: 'content',
@@ -644,7 +644,7 @@ function generateRecommendations(
         impact: '+0.2 to +0.6 points'
       });
     }
-    
+
     // Check bullet lengths
     const shortBullets = bulletPoints.filter(b => b.length < AMAZON_STANDARDS.bulletPoint.min).length;
     if (shortBullets > 0 && bulletCount >= AMAZON_STANDARDS.bulletCount.min) {
@@ -659,20 +659,20 @@ function generateRecommendations(
 
     const descLength = catalogData.description?.length || 0;
     const hasFullBullets = bulletCount >= AMAZON_STANDARDS.bulletCount.ideal;
-    
+
     // Only recommend description if it's missing AND bullets aren't complete
     // (Many products don't provide descriptions via Catalog API even if they exist on site)
     if (descLength < AMAZON_STANDARDS.description.ideal && !(descLength === 0 && hasFullBullets)) {
-      const targetLength = descLength < AMAZON_STANDARDS.description.min 
-        ? AMAZON_STANDARDS.description.min 
+      const targetLength = descLength < AMAZON_STANDARDS.description.min
+        ? AMAZON_STANDARDS.description.min
         : AMAZON_STANDARDS.description.ideal;
-      
-      const priority = descLength === 0 && !hasFullBullets 
-        ? 'high' 
-        : descLength < AMAZON_STANDARDS.description.min 
-          ? 'medium' 
+
+      const priority = descLength === 0 && !hasFullBullets
+        ? 'high'
+        : descLength < AMAZON_STANDARDS.description.min
+          ? 'medium'
           : 'low';
-      
+
       recommendations.push({
         category: 'content',
         priority,
@@ -680,10 +680,10 @@ function generateRecommendations(
         description: descLength === 0
           ? `Add a detailed product description (${AMAZON_STANDARDS.description.ideal}-${AMAZON_STANDARDS.description.idealMax} characters). This helps with SEO and conversions.`
           : `Expand description to ${AMAZON_STANDARDS.description.ideal}-${AMAZON_STANDARDS.description.idealMax} characters (currently ${descLength}). Balance SEO keywords with persuasive copy.`,
-        impact: descLength === 0 && !hasFullBullets 
-          ? '+0.3 to +0.6 points' 
-          : descLength < AMAZON_STANDARDS.description.min 
-            ? '+0.3 to +0.5 points' 
+        impact: descLength === 0 && !hasFullBullets
+          ? '+0.3 to +0.6 points'
+          : descLength < AMAZON_STANDARDS.description.min
+            ? '+0.3 to +0.5 points'
             : '+0.1 to +0.3 points'
       });
     } else if (descLength > AMAZON_STANDARDS.description.max) {

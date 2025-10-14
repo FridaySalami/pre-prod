@@ -44,6 +44,20 @@
 		return data.history.filter((h: any) => new Date(h.timestamp) >= cutoffDate);
 	});
 
+	// Check if we have actual price data (not just empty records)
+	const hasPriceData = $derived.by(() => {
+		if (!filteredHistory || filteredHistory.length === 0) return false;
+
+		// Check if at least one record has price information
+		return filteredHistory.some(
+			(h: any) =>
+				h.yourOffer?.landedPrice ||
+				h.yourPrice ||
+				h.marketLow ||
+				(h.competitorPrices && h.competitorPrices.length > 0)
+		);
+	});
+
 	// Get real offer metrics from API
 	const offerMetrics = data.offerMetrics || {};
 	const totalPrimeOffers = offerMetrics.totalPrimeOffers || 0;
@@ -523,8 +537,11 @@
 						</div>
 					</div>
 				</div>
-				<div class="flex space-x-3">
-					<button
+				<div class="flex flex-col space-y-3">
+					<a
+						href="https://sellercentral.amazon.co.uk/myinventory/inventory?fulfilledBy=all&page=1&pageSize=50&searchField=all&searchTerm={data.asin}&sort=date_created_desc&status=all&ref_=xx_invmgr_favb_xx"
+						target="_blank"
+						rel="noopener noreferrer"
 						class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
 					>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -532,18 +549,15 @@
 								stroke-linecap="round"
 								stroke-linejoin="round"
 								stroke-width="2"
-								d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-							/>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+								d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
 							/>
 						</svg>
-						<span>Track Competitor</span>
-					</button>
-					<button
+						<span>Manage Amazon Listing</span>
+					</a>
+					<a
+						href="https://www.amazon.co.uk/dp/{data.asin}"
+						target="_blank"
+						rel="noopener noreferrer"
 						class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
 					>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -551,15 +565,14 @@
 								stroke-linecap="round"
 								stroke-linejoin="round"
 								stroke-width="2"
-								d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+								d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
 							/>
 						</svg>
-						<span>Save Product</span>
-					</button>
+						<span>Amazon Product Page</span>
+					</a>
 				</div>
 			</div>
 		</div>
-
 		<!-- Summary Cards Row -->
 		<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
 			<!-- Product Images Gallery (if available) -->
@@ -582,11 +595,13 @@
 			{/if}
 
 			<!-- 30-Day Revenue (Coming Soon) -->
-			<div class="bg-white rounded-lg shadow p-6 border-2 border-dashed border-gray-300">
-				<div class="text-sm text-gray-600 mb-1">30-Day Revenue</div>
+			<div
+				class="bg-gray-50 rounded-lg shadow-sm p-6 border-2 border-dashed border-gray-300 opacity-60"
+			>
+				<div class="text-sm text-gray-500 mb-1">30-Day Revenue</div>
 				<div class="text-2xl font-semibold text-gray-400 mb-2">—</div>
-				<div class="text-xs text-gray-500 mb-3">Unit Sales: —</div>
-				<div class="mt-2 flex items-center text-blue-600 text-sm bg-blue-50 p-2 rounded">
+				<div class="text-xs text-gray-400 mb-3">Unit Sales: —</div>
+				<div class="mt-2 flex items-center text-gray-500 text-sm bg-gray-100 p-2 rounded">
 					<svg
 						class="w-4 h-4 mr-2 flex-shrink-0"
 						fill="none"
@@ -707,7 +722,8 @@
 								{#each healthScore.recommendations.slice(0, 3) as rec}
 									<div class="flex items-start space-x-2">
 										<span
-											class="inline-block w-2 h-2 rounded-full mt-1.5 flex-shrink-0 {rec.priority === 'high'
+											class="inline-block w-2 h-2 rounded-full mt-1.5 flex-shrink-0 {rec.priority ===
+											'high'
 												? 'bg-red-500'
 												: rec.priority === 'medium'
 													? 'bg-yellow-500'
@@ -715,11 +731,14 @@
 										></span>
 										<div class="flex-1 min-w-0">
 											<div class="text-xs font-medium text-gray-800">{rec.title}</div>
-											<div class="text-xs text-gray-600 mt-0.5 leading-relaxed">{rec.description}</div>
+											<div class="text-xs text-gray-600 mt-0.5 leading-relaxed">
+												{rec.description}
+											</div>
 											<div class="flex items-center mt-1 space-x-2">
 												<span class="text-xs text-green-600 font-medium">{rec.impact}</span>
 												<span class="text-xs text-gray-400">•</span>
-												<span class="text-xs text-gray-500 capitalize">{rec.priority} priority</span>
+												<span class="text-xs text-gray-500 capitalize">{rec.priority} priority</span
+												>
 											</div>
 										</div>
 									</div>
@@ -1171,9 +1190,65 @@
 
 					<!-- Chart Canvas -->
 					<div class="relative" style="height: 400px;">
-						{#if data.history && data.history.length > 0}
+						{#if data.history && data.history.length > 0 && hasPriceData}
 							<canvas bind:this={chartCanvas}></canvas>
+						{:else if data.history && data.history.length > 0 && !hasPriceData}
+							<!-- Has history but no price data -->
+							<div
+								class="flex items-center justify-center h-full bg-gray-50 rounded-lg border-2 border-dashed border-gray-300"
+							>
+								<div class="text-center px-6">
+									<svg
+										class="mx-auto h-12 w-12 text-gray-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+										/>
+									</svg>
+									<h3 class="mt-3 text-sm font-medium text-gray-900">No Price Changes Recorded</h3>
+									<p class="mt-2 text-sm text-gray-500 max-w-sm">
+										{#if timeRange === '1hour'}
+											No price changes in the last hour. Try selecting a longer time range.
+										{:else if timeRange === '12hours'}
+											No price changes in the last 12 hours. Try selecting a longer time range.
+										{:else if timeRange === '1day'}
+											No price changes in the last 24 hours. Try selecting a longer time range.
+										{:else}
+											Price monitoring data will appear here when price changes are detected for
+											this product.
+										{/if}
+									</p>
+									<div class="mt-4">
+										<button
+											onclick={() => changeTimeRange('30days')}
+											class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+										>
+											<svg
+												class="mr-2 h-4 w-4"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+												/>
+											</svg>
+											View Last 30 Days
+										</button>
+									</div>
+								</div>
+							</div>
 						{:else}
+							<!-- No history at all -->
 							<div class="flex items-center justify-center h-full bg-gray-50 rounded-lg">
 								<div class="text-center">
 									<svg

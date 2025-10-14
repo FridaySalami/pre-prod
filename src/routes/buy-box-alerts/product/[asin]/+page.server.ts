@@ -115,7 +115,7 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
         // Prepare buy box data
         const buyBoxData: BuyBoxData | undefined = alertData.currentState ? {
           currentlyHasBuyBox: alertData.currentState.has_buy_box || false,
-          winRate: alertData.analytics?.buybox_win_rate || 0,
+          winRate: alertData.analytics?.buyBoxWinRate || 0, // Fixed: was buybox_win_rate, should be buyBoxWinRate
           totalChecks: alertData.history?.length || 0,
           isFBA: alertData.currentState.is_fba || false,
           isPrime: alertData.currentState.is_prime || false
