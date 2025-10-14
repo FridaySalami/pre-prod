@@ -1276,7 +1276,7 @@
 
 				<!-- Product Features (from Catalog API) -->
 				{#if catalogData?.bulletPoints && catalogData.bulletPoints.length > 0}
-					<div class="bg-white rounded-lg shadow p-6">
+					<div class="bg-gray-50 rounded-lg shadow p-6 mt-6">
 						<h3 class="font-semibold text-gray-900 mb-4">Product Features</h3>
 						<ul class="space-y-2">
 							{#each catalogData.bulletPoints.slice(0, 5) as bulletPoint}
