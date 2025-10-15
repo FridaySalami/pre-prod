@@ -142,21 +142,15 @@
 			requiredRole: 'user'
 		},
 		{
-			title: 'Buy Box Monitor',
-			url: '/buy-box-monitor',
-			icon: 'visibility',
-			requiredRole: 'user' // Changed from manager to user
-		},
-		{
 			title: 'Buy Box Manager',
 			url: '/buy-box-manager',
 			icon: 'manage_search',
 			requiredRole: 'user' // Changed from admin to user
 		},
 		{
-			title: 'Real-time Buy Box',
-			url: '/buy-box-alerts/real-time',
-			icon: 'speed',
+			title: 'Sales Dashboard',
+			url: '/sales-dashboard',
+			icon: 'bar_chart',
 			requiredRole: 'user'
 		},
 		{

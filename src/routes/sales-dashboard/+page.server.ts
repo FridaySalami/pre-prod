@@ -1,5 +1,6 @@
 // Server-side data loader for Sales Dashboard
-// Fetches top 100 products by revenue from last 30 days
+// Implements server-side pagination, search, and filtering
+// Uses materialized view for performance
 
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -21,95 +22,189 @@ export interface SalesRecord {
   avg_price: number;
 }
 
-export const load: PageServerLoad = async () => {
+export interface PaginationInfo {
+  currentPage: number;
+  pageSize: number;
+  totalProducts: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+  showing: {
+    from: number;
+    to: number;
+  };
+}
+
+export const load: PageServerLoad = async ({ url }) => {
   try {
     const supabase = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
 
-    // Calculate date 30 days ago
+    // Parse URL parameters for pagination, sorting, and search
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+    const pageSize = parseInt(url.searchParams.get('pageSize') || '50');
+    const sortBy = url.searchParams.get('sortBy') || 'total_revenue';
+    const sortDir = (url.searchParams.get('sortDir') || 'desc') as 'asc' | 'desc';
+    const searchQuery = url.searchParams.get('search')?.trim() || '';
+    const minRevenue = parseFloat(url.searchParams.get('minRevenue') || '0');
+
+    // Validate pageSize
+    const validPageSizes = [25, 50, 100, 250];
+    const validatedPageSize = validPageSizes.includes(pageSize) ? pageSize : 50;
+
+    // Validate sortBy
+    const validSortColumns = [
+      'asin', 'total_revenue', 'total_units', 'total_sessions',
+      'total_page_views', 'avg_conversion', 'avg_buy_box', 'avg_price'
+    ];
+    const validatedSortBy = validSortColumns.includes(sortBy) ? sortBy : 'total_revenue';
+
+    console.log(`📊 Loading sales dashboard: page=${page}, pageSize=${validatedPageSize}, sort=${validatedSortBy} ${sortDir}, search="${searchQuery}"`);
+
+    // Calculate date range
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const dateFilter = thirtyDaysAgo.toISOString().split('T')[0];
 
-    console.log(`📊 Fetching top sellers since ${dateFilter}`);
+    // Try to use materialized view first, fallback to aggregation
+    let products: any[] = [];
+    let totalCount = 0;
+    let dataSource = 'unknown';
 
-    // Fallback: Manual aggregation query (database function not implemented yet)
-    console.log('Fetching all sales data for client-side aggregation...');
+    try {
+      // First, try to query the materialized view
+      console.log('Attempting to query sales_dashboard_30d materialized view...');
 
-    // Fetch ALL data (no limit) by making multiple requests if needed
-    let allData: any[] = [];
-    let from = 0;
-    const batchSize = 1000;
-    let hasMore = true;
+      // Build the base query
+      let countQuery = supabase
+        .from('sales_dashboard_30d')
+        .select('*', { count: 'exact', head: true });
 
-    while (hasMore) {
-      const { data: batch, error: batchError } = await supabase
-        .from('amazon_sales_data')
-        .select('*')
-        .gte('report_date', dateFilter)
-        .range(from, from + batchSize - 1);
+      let dataQuery = supabase
+        .from('sales_dashboard_30d')
+        .select('*');
 
-      if (batchError) {
-        throw new Error(`Failed to fetch sales data: ${batchError.message}`);
+      // Apply search filter if provided
+      if (searchQuery) {
+        const searchFilter = `asin.ilike.%${searchQuery}%`;
+        countQuery = countQuery.or(searchFilter);
+        dataQuery = dataQuery.or(searchFilter);
       }
 
-      if (batch && batch.length > 0) {
-        allData = allData.concat(batch);
-        from += batchSize;
-        hasMore = batch.length === batchSize; // Continue if we got a full batch
-      } else {
-        hasMore = false;
+      // Apply minimum revenue filter
+      if (minRevenue > 0) {
+        countQuery = countQuery.gte('total_revenue', minRevenue);
+        dataQuery = dataQuery.gte('total_revenue', minRevenue);
       }
+
+      // Get total count
+      const { count, error: countError } = await countQuery;
+
+      if (countError) {
+        throw new Error(`Materialized view not available: ${countError.message}`);
+      }
+
+      totalCount = count || 0;
+
+      // Calculate offset
+      const offset = (page - 1) * validatedPageSize;
+
+      // Apply sorting and pagination
+      const { data: viewData, error: viewError } = await dataQuery
+        .order(validatedSortBy, { ascending: sortDir === 'asc' })
+        .range(offset, offset + validatedPageSize - 1);
+
+      if (viewError) {
+        throw new Error(`Query failed: ${viewError.message}`);
+      }
+
+      products = viewData || [];
+      dataSource = 'materialized-view';
+      console.log(`✅ Using materialized view: ${products.length} products (${totalCount} total)`);
+
+    } catch (viewError) {
+      // Fallback to manual aggregation
+      console.log(`⚠️ Materialized view unavailable, falling back to aggregation:`, viewError);
+      const aggregated = await fetchAndAggregateData(supabase, dateFilter, searchQuery, minRevenue);
+
+      totalCount = aggregated.length;
+
+      // Sort in memory
+      aggregated.sort((a, b) => {
+        const aVal = a[validatedSortBy as keyof typeof a];
+        const bVal = b[validatedSortBy as keyof typeof b];
+
+        // Handle null/undefined values
+        if (aVal === null || aVal === undefined) return 1;
+        if (bVal === null || bVal === undefined) return -1;
+
+        if (sortDir === 'asc') {
+          return aVal > bVal ? 1 : -1;
+        } else {
+          return aVal < bVal ? 1 : -1;
+        }
+      });
+
+      // Paginate in memory
+      const offset = (page - 1) * validatedPageSize;
+      products = aggregated.slice(offset, offset + validatedPageSize);
+      dataSource = 'client-side-aggregation';
+      console.log(`✅ Using aggregation: ${products.length} products on page ${page}`);
     }
 
-    console.log(`📦 Fetched ${allData.length} total sales records, aggregating...`);
-
-    // Aggregate in JavaScript
-    const aggregated = aggregateSalesData(allData);
-
-    console.log(`✅ Aggregated into ${aggregated.length} unique products`);
-
-    // Fetch product titles from sku_asin_mapping table
+    // Fetch product titles from sku_asin_mapping
     console.log('📝 Fetching product titles...');
-    const asins = aggregated.map(p => p.asin);
+    const asins = products.map(p => p.asin);
 
-    // Fetch titles in batches
-    let productTitles = new Map<string, string>();
-    const titleBatchSize = 1000;
-
-    for (let i = 0; i < asins.length; i += titleBatchSize) {
-      const batchAsins = asins.slice(i, i + titleBatchSize);
+    if (asins.length > 0) {
       const { data: titleData, error: titleError } = await supabase
         .from('sku_asin_mapping')
         .select('asin1, item_name')
-        .in('asin1', batchAsins);
+        .in('asin1', asins);
 
       if (titleError) {
         console.error('Failed to fetch product titles:', titleError);
       } else if (titleData) {
-        titleData.forEach(row => {
-          if (row.asin1 && row.item_name) {
-            productTitles.set(row.asin1, row.item_name);
-          }
-        });
+        const titleMap = new Map(titleData.map(row => [row.asin1, row.item_name]));
+        products = products.map(product => ({
+          ...product,
+          item_name: titleMap.get(product.asin) || null
+        }));
+        console.log(`✅ Fetched ${titleData.length} product titles`);
       }
     }
 
-    console.log(`✅ Fetched ${productTitles.size} product titles`);
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalCount / validatedPageSize);
+    const showingFrom = totalCount > 0 ? (page - 1) * validatedPageSize + 1 : 0;
+    const showingTo = Math.min(page * validatedPageSize, totalCount);
 
-    // Merge titles into aggregated data
-    const productsWithTitles = aggregated.map(product => ({
-      ...product,
-      item_name: productTitles.get(product.asin) || null
-    }));
+    const pagination: PaginationInfo = {
+      currentPage: page,
+      pageSize: validatedPageSize,
+      totalProducts: totalCount,
+      totalPages: totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+      showing: {
+        from: showingFrom,
+        to: showingTo
+      }
+    };
 
     return {
-      products: productsWithTitles, // Return ALL products with titles
+      products: products as SalesRecord[],
+      pagination,
       dateRange: {
         start: dateFilter,
         end: new Date().toISOString().split('T')[0]
       },
-      totalProducts: productsWithTitles.length,
-      dataSource: 'client-side-aggregation'
+      filters: {
+        search: searchQuery,
+        minRevenue: minRevenue,
+        sortBy: validatedSortBy,
+        sortDir: sortDir
+      },
+      dataSource
     };
 
   } catch (err) {
@@ -117,6 +212,63 @@ export const load: PageServerLoad = async () => {
     throw error(500, `Failed to load sales data: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 };
+
+/**
+ * Fallback: Fetch and aggregate data manually
+ */
+async function fetchAndAggregateData(
+  supabase: any,
+  dateFilter: string,
+  searchQuery: string,
+  minRevenue: number
+): Promise<SalesRecord[]> {
+  console.log('Fetching all sales data for aggregation...');
+
+  let allData: any[] = [];
+  let from = 0;
+  const batchSize = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data: batch, error: batchError } = await supabase
+      .from('amazon_sales_data')
+      .select('*')
+      .gte('report_date', dateFilter)
+      .range(from, from + batchSize - 1);
+
+    if (batchError) {
+      throw new Error(`Failed to fetch sales data: ${batchError.message}`);
+    }
+
+    if (batch && batch.length > 0) {
+      allData = allData.concat(batch);
+      from += batchSize;
+      hasMore = batch.length === batchSize;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  console.log(`📦 Fetched ${allData.length} total sales records`);
+
+  // Aggregate
+  const aggregated = aggregateSalesData(allData);
+
+  // Apply filters
+  let filtered = aggregated;
+
+  if (searchQuery) {
+    filtered = filtered.filter(p =>
+      p.asin.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }
+
+  if (minRevenue > 0) {
+    filtered = filtered.filter(p => p.total_revenue >= minRevenue);
+  }
+
+  return filtered;
+}
 
 /**
  * Client-side aggregation fallback if database function doesn't exist
@@ -175,6 +327,7 @@ function aggregateSalesData(rawData: any[]): SalesRecord[] {
     return {
       asin: group.asin,
       parent_asin: group.parent_asin,
+      item_name: null, // Will be populated later from sku_asin_mapping
       total_revenue: totalRevenue,
       total_units: totalUnits,
       total_sessions: group.sessions.reduce((sum, val) => sum + val, 0),

@@ -1,7 +1,14 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 
 	let { data }: { data: PageData } = $props();
+
+	// Search and filter state
+	let searchInput = $state(data.filters?.search || '');
+	let minRevenueInput = $state(data.filters?.minRevenue?.toString() || '');
 
 	// Sorting state
 	type SortKey =
@@ -13,39 +20,60 @@
 		| 'avg_conversion'
 		| 'avg_buy_box'
 		| 'avg_price';
-	let sortKey = $state<SortKey>('total_revenue');
-	let sortDirection = $state<'asc' | 'desc'>('desc');
+	let sortKey = $state<SortKey>((data.filters?.sortBy as SortKey) || 'total_revenue');
+	let sortDirection = $state<'asc' | 'desc'>(data.filters?.sortDir || 'desc');
 
-	// Sorted products
-	const sortedProducts = $derived.by(() => {
-		const products = [...data.products];
+	// Products from server (already sorted and paginated)
+	const products = $derived(data.products || []);
 
-		products.sort((a, b) => {
-			const aVal = a[sortKey];
-			const bVal = b[sortKey];
-
-			if (aVal === null || aVal === undefined) return 1;
-			if (bVal === null || bVal === undefined) return -1;
-
-			if (sortDirection === 'asc') {
-				return aVal > bVal ? 1 : -1;
-			} else {
-				return aVal < bVal ? 1 : -1;
-			}
-		});
-
-		return products;
-	});
-
-	// Toggle sort
+	// Toggle sort - updates URL to trigger server-side sort
 	function toggleSort(key: SortKey) {
-		if (sortKey === key) {
-			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-		} else {
-			sortKey = key;
-			sortDirection = 'desc'; // Default to descending for new column
-		}
+		const newDirection = sortKey === key && sortDirection === 'desc' ? 'asc' : 'desc';
+		sortKey = key;
+		sortDirection = newDirection;
+
+		const url = new URL($page.url);
+		url.searchParams.set('sortBy', key);
+		url.searchParams.set('sortDir', newDirection);
+		url.searchParams.set('page', '1'); // Reset to first page when sorting changes
+		goto(url.toString());
 	}
+
+	// Apply search and filters
+	function applyFilters() {
+		const url = new URL($page.url);
+
+		if (searchInput.trim()) {
+			url.searchParams.set('search', searchInput.trim());
+		} else {
+			url.searchParams.delete('search');
+		}
+
+		const minRev = parseFloat(minRevenueInput);
+		if (!isNaN(minRev) && minRev > 0) {
+			url.searchParams.set('minRevenue', minRev.toString());
+		} else {
+			url.searchParams.delete('minRevenue');
+		}
+
+		url.searchParams.set('page', '1'); // Reset to first page
+		goto(url.toString());
+	}
+
+	// Clear all filters
+	function clearFilters() {
+		searchInput = '';
+		minRevenueInput = '';
+
+		const url = new URL($page.url);
+		url.searchParams.delete('search');
+		url.searchParams.delete('minRevenue');
+		url.searchParams.set('page', '1');
+		goto(url.toString());
+	}
+
+	// Check if any filters are active
+	const hasActiveFilters = $derived(searchInput || minRevenueInput);
 
 	// Format currency
 	function formatCurrency(value: number): string {
@@ -87,10 +115,94 @@
 				Last 30 days ({data.dateRange.start} to {data.dateRange.end})
 			</p>
 			<div class="mt-4 flex items-center space-x-4 text-sm text-gray-500">
-				<span>📊 {data.totalProducts} products</span>
+				<span>📊 {data.pagination.totalProducts.toLocaleString()} products</span>
 				<span>•</span>
-				<span>🔄 Data refreshed on page load</span>
+				<span>🔄 Data source: {data.dataSource}</span>
+				{#if data.dataSource === 'materialized-view'}
+					<span
+						class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+					>
+						⚡ Optimized
+					</span>
+				{/if}
 			</div>
+		</div>
+
+		<!-- Search and Filters -->
+		<div class="bg-white rounded-lg shadow p-4 mb-6">
+			<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+				<!-- Search -->
+				<div class="md:col-span-2">
+					<label for="search" class="block text-sm font-medium text-gray-700 mb-1">
+						Search Products
+					</label>
+					<input
+						id="search"
+						type="text"
+						bind:value={searchInput}
+						onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+						placeholder="Search by ASIN or product name..."
+						class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+					/>
+				</div>
+
+				<!-- Min Revenue Filter -->
+				<div>
+					<label for="minRevenue" class="block text-sm font-medium text-gray-700 mb-1">
+						Min Revenue (£)
+					</label>
+					<input
+						id="minRevenue"
+						type="number"
+						min="0"
+						step="100"
+						bind:value={minRevenueInput}
+						onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+						placeholder="e.g., 1000"
+						class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+					/>
+				</div>
+
+				<!-- Action Buttons -->
+				<div class="flex items-end gap-2">
+					<button
+						onclick={applyFilters}
+						class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+					>
+						Apply
+					</button>
+					{#if hasActiveFilters}
+						<button
+							onclick={clearFilters}
+							class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+							title="Clear all filters"
+						>
+							✕
+						</button>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Active filters display -->
+			{#if hasActiveFilters}
+				<div class="mt-3 flex flex-wrap gap-2">
+					<span class="text-sm text-gray-600">Active filters:</span>
+					{#if searchInput}
+						<span
+							class="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-sm"
+						>
+							Search: "{searchInput}"
+						</span>
+					{/if}
+					{#if minRevenueInput}
+						<span
+							class="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-sm"
+						>
+							Min Revenue: £{parseFloat(minRevenueInput).toLocaleString()}
+						</span>
+					{/if}
+				</div>
+			{/if}
 		</div>
 
 		<!-- Summary Stats -->
@@ -98,29 +210,32 @@
 			<div class="bg-white rounded-lg shadow p-4">
 				<div class="text-sm text-gray-600">Total Revenue</div>
 				<div class="text-2xl font-bold text-gray-900">
-					{formatCurrency(sortedProducts.reduce((sum, p) => sum + p.total_revenue, 0))}
+					{formatCurrency(products.reduce((sum, p) => sum + p.total_revenue, 0))}
 				</div>
+				<div class="text-xs text-gray-500 mt-1">Current page total</div>
 			</div>
 			<div class="bg-white rounded-lg shadow p-4">
 				<div class="text-sm text-gray-600">Total Units Sold</div>
 				<div class="text-2xl font-bold text-gray-900">
-					{formatNumber(sortedProducts.reduce((sum, p) => sum + p.total_units, 0))}
+					{formatNumber(products.reduce((sum, p) => sum + p.total_units, 0))}
 				</div>
+				<div class="text-xs text-gray-500 mt-1">Current page total</div>
 			</div>
 			<div class="bg-white rounded-lg shadow p-4">
 				<div class="text-sm text-gray-600">Total Sessions</div>
 				<div class="text-2xl font-bold text-gray-900">
-					{formatNumber(sortedProducts.reduce((sum, p) => sum + p.total_sessions, 0))}
+					{formatNumber(products.reduce((sum, p) => sum + p.total_sessions, 0))}
 				</div>
+				<div class="text-xs text-gray-500 mt-1">Current page total</div>
 			</div>
 			<div class="bg-white rounded-lg shadow p-4">
 				<div class="text-sm text-gray-600">Avg Conversion</div>
 				<div class="text-2xl font-bold text-gray-900">
 					{formatPercent(
-						sortedProducts.reduce((sum, p) => sum + p.avg_conversion, 0) / sortedProducts.length ||
-							0
+						products.reduce((sum, p) => sum + p.avg_conversion, 0) / products.length || 0
 					)}
 				</div>
+				<div class="text-xs text-gray-500 mt-1">Current page average</div>
 			</div>
 		</div>
 
@@ -188,16 +303,18 @@
 						</tr>
 					</thead>
 					<tbody class="bg-white divide-y divide-gray-200">
-						{#each sortedProducts as product, i}
+						{#each products as product, i}
 							<tr class="hover:bg-gray-50 transition-colors">
 								<td class="px-3 py-4 whitespace-nowrap">
 									<a
 										href="/buy-box-alerts/product/{product.asin}"
+										target="_blank"
+										rel="noopener noreferrer"
 										class="text-sm font-mono text-blue-600 hover:text-blue-800 hover:underline"
 									>
 										{product.asin}
 									</a>
-									{#if i < 3}
+									{#if i < 3 && data.pagination.currentPage === 1}
 										<span class="ml-2 text-xs">
 											{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}
 										</span>
@@ -253,7 +370,7 @@
 				</table>
 			</div>
 
-			{#if sortedProducts.length === 0}
+			{#if products.length === 0}
 				<div class="text-center py-12">
 					<svg
 						class="mx-auto h-12 w-12 text-gray-400"
@@ -269,16 +386,47 @@
 						/>
 					</svg>
 					<h3 class="mt-2 text-sm font-medium text-gray-900">No sales data</h3>
-					<p class="mt-1 text-sm text-gray-500">No products found for the selected date range.</p>
+					<p class="mt-1 text-sm text-gray-500">
+						{#if hasActiveFilters}
+							No products match your search criteria. Try adjusting your filters.
+						{:else}
+							No products found for the selected date range.
+						{/if}
+					</p>
+					{#if hasActiveFilters}
+						<button
+							onclick={clearFilters}
+							class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+						>
+							Clear Filters
+						</button>
+					{/if}
 				</div>
 			{/if}
 		</div>
 
+		<!-- Pagination -->
+		{#if products.length > 0}
+			<Pagination
+				currentPage={data.pagination.currentPage}
+				totalPages={data.pagination.totalPages}
+				pageSize={data.pagination.pageSize}
+				totalProducts={data.pagination.totalProducts}
+				hasNext={data.pagination.hasNext}
+				hasPrev={data.pagination.hasPrev}
+				showing={data.pagination.showing}
+			/>
+		{/if}
+
 		<!-- Footer Info -->
 		<div class="mt-6 text-sm text-gray-500 text-center">
 			<p>
-				Data source: Amazon Reports API • Updated daily via cron job • Showing top {data.totalProducts}
-				products
+				Data source: Amazon Reports API • Updated daily via cron job
+				{#if data.dataSource === 'materialized-view'}
+					• Using optimized materialized view
+				{:else}
+					• Real-time aggregation
+				{/if}
 			</p>
 		</div>
 	</div>
