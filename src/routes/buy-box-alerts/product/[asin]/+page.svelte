@@ -12,6 +12,10 @@
 	let chartCanvas = $state<HTMLCanvasElement | null>(null);
 	let chartInstance = $state<Chart | null>(null);
 
+	// Competitor filter state
+	type CompetitorFilter = 'all' | 'us-only' | 'us-vs-leader' | 'top-3';
+	let competitorFilter = $state<CompetitorFilter>('all');
+
 	const OUR_SELLER_ID = 'A2D8NG39VURSL3';
 
 	// Filter history based on selected time range
@@ -275,6 +279,29 @@
 					`Outlier filtering: Your avg price £${yourAveragePrice.toFixed(2)}, excluding prices above £${outlierThreshold.toFixed(2)}`
 				);
 
+				// Filter competitors based on selected filter
+				let competitorsToShow = [...data.competitors];
+
+				if (competitorFilter === 'us-only') {
+					// Show no competitors, only "Your Price" and "Market Low" lines
+					competitorsToShow = [];
+				} else if (competitorFilter === 'us-vs-leader') {
+					// Show only the market leader (lowest current price)
+					const sortedByPrice = [...data.competitors].sort(
+						(a, b) => (a.currentPrice || Infinity) - (b.currentPrice || Infinity)
+					);
+					competitorsToShow = sortedByPrice.slice(0, 1);
+				} else if (competitorFilter === 'top-3') {
+					// Show top 3 competitors (by lowest price)
+					const sortedByPrice = [...data.competitors].sort(
+						(a, b) => (a.currentPrice || Infinity) - (b.currentPrice || Infinity)
+					);
+					competitorsToShow = sortedByPrice.slice(0, 3);
+				}
+				// else 'all' - show all competitors (default)
+
+				console.log(`Filter: ${competitorFilter}, showing ${competitorsToShow.length} competitors`);
+
 				// Generate distinct colors for competitors (excluding green)
 				const competitorColors = [
 					'rgb(239, 68, 68)', // Red
@@ -289,8 +316,8 @@
 					'rgb(217, 70, 239)' // Magenta
 				];
 
-				// Create a line for each competitor
-				data.competitors.slice(0, 10).forEach((competitor: any, index: number) => {
+				// Create a line for each filtered competitor
+				competitorsToShow.slice(0, 10).forEach((competitor: any, index: number) => {
 					// Extract this competitor's prices from filtered history
 					const competitorPrices = filteredHistory
 						.map((h: any) => {
@@ -449,6 +476,17 @@
 	// Change time range filter
 	function changeTimeRange(range: typeof timeRange) {
 		timeRange = range;
+		// Use setTimeout to ensure state update completes before chart recreation
+		setTimeout(() => {
+			if (chartCanvas) {
+				createChart();
+			}
+		}, 0);
+	}
+
+	// Change competitor filter
+	function changeCompetitorFilter(filter: CompetitorFilter) {
+		competitorFilter = filter;
 		// Use setTimeout to ensure state update completes before chart recreation
 		setTimeout(() => {
 			if (chartCanvas) {
@@ -1270,6 +1308,45 @@
 							</button>
 						</div>
 					</div>
+
+					<!-- Competitor Filter Buttons -->
+					{#if activeTab === 'price' && data.competitors && data.competitors.length > 0}
+						<div class="flex items-center space-x-2 mb-4 pb-4 border-b border-gray-200">
+							<span class="text-sm font-medium text-gray-700">Show:</span>
+							<button
+								onclick={() => changeCompetitorFilter('all')}
+								class="px-3 py-1 text-xs rounded {competitorFilter === 'all'
+									? 'bg-green-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								All Competitors
+							</button>
+							<button
+								onclick={() => changeCompetitorFilter('us-only')}
+								class="px-3 py-1 text-xs rounded {competitorFilter === 'us-only'
+									? 'bg-green-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								Us Only
+							</button>
+							<button
+								onclick={() => changeCompetitorFilter('us-vs-leader')}
+								class="px-3 py-1 text-xs rounded {competitorFilter === 'us-vs-leader'
+									? 'bg-green-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								Us vs Market Leader
+							</button>
+							<button
+								onclick={() => changeCompetitorFilter('top-3')}
+								class="px-3 py-1 text-xs rounded {competitorFilter === 'top-3'
+									? 'bg-green-600 text-white'
+									: 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+							>
+								Top 3 Competitors
+							</button>
+						</div>
+					{/if}
 
 					<!-- Chart Canvas -->
 					<div class="relative" style="height: 400px;">
