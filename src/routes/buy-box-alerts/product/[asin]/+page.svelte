@@ -84,6 +84,9 @@
 	// Get listing health score
 	const healthScore = data.healthScore || null;
 
+	// Get sales data from Amazon Reports API
+	const salesData = data.salesData || null;
+
 	// Get current state metrics
 	const currentState = data.currentState || {};
 	const yourPrice =
@@ -594,29 +597,89 @@
 				</div>
 			{/if}
 
-			<!-- 30-Day Revenue (Coming Soon) -->
+			<!-- 30-Day Revenue (Real Data from Amazon Reports API) -->
 			<div
-				class="bg-gray-50 rounded-lg shadow-sm p-6 border-2 border-dashed border-gray-300 opacity-60"
+				class="bg-white rounded-lg shadow p-6 border-l-4 {salesData
+					? 'border-green-500'
+					: 'border-gray-300'}"
 			>
-				<div class="text-sm text-gray-500 mb-1">30-Day Revenue</div>
-				<div class="text-2xl font-semibold text-gray-400 mb-2">—</div>
-				<div class="text-xs text-gray-400 mb-3">Unit Sales: —</div>
-				<div class="mt-2 flex items-center text-gray-500 text-sm bg-gray-100 p-2 rounded">
-					<svg
-						class="w-4 h-4 mr-2 flex-shrink-0"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-						/>
-					</svg>
-					<span class="text-xs">Amazon Reports API Integration - To Be Implemented</span>
-				</div>
+				<div class="text-sm text-gray-600 mb-1">30-Day Revenue</div>
+				{#if salesData}
+					<div class="text-3xl font-bold text-gray-900 mb-2">
+						£{salesData.totalRevenue.toLocaleString('en-GB', {
+							minimumFractionDigits: 2,
+							maximumFractionDigits: 2
+						})}
+					</div>
+					<div class="text-sm text-gray-600 mb-3">
+						Unit Sales: <span class="font-semibold"
+							>{salesData.totalUnits.toLocaleString('en-GB')}</span
+						>
+					</div>
+
+					<!-- Key Metrics Grid -->
+					<div class="grid grid-cols-2 gap-3 pt-3 border-t border-gray-200">
+						<div>
+							<div class="text-xs text-gray-500">Sessions</div>
+							<div class="text-sm font-semibold text-gray-900">
+								{salesData.totalSessions.toLocaleString('en-GB')}
+							</div>
+						</div>
+						<div>
+							<div class="text-xs text-gray-500">Page Views</div>
+							<div class="text-sm font-semibold text-gray-900">
+								{salesData.totalPageViews.toLocaleString('en-GB')}
+							</div>
+						</div>
+						<div>
+							<div class="text-xs text-gray-500">Buy Box %</div>
+							<div class="text-sm font-semibold text-gray-900">
+								{salesData.avgBuyBoxPercentage}%
+							</div>
+						</div>
+						<div>
+							<div class="text-xs text-gray-500">Conversion</div>
+							<div class="text-sm font-semibold text-gray-900">
+								{salesData.avgConversionRate}%
+							</div>
+						</div>
+					</div>
+
+					<!-- Date Range Info -->
+					<div class="mt-3 pt-3 border-t border-gray-200">
+						<div class="flex items-center justify-between text-xs text-gray-500">
+							<span>{salesData.recordCount} days of data</span>
+							<span
+								>{new Date(salesData.dateRange.start).toLocaleDateString('en-GB', {
+									month: 'short',
+									day: 'numeric'
+								})} - {new Date(salesData.dateRange.end).toLocaleDateString('en-GB', {
+									month: 'short',
+									day: 'numeric'
+								})}</span
+							>
+						</div>
+					</div>
+				{:else}
+					<div class="text-2xl font-semibold text-gray-400 mb-2">—</div>
+					<div class="text-xs text-gray-400 mb-3">Unit Sales: —</div>
+					<div class="mt-2 flex items-center text-gray-500 text-sm bg-gray-100 p-2 rounded">
+						<svg
+							class="w-4 h-4 mr-2 flex-shrink-0"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+							/>
+						</svg>
+						<span class="text-xs">No sales data available for the last 30 days</span>
+					</div>
+				{/if}
 			</div>
 
 			<!-- Listing Health Score -->

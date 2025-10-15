@@ -40,7 +40,9 @@ const ROUTE_PROTECTION = {
     '/api/quick-price-check', // Temporarily public for debugging
     '/api/daily-report', // Public for Make.com integration
     '/api/product-lookup', // Public for internal product lookups
-    '/api/product-lookup/test' // Public for testing
+    '/api/product-lookup/test', // Public for testing
+    '/api/cron/daily-sales-report', // Daily cron job endpoint with Bearer token auth
+    '/api/cron/backfill-sales-report' // One-time backfill endpoint with Bearer token auth
     // Note: '/' is NOT public - it should redirect to login if not authenticated
   ],
 

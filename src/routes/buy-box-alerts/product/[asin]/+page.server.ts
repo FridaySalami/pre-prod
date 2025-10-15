@@ -3,10 +3,12 @@
 
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import { createClient } from '@supabase/supabase-js';
 import { SPAPIClient } from '$lib/amazon/sp-api-client';
 import { CatalogService } from '$lib/amazon/catalog-service';
 import { FeesService } from '$lib/amazon/fees-service';
 import { calculateListingHealth, type CompetitorData, type BuyBoxData } from '$lib/amazon/listing-health';
+import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import {
   AMAZON_CLIENT_ID,
   AMAZON_CLIENT_SECRET,
@@ -14,7 +16,8 @@ import {
   AMAZON_AWS_ACCESS_KEY_ID,
   AMAZON_AWS_SECRET_ACCESS_KEY,
   AMAZON_SELLER_ID,
-  AMAZON_ROLE_ARN
+  AMAZON_ROLE_ARN,
+  PRIVATE_SUPABASE_SERVICE_KEY
 } from '$env/static/private';
 
 export const load: PageServerLoad = async ({ params, fetch, url }) => {
@@ -100,6 +103,60 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
       }
     }
 
+    // Fetch 30-day sales data from amazon_sales_data table
+    let salesData = null;
+    try {
+      const supabase = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
+
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+      const { data: salesRecords, error: salesError } = await supabase
+        .from('amazon_sales_data')
+        .select('*')
+        .eq('asin', asin)
+        .gte('report_date', thirtyDaysAgoStr)
+        .order('report_date', { ascending: false });
+
+      if (salesError) {
+        console.error(`Failed to fetch sales data for ${asin}:`, salesError);
+      } else if (salesRecords && salesRecords.length > 0) {
+        // Calculate 30-day totals
+        const totalRevenue = salesRecords.reduce((sum, record) => sum + (record.ordered_product_sales || 0), 0);
+        const totalUnits = salesRecords.reduce((sum, record) => sum + (record.ordered_units || 0), 0);
+        const totalSessions = salesRecords.reduce((sum, record) => sum + (record.sessions || 0), 0);
+        const totalPageViews = salesRecords.reduce((sum, record) => sum + (record.page_views || 0), 0);
+
+        // Calculate averages
+        const avgBuyBoxPercentage = salesRecords.reduce((sum, record) =>
+          sum + (record.buy_box_percentage || 0), 0) / salesRecords.length;
+        const avgConversionRate = salesRecords.reduce((sum, record) =>
+          sum + (record.unit_session_percentage || 0), 0) / salesRecords.length;
+
+        salesData = {
+          totalRevenue,
+          totalUnits,
+          totalSessions,
+          totalPageViews,
+          avgBuyBoxPercentage: Math.round(avgBuyBoxPercentage * 100) / 100,
+          avgConversionRate: Math.round(avgConversionRate * 100) / 100,
+          recordCount: salesRecords.length,
+          dateRange: {
+            start: salesRecords[salesRecords.length - 1].report_date,
+            end: salesRecords[0].report_date
+          }
+        };
+
+        console.log(`✅ Fetched sales data for ${asin}: £${totalRevenue.toFixed(2)} revenue, ${totalUnits} units over ${salesRecords.length} days`);
+      } else {
+        console.log(`No sales data found for ${asin} in the last 30 days`);
+      }
+    } catch (salesErr) {
+      console.error(`Failed to fetch sales data for ${asin}:`, salesErr);
+      // Continue without sales data
+    }
+
     // Calculate listing health score
     let healthScore = null;
     if (catalogData) {
@@ -142,6 +199,7 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
       catalogData, // NEW: Catalog API data
       feesData, // NEW: Fees API data
       healthScore, // NEW: Listing health score
+      salesData, // NEW: 30-day sales metrics from Amazon Reports API
       daysRequested: parseInt(days)
     };
   } catch (err) {
