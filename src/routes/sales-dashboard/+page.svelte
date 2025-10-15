@@ -76,7 +76,8 @@
 	const hasActiveFilters = $derived(searchInput || minRevenueInput);
 
 	// Format currency
-	function formatCurrency(value: number): string {
+	function formatCurrency(value: number | null): string {
+		if (value === null || value === undefined) return '£0.00';
 		return new Intl.NumberFormat('en-GB', {
 			style: 'currency',
 			currency: 'GBP',
@@ -86,12 +87,14 @@
 	}
 
 	// Format number
-	function formatNumber(value: number): string {
+	function formatNumber(value: number | null): string {
+		if (value === null || value === undefined) return '0';
 		return new Intl.NumberFormat('en-GB').format(Math.round(value));
 	}
 
 	// Format percentage
-	function formatPercent(value: number): string {
+	function formatPercent(value: number | null): string {
+		if (value === null || value === undefined) return '0.0%';
 		return `${value.toFixed(1)}%`;
 	}
 
@@ -141,9 +144,12 @@
 						type="text"
 						bind:value={searchInput}
 						onkeydown={(e) => e.key === 'Enter' && applyFilters()}
-						placeholder="Search by ASIN or product name..."
+						placeholder="Search by ASIN or product name (e.g., 'Callebaut', 'B08...')"
 						class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
 					/>
+					<p class="mt-1 text-xs text-gray-500">
+						💡 Tip: Partial matches work (e.g., "callebaut" finds all Callebaut products)
+					</p>
 				</div>
 
 				<!-- Min Revenue Filter -->

@@ -155,6 +155,32 @@
 		return sellerId.length > 12 ? `${sellerId.substring(0, 10)}...` : sellerId;
 	}
 
+	// Clear catalog cache for this ASIN
+	let isClearingCache = $state(false);
+	async function clearCatalogCache() {
+		if (isClearingCache) return;
+		
+		isClearingCache = true;
+		try {
+			const response = await fetch(`/api/catalog-cache/${data.asin}`, {
+				method: 'DELETE'
+			});
+			
+			if (response.ok) {
+				// Reload the page to fetch fresh data
+				window.location.reload();
+			} else {
+				const result = await response.json();
+				alert(`Error: ${result.error || 'Failed to clear cache'}`);
+				isClearingCache = false;
+			}
+		} catch (error) {
+			console.error('Error clearing cache:', error);
+			alert('Failed to clear cache. Please try again.');
+			isClearingCache = false;
+		}
+	}
+
 	// Generate a consistent color for each seller
 	function getSellerColor(sellerId: string, index: number): string {
 		const colors = [
@@ -234,6 +260,21 @@
 			if (data.competitors && data.competitors.length > 0) {
 				console.log('Adding competitor lines for', data.competitors.length, 'competitors');
 
+				// Calculate outlier threshold based on your price
+				// Exclude prices that are more than 50% above your price (adjustable)
+				const yourAveragePrice = filteredHistory
+					.map((h: any) => h.yourOffer?.landedPrice || h.yourPrice || 0)
+					.filter((p: number) => p > 0)
+					.reduce(
+						(sum: number, p: number, _index: number, arr: number[]) => sum + p / arr.length,
+						0
+					);
+
+				const outlierThreshold = yourAveragePrice * 1.5; // 150% of your price
+				console.log(
+					`Outlier filtering: Your avg price £${yourAveragePrice.toFixed(2)}, excluding prices above £${outlierThreshold.toFixed(2)}`
+				);
+
 				// Generate distinct colors for competitors (excluding green)
 				const competitorColors = [
 					'rgb(239, 68, 68)', // Red
@@ -257,15 +298,22 @@
 							const sellerData = h.competitorPrices?.find(
 								(cp: any) => cp.seller === competitor.sellerId
 							);
+							const price = sellerData?.landedPrice || null;
+
+							// Filter out outlier prices that are too high above your price
+							if (price !== null && price > outlierThreshold) {
+								return { x: new Date(h.timestamp), y: null }; // Exclude outlier
+							}
+
 							return {
 								x: new Date(h.timestamp),
-								y: sellerData?.landedPrice || null
+								y: price
 							};
 						})
 						.filter((point: any) => point.y !== null);
 
 					console.log(
-						`Competitor ${competitor.sellerId}: ${competitorPrices.length} price points`,
+						`Competitor ${competitor.sellerId}: ${competitorPrices.length} price points (outliers filtered)`,
 						competitorPrices
 					);
 
@@ -1557,5 +1605,30 @@
 				</div>
 			</div>
 		{/if}
+	</div>
+
+	<!-- Clear Cache Button (Bottom of page) -->
+	<div class="mt-8 pb-6 flex justify-center">
+		<button
+			onclick={clearCatalogCache}
+			disabled={isClearingCache}
+			class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded border border-gray-300 text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+			title="Clear cached product data and reload fresh from Amazon"
+		>
+			<svg
+				class="w-3.5 h-3.5 mr-1.5 {isClearingCache ? 'animate-spin' : ''}"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+				/>
+			</svg>
+			{isClearingCache ? 'Clearing...' : 'Clear Cache & Refresh'}
+		</button>
 	</div>
 </div>

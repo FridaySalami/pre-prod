@@ -74,6 +74,52 @@ export const load: PageServerLoad = async ({ url }) => {
       // First, try to query the materialized view
       console.log('Attempting to query sales_dashboard_30d materialized view...');
 
+      // If search query exists, find matching ASINs from product names first
+      let matchingAsins: string[] = [];
+      if (searchQuery) {
+        console.log(`🔍 Searching for products matching: "${searchQuery}"`);
+        const { data: searchResults, error: searchError } = await supabase
+          .from('sku_asin_mapping')
+          .select('asin1, item_name')
+          .or(`asin1.ilike.%${searchQuery}%,item_name.ilike.%${searchQuery}%`);
+
+        if (searchError) {
+          console.error('Search error:', searchError);
+        } else if (searchResults && searchResults.length > 0) {
+          matchingAsins = searchResults.map((r: { asin1: string }) => r.asin1).filter(Boolean);
+          console.log(`✅ Found ${matchingAsins.length} matching products`);
+          console.log(`   First 3 matches:`, searchResults.slice(0, 3).map((r: { asin1: string; item_name: string }) => ({ asin: r.asin1, name: r.item_name })));
+        }
+
+        // If search provided but no matches found, return empty results
+        if (matchingAsins.length === 0) {
+          console.log('⚠️ No products found matching search query');
+          return {
+            products: [],
+            pagination: {
+              currentPage: page,
+              pageSize: validatedPageSize,
+              totalProducts: 0,
+              totalPages: 0,
+              hasNext: false,
+              hasPrev: false,
+              showing: { from: 0, to: 0 }
+            },
+            dateRange: {
+              start: dateFilter,
+              end: new Date().toISOString().split('T')[0]
+            },
+            filters: {
+              search: searchQuery,
+              minRevenue: minRevenue,
+              sortBy: validatedSortBy,
+              sortDir: sortDir
+            },
+            dataSource: 'no-results'
+          };
+        }
+      }
+
       // Build the base query
       let countQuery = supabase
         .from('sales_dashboard_30d')
@@ -83,11 +129,15 @@ export const load: PageServerLoad = async ({ url }) => {
         .from('sales_dashboard_30d')
         .select('*');
 
-      // Apply search filter if provided
-      if (searchQuery) {
-        const searchFilter = `asin.ilike.%${searchQuery}%`;
-        countQuery = countQuery.or(searchFilter);
-        dataQuery = dataQuery.or(searchFilter);
+      // Apply search filter if provided (search in matched ASINs)
+      if (searchQuery && matchingAsins.length > 0) {
+        console.log(`🔍 Filtering by ${matchingAsins.length} matching ASINs:`, matchingAsins.slice(0, 5));
+        countQuery = countQuery.in('asin', matchingAsins);
+        dataQuery = dataQuery.in('asin', matchingAsins);
+      } else if (searchQuery) {
+        console.log('⚠️ Search query provided but no matching ASINs found');
+      } else {
+        console.log('ℹ️ No search query - showing all products');
       }
 
       // Apply minimum revenue filter
@@ -108,9 +158,11 @@ export const load: PageServerLoad = async ({ url }) => {
       // Calculate offset
       const offset = (page - 1) * validatedPageSize;
 
-      // Apply sorting and pagination
+      // Apply sorting and pagination with null handling
+      // For descending sorts, we want nulls last (highest values first, nulls at bottom)
+      // For ascending sorts, we want nulls last as well (lowest values first, nulls at bottom)
       const { data: viewData, error: viewError } = await dataQuery
-        .order(validatedSortBy, { ascending: sortDir === 'asc' })
+        .order(validatedSortBy, { ascending: sortDir === 'asc', nullsFirst: false })
         .range(offset, offset + validatedPageSize - 1);
 
       if (viewError) {
@@ -224,6 +276,26 @@ async function fetchAndAggregateData(
 ): Promise<SalesRecord[]> {
   console.log('Fetching all sales data for aggregation...');
 
+  // If search query exists, find matching ASINs first
+  let matchingAsins: string[] = [];
+  if (searchQuery) {
+    console.log(`🔍 Searching for products matching: "${searchQuery}"`);
+    const { data: searchResults, error: searchError } = await supabase
+      .from('sku_asin_mapping')
+      .select('asin1, item_name')
+      .or(`asin1.ilike.%${searchQuery}%,item_name.ilike.%${searchQuery}%`);
+
+    if (!searchError && searchResults && searchResults.length > 0) {
+      matchingAsins = searchResults.map((r: { asin1: string }) => r.asin1).filter(Boolean);
+      console.log(`✅ Found ${matchingAsins.length} matching products`);
+      console.log(`   First 3 matches:`, searchResults.slice(0, 3).map((r: { asin1: string; item_name: string }) => ({ asin: r.asin1, name: r.item_name })));
+    } else {
+      // No matches found
+      console.log('⚠️ No products found matching search query');
+      return [];
+    }
+  }
+
   let allData: any[] = [];
   let from = 0;
   const batchSize = 1000;
@@ -257,10 +329,8 @@ async function fetchAndAggregateData(
   // Apply filters
   let filtered = aggregated;
 
-  if (searchQuery) {
-    filtered = filtered.filter(p =>
-      p.asin.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+  if (searchQuery && matchingAsins.length > 0) {
+    filtered = filtered.filter(p => matchingAsins.includes(p.asin));
   }
 
   if (minRevenue > 0) {

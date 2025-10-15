@@ -115,8 +115,25 @@ export class CatalogService {
     const mainImageObj = images.find((img: any) => img.variant === 'MAIN') || images[0];
     const mainImage = mainImageObj?.link;
 
-    // Process all images
-    const productImages: CatalogImage[] = images.map((img: any) => ({
+    // Process all images and deduplicate by variant
+    // Amazon returns same image at different sizes with different IDs:
+    // - MAIN: 61e3RmHxD9L (1000px), 51ukzSfH1AL (500px), 51ukzSfH1AL._SL75_ (75px)
+    // - PT01: 61jSZIelLxL (1000px), 41RYlEth61L (500px), etc.
+    // We want the largest version of each VARIANT (MAIN, PT01, PT02, etc.)
+    const imageMap = new Map<string, any>();
+
+    images.forEach((img: any) => {
+      const variant = img.variant;
+
+      // Keep the largest version (highest width) for each variant
+      const existing = imageMap.get(variant);
+      if (!existing || img.width > existing.width) {
+        imageMap.set(variant, img);
+      }
+    });
+
+    // Convert back to array, maintaining order
+    const productImages: CatalogImage[] = Array.from(imageMap.values()).map((img: any) => ({
       variant: img.variant,
       link: img.link,
       height: img.height,
