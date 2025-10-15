@@ -170,16 +170,26 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
         } : undefined;
 
         // Prepare buy box data
+        // Use real 30-day Buy Box % from Amazon Reports API if available, otherwise fall back to alert history
         const buyBoxData: BuyBoxData | undefined = alertData.currentState ? {
           currentlyHasBuyBox: alertData.currentState.has_buy_box || false,
-          winRate: alertData.analytics?.buyBoxWinRate || 0, // Fixed: was buybox_win_rate, should be buyBoxWinRate
+          winRate: salesData?.avgBuyBoxPercentage || alertData.analytics?.buyBoxWinRate || 0,
           totalChecks: alertData.history?.length || 0,
           isFBA: alertData.currentState.is_fba || false,
           isPrime: alertData.currentState.is_prime || false
         } : undefined;
 
+        console.log(`📊 Buy Box Data for health score:`, {
+          currentlyHasBuyBox: buyBoxData?.currentlyHasBuyBox,
+          winRate: buyBoxData?.winRate,
+          source: salesData?.avgBuyBoxPercentage ? 'Amazon Reports API (30-day avg)' : 'Alert history'
+        });
+
         healthScore = calculateListingHealth(catalogData, competitorData, buyBoxData);
         console.log(`✅ Calculated health score for ${asin}: ${healthScore.overall}/10 (${healthScore.grade})`);
+        if (salesData?.avgBuyBoxPercentage) {
+          console.log(`   Using real 30-day Buy Box %: ${salesData.avgBuyBoxPercentage}% (from Amazon Reports API)`);
+        }
       } catch (healthErr) {
         console.error(`Failed to calculate health score for ${asin}:`, healthErr);
         // Continue without health score

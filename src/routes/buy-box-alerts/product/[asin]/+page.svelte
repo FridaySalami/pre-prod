@@ -644,22 +644,6 @@
 							</div>
 						</div>
 					</div>
-
-					<!-- Date Range Info -->
-					<div class="mt-3 pt-3 border-t border-gray-200">
-						<div class="flex items-center justify-between text-xs text-gray-500">
-							<span>{salesData.recordCount} days of data</span>
-							<span
-								>{new Date(salesData.dateRange.start).toLocaleDateString('en-GB', {
-									month: 'short',
-									day: 'numeric'
-								})} - {new Date(salesData.dateRange.end).toLocaleDateString('en-GB', {
-									month: 'short',
-									day: 'numeric'
-								})}</span
-							>
-						</div>
-					</div>
 				{:else}
 					<div class="text-2xl font-semibold text-gray-400 mb-2">—</div>
 					<div class="text-xs text-gray-400 mb-3">Unit Sales: —</div>
