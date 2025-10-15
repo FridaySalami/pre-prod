@@ -159,13 +159,13 @@
 	let isClearingCache = $state(false);
 	async function clearCatalogCache() {
 		if (isClearingCache) return;
-		
+
 		isClearingCache = true;
 		try {
 			const response = await fetch(`/api/catalog-cache/${data.asin}`, {
 				method: 'DELETE'
 			});
-			
+
 			if (response.ok) {
 				// Reload the page to fetch fresh data
 				window.location.reload();
@@ -481,6 +481,10 @@
 		};
 	});
 </script>
+
+<svelte:head>
+	<title>{productTitle} - Product Analysis</title>
+</svelte:head>
 
 <!-- Helium 10 Style Layout -->
 <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-6">

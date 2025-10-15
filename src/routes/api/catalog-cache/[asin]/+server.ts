@@ -35,9 +35,9 @@ export const DELETE: RequestHandler = async ({ params }) => {
 
     console.log(`✅ Cache cleared for ASIN: ${asin}`);
 
-    return json({ 
-      success: true, 
-      message: `Cache cleared for ${asin}. Page will reload with fresh data.` 
+    return json({
+      success: true,
+      message: `Cache cleared for ${asin}. Page will reload with fresh data.`
     });
 
   } catch (err) {
