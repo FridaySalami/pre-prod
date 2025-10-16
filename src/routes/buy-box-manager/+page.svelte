@@ -22,6 +22,16 @@
 	let toastNotifications: ToastNotification[] = [];
 	let toastIdCounter = 0;
 
+	// Celebration sprite animation
+	let showCelebration = false;
+
+	function triggerCelebration() {
+		showCelebration = true;
+		setTimeout(() => {
+			showCelebration = false;
+		}, 1000);
+	}
+
 	function showToast(
 		type: ToastNotification['type'],
 		title: string,
@@ -4852,7 +4862,8 @@
 																status: 'pending'
 															});
 
-															// Item added to basket (no toast notification)
+															// Trigger celebration animation
+															triggerCelebration();
 														}}
 														title="Add to pricing basket for bulk update"
 													>
@@ -4949,6 +4960,25 @@
 	<BasketSidebar />
 </div>
 
+<!-- Celebration Sprite Animation -->
+{#if showCelebration}
+	<div class="celebration-container" transition:fade={{ duration: 300 }}>
+		<div class="celebration-sprite">
+			<svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+				<circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none" />
+				<path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
+			</svg>
+		</div>
+		<!-- Confetti particles -->
+		{#each Array(12) as _, i}
+			<div
+				class="confetti"
+				style="--angle: {i * 30}deg; --delay: {i * 0.05}s; --hue: {i * 30}deg;"
+			></div>
+		{/each}
+	</div>
+{/if}
+
 <style>
 	/* Row animation for successful updates */
 	:global(.updated-row) {
@@ -5020,6 +5050,119 @@
 		}
 		50% {
 			opacity: 0.8;
+		}
+	}
+
+	/* Celebration Sprite Animation */
+	.celebration-container {
+		position: fixed;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+		z-index: 9999;
+	}
+
+	.celebration-sprite {
+		position: relative;
+		width: 80px;
+		height: 80px;
+		animation: celebration-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+	}
+
+	.checkmark {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		display: block;
+		stroke-width: 3;
+		stroke: #22c55e;
+		stroke-miterlimit: 10;
+		box-shadow: inset 0px 0px 0px #22c55e;
+		animation:
+			checkmark-fill 0.4s ease-in-out 0.4s forwards,
+			checkmark-scale 0.3s ease-in-out 0.9s both;
+	}
+
+	.checkmark-circle {
+		stroke-dasharray: 166;
+		stroke-dashoffset: 166;
+		stroke-width: 3;
+		stroke-miterlimit: 10;
+		stroke: #22c55e;
+		fill: #fff;
+		animation: checkmark-stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+	}
+
+	.checkmark-check {
+		transform-origin: 50% 50%;
+		stroke-dasharray: 48;
+		stroke-dashoffset: 48;
+		stroke-width: 3;
+		stroke: #22c55e;
+		animation: checkmark-stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
+	}
+
+	@keyframes checkmark-stroke {
+		100% {
+			stroke-dashoffset: 0;
+		}
+	}
+
+	@keyframes checkmark-scale {
+		0%,
+		100% {
+			transform: none;
+		}
+		50% {
+			transform: scale3d(1.1, 1.1, 1);
+		}
+	}
+
+	@keyframes checkmark-fill {
+		100% {
+			box-shadow: inset 0px 0px 0px 30px #22c55e;
+		}
+	}
+
+	@keyframes celebration-pop {
+		0% {
+			transform: scale(0) rotate(0deg);
+			opacity: 0;
+		}
+		50% {
+			transform: scale(1.2) rotate(10deg);
+		}
+		100% {
+			transform: scale(1) rotate(0deg);
+			opacity: 1;
+		}
+	}
+
+	.confetti {
+		position: absolute;
+		width: 8px;
+		height: 8px;
+		background-color: hsl(var(--hue), 70%, 60%);
+		top: 50%;
+		left: 50%;
+		animation: confetti-burst 0.8s ease-out forwards;
+		animation-delay: var(--delay);
+		border-radius: 2px;
+		opacity: 0;
+	}
+
+	@keyframes confetti-burst {
+		0% {
+			transform: translate(-50%, -50%) rotate(var(--angle)) translateY(0) scale(0);
+			opacity: 1;
+		}
+		50% {
+			opacity: 1;
+		}
+		100% {
+			transform: translate(-50%, -50%) rotate(var(--angle)) translateY(-120px) scale(0.3);
+			opacity: 0;
 		}
 	}
 </style>
