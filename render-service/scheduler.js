@@ -12,6 +12,7 @@ const axios = require('axios');
 
 const FRONTEND_URL = 'https://operations.chefstorecookbook.com';
 const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'https://buy-box-render-service-4603.onrender.com';
+const API_KEY = process.env.EXTERNAL_API_KEY || process.env.MAKE_COM_API_KEY;
 
 async function clearAllData() {
   try {
@@ -21,7 +22,8 @@ async function clearAllData() {
     const response = await axios.delete(`${FRONTEND_URL}/api/buybox/clear`, {
       timeout: 30000,
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY
       }
     });
 
@@ -109,8 +111,14 @@ if (!RENDER_SERVICE_URL) {
   process.exit(1);
 }
 
+if (!API_KEY) {
+  console.error('❌ API key not configured. Please set EXTERNAL_API_KEY or MAKE_COM_API_KEY environment variable');
+  process.exit(1);
+}
+
 console.log(`🎯 Target frontend: ${FRONTEND_URL}`);
 console.log(`🎯 Target service: ${RENDER_SERVICE_URL}`);
+console.log(`🔑 API key configured: ${API_KEY ? '✓' : '✗'}`);
 
 // Run the scheduled task
 runScheduledTask();
