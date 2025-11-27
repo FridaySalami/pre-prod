@@ -415,7 +415,7 @@
 							},
 							label: (context) => {
 								const label = context.dataset.label || '';
-								const value = context.parsed.y;
+								const value = context.parsed.y || 0;
 								return `${label}: ${formatPrice(value)}`;
 							},
 							afterBody: (tooltipItems) => {
@@ -525,7 +525,7 @@
 </svelte:head>
 
 <!-- Helium 10 Style Layout -->
-<div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-6">
+<div class="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 py-6">
 	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 		<!-- Header -->
 		<div class="bg-white rounded-lg shadow-lg p-6 mb-6">
@@ -533,7 +533,7 @@
 				<div class="flex items-start space-x-4 flex-1">
 					<!-- Product Image -->
 					{#if mainProductImage}
-						<div class="flex-shrink-0">
+						<div class="shrink-0">
 							<img
 								src={mainProductImage}
 								alt={productTitle}
@@ -542,7 +542,7 @@
 						</div>
 					{:else}
 						<div
-							class="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center"
+							class="shrink-0 w-24 h-24 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center"
 						>
 							<svg
 								class="w-12 h-12 text-gray-400"
@@ -658,7 +658,7 @@
 					<h3 class="font-semibold text-gray-900 mb-4">Product Images</h3>
 					<div class="flex space-x-4 overflow-x-auto pb-2">
 						{#each productImages.slice(0, 8) as image}
-							<div class="flex-shrink-0">
+							<div class="shrink-0">
 								<img
 									src={image.link}
 									alt="{productTitle} - {image.variant}"
@@ -723,7 +723,7 @@
 					<div class="text-xs text-gray-400 mb-3">Unit Sales: —</div>
 					<div class="mt-2 flex items-center text-gray-500 text-sm bg-gray-100 p-2 rounded">
 						<svg
-							class="w-4 h-4 mr-2 flex-shrink-0"
+							class="w-4 h-4 mr-2 shrink-0"
 							fill="none"
 							stroke="currentColor"
 							viewBox="0 0 24 24"
@@ -843,7 +843,7 @@
 								{#each healthScore.recommendations.slice(0, 3) as rec}
 									<div class="flex items-start space-x-2">
 										<span
-											class="inline-block w-2 h-2 rounded-full mt-1.5 flex-shrink-0 {rec.priority ===
+											class="inline-block w-2 h-2 rounded-full mt-1.5 shrink-0 {rec.priority ===
 											'high'
 												? 'bg-red-500'
 												: rec.priority === 'medium'
@@ -1177,7 +1177,7 @@
 								<div class="mt-3 p-3 bg-green-50 border border-green-200 rounded">
 									<div class="flex items-start space-x-2">
 										<svg
-											class="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
+											class="w-5 h-5 text-green-600 shrink-0 mt-0.5"
 											fill="currentColor"
 											viewBox="0 0 20 20"
 										>
@@ -1350,7 +1350,126 @@
 
 					<!-- Chart Canvas -->
 					<div class="relative" style="height: 400px;">
-						{#if data.history && data.history.length > 0 && hasPriceData}
+						{#if activeTab === 'sales'}
+							<!-- Sales Chart -->
+							{#if salesData && salesData.recordCount > 0}
+								{#await fetch(`/api/sales/${data.asin}/daily`) then response}
+									{#await response.json() then dailySales}
+										{@const maxRevenue = Math.max(
+											...dailySales.map((d: any) => d.ordered_product_sales || 0)
+										)}
+										{@const maxUnits = Math.max(
+											...dailySales.map((d: any) => d.ordered_units || 0)
+										)}
+
+										<svg class="w-full h-full" viewBox="0 0 1000 400" preserveAspectRatio="none">
+											<!-- Grid lines -->
+											{#each [0, 25, 50, 75, 100] as percent}
+												<line
+													x1="60"
+													y1={350 - (percent * 300) / 100}
+													x2="980"
+													y2={350 - (percent * 300) / 100}
+													stroke="#e5e7eb"
+													stroke-width="1"
+												/>
+												<text
+													x="10"
+													y={355 - (percent * 300) / 100}
+													font-size="12"
+													fill="#6b7280"
+													text-anchor="start"
+												>
+													£{Math.round((maxRevenue * percent) / 100)}
+												</text>
+											{/each}
+
+											<!-- Revenue Area Chart -->
+											<path
+												d={dailySales.reduce((path: string, point: any, i: number) => {
+													const x = 60 + i * (920 / (dailySales.length - 1 || 1));
+													const y = 350 - (point.ordered_product_sales / maxRevenue) * 300;
+													return path + (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+												}, '') + ` L ${60 + 920} 350 L 60 350 Z`}
+												fill="rgb(59, 130, 246)"
+												fill-opacity="0.3"
+												stroke="rgb(59, 130, 246)"
+												stroke-width="2"
+											/>
+
+											<!-- Units Bar Chart (overlay) -->
+											{#each dailySales as point, i}
+												{@const x = 60 + i * (920 / dailySales.length)}
+												{@const barWidth = Math.max(1, 920 / dailySales.length - 2)}
+												{@const height = (point.ordered_units / maxUnits) * 150}
+												<rect
+													{x}
+													y={350 - height}
+													width={barWidth}
+													{height}
+													fill="rgb(34, 197, 94)"
+													fill-opacity="0.5"
+												/>
+											{/each}
+
+											<!-- Date labels -->
+											{#each dailySales.filter((_: any, i: number) => i % Math.ceil(dailySales.length / 10) === 0) as point}
+												{@const x = 60 + dailySales.indexOf(point) * (920 / dailySales.length)}
+												<text
+													x={x + 920 / dailySales.length / 2}
+													y="380"
+													font-size="10"
+													fill="#6b7280"
+													text-anchor="middle"
+												>
+													{new Date(point.report_date).toLocaleDateString('en-GB', {
+														day: '2-digit',
+														month: 'short'
+													})}
+												</text>
+											{/each}
+										</svg>
+
+										<!-- Legend -->
+										<div class="mt-4 flex justify-center space-x-6 text-xs">
+											<div class="flex items-center">
+												<div class="w-4 h-2 bg-blue-500 opacity-50 mr-2"></div>
+												<span class="text-gray-600">Revenue (£)</span>
+											</div>
+											<div class="flex items-center">
+												<div class="w-4 h-2 bg-green-500 opacity-50 mr-2"></div>
+												<span class="text-gray-600">Units Sold</span>
+											</div>
+										</div>
+									{/await}
+								{/await}
+							{:else}
+								<!-- No Sales Data -->
+								<div
+									class="flex items-center justify-center h-full bg-gray-50 rounded-lg border-2 border-dashed border-gray-300"
+								>
+									<div class="text-center px-6">
+										<svg
+											class="mx-auto h-12 w-12 text-gray-400"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+											/>
+										</svg>
+										<h3 class="mt-3 text-sm font-medium text-gray-900">No Sales Data Available</h3>
+										<p class="mt-2 text-sm text-gray-500 max-w-sm">
+											Sales data from Amazon Reports API will appear here once available.
+										</p>
+									</div>
+								</div>
+							{/if}
+						{:else if data.history && data.history.length > 0 && hasPriceData}
 							<canvas bind:this={chartCanvas}></canvas>
 						{:else if data.history && data.history.length > 0 && !hasPriceData}
 							<!-- Has history but no price data -->
@@ -1442,7 +1561,7 @@
 							{#each catalogData.bulletPoints.slice(0, 5) as bulletPoint}
 								<li class="text-sm text-gray-700 flex items-start">
 									<svg
-										class="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0"
+										class="w-4 h-4 text-green-500 mr-2 mt-0.5 shrink-0"
 										fill="currentColor"
 										viewBox="0 0 20 20"
 									>
@@ -1550,7 +1669,7 @@
 											</div>
 											{#if competitor.isCurrentBuyBoxWinner}
 												<span
-													class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm"
+													class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-linear-to-r from-amber-400 to-orange-500 text-white shadow-sm"
 													title="Current Buy Box Winner"
 												>
 													<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

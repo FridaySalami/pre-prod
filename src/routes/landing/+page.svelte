@@ -1609,110 +1609,142 @@
 								<Skeleton class="h-4 w-1/2" />
 							</div>
 						{:else}
-							<div class="grid grid-cols-1 gap-4">
+							<div class="flex flex-col gap-4">
 								<!-- B2C Amazon Fulfillment (1.x series) -->
-								<div class="bg-blue-50 p-4 rounded-lg shadow-sm">
-									<h3 class="text-sm font-medium text-blue-800 mb-2">Fulfillment Operations</h3>
-									<div class="grid grid-cols-2 gap-2">
-										<div class="text-xs text-blue-600">Shipments Packed</div>
-										<div class="text-right font-medium text-blue-900">
-											{metrics.shipmentsPacked}
+								<div
+									class="bg-white border border-blue-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow"
+								>
+									<h3 class="text-sm font-semibold text-blue-800 mb-4 uppercase tracking-wide">
+										Fulfillment Operations
+									</h3>
+									<div class="grid grid-cols-2 gap-y-4 gap-x-2">
+										<div>
+											<div class="text-xs text-slate-500 mb-1">Shipments Packed</div>
+											<div class="text-xl font-bold text-slate-900">
+												{metrics.shipmentsPacked}
+											</div>
 										</div>
 
-										<div class="text-xs text-blue-600">Hours Worked</div>
-										<div class="text-right font-medium text-blue-900">
-											{metrics.actualHoursWorked.toFixed(1)}h
+										<div>
+											<div class="text-xs text-slate-500 mb-1">Hours Worked</div>
+											<div class="text-xl font-bold text-slate-900">
+												{metrics.actualHoursWorked.toFixed(1)}<span
+													class="text-sm font-normal text-slate-500 ml-1">h</span
+												>
+											</div>
 										</div>
 
-										<div class="text-xs text-blue-600">Labor Efficiency</div>
-										<div class="text-right font-medium text-blue-900">
-											{metrics.laborEfficiency.toFixed(1)}/hr
+										<div>
+											<div class="text-xs text-slate-500 mb-1">Labor Efficiency</div>
+											<div class="text-xl font-bold text-slate-900">
+												{metrics.laborEfficiency.toFixed(1)}<span
+													class="text-sm font-normal text-slate-500 ml-1">/hr</span
+												>
+											</div>
 										</div>
 
 										{#if metrics.laborUtilization > 0}
-											<div class="text-xs text-blue-600">Labor Utilization</div>
-											<div class="text-right font-medium text-blue-900">
-												{metrics.laborUtilization.toFixed(1)}%
+											<div>
+												<div class="text-xs text-slate-500 mb-1">Labor Utilization</div>
+												<div class="text-xl font-bold text-slate-900">
+													{metrics.laborUtilization.toFixed(1)}<span
+														class="text-sm font-normal text-slate-500 ml-1">%</span
+													>
+												</div>
 											</div>
 										{/if}
 									</div>
 								</div>
 
 								<!-- B2C Amazon Financials (2.0 series) -->
-								<div class="bg-green-50 p-4 rounded-lg shadow-sm">
-									<h3 class="text-sm font-medium text-green-800 mb-2">Financial Performance</h3>
-									<div class="grid grid-cols-2 gap-2">
-										<div class="text-xs text-green-600">Total Sales</div>
-										<div class="text-right font-medium text-green-900">
-											£{metrics.totalSales.toLocaleString('en-GB', {
-												minimumFractionDigits: 2,
-												maximumFractionDigits: 2
-											})}
+								<div
+									class="bg-white border border-green-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow"
+								>
+									<h3 class="text-sm font-semibold text-green-800 mb-4 uppercase tracking-wide">
+										Financial Performance
+									</h3>
+									<div class="grid grid-cols-2 gap-y-4 gap-x-2">
+										<div class="col-span-2">
+											<div class="text-xs text-slate-500 mb-1">Total Sales</div>
+											<div class="text-2xl font-bold text-slate-900">
+												£{metrics.totalSales.toLocaleString('en-GB', {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})}
+											</div>
 										</div>
 
-										<div class="text-xs text-green-600">Amazon Sales</div>
-										<div class="text-right font-medium text-green-900">
-											£{metrics.amazonSales.toLocaleString('en-GB', {
-												minimumFractionDigits: 2,
-												maximumFractionDigits: 2
-											})}
+										<div>
+											<div class="text-xs text-slate-500 mb-1">Amazon Sales</div>
+											<div class="text-lg font-semibold text-slate-900">
+												£{metrics.amazonSales.toLocaleString('en-GB', {
+													minimumFractionDigits: 0,
+													maximumFractionDigits: 0
+												})}
+											</div>
 										</div>
 
-										<div class="text-xs text-green-600">eBay Sales</div>
-										<div class="text-right font-medium text-green-900">
-											£{metrics.ebaySales.toLocaleString('en-GB', {
-												minimumFractionDigits: 2,
-												maximumFractionDigits: 2
-											})}
-										</div>
-
-										<div class="text-xs text-green-600">Shopify Sales</div>
-										<div class="text-right font-medium text-green-900">
-											£{metrics.shopifySales.toLocaleString('en-GB', {
-												minimumFractionDigits: 2,
-												maximumFractionDigits: 2
-											})}
+										<div>
+											<div class="text-xs text-slate-500 mb-1">eBay/Shopify</div>
+											<div class="text-lg font-semibold text-slate-900">
+												£{(metrics.ebaySales + metrics.shopifySales).toLocaleString('en-GB', {
+													minimumFractionDigits: 0,
+													maximumFractionDigits: 0
+												})}
+											</div>
 										</div>
 									</div>
 								</div>
 
 								<!-- Orders (2.1 series) -->
-								<div class="bg-red-50 p-4 rounded-lg shadow-sm">
-									<h3 class="text-sm font-medium text-red-800 mb-2">Order Volume</h3>
-									<div class="grid grid-cols-2 gap-2">
-										<div class="text-xs text-red-600">Total Orders</div>
-										<div class="text-right font-medium text-red-900">
-											{metrics.linnworksTotalOrders}
+								<div
+									class="bg-white border border-orange-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow"
+								>
+									<h3 class="text-sm font-semibold text-orange-800 mb-4 uppercase tracking-wide">
+										Order Volume
+									</h3>
+									<div class="grid grid-cols-2 gap-4">
+										<div>
+											<div class="text-xs text-slate-500 mb-1">Total Orders</div>
+											<div class="text-xl font-bold text-slate-900">
+												{metrics.linnworksTotalOrders}
+											</div>
 										</div>
 
-										<div class="text-xs text-red-600">Amazon Orders</div>
-										<div class="text-right font-medium text-red-900">
-											{metrics.linnworksAmazonOrders}
-											{#if metrics.amazonOrdersPercent > 0}
-												<span class="text-sm font-medium text-slate-600 ml-2">
-													({metrics.amazonOrdersPercent.toFixed(1)}%)
-												</span>
-											{/if}
+										<div>
+											<div class="text-xs text-slate-500 mb-1">Amazon</div>
+											<div class="text-lg font-semibold text-slate-900">
+												{metrics.linnworksAmazonOrders}
+												{#if metrics.amazonOrdersPercent > 0}
+													<span class="text-xs font-normal text-slate-500 block mt-0.5">
+														{metrics.amazonOrdersPercent.toFixed(1)}%
+													</span>
+												{/if}
+											</div>
 										</div>
 
-										<div class="text-xs text-red-600">eBay Orders</div>
-										<div class="text-right font-medium text-red-900">
-											{metrics.linnworksEbayOrders}
-											{#if metrics.ebayOrdersPercent > 0}
-												<span class="text-sm font-medium text-slate-600 ml-2">
-													({metrics.ebayOrdersPercent.toFixed(1)}%)
-												</span>
-											{/if}
+										<div>
+											<div class="text-xs text-slate-500 mb-1">eBay</div>
+											<div class="text-lg font-semibold text-slate-900">
+												{metrics.linnworksEbayOrders}
+												{#if metrics.ebayOrdersPercent > 0}
+													<span class="text-xs font-normal text-slate-500 block mt-0.5">
+														{metrics.ebayOrdersPercent.toFixed(1)}%
+													</span>
+												{/if}
+											</div>
 										</div>
 
-										<div class="text-xs text-red-600">Shopify Orders</div>
-										<div class="text-right font-medium text-red-900">
-											{metrics.linnworksShopifyOrders}
-											{#if metrics.shopifyOrdersPercent > 0}
-												<span class="text-sm font-medium text-slate-600 ml-2">
-													({metrics.shopifyOrdersPercent.toFixed(1)}%)
-												</span>
-											{/if}
+										<div>
+											<div class="text-xs text-slate-500 mb-1">Shopify</div>
+											<div class="text-lg font-semibold text-slate-900">
+												{metrics.linnworksShopifyOrders}
+												{#if metrics.shopifyOrdersPercent > 0}
+													<span class="text-xs font-normal text-slate-500 block mt-0.5">
+														{metrics.shopifyOrdersPercent.toFixed(1)}%
+													</span>
+												{/if}
+											</div>
 										</div>
 									</div>
 								</div>
@@ -1860,24 +1892,53 @@
 {/if}
 
 <style>
+	:global(:root) {
+		--primary: #1a7f4c;
+		--primary-hover: #166a3f;
+		--accent: #f59e0b;
+		--neutral-50: #f9fafb;
+		--neutral-100: #f3f4f6;
+		--neutral-200: #e5e7eb;
+		--neutral-800: #1f2937;
+		--neutral-900: #111827;
+		--font-sans:
+			ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+			'Helvetica Neue', Arial, sans-serif;
+	}
+
+	/* Global Button Styles */
+	button {
+		font-family: var(--font-sans);
+	}
+
+	/* Loading Styles */
+	.loading-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 100vh;
+		color: var(--neutral-900);
+		font-family: var(--font-sans);
+	}
+
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid rgba(26, 127, 76, 0.1);
+		border-radius: 50%;
+		border-top-color: var(--primary);
+		animation: spin 1s ease-in-out infinite;
+		margin-bottom: 16px;
+	}
+
 	.loading-spinner-small {
 		width: 16px;
 		height: 16px;
-		border: 2px solid rgba(0, 122, 255, 0.1);
+		border: 2px solid rgba(26, 127, 76, 0.1);
 		border-radius: 50%;
-		border-top-color: #007aff;
+		border-top-color: var(--primary);
 		animation: spin 1s ease-in-out infinite;
-	}
-
-	@keyframes fadeIn {
-		from {
-			opacity: 0;
-			transform: translateY(-10px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
 	}
 
 	@keyframes spin {
@@ -1886,70 +1947,128 @@
 		}
 	}
 
-	/* Add these new styles for loading state */
-	.loading-container {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		height: 100vh;
-		color: #1d1d1f;
-	}
-
-	.loading-spinner {
-		width: 40px;
-		height: 40px;
-		border: 3px solid rgba(0, 122, 255, 0.1);
-		border-radius: 50%;
-		border-top-color: #007aff;
-		animation: spin 1s ease-in-out infinite;
-		margin-bottom: 16px;
-	}
-
-	/* Your existing styles... */
-	/* Global Dashboard Styles */
+	/* Dashboard Container */
 	.dashboard-container {
-		padding: 24px;
+		padding: 32px;
 		max-width: 1400px;
 		margin: 0 auto;
+		font-family: var(--font-sans);
+		color: var(--neutral-900);
 	}
 
+	/* Header */
 	.dashboard-header {
-		margin-bottom: 24px;
-	}
-
-	.staff-count {
-		background: #f5f5f7;
-		border-radius: 12px;
-		font-size: 0.7rem;
-		color: #86868b;
-		padding: 2px 8px;
-		display: inline-block;
-		margin: 0 0 8px 0;
-		align-self: flex-start;
+		margin-bottom: 32px;
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-end;
+		border-bottom: 1px solid var(--neutral-200);
+		padding-bottom: 20px;
 	}
 
 	.dashboard-header h1 {
-		font-size: 1.75rem;
-		font-weight: 500;
-		color: #1d1d1f;
+		font-size: 1.875rem; /* 30px */
+		font-weight: 600;
+		color: var(--neutral-900);
 		margin: 0;
-		padding: 0;
+		letter-spacing: -0.025em;
 	}
 
 	.date-display {
-		color: #86868b;
-		margin-top: 4px;
-		font-size: 0.95rem;
+		color: #6b7280;
+		font-size: 1rem;
+		font-weight: 500;
 	}
 
+	/* Grid Layout */
 	.dashboard-grid {
 		display: grid;
-		grid-template-columns: 1fr 340px;
-		gap: 24px;
+		grid-template-columns: 1fr 380px;
+		gap: 32px;
+		align-items: start;
 	}
 
-	/* Staff List Styles */
+	/* Weekly Staff Grid - 3x2 Layout */
+	.weekly-staff-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 16px;
+		margin-top: 20px;
+	}
+
+	.day-column {
+		background: #fff;
+		border: 1px solid var(--neutral-200);
+		border-radius: 12px;
+		padding: 16px;
+		transition: all 0.2s ease;
+	}
+
+	.day-column:hover {
+		border-color: #d1d5db;
+		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+	}
+
+	.day-column.today {
+		background-color: #f0fdf4; /* Light green tint */
+		border-color: var(--primary);
+		box-shadow: 0 0 0 1px var(--primary);
+	}
+
+	.day-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		border-bottom: 1px solid var(--neutral-100);
+		padding-bottom: 10px;
+		margin-bottom: 12px;
+	}
+
+	.day-name {
+		font-weight: 700;
+		font-size: 1rem;
+		color: var(--neutral-900);
+	}
+
+	.day-date {
+		font-size: 0.875rem;
+		color: #6b7280;
+		font-weight: 500;
+	}
+
+	.day-iso-date {
+		display: none;
+	}
+
+	.day-column.today .day-name {
+		color: var(--primary);
+	}
+
+	.day-empty {
+		color: #9ca3af;
+		font-size: 0.875rem;
+		padding: 20px 0;
+		text-align: center;
+		font-style: italic;
+	}
+
+	.staff-count {
+		background: var(--neutral-100);
+		border-radius: 9999px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #4b5563;
+		padding: 2px 10px;
+		display: inline-block;
+		margin-bottom: 12px;
+	}
+
+	.day-column.today .staff-count {
+		background: rgba(26, 127, 76, 0.1);
+		color: var(--primary);
+	}
+
+	/* Staff List */
 	.staff-list {
 		list-style: none;
 		padding: 0;
@@ -1960,61 +2079,162 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 8px 0;
-		border-bottom: 1px solid #f5f5f7;
+		padding: 6px 0;
+		font-size: 0.9375rem; /* 15px */
 	}
 
-	.staff-item:last-child {
-		border-bottom: none;
+	.role-separator {
+		height: 1px;
+		background: var(--neutral-100);
+		margin: 8px 0;
 	}
 
 	.staff-name {
-		font-weight: 500;
-		color: #1d1d1f;
+		font-weight: 400;
+		color: var(--neutral-800);
 	}
 
-	.leave-staff-list {
+	.staff-item.on-leave .staff-name {
+		color: #9ca3af;
+		text-decoration: line-through;
+	}
+
+	.leave-icon {
+		font-size: 0.9em;
+		margin-right: 6px;
+		text-decoration: none !important;
+		display: inline-block;
+	}
+
+	/* Leave List */
+	.leave-list-container {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.leave-section {
+		background: var(--neutral-50);
+		border-radius: 8px;
+		padding: 12px 16px;
+	}
+
+	.leave-date-header {
+		font-weight: 600;
+		color: var(--neutral-900);
+		margin-bottom: 8px;
+		font-size: 0.9375rem;
+	}
+
+	.leave-staff-list.simple {
 		list-style: none;
 		padding: 0;
 		margin: 0;
 	}
 
-	.leave-staff-item {
-		font-size: 0.9rem;
+	.leave-staff-item.simple {
+		font-size: 0.9375rem;
+		padding: 2px 0;
+		color: #4b5563;
+	}
+
+	/* Weather Widget */
+	.weather-content {
 		padding: 4px 0;
-		color: #1d1d1f;
 	}
 
-	.staff-item.on-leave .staff-name {
-		color: #acacae;
+	.weather-main {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 24px;
 	}
 
-	.leave-icon {
-		font-size: 0.8em;
-		margin-right: 4px;
+	.weather-icon-temp {
+		display: flex;
+		align-items: center;
+		gap: 16px;
 	}
 
-	/* Tomorrow's forecast styles */
+	.weather-icon {
+		width: 64px;
+		height: 64px;
+		filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+	}
+
+	.weather-temp {
+		font-size: 2.5rem;
+		font-weight: 600;
+		color: var(--neutral-900);
+		line-height: 1;
+	}
+
+	.weather-condition {
+		color: #6b7280;
+		font-size: 1rem;
+		margin-top: 4px;
+	}
+
+	.weather-updated {
+		font-size: 0.75rem;
+		color: #9ca3af;
+		text-align: right;
+	}
+
+	.weather-details {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 16px;
+		background: var(--neutral-50);
+		border-radius: 12px;
+		padding: 16px;
+		margin-bottom: 24px;
+	}
+
+	.detail-label {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #6b7280;
+		margin-bottom: 4px;
+	}
+
+	.detail-value {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--neutral-900);
+	}
+
+	.high-low {
+		font-size: 0.875rem;
+		margin-top: 6px;
+		font-weight: 500;
+	}
+
+	.high {
+		color: #ef4444;
+		margin-right: 8px;
+	}
+	.low {
+		color: #3b82f6;
+	}
+
+	/* Tomorrow Forecast */
 	.tomorrow-forecast {
-		margin-top: 20px;
-		background: #f5f5f7;
-		border-radius: 8px;
-		padding: 12px;
+		background: #fff;
+		border: 1px solid var(--neutral-200);
+		border-radius: 12px;
+		padding: 16px;
 	}
 
 	.tomorrow-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 8px;
-		font-size: 0.85rem;
-		color: #1d1d1f;
-		font-weight: 500;
-	}
-
-	.tomorrow-header span:last-child {
-		color: #86868b;
-		font-weight: normal;
+		margin-bottom: 12px;
+		font-size: 0.9375rem;
+		font-weight: 600;
+		color: var(--neutral-900);
 	}
 
 	.tomorrow-content {
@@ -2026,286 +2246,66 @@
 	.tomorrow-icon-temp {
 		display: flex;
 		align-items: center;
+		gap: 12px;
 	}
 
 	.tomorrow-icon {
-		width: 36px;
-		height: 36px;
-		margin-right: 8px;
+		width: 40px;
+		height: 40px;
 	}
 
 	.tomorrow-condition {
-		font-size: 0.85rem;
-		color: #1d1d1f;
+		font-size: 0.9375rem;
+		color: #4b5563;
 	}
 
 	.tomorrow-temps {
 		text-align: right;
-		font-size: 0.85rem;
+		font-size: 0.9375rem;
+		font-weight: 500;
 	}
 
 	.tomorrow-high {
-		color: #ff3b30;
-		font-weight: 500;
+		color: #ef4444;
 	}
-
 	.tomorrow-low {
-		color: #007aff;
-		margin: 4px 0;
+		color: #3b82f6;
 	}
 
 	.tomorrow-rain {
-		color: #86868b;
+		color: #6b7280;
+		font-size: 0.875rem;
+		margin-top: 4px;
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
+		gap: 4px;
 	}
 
-	.rain-icon {
-		margin-right: 4px;
-		font-size: 0.8rem;
-	}
-
-	/* Weather Widget Styles */
-	.weather-main {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		margin-bottom: 20px;
-	}
-
-	.weather-icon-temp {
-		display: flex;
-		align-items: center;
-	}
-
-	.weather-icon {
-		width: 50px;
-		height: 50px;
-		margin-right: 12px;
-	}
-
-	.weather-temp {
-		font-size: 1.8rem;
-		font-weight: 500;
-		color: #1d1d1f;
-	}
-
-	.weather-condition {
-		color: #86868b;
-		font-size: 0.9rem;
-	}
-
-	.weather-updated {
-		font-size: 0.75rem;
-		color: #86868b;
-		text-align: right;
-	}
-
-	.weather-updated span {
-		display: block;
-		margin-bottom: 2px;
-	}
-
-	.weather-details {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 12px 16px;
-		margin-top: 16px;
-		background: #f5f5f7;
-		border-radius: 8px;
-		padding: 12px;
-	}
-
-	.weather-detail-item {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.detail-label {
-		font-size: 0.75rem;
-		color: #86868b;
-	}
-
-	.detail-value {
-		font-size: 0.9rem;
-		font-weight: 500;
-		color: #1d1d1f;
-		margin-top: 2px;
-	}
-
-	/* Add to your existing styles */
-	.high-low {
-		font-size: 0.8rem;
-		margin-top: 4px;
-		color: #86868b;
-	}
-
-	.high {
-		color: #ff3b30;
-		margin-right: 8px;
-	}
-
-	.low {
-		color: #007aff;
-	}
-
-	/* Animation */
-	@keyframes pulse {
-		0% {
-			opacity: 0.6;
-		}
-		50% {
-			opacity: 1;
-		}
-		100% {
-			opacity: 0.6;
-		}
-	}
-
-	/* Responsive Adjustments */
-	@media (max-width: 900px) {
+	/* Responsive */
+	@media (max-width: 1024px) {
 		.dashboard-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.main-column {
-			order: 2;
-		}
-
-		.sidebar-column {
-			order: 1;
-		}
-	}
-
-	@media (max-width: 480px) {
-		.dashboard-container {
-			padding: 16px;
-		}
-	}
-
-	/* Simplified Leave List Styles */
-	.leave-list-container {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.leave-section {
-		margin-bottom: 16px;
-		padding-bottom: 16px;
-		border-bottom: 1px solid #f5f5f7;
-	}
-
-	.leave-section:last-child {
-		margin-bottom: 0;
-		padding-bottom: 0;
-		border-bottom: none;
-	}
-
-	.leave-date-header {
-		font-weight: 500;
-		color: #1d1d1f;
-		margin-bottom: 6px;
-		font-size: 0.9rem;
-	}
-
-	.leave-staff-list.simple {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.leave-staff-item.simple {
-		font-size: 0.9rem;
-		padding: 3px 0;
-		color: #1d1d1f;
-	}
-
-	/* Weekly Staff Grid Styles */
-	.weekly-staff-grid {
-		display: grid;
-		grid-template-columns: repeat(6, 1fr);
-		gap: 12px;
-		margin-top: 16px;
-	}
-
-	.day-column {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.day-header {
-		text-align: center;
-		border-bottom: 1px solid #f0f0f0;
-		padding-bottom: 8px;
-		margin-bottom: 8px;
-	}
-
-	.day-name {
-		font-weight: 500;
-		font-size: 0.9rem;
-	}
-
-	.day-date {
-		font-size: 0.8rem;
-		color: #86868b;
-		margin-top: 2px;
-	}
-
-	.day-empty {
-		color: #86868b;
-		font-size: 0.85rem;
-		padding: 12px 0;
-		text-align: center;
-		font-style: italic;
-	}
-
-	.staff-list.compact {
-		font-size: 0.85rem;
-	}
-
-	.staff-item.compact {
-		padding: 4px 0;
-	}
-
-	/* Add responsive behavior for weekly staff */
-	@media (max-width: 1024px) {
-		.weekly-staff-grid {
-			grid-template-columns: repeat(3, 1fr);
-			grid-gap: 16px;
-		}
-
-		.day-column {
-			border: 1px solid #f0f0f0;
-			border-radius: 8px;
-			padding: 12px;
-		}
-	}
-
-	@media (max-width: 640px) {
 		.weekly-staff-grid {
 			grid-template-columns: repeat(2, 1fr);
 		}
 	}
 
-	@media (max-width: 480px) {
+	@media (max-width: 640px) {
+		.dashboard-container {
+			padding: 16px;
+		}
+
 		.weekly-staff-grid {
 			grid-template-columns: 1fr;
 		}
-	}
 
-	/* Add this to your styles */
-	.day-column.today {
-		background-color: rgba(0, 122, 255, 0.05);
-		border-radius: 8px;
-		box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.2);
-	}
-
-	.day-column.today .day-header {
-		border-bottom-color: rgba(0, 122, 255, 0.2);
-	}
-
-	.day-column.today .day-name {
-		color: #007aff;
+		.dashboard-header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 8px;
+		}
 	}
 </style>
