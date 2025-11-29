@@ -112,14 +112,24 @@
 		type: 'separator';
 	};
 
-	type MenuItem = NavigationItem | SeparatorItem;
+	type SectionHeaderItem = {
+		type: 'section';
+		title: string;
+	};
+
+	type MenuItem = NavigationItem | SeparatorItem | SectionHeaderItem;
 
 	// Type guard functions
-	const isSeparator = (item: MenuItem): item is SeparatorItem => 'type' in item;
+	const isSeparator = (item: MenuItem): item is SeparatorItem => 'type' in item && item.type === 'separator';
+	const isSectionHeader = (item: MenuItem): item is SectionHeaderItem => 'type' in item && item.type === 'section';
 	const isNavigationItem = (item: MenuItem): item is NavigationItem => !('type' in item);
 
 	// Navigation items with role requirements
 	const allItems: MenuItem[] = [
+		{
+			type: 'section',
+			title: 'General'
+		},
 		{
 			title: 'Home',
 			url: '/landing',
@@ -127,7 +137,8 @@
 			requiredRole: 'user'
 		},
 		{
-			type: 'separator'
+			type: 'section',
+			title: 'Dashboard'
 		},
 		{
 			title: 'Employee Hours',
@@ -142,27 +153,6 @@
 			requiredRole: 'user'
 		},
 		{
-			title: 'Buy Box Manager',
-			url: '/buy-box-manager',
-			icon: 'manage_search',
-			requiredRole: 'user' // Changed from admin to user
-		},
-		{
-			title: 'Sales Dashboard',
-			url: '/sales-dashboard',
-			icon: 'bar_chart',
-			requiredRole: 'user'
-		},
-		{
-			title: 'Pricer Tool',
-			url: '/pricer',
-			icon: 'calculate',
-			requiredRole: 'user'
-		},
-		{
-			type: 'separator'
-		},
-		{
 			title: 'Analytics',
 			url: '/analytics',
 			icon: 'analytics',
@@ -175,13 +165,8 @@
 			requiredRole: 'user'
 		},
 		{
-			type: 'separator'
-		},
-		{
-			title: 'Kaizen Projects',
-			url: '/kaizen-projects',
-			icon: 'assignment',
-			requiredRole: 'user'
+			type: 'section',
+			title: 'Core Operations'
 		},
 		{
 			title: 'Schedules',
@@ -190,7 +175,36 @@
 			requiredRole: 'user'
 		},
 		{
-			type: 'separator'
+			title: 'Buy Box Manager',
+			url: '/buy-box-manager',
+			icon: 'manage_search',
+			requiredRole: 'user'
+		},
+		{
+			title: 'Pricer Tool',
+			url: '/pricer',
+			icon: 'calculate',
+			requiredRole: 'user'
+		},
+		{
+			title: 'Sales Dashboard',
+			url: '/sales-dashboard',
+			icon: 'bar_chart',
+			requiredRole: 'user'
+		},
+		{
+			type: 'section',
+			title: 'Continuous Improvement'
+		},
+		{
+			title: 'Kaizen Projects',
+			url: '/kaizen-projects',
+			icon: 'assignment',
+			requiredRole: 'user'
+		},
+		{
+			type: 'section',
+			title: 'Documentation'
 		},
 		{
 			title: 'Documentation',
@@ -224,6 +238,9 @@
 					filteredItems.push(item);
 					lastWasSeparator = true;
 				}
+			} else if (isSectionHeader(item)) {
+				filteredItems.push(item);
+				lastWasSeparator = false;
 			} else {
 				// Check if user has required role
 				if (!item.requiredRole || hasRole(item.requiredRole, userRole)) {
@@ -315,7 +332,7 @@
 	}
 </script>
 
-<Sidebar.Root collapsible="icon" class="min-h-screen" data-sidebar="sidebar">
+<Sidebar.Root collapsible="icon" class="min-h-screen bg-gray-50 border-r border-gray-200" data-sidebar="sidebar">
 	<Sidebar.Header class="">
 		<div
 			class="flex flex-col items-center px-4 py-3 gap-2 transition-all duration-200 hover:bg-sidebar-accent/50 rounded-lg mx-2"
@@ -333,18 +350,22 @@
 	<Sidebar.Content class="" data-sidebar="content">
 		<Sidebar.Group class="">
 			<Sidebar.GroupContent class="">
-				<Sidebar.Menu class="">
-					{#each items() as item, index (isSeparator(item) ? `sep-${index}` : item.title)}
+				<Sidebar.Menu class="gap-1">
+					{#each items() as item, index (isSeparator(item) ? `sep-${index}` : isSectionHeader(item) ? `sec-${index}` : item.title)}
 						{#if isSeparator(item)}
 							<div class="separator-container px-3 py-1 group-data-[collapsible=icon]:px-2">
 								<div class="separator-line"></div>
+							</div>
+						{:else if isSectionHeader(item)}
+							<div class="section-header group-data-[collapsible=icon]:hidden">
+								{item.title}
 							</div>
 						{:else}
 							<Sidebar.MenuItem class="">
 								<Sidebar.MenuButton
 									isActive={currentPath === item.url ||
 										(item.url !== '/landing' && currentPath.startsWith(item.url))}
-									class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+									class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground py-2.5 pl-4"
 									children={() => {}}
 									tooltipContent={item.title}
 									tooltipContentProps={{}}
@@ -357,11 +378,11 @@
 											onclick={handleNavClick}
 										>
 											<i
-												class="material-icons-outlined text-lg shrink-0 transition-all duration-200 group-hover:scale-110"
+												class="material-icons-outlined text-[22px] text-gray-500 shrink-0 transition-all duration-200 group-hover:scale-110 group-data-[active=true]:text-primary"
 												>{item.icon}</i
 											>
 											<span
-												class="group-data-[collapsible=icon]:sr-only transition-all duration-200"
+												class="text-[15px] text-gray-700 group-data-[active=true]:font-semibold group-data-[active=true]:text-primary group-data-[collapsible=icon]:sr-only transition-all duration-200"
 												>{item.title}</span
 											>
 											<!-- Add role indicator for admin/manager items -->
@@ -388,10 +409,11 @@
 	</Sidebar.Content>
 
 	<Sidebar.Footer class="">
+		<div class="section-header group-data-[collapsible=icon]:hidden">Account</div>
 		<Sidebar.Menu class="">
 			<Sidebar.MenuItem class="">
 				<Sidebar.MenuButton
-					class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+					class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground py-2.5 pl-4"
 					children={() => {}}
 					tooltipContent="Logout"
 					tooltipContentProps={{}}
@@ -403,10 +425,11 @@
 							class="flex items-center gap-3 w-full text-left hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group transition-all duration-200"
 						>
 							<i
-								class="material-icons-outlined text-lg shrink-0 transition-all duration-200 group-hover:scale-110 group-hover:rotate-12"
+								class="material-icons-outlined text-[22px] text-gray-500 shrink-0 transition-all duration-200 group-hover:scale-110 group-hover:rotate-12"
 								>logout</i
 							>
-							<span class="group-data-[collapsible=icon]:sr-only transition-all duration-200"
+							<span
+								class="text-[15px] text-gray-700 group-data-[collapsible=icon]:sr-only transition-all duration-200"
 								>Logout</span
 							>
 						</button>
@@ -583,6 +606,16 @@
 		transform: scale(0.98) !important;
 	}
 
+	/* Section Header */
+	.section-header {
+		text-transform: uppercase;
+		font-size: 11px;
+		color: #9ca3af;
+		letter-spacing: 1px;
+		padding: 24px 16px 8px 16px;
+		font-weight: 600;
+	}
+
 	/* Separator styles */
 	.separator-container {
 		margin: 4px 0;
@@ -592,30 +625,13 @@
 
 	.separator-line {
 		height: 1px;
-		background-color: rgba(148, 163, 184, 0.4); /* fallback color */
-		background: linear-gradient(
-			90deg,
-			transparent,
-			rgba(148, 163, 184, 0.6) 20%,
-			rgba(148, 163, 184, 0.6) 80%,
-			transparent
-		);
-		opacity: 1;
-		transition: all 0.2s ease-in-out;
-		border-radius: 1px;
-		min-height: 1px;
-		display: block;
+		background-color: rgba(0, 0, 0, 0.05); /* Very subtle */
 		width: 100%;
 	}
 
 	/* Alternative approach - use border instead of background */
 	.separator-line::after {
-		content: '';
-		display: block;
-		width: 100%;
-		height: 1px;
-		border-top: 1px solid rgba(148, 163, 184, 0.3);
-		background: transparent;
+		display: none;
 	}
 
 	/* Hide separators when sidebar is collapsed */
