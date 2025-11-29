@@ -347,33 +347,6 @@
 			<div class="header-content">
 				<h1>Employee Hours</h1>
 			</div>
-			<div class="header-actions">
-				<button class="reset-button" onclick={resetAllHours}> Reset All </button>
-				<button
-					class="save-button {saveStatus === 'success' ? 'glow-success' : ''}"
-					onclick={saveHours}
-					disabled={saving}
-				>
-					{#if saving}
-						<svg
-							class="animate-spin"
-							width="16"
-							height="16"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<path
-								d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.49-8.49l2.83-2.83"
-							/>
-						</svg>
-						Saving...
-					{:else}
-						{hasExistingData ? 'Update Hours' : 'Save Hours'}
-					{/if}
-				</button>
-			</div>
 		</div>
 
 		<!-- Persistent status bar to prevent layout jumping -->
@@ -492,6 +465,34 @@
 						<span class="metric-label">Reduce Hours By</span>
 					</div>
 				{/if}
+
+				<div class="card-actions">
+					<button class="reset-button" onclick={resetAllHours}> Reset All </button>
+					<button
+						class="save-button {saveStatus === 'success' ? 'glow-success' : ''}"
+						onclick={saveHours}
+						disabled={saving}
+					>
+						{#if saving}
+							<svg
+								class="animate-spin"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.49-8.49l2.83-2.83"
+								/>
+							</svg>
+							Saving...
+						{:else}
+							{hasExistingData ? 'Update Hours' : 'Save Hours'}
+						{/if}
+					</button>
+				</div>
 			</div>
 
 			<!-- Main Content Area -->
@@ -561,15 +562,12 @@
 					<div class="role-list">
 						{#each Object.entries(roleBreakdown()) as [role, data]}
 							<div class="role-item">
-								<div class="role-info">
-									<span class="role-name">{role}</span>
-									<span class="employee-count"
-										>{data.employees} employee{data.employees !== 1 ? 's' : ''}</span
-									>
+								<div class="role-name">{role}</div>
+								<div class="role-stat-count">
+									{data.employees} employee{data.employees !== 1 ? 's' : ''}
 								</div>
-								<div class="role-hours">
-									<span class="hours-value">{data.totalHours.toFixed(1)}</span>
-									<span class="hours-unit">hrs</span>
+								<div class="role-stat-hours">
+									{data.totalHours.toFixed(1)} hrs
 								</div>
 							</div>
 						{/each}
@@ -591,6 +589,7 @@
 			</div>
 		{/if}
 	</div>
+	<footer class="page-footer">Created by Jack Weston</footer>
 {:else}
 	<!-- When session is null, onMount should have redirected already -->
 	<div class="loading-container">
@@ -672,10 +671,11 @@
 		letter-spacing: -0.025em;
 	}
 
-	.header-actions {
+	.card-actions {
 		display: flex;
 		gap: 12px;
 		align-items: center;
+		margin-left: auto;
 	}
 
 	.reset-button {
@@ -944,7 +944,7 @@
 		text-transform: none;
 		letter-spacing: normal;
 		border-bottom: 1px solid #e5e7eb;
-		margin-top: 16px;
+		margin-top: 24px;
 		margin-bottom: 8px;
 	}
 
@@ -954,9 +954,10 @@
 	}
 
 	.employee-row {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr auto auto;
 		align-items: center;
-		justify-content: space-between;
+		gap: 16px;
 		padding: 12px 16px;
 		border: 1px solid #e5e7eb;
 		border-radius: 6px;
@@ -980,9 +981,7 @@
 	}
 
 	.employee-info {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
+		display: contents;
 	}
 
 	.employee-name {
@@ -1005,7 +1004,7 @@
 		border-radius: 6px;
 		font-size: 1rem;
 		font-weight: 600;
-		text-align: center;
+		text-align: right;
 		background: white;
 		transition: all 0.2s ease;
 		font-variant-numeric: tabular-nums;
@@ -1026,56 +1025,48 @@
 
 	/* Breakdown Section */
 	.role-list {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 12px;
 		padding: 16px;
 	}
 
 	.role-item {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 12px 16px;
+		flex-direction: column;
+		gap: 4px;
+		padding: 12px;
 		border: 1px solid #e5e7eb;
 		border-radius: 8px;
 		background: white;
+		transition: all 0.2s ease;
 	}
 
-	.role-info {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
+	.role-item:hover {
+		border-color: #d1d5db;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 	}
 
 	.role-name {
 		font-weight: 600;
 		color: #374151;
 		font-size: 0.875rem;
+		margin-bottom: 4px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
-	.employee-count {
+	.role-stat-count {
 		font-size: 0.75rem;
 		color: #6b7280;
 	}
 
-	.role-hours {
-		display: flex;
-		align-items: baseline;
-		gap: 4px;
-	}
-
-	.hours-value {
-		font-size: 1.125rem;
-		font-weight: 700;
+	.role-stat-hours {
+		font-size: 0.9375rem;
 		color: #111827;
+		font-weight: 600;
 		font-variant-numeric: tabular-nums;
-	}
-
-	.hours-unit {
-		font-size: 0.75rem;
-		color: #6b7280;
-		font-weight: 500;
 	}
 
 	/* Bottom Stats Bar */
@@ -1182,6 +1173,30 @@
 		.stat-separator {
 			display: none;
 		}
+
+		.employee-row {
+			display: flex;
+			flex-direction: column;
+			align-items: stretch;
+			gap: 8px;
+		}
+
+		.employee-info {
+			display: flex;
+			flex-direction: row;
+			align-items: baseline;
+			justify-content: space-between;
+			gap: 8px;
+		}
+
+		.input-container {
+			width: 100%;
+		}
+
+		.hours-input {
+			width: 100%;
+			text-align: center;
+		}
 	}
 
 	/* Animations */
@@ -1236,5 +1251,13 @@
 		animation: glow 1.5s infinite;
 		background-color: #059669 !important; /* Green success color */
 		border-color: #059669 !important;
+	}
+
+	.page-footer {
+		text-align: center;
+		padding: 24px;
+		color: #9ca3af;
+		font-size: 0.875rem;
+		margin-top: auto;
 	}
 </style>
