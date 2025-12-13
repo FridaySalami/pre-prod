@@ -420,7 +420,7 @@
 				{#if hoveredItem}
 					<div
 						class={cn(
-							'absolute border-border/50 bg-background grid min-w-[9rem] items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl pointer-events-none z-50'
+							'absolute border-border/50 bg-background grid min-w-36 items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl pointer-events-none z-50'
 						)}
 						style="left: {mousePosition.x + 10}px; top: {mousePosition.y - 10}px;"
 					>

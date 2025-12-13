@@ -650,7 +650,7 @@
 							</CardHeader>
 							<CardContent>
 								<Skeleton class="h-8 w-[120px] mb-2" />
-								<Skeleton class="h-3 w-[80px]" />
+								<Skeleton class="h-3 w-20" />
 							</CardContent>
 						</Card>
 					{/each}
@@ -669,7 +669,7 @@
 											<Skeleton class="w-3 h-3 rounded-full" />
 											<Skeleton class="h-4 w-[60px]" />
 										</div>
-										<Skeleton class="h-4 w-[80px]" />
+										<Skeleton class="h-4 w-20" />
 									</div>
 								{/each}
 							</div>
@@ -685,8 +685,8 @@
 								{#each Array(3) as _}
 									<div class="space-y-2">
 										<div class="flex justify-between text-sm">
-											<Skeleton class="h-4 w-[60px]" />
-											<Skeleton class="h-4 w-[40px]" />
+											<Skeleton class="h-4 w-20" />
+											<Skeleton class="h-4 w-10" />
 										</div>
 										<Skeleton class="w-full h-2 rounded-full" />
 									</div>

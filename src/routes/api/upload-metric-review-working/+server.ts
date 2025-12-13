@@ -30,20 +30,23 @@ export const POST: RequestHandler = async ({ request }) => {
   try {
     console.log('🚀 API: Starting streamlined daily metric review upload...');
 
-    // Get current week dates
-    const displayedMonday = getMonday(new Date());
-    const weekDates = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(displayedMonday);
-      date.setDate(displayedMonday.getDate() + i);
+    // Get last 8 days to ensure we capture recent history and any week boundaries
+    // This fixes the issue where running on Monday would only fetch "this week" (empty) 
+    // and miss "last week" (which needs finalization)
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 7); // Go back 7 days
+
+    const dateRange = Array.from({ length: 8 }, (_, i) => {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
       return date;
     });
 
-    const mondayStr = displayedMonday.toISOString().split('T')[0];
-    const sundayStr = new Date(displayedMonday.getTime() + 6 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0];
+    const startDateStr = dateRange[0].toISOString().split('T')[0];
+    const endDateStr = dateRange[dateRange.length - 1].toISOString().split('T')[0];
 
-    console.log(`📅 Target week: ${mondayStr} to ${sundayStr}`);
+    console.log(`📅 Processing date range: ${startDateStr} to ${endDateStr}`);
 
     // Step 1: Get Linnworks data
     console.log('📊 Step 1: Fetching Linnworks data...');
@@ -51,16 +54,16 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Use direct service call instead of HTTP request
     const linnworksData = await getDailyOrderCounts(
-      weekDates[0], // start date
-      weekDates[6]  // end date
+      dateRange[0], // start date
+      dateRange[dateRange.length - 1]  // end date
     );
 
     linnworksTime = Date.now() - linnworksStartTime;
 
     console.log(`✅ Linnworks data fetched in ${linnworksTime}ms`);
     console.log('📋 Linnworks Response Structure:');
-    console.log('   - Start Date:', mondayStr);
-    console.log('   - End Date:', sundayStr);
+    console.log('   - Start Date:', startDateStr);
+    console.log('   - End Date:', endDateStr);
     console.log('   - Daily Orders Count:', linnworksData?.data?.length || 0);
     console.log('   - Is Cached:', linnworksData?.isCached || false);
 
@@ -70,16 +73,16 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Use direct service call instead of HTTP request
     const financialData = await getDailyFinancialData(
-      weekDates[0], // start date
-      weekDates[6]  // end date
+      dateRange[0], // start date
+      dateRange[dateRange.length - 1]  // end date
     );
 
     financialTime = Date.now() - financialStartTime;
 
     console.log(`✅ Financial data fetched in ${financialTime}ms`);
     console.log('💰 Financial Response Structure:');
-    console.log('   - Start Date:', mondayStr);
-    console.log('   - End Date:', sundayStr);
+    console.log('   - Start Date:', startDateStr);
+    console.log('   - End Date:', endDateStr);
     console.log('   - Daily Data Count:', financialData?.data?.length || 0);
     console.log('   - Is Cached:', financialData?.isCached || false);
 
@@ -90,9 +93,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
     try {
       const { getScheduledHoursForDateRange } = await import('$lib/schedule/hours-service');
-      const currentWeekStart = new Date(mondayStr);
-      const currentWeekEnd = new Date(sundayStr);
-      scheduledHoursData = await getScheduledHoursForDateRange(currentWeekStart, currentWeekEnd);
+      const rangeStart = new Date(startDateStr);
+      const rangeEnd = new Date(endDateStr);
+      scheduledHoursData = await getScheduledHoursForDateRange(rangeStart, rangeEnd);
 
       scheduledTime = Date.now() - scheduledStartTime;
       console.log(`✅ Scheduled hours fetched in ${scheduledTime}ms`);
@@ -101,7 +104,7 @@ export const POST: RequestHandler = async ({ request }) => {
       scheduledTime = Date.now() - scheduledStartTime;
       console.warn(`⚠️ Scheduled hours failed after ${scheduledTime}ms, using defaults:`, err);
       // Create default scheduled hours
-      scheduledHoursData = weekDates.map(date => ({
+      scheduledHoursData = dateRange.map(date => ({
         date: date.toISOString().split('T')[0],
         hours: 40 // Default 40 hours per day
       }));
@@ -115,9 +118,6 @@ export const POST: RequestHandler = async ({ request }) => {
     let employeeRoleBreakdowns: Record<string, { management: number; packing: number; picking: number; }> = {};
 
     try {
-      const startDateStr = mondayStr;
-      const endDateStr = sundayStr;
-
       const { data, error } = await supabaseAdmin
         .from('daily_employee_hours')
         .select('work_date, hours_worked, employee_role')
@@ -171,7 +171,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Step 5: Prepare upload data (using correct column names)
     console.log('📊 Step 5: Preparing upload data...');
-    const uploadData = weekDates.map(date => {
+    const uploadData = dateRange.map(date => {
       const dateStr = date.toISOString().split('T')[0];
       const dayData = linnworksData.data?.find((d: any) => d.date === dateStr);
       const financialDayData = financialData.data?.find((d: any) => d.date === dateStr);

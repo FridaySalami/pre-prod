@@ -120,8 +120,10 @@
 	type MenuItem = NavigationItem | SeparatorItem | SectionHeaderItem;
 
 	// Type guard functions
-	const isSeparator = (item: MenuItem): item is SeparatorItem => 'type' in item && item.type === 'separator';
-	const isSectionHeader = (item: MenuItem): item is SectionHeaderItem => 'type' in item && item.type === 'section';
+	const isSeparator = (item: MenuItem): item is SeparatorItem =>
+		'type' in item && item.type === 'separator';
+	const isSectionHeader = (item: MenuItem): item is SectionHeaderItem =>
+		'type' in item && item.type === 'section';
 	const isNavigationItem = (item: MenuItem): item is NavigationItem => !('type' in item);
 
 	// Navigation items with role requirements
@@ -332,7 +334,11 @@
 	}
 </script>
 
-<Sidebar.Root collapsible="icon" class="min-h-screen bg-gray-50 border-r border-gray-200" data-sidebar="sidebar">
+<Sidebar.Root
+	collapsible="icon"
+	class="min-h-screen bg-gray-50 border-r border-gray-200"
+	data-sidebar="sidebar"
+>
 	<Sidebar.Header class="">
 		<div
 			class="flex flex-col items-center px-4 py-3 gap-2 transition-all duration-200 hover:bg-sidebar-accent/50 rounded-lg mx-2"

@@ -1527,10 +1527,10 @@
 				{@const enhanced = enhancedSeasonalAnalysis()}
 				{#if enhanced && 'detectedCycles' in enhanced}
 					<div
-						class="mt-4 p-4 bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/50 dark:to-green-950/50 rounded-lg border"
+						class="mt-4 p-4 bg-linear-to-r from-blue-50 to-green-50 dark:from-blue-950/50 dark:to-green-950/50 rounded-lg border"
 					>
 						<div class="flex items-center gap-2 mb-3">
-							<div class="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-green-500"></div>
+							<div class="w-3 h-3 rounded-full bg-linear-to-r from-blue-500 to-green-500"></div>
 							<span class="font-medium text-sm">Enhanced Seasonal Analysis</span>
 							<Badge variant="outline" class="text-xs">
 								{enhanced.confidence > 0.7 ? 'High' : enhanced.confidence > 0.4 ? 'Medium' : 'Low'} Confidence
