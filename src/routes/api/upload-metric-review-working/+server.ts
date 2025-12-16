@@ -260,7 +260,7 @@ export const POST: RequestHandler = async ({ request }) => {
     const totalTime = Date.now() - totalStartTime;
     console.log('📤 Upload Summary:');
     console.log(`   - Records processed: ${uploadData.length}`);
-    console.log(`   - Week range: ${mondayStr} to ${sundayStr}`);
+    console.log(`   - Date range: ${startDateStr} to ${endDateStr}`);
 
     console.log('⏱️ Detailed Timing Breakdown:');
     console.log(`   - Linnworks API: ${linnworksTime}ms`);
@@ -288,8 +288,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
     return new Response(JSON.stringify({
       success: true,
-      message: `Successfully uploaded daily metric review for week ${weekDates[0].toLocaleDateString()} - ${weekDates[6].toLocaleDateString()} via streamlined API`,
-      weekRange: `${weekDates[0].toLocaleDateString()} - ${weekDates[6].toLocaleDateString()}`,
+      message: `Successfully uploaded daily metric review for period ${dateRange[0].toLocaleDateString()} - ${dateRange[dateRange.length - 1].toLocaleDateString()} via streamlined API`,
+      dateRange: `${dateRange[0].toLocaleDateString()} - ${dateRange[dateRange.length - 1].toLocaleDateString()}`,
       recordsUploaded: uploadData.length,
       uploadedAt: new Date().toISOString()
     }), {
