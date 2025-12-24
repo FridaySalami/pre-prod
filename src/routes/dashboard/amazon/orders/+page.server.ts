@@ -3,31 +3,75 @@ import { CostCalculator } from '$lib/server/cost-calculator';
 
 export async function load({ url }) {
   const dateParam = url.searchParams.get('date');
-  let startDate: Date, endDate: Date;
+  const searchParam = url.searchParams.get('search');
 
-  if (dateParam) {
-    const targetDate = new Date(dateParam);
-    startDate = new Date(targetDate);
-    startDate.setHours(0, 0, 0, 0);
-    endDate = new Date(targetDate);
-    endDate.setHours(23, 59, 59, 999);
+  let orders: any[] = [];
+  let error = null;
+  let startDate: Date | undefined;
+
+  if (searchParam) {
+    const term = searchParam.trim();
+
+    // 1. Search orders by ID
+    const { data: ordersById, error: error1 } = await db
+      .from('amazon_orders')
+      .select('amazon_order_id')
+      .ilike('amazon_order_id', `%${term}%`);
+
+    // 2. Search items by SKU or ASIN
+    const { data: itemsBySkuOrAsin, error: error2 } = await db
+      .from('amazon_order_items')
+      .select('amazon_order_id')
+      .or(`seller_sku.ilike.%${term}%,asin.ilike.%${term}%`);
+
+    if (error1) console.error('Error searching orders:', error1);
+    if (error2) console.error('Error searching items:', error2);
+
+    const orderIds = new Set([
+      ...(ordersById?.map(o => o.amazon_order_id) || []),
+      ...(itemsBySkuOrAsin?.map(i => i.amazon_order_id) || [])
+    ]);
+
+    if (orderIds.size > 0) {
+      const { data: searchResults, error: searchError } = await db
+        .from('amazon_orders')
+        .select('*, amazon_order_items(*)')
+        .in('amazon_order_id', Array.from(orderIds))
+        .order('purchase_date', { ascending: false });
+
+      orders = searchResults || [];
+      error = searchError;
+    }
   } else {
-    // Default to yesterday
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    startDate = new Date(yesterday);
-    startDate.setHours(0, 0, 0, 0);
-    endDate = new Date(yesterday);
-    endDate.setHours(23, 59, 59, 999);
-  }
+    let endDate: Date;
 
-  const { data: orders, error } = await db
-    .from('amazon_orders')
-    .select('*, amazon_order_items(*)')
-    .gte('purchase_date', startDate.toISOString())
-    .lte('purchase_date', endDate.toISOString())
-    .order('purchase_date', { ascending: false });
+    if (dateParam) {
+      const targetDate = new Date(dateParam);
+      startDate = new Date(targetDate);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(targetDate);
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      // Default to yesterday
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      startDate = new Date(yesterday);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(yesterday);
+      endDate.setHours(23, 59, 59, 999);
+    }
+
+    const { data: dateOrders, error: dateError } = await db
+      .from('amazon_orders')
+      .select('*, amazon_order_items(*)')
+      .gte('purchase_date', startDate.toISOString())
+      .lte('purchase_date', endDate.toISOString())
+      .order('purchase_date', { ascending: false });
+
+    orders = dateOrders || [];
+    error = dateError;
+  }
 
   if (error) {
     console.error('Error fetching amazon orders:', error);
@@ -45,8 +89,9 @@ export async function load({ url }) {
 
       // Calculate price per item for fee calculation
       const itemPrice = item.item_price_amount ? parseFloat(item.item_price_amount) / item.quantity_ordered : 0;
+      const itemTax = item.item_tax_amount !== null ? parseFloat(item.item_tax_amount) / item.quantity_ordered : undefined;
 
-      const costs = await calculator.calculateProductCosts(item.seller_sku, itemPrice, { isPrime: order.is_prime });
+      const costs = await calculator.calculateProductCosts(item.seller_sku, itemPrice, { isPrime: order.is_prime, actualTax: itemTax });
       return {
         ...item,
         costs
@@ -61,6 +106,7 @@ export async function load({ url }) {
 
   return {
     orders: enrichedOrders ?? [],
-    date: dateParam || startDate.toISOString().split('T')[0]
+    date: dateParam || (startDate ? startDate.toISOString().split('T')[0] : ''),
+    search: searchParam || ''
   };
 }

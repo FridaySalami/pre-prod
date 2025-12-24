@@ -1,15 +1,44 @@
-import { db } from '$lib/supabaseServer';
+import { createClient } from '@supabase/supabase-js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-export class CostCalculator {
-  private boxSizeCosts: Map<string, number>;
-  private fragileSKUs: Set<string>;
-  private shippingTable: any[];
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-  constructor() {
+// Load environment variables
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) {
+    console.error('No .env file found');
+    process.exit(1);
+  }
+
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  const env = {};
+
+  envContent.split('\n').forEach(line => {
+    const match = line.match(/^([^=]+)=(.*)$/);
+    if (match) {
+      env[match[1]] = match[2].replace(/^["']|["']$/g, '');
+    }
+  });
+
+  return env;
+}
+
+const env = loadEnvFile();
+// Use service key if available to bypass RLS, otherwise anon key
+const supabaseKey = env.PRIVATE_SUPABASE_SERVICE_KEY || env.PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(env.PUBLIC_SUPABASE_URL, supabaseKey);
+
+// --- CostCalculator Class (Simplified for debugging) ---
+class CostCalculator {
+  constructor(dbClient) {
+    this.db = dbClient;
     this.initializeLookupTables();
   }
 
-  private initializeLookupTables() {
+  initializeLookupTables() {
     // Box size cost lookup
     this.boxSizeCosts = new Map([
       ['5.25x5.25x5.25', 0.15],
@@ -91,13 +120,12 @@ export class CostCalculator {
     ];
   }
 
-  private calculateShippingCost(product: any, shippingService: string): number {
+  calculateShippingCost(product, shippingService) {
     const productWeight = product.weight ?? 0;
     const productDepth = product.depth ?? 0;
     const productHeight = product.height ?? 0;
     const productWidth = product.width ?? 0;
 
-    // Find matching shipping tier based on service type, weight, and dimensions
     const serviceOptions = this.shippingTable.filter(s => s.service === shippingService);
 
     for (const option of serviceOptions) {
@@ -105,44 +133,51 @@ export class CostCalculator {
         productDepth >= option.depthMin && productDepth <= option.depthMax &&
         productHeight >= option.heightMin && productHeight <= option.heightMax &&
         productWidth >= option.widthMin && productWidth <= option.widthMax) {
-        return option.cost;
+        return { cost: option.cost, tier: option.tier };
       }
     }
 
-    return 0; // No match found
+    return { cost: 0, tier: 'No Match' };
   }
 
-  private getAmazonFeeRate(price: number): number {
+  getAmazonFeeRate(price) {
     return price < 10 ? 0.08 : 0.153;
   }
 
-  async calculateProductCosts(sku: string, price: number = 0, options: { isPrime?: boolean, actualTax?: number } = {}) {
+  async calculateProductCosts(sku, price = 0, options = {}) {
     try {
       // Fetch product data
-      const { data: product, error: productError } = await db
+      const { data: product, error: productError } = await this.db
         .from('inventory')
         .select('id, sku, depth, height, width, weight')
         .eq('sku', sku)
         .single();
 
       if (productError || !product) {
-        console.log(`[CostCalculator] Product not found: ${sku}`);
+        console.log(`[CostCalculator] Product not found in inventory: ${sku}`);
         return null;
       }
+      console.log('Inventory Data:', product);
 
       // Fetch SKU-ASIN mapping for shipping lookup and item name
-      const { data: skuMapping, error: skuError } = await db
+      const { data: skuMapping, error: skuError } = await this.db
         .from('sku_asin_mapping')
         .select('merchant_shipping_group, item_name')
         .eq('seller_sku', sku)
         .single();
 
+      if (skuError) console.log('Mapping Error:', skuError);
+      console.log('Mapping Data:', skuMapping);
+
       // Fetch Linnworks data for cost lookup
-      const { data: linnworksData } = await db
+      const { data: linnworksData, error: linnError } = await this.db
         .from('linnworks_composition_summary')
         .select('total_value, child_vats')
         .eq('parent_sku', sku)
         .single();
+
+      if (linnError) console.log('Linnworks Error:', linnError);
+      console.log('Linnworks Data:', linnworksData);
 
       // Calculate all cost components
       let shipping = skuMapping?.merchant_shipping_group || 'Off Amazon';
@@ -153,12 +188,6 @@ export class CostCalculator {
       }
 
       const box = `${String(product.width ?? '')}x${String(product.height ?? '')}x${String(product.depth ?? '')}`;
-
-      // Determine shipping type for display
-      const shippingType = shipping === 'Nationwide Prime' ? 'Prime' :
-        shipping === 'UK Shipping' ? 'Standard' :
-          shipping === 'UK shipping One day' ? 'One Day' :
-            'Unknown';
 
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
@@ -176,23 +205,13 @@ export class CostCalculator {
       const vatAmount = vatCode === 20 ? baseCost * 0.2 : 0;
 
       // Calculate shipping cost
-      const shippingCost = this.calculateShippingCost(product, shipping);
-
-      // Calculate Sales VAT and Ex-VAT Price
-      let salesVat = 0;
-      let exVatPrice = price;
-
-      if (options.actualTax !== undefined) {
-        salesVat = options.actualTax;
-        exVatPrice = price - salesVat;
-      } else {
-        const vatRate = vatCode / 100;
-        exVatPrice = price / (1 + vatRate);
-        salesVat = price - exVatPrice;
-      }
+      const shippingResult = this.calculateShippingCost(product, shipping);
+      const shippingCost = shippingResult.cost;
 
       // Calculate Amazon Fee
       // Calculate Ex-VAT price for fee calculation
+      const vatRate = vatCode / 100;
+      const exVatPrice = price / (1 + vatRate);
       const amazonFeeRate = this.getAmazonFeeRate(exVatPrice);
       const amazonFee = exVatPrice * amazonFeeRate;
 
@@ -205,12 +224,11 @@ export class CostCalculator {
         materialCost,
         fragileCharge,
         vatAmount,
-        salesVat,
         shippingCost,
+        shippingTier: shippingResult.tier,
         amazonFee,
         materialTotalCost,
         shipping,
-        shippingType,
         box,
         vatCode,
         itemName: skuMapping?.item_name || null
@@ -222,3 +240,35 @@ export class CostCalculator {
     }
   }
 }
+
+async function debugOrder() {
+  const orderId = '205-0265907-0045923';
+  console.log(`Debugging Order: ${orderId}`);
+
+  const { data: order, error } = await supabase
+    .from('amazon_orders')
+    .select('*, amazon_order_items(*)')
+    .eq('amazon_order_id', orderId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching order:', error);
+    return;
+  }
+
+  console.log('Order found:', order.amazon_order_id);
+  console.log('Is Prime:', order.is_prime);
+
+  const calculator = new CostCalculator(supabase);
+
+  for (const item of order.amazon_order_items) {
+    console.log(`\n--- Processing Item: ${item.seller_sku} ---`);
+    const itemPrice = item.item_price_amount ? parseFloat(item.item_price_amount) / item.quantity_ordered : 0;
+    console.log(`Item Price: ${itemPrice}`);
+
+    const costs = await calculator.calculateProductCosts(item.seller_sku, itemPrice, { isPrime: order.is_prime });
+    console.log('Calculated Costs:', costs);
+  }
+}
+
+debugOrder();

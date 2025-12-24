@@ -167,6 +167,12 @@
 			requiredRole: 'user'
 		},
 		{
+			title: 'Amazon Orders',
+			url: '/dashboard/amazon/orders',
+			icon: 'shopping_cart',
+			requiredRole: 'user'
+		},
+		{
 			type: 'section',
 			title: 'Core Operations'
 		},

@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { Button } from '$lib/shadcn/ui/button';
-	import { RefreshCw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-svelte';
+	import { RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Bug } from 'lucide-svelte';
 	import { showToast } from '$lib/toastStore';
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
+	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
+	import DebugModal from '$lib/components/DebugModal.svelte';
 
 	export let data;
 
@@ -17,7 +19,55 @@
 	let sortDirection: 'asc' | 'desc' = 'desc';
 	let durationTimer: ReturnType<typeof setInterval> | null = null;
 
+	// Modal state
+	let showUpdateCostModal = false;
+	let selectedSku = '';
+	let selectedTitle = '';
+	let selectedAsin = '';
+
+	// Debug Modal state
+	let showDebugModal = false;
+	let debugLogs: string[] = [];
+	let debugTitle = '';
+
+	function openUpdateCostModal(sku: string, title: string, asin: string) {
+		selectedSku = sku;
+		selectedTitle = title;
+		selectedAsin = asin;
+		showUpdateCostModal = true;
+	}
+
+	async function openDebugModal(orderId: string, sku: string) {
+		debugTitle = `Debug: ${sku}`;
+		debugLogs = ['Loading...'];
+		showDebugModal = true;
+
+		try {
+			const res = await fetch(
+				`/api/amazon/orders/debug?orderId=${orderId}&sku=${encodeURIComponent(sku)}`
+			);
+			const data = await res.json();
+			if (data.logs) {
+				debugLogs = data.logs;
+			} else {
+				debugLogs = ['No logs returned', JSON.stringify(data)];
+			}
+		} catch (e) {
+			debugLogs = ['Error fetching debug info', String(e)];
+		}
+	}
+
 	$: selectedDate = data.date;
+	let searchTerm = data.search || '';
+	$: if (data.search !== undefined) searchTerm = data.search;
+
+	function performSearch() {
+		if (searchTerm.trim()) {
+			goto(`?search=${encodeURIComponent(searchTerm.trim())}`);
+		} else {
+			goto(`?`);
+		}
+	}
 
 	$: {
 		if (syncing) {
@@ -42,19 +92,88 @@
 		if (!order.amazon_order_items) return 0;
 		return order.amazon_order_items.reduce((sum: number, item: any) => {
 			if (item.costs) {
-				return (
-					sum +
-					((item.costs.materialTotalCost || 0) +
-						(item.costs.shippingCost || 0) +
-						(item.costs.amazonFee || 0)) *
-						item.quantity_ordered
-				);
+				const material = Number(item.costs.materialTotalCost) || 0;
+				const shipping = Number(item.costs.shippingCost) || 0;
+				const fee = Number(item.costs.amazonFee) || 0;
+				const salesVat = Number(item.costs.salesVat) || 0;
+				const qty = Number(item.quantity_ordered) || 0;
+				return sum + (material + shipping + fee + salesVat) * qty;
 			}
 			return sum;
 		}, 0);
 	}
 
 	$: filteredOrders = data.orders || [];
+
+	// SKU Analysis
+	interface SkuStats {
+		sku: string;
+		title: string;
+		asin: string;
+		count: number;
+		totalProfit: number;
+		avgProfit: number;
+		hasCostData: boolean;
+	}
+
+	$: skuStats = filteredOrders.reduce((acc: Record<string, SkuStats>, order: any) => {
+		if (!order.amazon_order_items) return acc;
+
+		order.amazon_order_items.forEach((item: any) => {
+			if (!item.seller_sku) return;
+
+			const sku = item.seller_sku;
+			if (!acc[sku]) {
+				acc[sku] = {
+					sku,
+					title: item.title || 'Unknown',
+					asin: item.asin || '',
+					count: 0,
+					totalProfit: 0,
+					avgProfit: 0,
+					hasCostData: false
+				};
+			}
+
+			const qty = Number(item.quantity_ordered) || 0;
+			acc[sku].count += qty;
+
+			// Calculate profit for this item
+			// Item Revenue
+			const itemPrice = Number(item.item_price_amount) || 0;
+			const revenue = itemPrice * qty;
+
+			// Item Cost
+			let itemCost = 0;
+			if (item.costs) {
+				acc[sku].hasCostData = true;
+				const material = Number(item.costs.materialTotalCost) || 0;
+				const shipping = Number(item.costs.shippingCost) || 0;
+				const fee = Number(item.costs.amazonFee) || 0;
+				const salesVat = Number(item.costs.salesVat) || 0;
+				itemCost = (material + shipping + fee + salesVat) * qty;
+			}
+
+			const profit = revenue - itemCost;
+			acc[sku].totalProfit += profit;
+		});
+		return acc;
+	}, {});
+
+	$: skuList = Object.values(skuStats).map((stat) => ({
+		...stat,
+		avgProfit: stat.count > 0 ? stat.totalProfit / stat.count : 0
+	}));
+
+	$: topSellingSkus = [...skuList].sort((a, b) => b.count - a.count).slice(0, 10);
+	$: mostProfitableSkus = [...skuList]
+		.filter((s) => s.hasCostData)
+		.sort((a, b) => b.avgProfit - a.avgProfit)
+		.slice(0, 10);
+	$: leastProfitableSkus = [...skuList]
+		.filter((s) => s.hasCostData)
+		.sort((a, b) => a.avgProfit - b.avgProfit)
+		.slice(0, 10);
 
 	$: sortedOrders = [...filteredOrders].sort((a, b) => {
 		let aValue = a[sortColumn];
@@ -85,12 +204,36 @@
 		return sortDirection === 'asc' ? comparison : -comparison;
 	});
 
-	$: totalSales = sortedOrders.reduce(
-		(sum, order) => sum + (parseFloat(order.order_total) || 0),
-		0
+	$: analyzedStats = sortedOrders.reduce(
+		(acc, order) => {
+			if (!order.amazon_order_items) return acc;
+
+			order.amazon_order_items.forEach((item: any) => {
+				if (item.costs) {
+					const qty = Number(item.quantity_ordered) || 0;
+					const itemPrice = Number(item.item_price_amount) || 0;
+					const revenue = itemPrice * qty;
+
+					const material = Number(item.costs.materialTotalCost) || 0;
+					const shipping = Number(item.costs.shippingCost) || 0;
+					const fee = Number(item.costs.amazonFee) || 0;
+					const salesVat = Number(item.costs.salesVat) || 0;
+					const itemCost = (material + shipping + fee + salesVat) * qty;
+
+					acc.sales += revenue;
+					acc.costs += itemCost;
+					acc.units += qty;
+				}
+			});
+			return acc;
+		},
+		{ sales: 0, costs: 0, units: 0 }
 	);
-	$: totalCosts = sortedOrders.reduce((sum, order) => sum + calculateOrderCost(order), 0);
-	$: totalProfit = totalSales - totalCosts;
+
+	$: totalSales = analyzedStats.sales;
+	$: totalCosts = analyzedStats.costs;
+	$: totalProfit = analyzedStats.sales - analyzedStats.costs;
+	$: totalUnitsSold = analyzedStats.units;
 
 	function toggleSort(column: string) {
 		if (sortColumn === column) {
@@ -103,8 +246,6 @@
 
 	async function syncOrders() {
 		console.log('Sync button clicked');
-		syncStartTime = Date.now();
-		syncDuration = 0;
 		syncing = true;
 		syncStatus = 'Starting sync...';
 		syncProgress = 0;
@@ -199,11 +340,25 @@
 		</div>
 		<div class="flex flex-col items-end gap-2">
 			<div class="flex items-center gap-2">
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						performSearch();
+					}}
+					class="flex gap-2"
+				>
+					<input
+						type="text"
+						placeholder="Search Order ID, SKU, ASIN..."
+						class="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 w-64"
+						bind:value={searchTerm}
+					/>
+				</form>
 				<input
 					type="date"
 					class="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-					value={selectedDate}
-					onchange={(e) => goto(`?date=${e.currentTarget.value}`)}
+					bind:value={selectedDate}
+					onchange={() => goto(`?date=${selectedDate}`)}
 				/>
 				<Button onclick={syncOrders} disabled={syncing}>
 					<RefreshCw class="mr-2 h-4 w-4 {syncing ? 'animate-spin' : ''}" />
@@ -222,7 +377,23 @@
 		</div>
 	</div>
 
-	<div class="grid gap-4 md:grid-cols-3">
+	<div class="grid gap-4 md:grid-cols-5">
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
+				<h3 class="tracking-tight text-sm font-medium">Total Orders</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="text-2xl font-bold">{filteredOrders.length}</div>
+			</div>
+		</div>
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
+				<h3 class="tracking-tight text-sm font-medium">Units Sold</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="text-2xl font-bold">{totalUnitsSold}</div>
+			</div>
+		</div>
 		<div class="rounded-xl border bg-card text-card-foreground shadow">
 			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
 				<h3 class="tracking-tight text-sm font-medium">Total Sales</h3>
@@ -246,6 +417,142 @@
 			<div class="p-6 pt-0">
 				<div class="text-2xl font-bold {totalProfit > 0 ? 'text-green-600' : 'text-red-600'}">
 					{totalProfit > 0 ? '+' : ''}{formatCurrency(totalProfit)}
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="grid gap-4 md:grid-cols-3">
+		<!-- Top Selling SKUs -->
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-6 pb-2">
+				<h3 class="font-semibold leading-none tracking-tight">Top 10 Selling SKUs</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="relative w-full overflow-auto max-h-[400px]">
+					<table class="w-full caption-bottom text-sm">
+						<thead class="[&_tr]:border-b sticky top-0 bg-card">
+							<tr
+								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+							>
+								<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+									>SKU</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Count</th
+								>
+							</tr>
+						</thead>
+						<tbody class="[&_tr:last-child]:border-0">
+							{#each topSellingSkus as sku}
+								<tr
+									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+								>
+									<td class="p-4 align-middle font-medium">
+										<div class="flex flex-col">
+											<span>{sku.sku}</span>
+											<span class="text-xs text-muted-foreground">{sku.title}</span>
+										</div>
+									</td>
+									<td class="p-4 align-middle text-right">{sku.count}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<!-- Most Profitable SKUs -->
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-6 pb-2">
+				<h3 class="font-semibold leading-none tracking-tight">Most Profitable SKUs (Avg)</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="relative w-full overflow-auto max-h-[400px]">
+					<table class="w-full caption-bottom text-sm">
+						<thead class="[&_tr]:border-b sticky top-0 bg-card">
+							<tr
+								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+							>
+								<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+									>SKU</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Avg Profit</th
+								>
+							</tr>
+						</thead>
+						<tbody class="[&_tr:last-child]:border-0">
+							{#each mostProfitableSkus as sku}
+								<tr
+									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+								>
+									<td class="p-4 align-middle font-medium">
+										<div class="flex flex-col">
+											<span>{sku.sku}</span>
+											<span class="text-xs text-muted-foreground">{sku.title}</span>
+										</div>
+									</td>
+									<td class="p-4 align-middle text-right">{sku.count}</td>
+									<td class="p-4 align-middle text-right text-green-600"
+										>{formatCurrency(sku.avgProfit)}</td
+									>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<!-- Least Profitable SKUs -->
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-6 pb-2">
+				<h3 class="font-semibold leading-none tracking-tight">Least Profitable SKUs (Avg)</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="relative w-full overflow-auto max-h-[400px]">
+					<table class="w-full caption-bottom text-sm">
+						<thead class="[&_tr]:border-b sticky top-0 bg-card">
+							<tr
+								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+							>
+								<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+									>SKU</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Avg Profit</th
+								>
+							</tr>
+						</thead>
+						<tbody class="[&_tr:last-child]:border-0">
+							{#each leastProfitableSkus as sku}
+								<tr
+									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+								>
+									<td class="p-4 align-middle font-medium">
+										<div class="flex flex-col">
+											<span>{sku.sku}</span>
+											<span class="text-xs text-muted-foreground">{sku.title}</span>
+										</div>
+									</td>
+									<td class="p-4 align-middle text-right">{sku.count}</td>
+									<td
+										class="p-4 align-middle text-right {sku.avgProfit < 0
+											? 'text-red-600'
+											: 'text-green-600'}">{formatCurrency(sku.avgProfit)}</td
+									>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
 				</div>
 			</div>
 		</div>
@@ -449,8 +756,8 @@
 									{#if order.amazon_order_items && order.amazon_order_items.length > 0}
 										<div class="flex flex-col gap-2">
 											{#each order.amazon_order_items as item}
-												<div class="text-xs flex flex-col">
-													<div class="flex items-center gap-1">
+												<div class="text-xs flex flex-col mb-2 last:mb-0">
+													<div class="flex items-center gap-1 flex-wrap">
 														<span class="font-semibold">{item.seller_sku || 'No SKU'}</span>
 														<span class="text-muted-foreground bg-muted px-1 rounded"
 															>ASIN: {item.asin}</span
@@ -464,6 +771,21 @@
 																)} ship)
 															</span>
 														{/if}
+														<button
+															class="ml-2 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
+															title="Update Cost Data"
+															onclick={() =>
+																openUpdateCostModal(item.seller_sku, item.title, item.asin)}
+														>
+															<Pencil class="h-3 w-3" />
+														</button>
+														<button
+															class="ml-1 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
+															title="Debug Cost Calculation"
+															onclick={() => openDebugModal(order.amazon_order_id, item.seller_sku)}
+														>
+															<Bug class="h-3 w-3" />
+														</button>
 													</div>
 													<div
 														class="truncate max-w-[250px] text-muted-foreground"
@@ -524,3 +846,16 @@
 		</div>
 	</div>
 </div>
+
+<UpdateCostModal
+	bind:open={showUpdateCostModal}
+	sku={selectedSku}
+	title={selectedTitle}
+	asin={selectedAsin}
+	on:success={() => {
+		// Refresh the page to show updated costs
+		window.location.reload();
+	}}
+/>
+
+<DebugModal bind:open={showDebugModal} logs={debugLogs} title={debugTitle} />

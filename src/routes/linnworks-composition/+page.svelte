@@ -217,6 +217,18 @@
 		return num.toString();
 	}
 
+	function safeParse(value: any): any[] {
+		if (Array.isArray(value)) return value;
+		if (typeof value === 'string') {
+			try {
+				return JSON.parse(value);
+			} catch (e) {
+				return [];
+			}
+		}
+		return [];
+	}
+
 	async function handleGenerateSummary() {
 		summaryLoading = true;
 		summaryMessage = '';
@@ -561,25 +573,21 @@
 				<tbody class="bg-white divide-y divide-gray-200">
 					{#each summaryData as row}
 						<tr>
-							<td class="px-6 py-4 text-sm text-gray-900">{row.parentSKU}</td>
-							<td class="px-6 py-4 text-sm text-gray-900">{row.parentTitle}</td>
-							<td class="px-6 py-4 text-sm text-gray-900">{JSON.parse(row.childSKUs).join(', ')}</td
+							<td class="px-6 py-4 text-sm text-gray-900">{row.parent_sku}</td>
+							<td class="px-6 py-4 text-sm text-gray-900">{row.parent_title}</td>
+							<td class="px-6 py-4 text-sm text-gray-900">{safeParse(row.child_skus).join(', ')}</td
 							>
 							<td class="px-6 py-4 text-sm text-gray-900"
-								>{JSON.parse(row.childQuantities || '[]').join(', ')}</td
+								>{safeParse(row.child_quantities).join(', ')}</td
 							>
 							<td class="px-6 py-4 text-sm text-gray-900"
-								>{JSON.parse(row.childPrices || '[]')
-									.map(formatNumber)
-									.join(', ')}</td
+								>{safeParse(row.child_prices).map(formatNumber).join(', ')}</td
 							>
 							<td class="px-6 py-4 text-sm text-gray-900"
-								>{JSON.parse(row.childVATs || '[]')
-									.map(formatNumber)
-									.join(', ')}</td
+								>{safeParse(row.child_vats).map(formatNumber).join(', ')}</td
 							>
-							<td class="px-6 py-4 text-sm text-gray-900">{formatNumber(row.totalQty)}</td>
-							<td class="px-6 py-4 text-sm text-gray-900">{formatNumber(row.totalValue)}</td>
+							<td class="px-6 py-4 text-sm text-gray-900">{formatNumber(row.total_qty)}</td>
+							<td class="px-6 py-4 text-sm text-gray-900">{formatNumber(row.total_value)}</td>
 						</tr>
 					{/each}
 				</tbody>
