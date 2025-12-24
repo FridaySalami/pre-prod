@@ -160,7 +160,7 @@ class CostCalculator {
 
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
-      const materialCost = 0.20;
+      const materialCost = 0.35;
       const fragileCharge = this.fragileSKUs.has(sku) ? 0.66 : 0.00;
 
       // VAT calculation
