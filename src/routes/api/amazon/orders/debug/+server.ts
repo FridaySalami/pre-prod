@@ -77,7 +77,11 @@ export async function GET({ url }) {
 
     // 4. Run Calculator
     const calculator = new CostCalculator();
-    const costs = await calculator.calculateProductCosts(sku, itemPrice, { isPrime: order.is_prime, actualTax: itemTax });
+    const costs = await calculator.calculateProductCosts(sku, itemPrice, {
+      isPrime: order.is_prime,
+      actualTax: itemTax,
+      quantity: item.quantity_ordered
+    });
     log('Calculated Costs:');
     log(costs);
 

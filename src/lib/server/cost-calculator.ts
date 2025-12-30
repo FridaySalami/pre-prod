@@ -1,9 +1,9 @@
 import { db } from '$lib/supabaseServer';
 
 export class CostCalculator {
-  private boxSizeCosts: Map<string, number>;
-  private fragileSKUs: Set<string>;
-  private shippingTable: any[];
+  private boxSizeCosts!: Map<string, number>;
+  private fragileSKUs!: Set<string>;
+  private shippingTable!: any[];
 
   constructor() {
     this.initializeLookupTables();
@@ -116,8 +116,10 @@ export class CostCalculator {
     return price < 10 ? 0.08 : 0.153;
   }
 
-  async calculateProductCosts(sku: string, price: number = 0, options: { isPrime?: boolean, actualTax?: number } = {}) {
+  async calculateProductCosts(sku: string, price: number = 0, options: { isPrime?: boolean, actualTax?: number, quantity?: number } = {}) {
     try {
+      const quantity = options.quantity || 1;
+
       // Fetch product data
       const { data: product, error: productError } = await db
         .from('inventory')
@@ -176,7 +178,13 @@ export class CostCalculator {
       const vatAmount = vatCode === 20 ? baseCost * 0.2 : 0;
 
       // Calculate shipping cost
-      const shippingCost = this.calculateShippingCost(product, shipping);
+      // Scale weight by quantity to find the correct shipping tier for the whole package
+      const shippingProduct = {
+        ...product,
+        weight: (product.weight || 0) * quantity
+      };
+      const totalShippingCost = this.calculateShippingCost(shippingProduct, shipping);
+      const shippingCost = totalShippingCost / quantity; // Amortize per unit
 
       // Calculate Sales VAT and Ex-VAT Price
       let salesVat = 0;
@@ -197,7 +205,8 @@ export class CostCalculator {
       const amazonFee = exVatPrice * amazonFeeRate;
 
       // Material total cost
-      const materialTotalCost = vatAmount + boxCost + materialCost + fragileCharge + baseCost;
+      // Exclude VAT from material total cost as it is recoverable
+      const materialTotalCost = boxCost + materialCost + fragileCharge + baseCost;
 
       return {
         baseCost,

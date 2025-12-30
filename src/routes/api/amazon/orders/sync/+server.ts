@@ -156,6 +156,7 @@ export async function GET({ url }: { url: URL }) {
 
         // Calculate date range
         const dateParam = url.searchParams.get('date');
+        const viewParam = url.searchParams.get('view') || 'daily';
         let targetDate: Date;
 
         if (dateParam) {
@@ -166,11 +167,16 @@ export async function GET({ url }: { url: URL }) {
           targetDate.setDate(now.getDate() - 1);
         }
 
-        const startDate = new Date(targetDate);
-        startDate.setHours(0, 0, 0, 0);
-
         const endDate = new Date(targetDate);
         endDate.setHours(23, 59, 59, 999);
+
+        const startDate = new Date(endDate);
+        if (viewParam === 'weekly') {
+          startDate.setDate(startDate.getDate() - 6);
+        } else {
+          startDate.setDate(targetDate.getDate());
+        }
+        startDate.setHours(0, 0, 0, 0);
 
         console.log(`Fetching Amazon orders for ${startDate.toISOString()} to ${endDate.toISOString()}`);
         send({ type: 'status', message: 'Fetching orders...' });
@@ -254,16 +260,20 @@ export async function GET({ url }: { url: URL }) {
           updated_at: new Date().toISOString()
         }));
 
-        // Upsert to Supabase
-        const { error } = await db
-          .from('amazon_orders')
-          .upsert(ordersToUpsert, { onConflict: 'amazon_order_id' });
+        // Upsert to Supabase in chunks
+        const chunkSize = 500;
+        for (let i = 0; i < ordersToUpsert.length; i += chunkSize) {
+          const chunk = ordersToUpsert.slice(i, i + chunkSize);
+          const { error } = await db
+            .from('amazon_orders')
+            .upsert(chunk, { onConflict: 'amazon_order_id' });
 
-        if (error) {
-          console.error('Error upserting orders to Supabase:', error);
-          send({ type: 'error', error: error.message });
-          controller.close();
-          return;
+          if (error) {
+            console.error('Error upserting orders to Supabase:', error);
+            send({ type: 'error', error: error.message });
+            controller.close();
+            return;
+          }
         }
 
         // Fetch and sync order items

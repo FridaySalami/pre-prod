@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { Button } from '$lib/shadcn/ui/button';
-	import { RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Bug } from 'lucide-svelte';
+	import { RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Bug, Download } from 'lucide-svelte';
 	import { showToast } from '$lib/toastStore';
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import DebugModal from '$lib/components/DebugModal.svelte';
 
@@ -18,6 +19,8 @@
 	let sortColumn = 'purchase_date';
 	let sortDirection: 'asc' | 'desc' = 'desc';
 	let durationTimer: ReturnType<typeof setInterval> | null = null;
+
+	$: view = $page.url.searchParams.get('view') || 'daily';
 
 	// Modal state
 	let showUpdateCostModal = false;
@@ -54,6 +57,24 @@
 			}
 		} catch (e) {
 			debugLogs = ['Error fetching debug info', String(e)];
+		}
+	}
+
+	async function syncSingleOrder(orderId: string) {
+		try {
+			showToast(`Syncing order ${orderId}...`, 'info');
+			const res = await fetch(`/api/amazon/orders/sync-single?orderId=${orderId}`);
+			const data = await res.json();
+
+			if (data.success) {
+				showToast('Order synced successfully', 'success');
+				setTimeout(() => window.location.reload(), 1000);
+			} else {
+				showToast(data.error || 'Failed to sync order', 'error');
+			}
+		} catch (e) {
+			showToast('Error syncing order', 'error');
+			console.error(e);
 		}
 	}
 
@@ -166,6 +187,7 @@
 	}));
 
 	$: topSellingSkus = [...skuList].sort((a, b) => b.count - a.count).slice(0, 10);
+	$: leastSellingSkus = [...skuList].sort((a, b) => a.count - b.count).slice(0, 10);
 	$: mostProfitableSkus = [...skuList]
 		.filter((s) => s.hasCostData)
 		.sort((a, b) => b.avgProfit - a.avgProfit)
@@ -209,10 +231,12 @@
 			if (!order.amazon_order_items) return acc;
 
 			order.amazon_order_items.forEach((item: any) => {
+				const qty = Number(item.quantity_ordered) || 0;
+				acc.units += qty * (item.bundle_quantity || 1);
+
 				if (item.costs) {
-					const qty = Number(item.quantity_ordered) || 0;
 					const itemPrice = Number(item.item_price_amount) || 0;
-					const revenue = itemPrice * qty;
+					const revenue = itemPrice; // item_price_amount is total for the line
 
 					const material = Number(item.costs.materialTotalCost) || 0;
 					const shipping = Number(item.costs.shippingCost) || 0;
@@ -222,7 +246,6 @@
 
 					acc.sales += revenue;
 					acc.costs += itemCost;
-					acc.units += qty;
 				}
 			});
 			return acc;
@@ -252,8 +275,8 @@
 		syncTotal = 0;
 
 		try {
-			console.log(`Fetching /api/amazon/orders/sync?date=${selectedDate}...`);
-			const response = await fetch(`/api/amazon/orders/sync?date=${selectedDate}`);
+			console.log(`Fetching /api/amazon/orders/sync?date=${selectedDate}&view=${view}...`);
+			const response = await fetch(`/api/amazon/orders/sync?date=${selectedDate}&view=${view}`);
 
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
@@ -330,6 +353,62 @@
 		if (amount === null || amount === undefined) return '-';
 		return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 	}
+
+	function downloadCSV() {
+		const headers = [
+			'Order ID',
+			'Purchase Date',
+			'Status',
+			'Order Total',
+			'Total Cost',
+			'Profit',
+			'Currency',
+			'Items Shipped',
+			'Items Unshipped',
+			'Carrier',
+			'Ship Method',
+			'Is Prime',
+			'Is Business',
+			'Is Premium',
+			'SKUs'
+		];
+
+		const rows = sortedOrders.map((order) => {
+			const totalCost = calculateOrderCost(order);
+			const orderTotal = parseFloat(order.order_total) || 0;
+			const profit = orderTotal - totalCost;
+			const skus = order.amazon_order_items?.map((i: any) => i.seller_sku).join('; ') || '';
+
+			return [
+				order.amazon_order_id,
+				order.purchase_date,
+				order.order_status,
+				orderTotal.toFixed(2),
+				totalCost.toFixed(2),
+				profit.toFixed(2),
+				order.currency_code,
+				order.number_of_items_shipped,
+				order.number_of_items_unshipped,
+				order.automated_carrier || '',
+				order.automated_ship_method || order.shipment_service_level_category || '',
+				order.is_prime ? 'Yes' : 'No',
+				order.is_business_order ? 'Yes' : 'No',
+				order.is_premium_order ? 'Yes' : 'No',
+				`"${skus}"`
+			].join(',');
+		});
+
+		const csvContent = [headers.join(','), ...rows].join('\n');
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const link = document.createElement('a');
+		const url = URL.createObjectURL(blob);
+		link.setAttribute('href', url);
+		link.setAttribute('download', `amazon_orders_${selectedDate || 'all'}.csv`);
+		link.style.visibility = 'hidden';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+	}
 </script>
 
 <div class="flex flex-col gap-6 p-6">
@@ -354,12 +433,34 @@
 						bind:value={searchTerm}
 					/>
 				</form>
+				<div class="flex items-center rounded-md border bg-muted p-1">
+					<button
+						class="rounded-sm px-3 py-1 text-sm font-medium transition-all {view === 'daily'
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:bg-background/50'}"
+						onclick={() => goto(`?date=${selectedDate}&view=daily`)}
+					>
+						Daily
+					</button>
+					<button
+						class="rounded-sm px-3 py-1 text-sm font-medium transition-all {view === 'weekly'
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:bg-background/50'}"
+						onclick={() => goto(`?date=${selectedDate}&view=weekly`)}
+					>
+						Weekly
+					</button>
+				</div>
 				<input
 					type="date"
 					class="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 					bind:value={selectedDate}
-					onchange={() => goto(`?date=${selectedDate}`)}
+					onchange={() => goto(`?date=${selectedDate}&view=${view}`)}
 				/>
+				<Button variant="outline" onclick={downloadCSV}>
+					<Download class="mr-2 h-4 w-4" />
+					Export CSV
+				</Button>
 				<Button onclick={syncOrders} disabled={syncing}>
 					<RefreshCw class="mr-2 h-4 w-4 {syncing ? 'animate-spin' : ''}" />
 					{syncing ? 'Syncing...' : 'Sync Orders'}
@@ -422,11 +523,11 @@
 		</div>
 	</div>
 
-	<div class="grid gap-4 md:grid-cols-3">
+	<div class="grid gap-4 md:grid-cols-2">
 		<!-- Top Selling SKUs -->
 		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
 			<div class="p-6 pb-2">
-				<h3 class="font-semibold leading-none tracking-tight">Top 10 Selling SKUs</h3>
+				<h3 class="font-semibold leading-none tracking-tight">Most Orders (Top 10)</h3>
 			</div>
 			<div class="p-6 pt-0">
 				<div class="relative w-full overflow-auto max-h-[400px]">
@@ -445,6 +546,46 @@
 						</thead>
 						<tbody class="[&_tr:last-child]:border-0">
 							{#each topSellingSkus as sku}
+								<tr
+									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+								>
+									<td class="p-4 align-middle font-medium">
+										<div class="flex flex-col">
+											<span>{sku.sku}</span>
+											<span class="text-xs text-muted-foreground">{sku.title}</span>
+										</div>
+									</td>
+									<td class="p-4 align-middle text-right">{sku.count}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<!-- Least Selling SKUs -->
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-6 pb-2">
+				<h3 class="font-semibold leading-none tracking-tight">Least Orders (Bottom 10)</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="relative w-full overflow-auto max-h-[400px]">
+					<table class="w-full caption-bottom text-sm">
+						<thead class="[&_tr]:border-b sticky top-0 bg-card">
+							<tr
+								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+							>
+								<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+									>SKU</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Count</th
+								>
+							</tr>
+						</thead>
+						<tbody class="[&_tr:last-child]:border-0">
+							{#each leastSellingSkus as sku}
 								<tr
 									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
 								>
@@ -662,6 +803,9 @@
 								>Items</th
 							>
 							<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+								>Units</th
+							>
+							<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
 								>Products</th
 							>
 							<th
@@ -715,6 +859,12 @@
 						{#each sortedOrders as order}
 							{@const totalCost = calculateOrderCost(order)}
 							{@const profit = order.order_total ? parseFloat(order.order_total) - totalCost : 0}
+							{@const totalUnits =
+								order.amazon_order_items?.reduce(
+									(sum: number, item: any) =>
+										sum + (Number(item.quantity_ordered) || 0) * (item.bundle_quantity || 1),
+									0
+								) || 0}
 							<tr
 								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
 							>
@@ -753,6 +903,9 @@
 									{order.number_of_items_shipped} / {order.number_of_items_unshipped}
 								</td>
 								<td class="p-4 align-middle">
+									{totalUnits}
+								</td>
+								<td class="p-4 align-middle">
 									{#if order.amazon_order_items && order.amazon_order_items.length > 0}
 										<div class="flex flex-col gap-2">
 											{#each order.amazon_order_items as item}
@@ -763,6 +916,11 @@
 															>ASIN: {item.asin}</span
 														>
 														<span class="font-bold">x{item.quantity_ordered}</span>
+														{#if item.bundle_quantity > 1}
+															<span class="text-xs text-muted-foreground ml-1">
+																({item.bundle_quantity * item.quantity_ordered} units)
+															</span>
+														{/if}
 														{#if item.shipping_price_amount > 0}
 															<span class="text-xs text-muted-foreground ml-1">
 																(+{formatCurrency(
@@ -797,7 +955,18 @@
 											{/each}
 										</div>
 									{:else}
-										<span class="text-muted-foreground text-xs italic">No items synced</span>
+										<div class="flex items-center gap-2">
+											<span class="text-muted-foreground text-xs italic">No items synced</span>
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-6 text-xs"
+												onclick={() => syncSingleOrder(order.amazon_order_id)}
+											>
+												<RefreshCw class="mr-1 h-3 w-3" />
+												Sync Items
+											</Button>
+										</div>
 									{/if}
 								</td>
 								<td class="p-4 align-middle">{order.automated_carrier || '-'}</td>
