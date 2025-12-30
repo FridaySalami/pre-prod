@@ -127,7 +127,7 @@ export async function load({ url }) {
     return { orders: [] };
   }
 
-  // Fetch composition summary for bundle calculations
+  // Fetch all necessary data for cost calculations in bulk
   const allSkus = new Set<string>();
   orders.forEach(order => {
     order.amazon_order_items?.forEach((item: any) => {
@@ -135,19 +135,37 @@ export async function load({ url }) {
     });
   });
 
+  const inventoryMap = new Map();
+  const mappingMap = new Map();
+  const linnworksMap = new Map();
   const bundleMap = new Map<string, number>();
 
   if (allSkus.size > 0) {
-    const { data: compositions } = await db
-      .from('linnworks_composition_summary')
-      .select('parent_sku, total_qty')
-      .in('parent_sku', Array.from(allSkus));
+    const skuList = Array.from(allSkus);
 
-    if (compositions) {
-      compositions.forEach(c => {
-        if (c.parent_sku && c.total_qty) {
-          bundleMap.set(c.parent_sku, c.total_qty);
-        }
+    // Parallel fetch for all required data
+    const [inventoryRes, mappingRes, linnworksRes] = await Promise.all([
+      db.from('inventory')
+        .select('id, sku, depth, height, width, weight')
+        .in('sku', skuList),
+      db.from('sku_asin_mapping')
+        .select('seller_sku, merchant_shipping_group, item_name')
+        .in('seller_sku', skuList),
+      db.from('linnworks_composition_summary')
+        .select('parent_sku, total_qty, total_value, child_vats')
+        .in('parent_sku', skuList)
+    ]);
+
+    if (inventoryRes.data) {
+      inventoryRes.data.forEach(i => inventoryMap.set(i.sku, i));
+    }
+    if (mappingRes.data) {
+      mappingRes.data.forEach(m => mappingMap.set(m.seller_sku, m));
+    }
+    if (linnworksRes.data) {
+      linnworksRes.data.forEach(l => {
+        linnworksMap.set(l.parent_sku, l);
+        if (l.total_qty) bundleMap.set(l.parent_sku, l.total_qty);
       });
     }
   }
@@ -155,10 +173,10 @@ export async function load({ url }) {
   const calculator = new CostCalculator();
 
   // Enrich orders with cost data
-  const enrichedOrders = await Promise.all(orders.map(async (order) => {
+  const enrichedOrders = orders.map((order) => {
     if (!order.amazon_order_items) return order;
 
-    const enrichedItems = await Promise.all(order.amazon_order_items.map(async (item: AmazonOrderItem) => {
+    const enrichedItems = order.amazon_order_items.map((item: AmazonOrderItem) => {
       if (!item.seller_sku) return item;
 
       // Calculate price per item for fee calculation
@@ -167,11 +185,19 @@ export async function load({ url }) {
         ? parseFloat(item.item_tax_amount) / item.quantity_ordered
         : undefined;
 
-      const costs = await calculator.calculateProductCosts(item.seller_sku!, itemPrice, {
-        isPrime: order.is_prime,
-        actualTax: itemTax,
-        quantity: item.quantity_ordered
-      });
+      // Get pre-fetched data
+      const product = inventoryMap.get(item.seller_sku);
+      const skuMapping = mappingMap.get(item.seller_sku);
+      const linnworksData = linnworksMap.get(item.seller_sku);
+
+      let costs = null;
+      if (product) {
+        costs = calculator.calculate(item.seller_sku!, itemPrice, product, skuMapping, linnworksData, {
+          isPrime: order.is_prime,
+          actualTax: itemTax,
+          quantity: item.quantity_ordered
+        });
+      }
 
       const bundleQuantity = bundleMap.get(item.seller_sku) || 1;
 
@@ -180,13 +206,13 @@ export async function load({ url }) {
         costs,
         bundle_quantity: bundleQuantity
       };
-    }));
+    });
 
     return {
       ...order,
       amazon_order_items: enrichedItems
     };
-  }));
+  });
 
   return {
     orders: enrichedOrders ?? [],

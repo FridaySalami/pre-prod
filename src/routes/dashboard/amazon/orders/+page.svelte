@@ -412,6 +412,21 @@
 </script>
 
 <div class="flex flex-col gap-6 p-6">
+	<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+		<div class="flex">
+			<div class="shrink-0">
+				<Bug class="h-5 w-5 text-yellow-400" />
+			</div>
+			<div class="ml-3">
+				<p class="text-sm text-yellow-700">
+					<span class="font-medium">Work in Progress</span>
+					- This page is currently under active development. Data and calculations may be subject to
+					verification.
+				</p>
+			</div>
+		</div>
+	</div>
+
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-3xl font-bold tracking-tight">Amazon Orders</h1>

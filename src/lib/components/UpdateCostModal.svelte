@@ -48,9 +48,9 @@
 	const boxSizeCosts = new Map([
 		['5.25x5.25x5.25', 0.15],
 		['6.25x6.25x6.25', 0.16],
-		['9.25x6.25x6.25', 0.20],
+		['9.25x6.25x6.25', 0.2],
 		['9.25x9.25x9.25', 0.28],
-		['0x0x0', 0.00],
+		['0x0x0', 0.0],
 		['12.25x9.25x3.25', 0.22],
 		['14.75x11.25x14.75', 1.96],
 		['12.25x9.25x6.25', 0.26],
@@ -67,17 +67,32 @@
 		['Pallet Wrap', 4.65],
 		['10.25x8.25x6.25', 0.24],
 		['14.25x11.25x9.25', 0.43],
-		['15.75x11.75x7.75', 0.70],
+		['15.75x11.75x7.75', 0.7],
 		['10.25x7.25x2.25', 0.17],
 		['11.25x14.25x3.25', 0.24],
 		['14.25x10.25x12.25', 0.72],
 		['15.25x10.25x5.25', 1.34],
-		['10.25x10.25x10.25', 0.00],
-		['15.25x15.25x15.25', 0.00],
+		['10.25x10.25x10.25', 0.0],
+		['15.25x15.25x15.25', 0.0],
 		['Maggi Box', 1.52],
 		['20.25x15.25x6.25', 1.52],
 		['Poly Bag', 0.04]
 	]);
+
+	// Filter for valid dimension keys (containing 'x')
+	$: boxOptions = Array.from(boxSizeCosts.keys())
+		.filter((k) => k.includes('x') && !k.includes('0x0x0'))
+		.sort();
+
+	function handleBoxPresetChange(e: Event) {
+		const val = (e.target as HTMLSelectElement).value;
+		if (val && val !== 'custom') {
+			const [w, h, d] = val.split('x');
+			width = w;
+			height = h;
+			depth = d;
+		}
+	}
 
 	$: {
 		const key = `${width}x${height}x${depth}`;
@@ -299,7 +314,19 @@
 				</div>
 
 				<div class="space-y-2">
-					<Label>Dimensions (cm)</Label>
+					<div class="flex items-center justify-between">
+						<Label>Dimensions (cm)</Label>
+						<select
+							class="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+							onchange={handleBoxPresetChange}
+							value={`${width}x${height}x${depth}`}
+						>
+							<option value="custom">Custom Size</option>
+							{#each boxOptions as option}
+								<option value={option}>{option}</option>
+							{/each}
+						</select>
+					</div>
 					<div class="flex gap-4">
 						<div class="relative flex-1">
 							<Input placeholder="W" bind:value={width} type="number" class="pl-6" />

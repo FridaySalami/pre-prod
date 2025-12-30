@@ -118,8 +118,6 @@ export class CostCalculator {
 
   async calculateProductCosts(sku: string, price: number = 0, options: { isPrime?: boolean, actualTax?: number, quantity?: number } = {}) {
     try {
-      const quantity = options.quantity || 1;
-
       // Fetch product data
       const { data: product, error: productError } = await db
         .from('inventory')
@@ -145,6 +143,25 @@ export class CostCalculator {
         .select('total_value, child_vats')
         .eq('parent_sku', sku)
         .single();
+
+      return this.calculate(sku, price, product, skuMapping, linnworksData, options);
+
+    } catch (error) {
+      console.error(`[CostCalculator] Error calculating costs for ${sku}:`, error);
+      return null;
+    }
+  }
+
+  calculate(
+    sku: string,
+    price: number,
+    product: any,
+    skuMapping: any,
+    linnworksData: any,
+    options: { isPrime?: boolean, actualTax?: number, quantity?: number } = {}
+  ) {
+    try {
+      const quantity = options.quantity || 1;
 
       // Calculate all cost components
       let shipping = skuMapping?.merchant_shipping_group || 'Off Amazon';
