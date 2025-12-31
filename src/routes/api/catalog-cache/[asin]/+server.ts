@@ -7,7 +7,9 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+
+const { PRIVATE_SUPABASE_SERVICE_KEY } = env;
 
 export const DELETE: RequestHandler = async ({ params }) => {
   const { asin } = params;

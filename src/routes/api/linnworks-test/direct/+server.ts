@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import * as env from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 // Add POST handler to match GET
 export const POST = GET;
@@ -9,16 +9,16 @@ export async function GET() {
   try {
     // If you already have a direct token (not requiring auth)
     const accessToken = env.LINNWORKS_ACCESS_TOKEN;
-    
+
     if (!accessToken) {
       return json({
         success: false,
         error: "No access token available"
       }, { status: 500 });
     }
-    
+
     console.log("Verifying access token first...");
-    
+
     // Step 1: Verify the token and get a session token
     console.log("Request details:", {
       method: 'POST',
@@ -33,7 +33,7 @@ export async function GET() {
       },
       body: JSON.stringify({ token: accessToken })
     });
-    
+
     if (!authResponse.ok) {
       const errorText = await authResponse.text();
       return json({
@@ -41,7 +41,7 @@ export async function GET() {
         error: `Auth Error ${authResponse.status}: ${errorText}`
       }, { status: 500 });
     }
-    
+
     // Trying to log any response data we can get
     try {
       const clonedResponse = authResponse.clone();
@@ -53,7 +53,7 @@ export async function GET() {
 
     // Parse the auth response to get the session token and server URL
     const authData = await authResponse.json();
-    
+
     if (!authData.Token || !authData.Server) {
       return json({
         success: false,
@@ -61,15 +61,15 @@ export async function GET() {
         authData
       }, { status: 500 });
     }
-    
+
     console.log("Authentication successful!");
     console.log("Server:", authData.Server);
     console.log("Session token acquired (first 5 chars):", authData.Token.substring(0, 5) + "...");
-    
+
     // Step 2: Use the session token to call an API endpoint
     const serverUrl = authData.Server;
     const sessionToken = authData.Token;
-    
+
     const apiResponse = await fetch(`${serverUrl}/api/Inventory/GetInventoryItems`, {
       method: 'POST',
       headers: {
@@ -86,7 +86,7 @@ export async function GET() {
         "pageNumber": 1
       })
     });
-    
+
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text();
       return json({
@@ -96,9 +96,9 @@ export async function GET() {
         tokenFirstChars: sessionToken.substring(0, 5) + "..."
       }, { status: 500 });
     }
-    
+
     const apiData = await apiResponse.json();
-    
+
     return json({
       success: true,
       server: serverUrl,

@@ -1,7 +1,9 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+
+const { PRIVATE_SUPABASE_SERVICE_KEY } = env;
 
 // Simple version without complex imports to isolate the issue
 export const POST: RequestHandler = async ({ request }) => {

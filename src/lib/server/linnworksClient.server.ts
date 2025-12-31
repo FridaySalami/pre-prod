@@ -1,9 +1,11 @@
-import {
+import { env } from '$env/dynamic/private';
+import { getTestOpenOrdersData } from '$lib/shared/mockData';
+
+const {
   LINNWORKS_APP_ID,
   LINNWORKS_APP_SECRET,
   LINNWORKS_ACCESS_TOKEN
-} from '$env/static/private';
-import { getTestOpenOrdersData } from '$lib/shared/mockData';
+} = env;
 
 // API URLs
 const AUTH_URL = 'https://api.linnworks.net';

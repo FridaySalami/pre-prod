@@ -4,14 +4,16 @@
  * Using the proper Feeds API for pricing operations
  */
 
-// Import environment variables using SvelteKit's static private env
-import {
+// Import environment variables using SvelteKit's dynamic private env
+import { env } from '$env/dynamic/private';
+
+const {
   AMAZON_CLIENT_ID,
   AMAZON_CLIENT_SECRET,
   AMAZON_REFRESH_TOKEN,
   AMAZON_REGION,
   AMAZON_MARKETPLACE_ID
-} from '$env/static/private';
+} = env;
 
 class AmazonFeedsAPI {
   constructor(config = {}) {

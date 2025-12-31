@@ -1,7 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import { OpenAI } from 'openai';
-import { OPENAI_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
+
+const { OPENAI_API_KEY } = env;
 
 export const POST: RequestHandler = async ({ request }) => {
   try {

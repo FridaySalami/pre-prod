@@ -1,19 +1,19 @@
 import { json } from '@sveltejs/kit';
-import * as env from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 export async function GET() {
   // Only use in development mode
   if (process.env.NODE_ENV !== 'development') {
     return json({ error: 'Only available in development mode' });
   }
-  
+
   // Check what environment variables are available
   const availableEnvs = Object.keys(env);
-  
+
   // Check for specific variables (safely)
   const linnworksAppIdExists = 'LINNWORKS_APP_ID' in env;
   const linnworksSecretExists = 'LINNWORKS_APP_SECRET' in env;
-  
+
   // Return a safe summary (don't expose actual values)
   return json({
     availableEnvVars: availableEnvs,

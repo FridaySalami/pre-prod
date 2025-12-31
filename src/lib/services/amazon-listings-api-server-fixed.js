@@ -4,8 +4,10 @@
  * Focused specifically on price updates for existing listings
  */
 
-// Import environment variables using SvelteKit's static private env
-import {
+// Import environment variables using SvelteKit's dynamic private env
+import { env } from '$env/dynamic/private';
+
+const {
   AMAZON_CLIENT_ID,
   AMAZON_CLIENT_SECRET,
   AMAZON_REFRESH_TOKEN,
@@ -13,7 +15,7 @@ import {
   AMAZON_AWS_SECRET_ACCESS_KEY,
   AMAZON_REGION,
   AMAZON_MARKETPLACE_ID
-} from '$env/static/private';
+} = env;
 
 class AmazonListingsAPI {
   constructor(config = {}) {

@@ -4,7 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 import AmazonFeedsAPI from '$lib/services/amazon-feeds-api.js';
 import { amazonFeedsRateLimiter } from '$lib/utils/rate-limiter.ts';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { PRIVATE_SUPABASE_SERVICE_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+
+const { PRIVATE_SUPABASE_SERVICE_KEY } = env;
 
 const supabase = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
 
