@@ -5,16 +5,7 @@
  */
 
 // Import environment variables using SvelteKit's static private env
-import {
-  AMAZON_CLIENT_ID,
-  AMAZON_CLIENT_SECRET,
-  AMAZON_REFRESH_TOKEN,
-  AMAZON_AWS_ACCESS_KEY_ID,
-  AMAZON_AWS_SECRET_ACCESS_KEY,
-  AMAZON_REGION,
-  AMAZON_MARKETPLACE_ID,
-  PRIVATE_SUPABASE_SERVICE_KEY
-} from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 
@@ -26,25 +17,25 @@ class AmazonListingsAPI {
       environment: config.environment || 'production',
       hasClientId: !!AMAZON_CLIENT_ID,
       hasRefreshToken: !!AMAZON_REFRESH_TOKEN,
-      hasAwsCredentials: !!(AMAZON_AWS_ACCESS_KEY_ID && AMAZON_AWS_SECRET_ACCESS_KEY)
+      hasAwsCredentials: !!(env.AMAZON_AWS_ACCESS_KEY_ID && env.AMAZON_AWS_SECRET_ACCESS_KEY)
     });
 
     this.config = {
       endpoint: 'https://sellingpartnerapi-eu.amazon.com',
-      clientId: config.clientId || AMAZON_CLIENT_ID,
-      clientSecret: config.clientSecret || AMAZON_CLIENT_SECRET,
-      refreshToken: config.refreshToken || AMAZON_REFRESH_TOKEN,
-      awsAccessKeyId: config.awsAccessKeyId || AMAZON_AWS_ACCESS_KEY_ID,
-      awsSecretAccessKey: config.awsSecretAccessKey || AMAZON_AWS_SECRET_ACCESS_KEY,
-      awsRegion: config.awsRegion || AMAZON_REGION || 'eu-west-1',
-      marketplaceId: config.marketplaceId || AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
+      clientId: config.clientId || env.AMAZON_CLIENT_ID,
+      clientSecret: config.clientSecret || env.AMAZON_CLIENT_SECRET,
+      refreshToken: config.refreshToken || env.AMAZON_REFRESH_TOKEN,
+      awsAccessKeyId: config.awsAccessKeyId || env.AMAZON_AWS_ACCESS_KEY_ID,
+      awsSecretAccessKey: config.awsSecretAccessKey || env.AMAZON_AWS_SECRET_ACCESS_KEY,
+      awsRegion: config.awsRegion || env.AMAZON_REGION || 'eu-west-1',
+      marketplaceId: config.marketplaceId || env.AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
       environment: config.environment || 'production'
     };
 
     // Initialize Supabase client for logging
     this.supabase = createClient(
       PUBLIC_SUPABASE_URL,
-      PRIVATE_SUPABASE_SERVICE_KEY
+      env.PRIVATE_SUPABASE_SERVICE_KEY
     );
 
     this.validateCredentials();

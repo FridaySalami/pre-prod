@@ -9,16 +9,7 @@ import { CatalogService } from '$lib/amazon/catalog-service';
 import { FeesService } from '$lib/amazon/fees-service';
 import { calculateListingHealth, type CompetitorData, type BuyBoxData } from '$lib/amazon/listing-health';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import {
-  AMAZON_CLIENT_ID,
-  AMAZON_CLIENT_SECRET,
-  AMAZON_REFRESH_TOKEN,
-  AMAZON_AWS_ACCESS_KEY_ID,
-  AMAZON_AWS_SECRET_ACCESS_KEY,
-  AMAZON_SELLER_ID,
-  AMAZON_ROLE_ARN,
-  PRIVATE_SUPABASE_SERVICE_KEY
-} from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 export const load: PageServerLoad = async ({ params, fetch, url }) => {
   const { asin } = params;
@@ -64,15 +55,15 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
 
     // Initialize Amazon SP-API services
     const spApiClient = new SPAPIClient({
-      clientId: AMAZON_CLIENT_ID,
-      clientSecret: AMAZON_CLIENT_SECRET,
-      refreshToken: AMAZON_REFRESH_TOKEN,
-      awsAccessKeyId: AMAZON_AWS_ACCESS_KEY_ID,
-      awsSecretAccessKey: AMAZON_AWS_SECRET_ACCESS_KEY,
+      clientId: env.AMAZON_CLIENT_ID,
+      clientSecret: env.AMAZON_CLIENT_SECRET,
+      refreshToken: env.AMAZON_REFRESH_TOKEN,
+      awsAccessKeyId: env.AMAZON_AWS_ACCESS_KEY_ID,
+      awsSecretAccessKey: env.AMAZON_AWS_SECRET_ACCESS_KEY,
       awsRegion: 'eu-west-1',
       marketplaceId: 'A1F83G8C2ARO7P',
-      sellerId: AMAZON_SELLER_ID, // CRITICAL: For External ID in STS AssumeRole
-      roleArn: AMAZON_ROLE_ARN // IAM Role ARN for STS AssumeRole
+      sellerId: env.AMAZON_SELLER_ID, // CRITICAL: For External ID in STS AssumeRole
+      roleArn: env.AMAZON_ROLE_ARN // IAM Role ARN for STS AssumeRole
     });
 
     const catalogService = new CatalogService(spApiClient);
@@ -106,7 +97,7 @@ export const load: PageServerLoad = async ({ params, fetch, url }) => {
     // Fetch 30-day sales data from amazon_sales_data table
     let salesData = null;
     try {
-      const supabase = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE_KEY);
+      const supabase = createClient(PUBLIC_SUPABASE_URL, env.PRIVATE_SUPABASE_SERVICE_KEY);
 
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

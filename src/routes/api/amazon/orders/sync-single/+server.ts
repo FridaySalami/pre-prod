@@ -1,15 +1,7 @@
 import { SPAPIClient } from '$lib/amazon/sp-api-client';
 import { db } from '$lib/supabaseServer';
 import { json } from '@sveltejs/kit';
-import {
-  AMAZON_CLIENT_ID,
-  AMAZON_CLIENT_SECRET,
-  AMAZON_REFRESH_TOKEN,
-  AMAZON_AWS_ACCESS_KEY_ID,
-  AMAZON_AWS_SECRET_ACCESS_KEY,
-  AMAZON_SELLER_ID,
-  AMAZON_ROLE_ARN
-} from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 interface AmazonOrderItem {
   ASIN: string;
@@ -48,15 +40,15 @@ export async function GET({ url }) {
 
   try {
     const spApiClient = new SPAPIClient({
-      clientId: AMAZON_CLIENT_ID,
-      clientSecret: AMAZON_CLIENT_SECRET,
-      refreshToken: AMAZON_REFRESH_TOKEN,
-      awsAccessKeyId: AMAZON_AWS_ACCESS_KEY_ID,
-      awsSecretAccessKey: AMAZON_AWS_SECRET_ACCESS_KEY,
+      clientId: env.AMAZON_CLIENT_ID,
+      clientSecret: env.AMAZON_CLIENT_SECRET,
+      refreshToken: env.AMAZON_REFRESH_TOKEN,
+      awsAccessKeyId: env.AMAZON_AWS_ACCESS_KEY_ID,
+      awsSecretAccessKey: env.AMAZON_AWS_SECRET_ACCESS_KEY,
       awsRegion: 'eu-west-1',
       marketplaceId: 'A1F83G8C2ARO7P',
-      sellerId: AMAZON_SELLER_ID,
-      roleArn: AMAZON_ROLE_ARN
+      sellerId: env.AMAZON_SELLER_ID,
+      roleArn: env.AMAZON_ROLE_ARN
     });
 
     // 1. Fetch Order Details

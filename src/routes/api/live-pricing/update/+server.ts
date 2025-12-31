@@ -2,15 +2,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseAdmin';
-import {
-  AMAZON_CLIENT_ID,
-  AMAZON_CLIENT_SECRET,
-  AMAZON_REFRESH_TOKEN,
-  AMAZON_AWS_ACCESS_KEY_ID,
-  AMAZON_AWS_SECRET_ACCESS_KEY,
-  AMAZON_MARKETPLACE_ID,
-  AMAZON_SELLER_ID
-} from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 /**
  * Serverless Live Pricing Update API
@@ -39,14 +31,14 @@ class ServerlessAmazonSPAPI {
 
   constructor() {
     this.config = {
-      clientId: AMAZON_CLIENT_ID,
-      clientSecret: AMAZON_CLIENT_SECRET,
-      refreshToken: AMAZON_REFRESH_TOKEN,
-      marketplace: AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
+      clientId: env.AMAZON_CLIENT_ID,
+      clientSecret: env.AMAZON_CLIENT_SECRET,
+      refreshToken: env.AMAZON_REFRESH_TOKEN,
+      marketplace: env.AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
       endpoint: 'https://sellingpartnerapi-eu.amazon.com',
       region: 'eu-west-1',
-      accessKeyId: AMAZON_AWS_ACCESS_KEY_ID,
-      secretAccessKey: AMAZON_AWS_SECRET_ACCESS_KEY
+      accessKeyId: env.AMAZON_AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AMAZON_AWS_SECRET_ACCESS_KEY
     };
 
     // Validate config
