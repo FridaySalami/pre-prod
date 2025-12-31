@@ -1,14 +1,15 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { env } from '$env/dynamic/private';
 
 // Use runtime environment variables to avoid build-time dependency
 const getAmazonConfig = () => {
   return {
-    clientId: process.env.AMAZON_CLIENT_ID,
-    clientSecret: process.env.AMAZON_CLIENT_SECRET,
-    refreshToken: process.env.AMAZON_REFRESH_TOKEN,
-    awsAccessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID,
-    awsSecretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY
+    clientId: env.AMAZON_CLIENT_ID,
+    clientSecret: env.AMAZON_CLIENT_SECRET,
+    refreshToken: env.AMAZON_REFRESH_TOKEN,
+    awsAccessKeyId: env.AMAZON_AWS_ACCESS_KEY_ID,
+    awsSecretAccessKey: env.AMAZON_AWS_SECRET_ACCESS_KEY
   };
 };
 

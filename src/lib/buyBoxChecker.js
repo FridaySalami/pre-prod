@@ -3,6 +3,7 @@
 // Buy Box checking logic extracted for use in API routes
 
 import axios from 'axios';
+import { env } from '$env/dynamic/private';
 
 // Your seller ID
 export const YOUR_SELLER_ID = 'A2D8NG39VURSL3';
@@ -40,7 +41,7 @@ function mapMerchantToken(sellerId, sellerName) {
  * @param {object} envVars - Environment variables object
  * @returns {Promise<object>} Buy Box data
  */
-export async function checkBuyBoxStatus(asin, envVars = process.env) {
+export async function checkBuyBoxStatus(asin, envVars = env) {
   const config = {
     marketplace: envVars.AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
     region: 'eu-west-1',

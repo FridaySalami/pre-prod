@@ -5,6 +5,7 @@
  */
 
 import aws4 from 'aws4';
+import { env } from '$env/dynamic/private';
 
 interface AmazonAPIConfig {
   environment?: 'sandbox' | 'production';
@@ -62,14 +63,14 @@ class AmazonListingsAPI {
         : 'https://sandbox.sellingpartnerapi-na.amazon.com',
 
       // API credentials from environment
-      clientId: config.clientId || process.env.AMAZON_CLIENT_ID || '',
-      clientSecret: config.clientSecret || process.env.AMAZON_CLIENT_SECRET || '',
-      refreshToken: config.refreshToken || process.env.AMAZON_REFRESH_TOKEN || '',
+      clientId: config.clientId || env.AMAZON_CLIENT_ID || '',
+      clientSecret: config.clientSecret || env.AMAZON_CLIENT_SECRET || '',
+      refreshToken: config.refreshToken || env.AMAZON_REFRESH_TOKEN || '',
 
       // AWS credentials for SigV4
-      awsAccessKeyId: config.awsAccessKeyId || process.env.AMAZON_AWS_ACCESS_KEY_ID || '',
-      awsSecretAccessKey: config.awsSecretAccessKey || process.env.AMAZON_AWS_SECRET_ACCESS_KEY || '',
-      awsRegion: config.awsRegion || process.env.AMAZON_AWS_REGION || 'eu-west-1',
+      awsAccessKeyId: config.awsAccessKeyId || env.AMAZON_AWS_ACCESS_KEY_ID || '',
+      awsSecretAccessKey: config.awsSecretAccessKey || env.AMAZON_AWS_SECRET_ACCESS_KEY || '',
+      awsRegion: config.awsRegion || env.AMAZON_AWS_REGION || 'eu-west-1',
 
       // Marketplace settings
       marketplaceId: config.marketplaceId || 'A1F83G8C2ARO7P', // UK marketplace
