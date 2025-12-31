@@ -131,7 +131,10 @@
 		sku: string;
 		title: string;
 		asin: string;
-		count: number;
+		orderCount: number;
+		unitCount: number;
+		soldCount: number;
+		totalRevenue: number;
 		totalProfit: number;
 		avgProfit: number;
 		hasCostData: boolean;
@@ -139,6 +142,7 @@
 
 	$: skuStats = filteredOrders.reduce((acc: Record<string, SkuStats>, order: any) => {
 		if (!order.amazon_order_items) return acc;
+		if (order.order_status === 'Canceled') return acc;
 
 		order.amazon_order_items.forEach((item: any) => {
 			if (!item.seller_sku) return;
@@ -149,7 +153,10 @@
 					sku,
 					title: item.title || 'Unknown',
 					asin: item.asin || '',
-					count: 0,
+					orderCount: 0,
+					unitCount: 0,
+					soldCount: 0,
+					totalRevenue: 0,
 					totalProfit: 0,
 					avgProfit: 0,
 					hasCostData: false
@@ -157,12 +164,17 @@
 			}
 
 			const qty = Number(item.quantity_ordered) || 0;
-			acc[sku].count += qty;
+			const bundleQty = Number(item.bundle_quantity) || 1;
+
+			acc[sku].soldCount += qty;
+			acc[sku].unitCount += qty * bundleQty;
+			acc[sku].orderCount += 1;
 
 			// Calculate profit for this item
 			// Item Revenue
 			const itemPrice = Number(item.item_price_amount) || 0;
-			const revenue = itemPrice * qty;
+			const revenue = itemPrice; // item_price_amount is total for the line
+			acc[sku].totalRevenue += revenue;
 
 			// Item Cost
 			let itemCost = 0;
@@ -183,17 +195,20 @@
 
 	$: skuList = Object.values(skuStats).map((stat) => ({
 		...stat,
-		avgProfit: stat.count > 0 ? stat.totalProfit / stat.count : 0
+		avgProfit: stat.soldCount > 0 ? stat.totalProfit / stat.soldCount : 0
 	}));
 
-	$: topSellingSkus = [...skuList].sort((a, b) => b.count - a.count).slice(0, 10);
-	$: leastSellingSkus = [...skuList].sort((a, b) => a.count - b.count).slice(0, 10);
+	$: topSellingSkus = [...skuList].sort((a, b) => b.orderCount - a.orderCount).slice(0, 10);
+	$: leastSellingSkus = [...skuList]
+		.filter((s) => s.orderCount > 0)
+		.sort((a, b) => a.orderCount - b.orderCount)
+		.slice(0, 10);
 	$: mostProfitableSkus = [...skuList]
 		.filter((s) => s.hasCostData)
 		.sort((a, b) => b.avgProfit - a.avgProfit)
 		.slice(0, 10);
 	$: leastProfitableSkus = [...skuList]
-		.filter((s) => s.hasCostData)
+		.filter((s) => s.hasCostData && s.orderCount > 0)
 		.sort((a, b) => a.avgProfit - b.avgProfit)
 		.slice(0, 10);
 
@@ -352,6 +367,14 @@
 	function formatCurrency(amount: number | null, currency: string = 'GBP') {
 		if (amount === null || amount === undefined) return '-';
 		return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
+	}
+
+	function getProfitAnalysis(sku: SkuStats) {
+		if (sku.orderCount === 0) return { label: 'No Orders', color: 'text-gray-500' };
+		if (sku.totalRevenue === 0) return { label: 'No Revenue', color: 'text-orange-500' };
+		if (sku.avgProfit === 0) return { label: 'Break-even', color: 'text-yellow-600' };
+		if (sku.avgProfit < 0) return { label: 'Loss Making', color: 'text-red-600' };
+		return { label: 'Low Margin', color: 'text-yellow-600' };
 	}
 
 	function downloadCSV() {
@@ -555,7 +578,10 @@
 									>SKU</th
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
-									>Count</th
+									>Order Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Unit Count</th
 								>
 							</tr>
 						</thead>
@@ -570,7 +596,8 @@
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
-									<td class="p-4 align-middle text-right">{sku.count}</td>
+									<td class="p-4 align-middle text-right">{sku.orderCount}</td>
+									<td class="p-4 align-middle text-right">{sku.unitCount}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -595,7 +622,10 @@
 									>SKU</th
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
-									>Count</th
+									>Order Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Unit Count</th
 								>
 							</tr>
 						</thead>
@@ -610,7 +640,8 @@
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
-									<td class="p-4 align-middle text-right">{sku.count}</td>
+									<td class="p-4 align-middle text-right">{sku.orderCount}</td>
+									<td class="p-4 align-middle text-right">{sku.unitCount}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -635,7 +666,13 @@
 									>SKU</th
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
-									>Count</th
+									>Order Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Unit Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Total Profit</th
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
 									>Avg Profit</th
@@ -653,7 +690,11 @@
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
-									<td class="p-4 align-middle text-right">{sku.count}</td>
+									<td class="p-4 align-middle text-right">{sku.orderCount}</td>
+									<td class="p-4 align-middle text-right">{sku.unitCount}</td>
+									<td class="p-4 align-middle text-right text-green-600"
+										>{formatCurrency(sku.totalProfit)}</td
+									>
 									<td class="p-4 align-middle text-right text-green-600"
 										>{formatCurrency(sku.avgProfit)}</td
 									>
@@ -681,15 +722,22 @@
 									>SKU</th
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
-									>Count</th
+									>Order Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Unit Count</th
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
 									>Avg Profit</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Insight</th
 								>
 							</tr>
 						</thead>
 						<tbody class="[&_tr:last-child]:border-0">
 							{#each leastProfitableSkus as sku}
+								{@const analysis = getProfitAnalysis(sku)}
 								<tr
 									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
 								>
@@ -699,12 +747,20 @@
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
-									<td class="p-4 align-middle text-right">{sku.count}</td>
+									<td class="p-4 align-middle text-right">{sku.orderCount}</td>
+									<td class="p-4 align-middle text-right">{sku.unitCount}</td>
 									<td
 										class="p-4 align-middle text-right {sku.avgProfit < 0
 											? 'text-red-600'
 											: 'text-green-600'}">{formatCurrency(sku.avgProfit)}</td
 									>
+									<td class="p-4 align-middle text-right">
+										<span
+											class="text-xs font-medium px-2 py-1 rounded-full bg-muted {analysis.color}"
+										>
+											{analysis.label}
+										</span>
+									</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -880,9 +936,15 @@
 										sum + (Number(item.quantity_ordered) || 0) * (item.bundle_quantity || 1),
 									0
 								) || 0}
-							<tr
-								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
-							>
+							{@const rowClass =
+								totalCost > 0
+									? profit < 0
+										? 'bg-red-50/60 hover:bg-red-100/60'
+										: profit > 0
+											? 'bg-green-50/40 hover:bg-green-100/50'
+											: 'hover:bg-muted/50'
+									: 'hover:bg-muted/50'}
+							<tr class="border-b transition-colors data-[state=selected]:bg-muted {rowClass}">
 								<td class="p-4 align-middle font-medium">{order.amazon_order_id}</td>
 								<td class="p-4 align-middle">{formatDate(order.purchase_date)}</td>
 								<td class="p-4 align-middle">
