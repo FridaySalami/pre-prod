@@ -439,7 +439,9 @@
 		class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
 	>
 		<div class="flex flex-col items-center gap-2">
-			<div class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+			<div
+				class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+			></div>
 			<p class="text-sm font-medium text-muted-foreground">Loading...</p>
 		</div>
 	</div>
@@ -464,7 +466,7 @@
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-3xl font-bold tracking-tight">Amazon Orders</h1>
-			<p class="text-muted-foreground">View and manage your Amazon orders</p>
+			<p class="text-muted-foreground">View your Amazon orders with cost analysis</p>
 		</div>
 		<div class="flex flex-col items-end gap-2">
 			<div class="flex items-center gap-2">
