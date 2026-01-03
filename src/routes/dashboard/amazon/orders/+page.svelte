@@ -1,26 +1,40 @@
 <script lang="ts">
 	import { Button } from '$lib/shadcn/ui/button';
-	import { RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Bug, Download } from 'lucide-svelte';
+	import {
+		RefreshCw,
+		ArrowUpDown,
+		ArrowUp,
+		ArrowDown,
+		Pencil,
+		Bug,
+		Download,
+		Upload
+	} from 'lucide-svelte';
 	import { showToast } from '$lib/toastStore';
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page, navigating } from '$app/stores';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import DebugModal from '$lib/components/DebugModal.svelte';
+	import { syncStore } from '$lib/stores/syncStore';
 
 	export let data;
 
-	let syncing = false;
-	let syncStatus = '';
-	let syncProgress = 0;
-	let syncTotal = 0;
-	let syncStartTime = 0;
-	let syncDuration = 0;
 	let sortColumn = 'purchase_date';
 	let sortDirection: 'asc' | 'desc' = 'desc';
-	let durationTimer: ReturnType<typeof setInterval> | null = null;
 
 	$: view = $page.url.searchParams.get('view') || 'daily';
+
+	// Auto-reload when sync completes
+	let wasSyncing = false;
+	$: {
+		if ($syncStore.syncing) {
+			wasSyncing = true;
+		} else if (wasSyncing && $syncStore.status.includes('Complete')) {
+			wasSyncing = false;
+			window.location.reload();
+		}
+	}
 
 	// Modal state
 	let showUpdateCostModal = false;
@@ -90,24 +104,31 @@
 		}
 	}
 
-	$: {
-		if (syncing) {
-			if (!durationTimer) {
-				durationTimer = setInterval(() => {
-					if (syncStartTime) {
-						syncDuration = (Date.now() - syncStartTime) / 1000;
-					}
-				}, 100);
-			}
-		} else if (durationTimer) {
-			clearInterval(durationTimer);
-			durationTimer = null;
+	function getShippingCostDisplay(order: any) {
+		if (order.shipping_cost !== null && order.shipping_cost !== undefined) {
+			return {
+				amount: Number(order.shipping_cost),
+				type: 'Actual',
+				class: 'text-blue-600 font-medium'
+			};
 		}
-	}
 
-	onDestroy(() => {
-		if (durationTimer) clearInterval(durationTimer);
-	});
+		if (!order.amazon_order_items)
+			return { amount: 0, type: 'Est.', class: 'text-muted-foreground' };
+
+		const estimatedTotal = order.amazon_order_items.reduce((sum: number, item: any) => {
+			if (item.costs) {
+				return sum + (Number(item.costs.shippingCost) || 0) * (Number(item.quantity_ordered) || 0);
+			}
+			return sum;
+		}, 0);
+
+		return {
+			amount: estimatedTotal,
+			type: 'Est.',
+			class: 'text-muted-foreground'
+		};
+	}
 
 	function calculateOrderCost(order: any): number {
 		if (!order.amazon_order_items) return 0;
@@ -212,6 +233,62 @@
 		.sort((a, b) => a.avgProfit - b.avgProfit)
 		.slice(0, 10);
 
+	// Profit Analysis (Bottom 50% Performers)
+	$: profitAnalysisStats = (() => {
+		// Only consider orders that have cost data to match the summary cards logic
+		// The summary cards calculate Total Profit by summing (revenue - cost) ONLY for items that have cost data.
+		// We must replicate this logic to ensure the totals match.
+		const analyzedOrders = filteredOrders
+			.map((order) => {
+				if (!order.amazon_order_items) return null;
+
+				// Calculate metrics only for items with costs
+				const metrics = order.amazon_order_items.reduce(
+					(acc: any, item: any) => {
+						if (item.costs) {
+							const qty = Number(item.quantity_ordered) || 0;
+							const revenue = Number(item.item_price_amount) || 0;
+
+							const material = Number(item.costs.materialTotalCost) || 0;
+							const shipping = Number(item.costs.shippingCost) || 0;
+							const fee = Number(item.costs.amazonFee) || 0;
+							const salesVat = Number(item.costs.salesVat) || 0;
+							const cost = (material + shipping + fee + salesVat) * qty;
+
+							acc.revenue += revenue;
+							acc.cost += cost;
+							acc.hasData = true;
+						}
+						return acc;
+					},
+					{ revenue: 0, cost: 0, hasData: false }
+				);
+
+				if (!metrics.hasData) return null;
+
+				return {
+					...order,
+					calculatedProfit: metrics.revenue - metrics.cost
+				};
+			})
+			.filter((o): o is NonNullable<typeof o> => o !== null)
+			.sort((a, b) => a.calculatedProfit - b.calculatedProfit);
+
+		const totalProfit = analyzedOrders.reduce((sum, o) => sum + o.calculatedProfit, 0);
+		const bottom50Count = Math.ceil(analyzedOrders.length * 0.5);
+		const bottom50Orders = analyzedOrders.slice(0, bottom50Count);
+		const bottom50Profit = bottom50Orders.reduce((sum, o) => sum + o.calculatedProfit, 0);
+
+		return {
+			bottom50PercentCount: bottom50Count,
+			bottom50PercentProfit: bottom50Profit,
+			totalProfit: totalProfit,
+			bottom50PercentProfitShare: totalProfit !== 0 ? (bottom50Profit / totalProfit) * 100 : 0
+		};
+	})();
+
+	let showProfitStats = false;
+
 	$: sortedOrders = [...filteredOrders].sort((a, b) => {
 		let aValue = a[sortColumn];
 		let bValue = b[sortColumn];
@@ -222,6 +299,9 @@
 		} else if (sortColumn === 'total_cost') {
 			aValue = calculateOrderCost(a);
 			bValue = calculateOrderCost(b);
+		} else if (sortColumn === 'shipping_cost') {
+			aValue = getShippingCostDisplay(a).amount;
+			bValue = getShippingCostDisplay(b).amount;
 		} else if (sortColumn === 'profit') {
 			const aCost = calculateOrderCost(a);
 			const bCost = calculateOrderCost(b);
@@ -283,66 +363,7 @@
 	}
 
 	async function syncOrders() {
-		console.log('Sync button clicked');
-		syncing = true;
-		syncStatus = 'Starting sync...';
-		syncProgress = 0;
-		syncTotal = 0;
-
-		try {
-			console.log(`Fetching /api/amazon/orders/sync?date=${selectedDate}&view=${view}...`);
-			const response = await fetch(`/api/amazon/orders/sync?date=${selectedDate}&view=${view}`);
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const reader = response.body?.getReader();
-			if (!reader) throw new Error('Response body is null');
-
-			const decoder = new TextDecoder();
-			let buffer = '';
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n\n');
-				buffer = lines.pop() || '';
-
-				for (const line of lines) {
-					if (line.startsWith('data: ')) {
-						const data = JSON.parse(line.slice(6));
-						console.log('Stream data:', data);
-
-						if (data.type === 'status') {
-							syncStatus = data.message;
-						} else if (data.type === 'progress') {
-							syncProgress = data.ordersProcessed || 0;
-							syncTotal = data.totalOrders || 0;
-							syncStatus = `Syncing items... ${syncProgress}/${syncTotal} orders processed`;
-						} else if (data.type === 'complete') {
-							syncDuration = (Date.now() - syncStartTime) / 1000;
-							syncStatus = `Complete! Took ${syncDuration.toFixed(1)}s. ${data.message}`;
-							showToast(data.message, 'success');
-							setTimeout(() => {
-								window.location.reload();
-							}, 2000);
-						} else if (data.type === 'error') {
-							showToast('Error: ' + data.error, 'error');
-							syncStatus = 'Error: ' + data.error;
-						}
-					}
-				}
-			}
-		} catch (e) {
-			showToast('Error syncing orders', 'error');
-			console.error('Sync error:', e);
-			syncStatus = 'Sync failed';
-		} finally {
-			syncing = false;
-		}
+		syncStore.startSync(selectedDate || '', view);
 	}
 	function getStatusColor(status: string) {
 		switch (status) {
@@ -384,6 +405,8 @@
 			'Status',
 			'Order Total',
 			'Total Cost',
+			'Shipping Cost',
+			'Shipping Type',
 			'Profit',
 			'Currency',
 			'Items Shipped',
@@ -398,6 +421,7 @@
 
 		const rows = sortedOrders.map((order) => {
 			const totalCost = calculateOrderCost(order);
+			const shippingDisplay = getShippingCostDisplay(order);
 			const orderTotal = parseFloat(order.order_total) || 0;
 			const profit = orderTotal - totalCost;
 			const skus = order.amazon_order_items?.map((i: any) => i.seller_sku).join('; ') || '';
@@ -408,6 +432,8 @@
 				order.order_status,
 				orderTotal.toFixed(2),
 				totalCost.toFixed(2),
+				shippingDisplay.amount.toFixed(2),
+				shippingDisplay.type,
 				profit.toFixed(2),
 				order.currency_code,
 				order.number_of_items_shipped,
@@ -508,24 +534,19 @@
 					bind:value={selectedDate}
 					onchange={() => goto(`?date=${selectedDate}&view=${view}`)}
 				/>
+				<Button variant="outline" onclick={() => goto('/dashboard/tools/upload-shipping')}>
+					<Upload class="mr-2 h-4 w-4" />
+					Upload Shipping Costs
+				</Button>
 				<Button variant="outline" onclick={downloadCSV}>
 					<Download class="mr-2 h-4 w-4" />
 					Export CSV
 				</Button>
-				<Button onclick={syncOrders} disabled={syncing}>
-					<RefreshCw class="mr-2 h-4 w-4 {syncing ? 'animate-spin' : ''}" />
-					{syncing ? 'Syncing...' : 'Sync Orders'}
+				<Button onclick={syncOrders} disabled={$syncStore.syncing}>
+					<RefreshCw class="mr-2 h-4 w-4 {$syncStore.syncing ? 'animate-spin' : ''}" />
+					{$syncStore.syncing ? 'Syncing...' : 'Sync Orders'}
 				</Button>
 			</div>
-			{#if syncStatus}
-				<div class="text-sm text-muted-foreground text-right">
-					{syncStatus}
-					{#if syncing || syncDuration > 0}
-						<br />
-						<span class="text-xs opacity-75">Duration: {syncDuration.toFixed(1)}s</span>
-					{/if}
-				</div>
-			{/if}
 		</div>
 	</div>
 
@@ -572,6 +593,53 @@
 				</div>
 			</div>
 		</div>
+	</div>
+
+	<!-- Profit Stats Collapsible -->
+	<div class="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
+		<button
+			class="w-full px-6 py-4 bg-muted/30 flex justify-between items-center hover:bg-muted/50 transition-colors"
+			onclick={() => (showProfitStats = !showProfitStats)}
+		>
+			<span class="font-semibold text-foreground">Profit Analysis (Bottom 50% Performers)</span>
+			<span
+				class="text-muted-foreground transform transition-transform {showProfitStats
+					? 'rotate-180'
+					: ''}"
+			>
+				▼
+			</span>
+		</button>
+
+		{#if showProfitStats}
+			<div class="p-6 border-t bg-card">
+				<div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+					<div class="p-4 bg-red-50/50 rounded-lg border border-red-100">
+						<p class="text-sm text-muted-foreground uppercase tracking-wide">Orders</p>
+						<p class="text-2xl font-bold text-red-700">
+							{profitAnalysisStats.bottom50PercentCount} orders
+						</p>
+						<p class="text-xs text-muted-foreground">50% of total volume</p>
+					</div>
+
+					<div class="p-4 bg-yellow-50/50 rounded-lg border border-yellow-100">
+						<p class="text-sm text-muted-foreground uppercase tracking-wide">Profit Generated</p>
+						<p class="text-2xl font-bold text-yellow-700">
+							{formatCurrency(profitAnalysisStats.bottom50PercentProfit)}
+						</p>
+						<p class="text-xs text-muted-foreground">From bottom 50%</p>
+					</div>
+
+					<div class="p-4 bg-blue-50/50 rounded-lg border border-blue-100">
+						<p class="text-sm text-muted-foreground uppercase tracking-wide">Profit Share</p>
+						<p class="text-2xl font-bold text-blue-700">
+							{profitAnalysisStats.bottom50PercentProfitShare.toFixed(1)}%
+						</p>
+						<p class="text-xs text-muted-foreground">of total profit</p>
+					</div>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<div class="grid gap-4 md:grid-cols-2">
@@ -870,6 +938,21 @@
 							</th>
 							<th
 								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('shipping_cost')}
+							>
+								<div class="flex items-center gap-1">
+									Shipping
+									{#if sortColumn === 'shipping_cost'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
 								onclick={() => toggleSort('profit')}
 							>
 								<div class="flex items-center gap-1">
@@ -942,6 +1025,7 @@
 					<tbody class="[&_tr:last-child]:border-0">
 						{#each sortedOrders as order}
 							{@const totalCost = calculateOrderCost(order)}
+							{@const shippingDisplay = getShippingCostDisplay(order)}
 							{@const profit = order.order_total ? parseFloat(order.order_total) - totalCost : 0}
 							{@const totalUnits =
 								order.amazon_order_items?.reduce(
@@ -976,6 +1060,20 @@
 									{#if totalCost > 0}
 										<span class="font-medium">{formatCurrency(totalCost, order.currency_code)}</span
 										>
+									{:else}
+										<span class="text-muted-foreground">-</span>
+									{/if}
+								</td>
+								<td class="p-4 align-middle">
+									{#if shippingDisplay.amount > 0}
+										<div class="flex flex-col">
+											<span class="font-medium {shippingDisplay.class}">
+												{formatCurrency(shippingDisplay.amount, order.currency_code)}
+											</span>
+											<span class="text-[10px] {shippingDisplay.class}">
+												{shippingDisplay.type}
+											</span>
+										</div>
 									{:else}
 										<span class="text-muted-foreground">-</span>
 									{/if}

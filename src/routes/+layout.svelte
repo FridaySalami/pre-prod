@@ -14,6 +14,7 @@
 	import AppSidebar from '$lib/AppSidebar.svelte';
 	import { checkRouteAccess } from '$lib/routeGuard';
 	import type { Snippet } from 'svelte';
+	import { syncStore } from '$lib/stores/syncStore';
 
 	interface Props {
 		children: Snippet;
@@ -432,6 +433,23 @@
 					</button>
 				</div>
 				<div class="header-right">
+					{#if $syncStore.syncing || $syncStore.status}
+						<div
+							class="flex items-center gap-3 mr-4 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200"
+						>
+							{#if $syncStore.syncing}
+								<div
+									class="h-3 w-3 animate-spin rounded-full border-2 border-gray-600 border-t-transparent"
+								></div>
+							{/if}
+							<div class="flex flex-col items-end leading-none gap-0.5">
+								<span class="font-medium">{$syncStore.status}</span>
+								{#if $syncStore.duration > 0}
+									<span class="text-[10px] text-gray-500">{$syncStore.duration.toFixed(1)}s</span>
+								{/if}
+							</div>
+						</div>
+					{/if}
 					<!-- Command Menu Button Container -->
 					<div class="command-menu-container">
 						<button

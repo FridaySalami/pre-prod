@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getDailyOrderCounts, getCurrentWeekRange } from '$lib/server/processedOrdersService.server';
+import { getDailyOrderCounts, getCurrentWeekRange, getWeeklyProfitStats } from '$lib/server/processedOrdersService.server';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, locals }) => {
@@ -46,6 +46,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
     const dailyOrders = orderCountsResult.data;
     const isCached = orderCountsResult.isCached;
 
+    // Get profit stats
+    const profitStats = await getWeeklyProfitStats(start, end);
+
     // Add summary information
     const summary = {
       totalOrders: dailyOrders.reduce((sum, day) => sum + day.count, 0),
@@ -54,7 +57,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
         ebay: dailyOrders.reduce((sum, day) => sum + (day.channels?.ebay || 0), 0),
         shopify: dailyOrders.reduce((sum, day) => sum + (day.channels?.shopify || 0), 0),
         other: dailyOrders.reduce((sum, day) => sum + (day.channels?.other || 0), 0)
-      }
+      },
+      profitStats
     };
 
     return json({

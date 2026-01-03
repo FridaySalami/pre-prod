@@ -176,6 +176,9 @@ export async function load({ url }) {
   const enrichedOrders = orders.map((order) => {
     if (!order.amazon_order_items) return order;
 
+    // Calculate total quantity for distributing actual shipping costs
+    const totalOrderQuantity = order.amazon_order_items.reduce((sum: number, item: any) => sum + (item.quantity_ordered || 0), 0) || 1;
+
     const enrichedItems = order.amazon_order_items.map((item: AmazonOrderItem) => {
       if (!item.seller_sku) return item;
 
@@ -197,6 +200,13 @@ export async function load({ url }) {
           actualTax: itemTax,
           quantity: item.quantity_ordered
         });
+
+        // Override with actual shipping cost if available
+        if (costs && order.shipping_cost !== null && order.shipping_cost !== undefined) {
+          // Distribute actual shipping cost evenly per unit
+          costs.shippingCost = Number(order.shipping_cost) / totalOrderQuantity;
+          costs.shippingType = 'Actual';
+        }
       }
 
       const bundleQuantity = bundleMap.get(item.seller_sku) || 1;

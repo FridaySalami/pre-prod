@@ -242,6 +242,87 @@ export async function getDailyOrderCounts(startDate: Date, endDate: Date): Promi
   }
 }
 
+export interface ProfitStats {
+  bottom50PercentCount: number;
+  bottom50PercentProfit: number;
+  totalProfit: number;
+  bottom50PercentProfitShare: number;
+}
+
+export async function getWeeklyProfitStats(startDate: Date, endDate: Date): Promise<ProfitStats> {
+  try {
+    const allOrders: ProcessedOrderData[] = [];
+
+    // Fetch all orders
+    await fetchAllOrdersWithPagination(startDate, endDate, (orders) => {
+      allOrders.push(...orders);
+    });
+
+    // Collect all SKUs
+    const skus = new Set<string>();
+    allOrders.forEach(order => {
+      if (order.Items) {
+        order.Items.forEach(item => {
+          if (item.SKU) skus.add(item.SKU);
+        });
+      }
+    });
+
+    // Fetch stock items to get purchase price
+    const stockItemsMap = await getStockItems(Array.from(skus));
+
+    let totalProfit = 0;
+    const orderProfits: { profit: number }[] = [];
+
+    for (const order of allOrders) {
+      // Skip orders that are not processed or cancelled if necessary
+      // Assuming fetchAllOrdersWithPagination returns processed orders
+
+      let revenue = order.fTotalCharge || 0;
+      let shippingCost = order.fPostageCost || 0;
+      let itemsCost = 0;
+
+      if (order.Items) {
+        for (const item of order.Items) {
+          if (item.SKU) {
+            const stockItem = stockItemsMap.get(item.SKU);
+            const purchasePrice = stockItem?.PurchasePrice || 0;
+            itemsCost += purchasePrice * (item.Quantity || 0);
+          }
+        }
+      }
+
+      const profit = revenue - shippingCost - itemsCost;
+      totalProfit += profit;
+      orderProfits.push({ profit });
+    }
+
+    // Sort by profit ascending
+    orderProfits.sort((a, b) => a.profit - b.profit);
+
+    // Bottom 50%
+    const bottom50Count = Math.ceil(orderProfits.length * 0.5);
+    const bottom50Orders = orderProfits.slice(0, bottom50Count);
+    const bottom50Profit = bottom50Orders.reduce((sum, o) => sum + o.profit, 0);
+
+    return {
+      bottom50PercentCount: bottom50Count,
+      bottom50PercentProfit: bottom50Profit,
+      totalProfit: totalProfit,
+      bottom50PercentProfitShare: totalProfit !== 0 ? (bottom50Profit / totalProfit) * 100 : 0
+    };
+  } catch (error) {
+    console.error('Error calculating weekly profit stats:', error);
+    // Return zeros on error to avoid breaking the UI
+    return {
+      bottom50PercentCount: 0,
+      bottom50PercentProfit: 0,
+      totalProfit: 0,
+      bottom50PercentProfitShare: 0
+    };
+  }
+}
+
 /**
  * Get the date range for the current week (Monday to Sunday)
  */
