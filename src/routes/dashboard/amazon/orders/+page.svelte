@@ -108,13 +108,13 @@
 		if (order.shipping_cost !== null && order.shipping_cost !== undefined) {
 			return {
 				amount: Number(order.shipping_cost),
-				type: 'Actual',
+				type: '(Actual)',
 				class: 'text-blue-600 font-medium'
 			};
 		}
 
 		if (!order.amazon_order_items)
-			return { amount: 0, type: 'Est.', class: 'text-muted-foreground' };
+			return { amount: 0, type: '(Est.)', class: 'text-muted-foreground' };
 
 		const estimatedTotal = order.amazon_order_items.reduce((sum: number, item: any) => {
 			if (item.costs) {
@@ -125,7 +125,7 @@
 
 		return {
 			amount: estimatedTotal,
-			type: 'Est.',
+			type: '(Est.)',
 			class: 'text-muted-foreground'
 		};
 	}
@@ -353,12 +353,57 @@
 	$: totalProfit = analyzedStats.sales - analyzedStats.costs;
 	$: totalUnitsSold = analyzedStats.units;
 
+	// Shipping Service Analysis
+	$: shippingStats = filteredOrders.reduce((acc: Record<string, any>, order: any) => {
+		const totalCost = calculateOrderCost(order);
+
+		// Only include orders with cost data to avoid skewing profit stats
+		if (totalCost <= 0) return acc;
+
+		const carrier = order.automated_carrier || 'Unknown';
+		const method =
+			order.automated_ship_method || order.shipment_service_level_category || 'Unknown';
+
+		// Exclude Return to Origin (RTO) shipments as they are not valid sales
+		if (method === 'SWA-UK-RTO' || method === 'Amazon Return to Origin') return acc;
+
+		const service = `${carrier} - ${method}`;
+
+		if (!acc[service]) {
+			acc[service] = {
+				name: service,
+				orderCount: 0,
+				totalProfit: 0,
+				totalRevenue: 0
+			};
+		}
+
+		acc[service].orderCount += 1;
+
+		const revenue = parseFloat(order.order_total) || 0;
+		const profit = revenue - totalCost;
+
+		acc[service].totalProfit += profit;
+		acc[service].totalRevenue += revenue;
+
+		return acc;
+	}, {});
+
+	$: shippingStatsList = Object.values(shippingStats).sort(
+		(a: any, b: any) => b.totalProfit - a.totalProfit
+	);
+
 	function toggleSort(column: string) {
 		if (sortColumn === column) {
 			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
 		} else {
 			sortColumn = column;
-			sortDirection = 'asc';
+			// Default to descending for money columns, ascending for text
+			if (['order_total', 'total_cost', 'shipping_cost', 'profit'].includes(column)) {
+				sortDirection = 'desc';
+			} else {
+				sortDirection = 'asc';
+			}
 		}
 	}
 
@@ -385,9 +430,18 @@
 		return new Date(dateString).toLocaleString();
 	}
 
-	function formatCurrency(amount: number | null, currency: string = 'GBP') {
+	function formatCurrency(amount: number | null, currency: string | null = 'GBP') {
 		if (amount === null || amount === undefined) return '-';
-		return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
+		// Fallback to GBP if currency is null/undefined/empty
+		const safeCurrency = currency || 'GBP';
+		try {
+			return new Intl.NumberFormat('en-GB', { style: 'currency', currency: safeCurrency }).format(
+				amount
+			);
+		} catch (e) {
+			// Fallback if the currency code itself is invalid (e.g. garbage data)
+			return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+		}
 	}
 
 	function getProfitAnalysis(sku: SkuStats) {
@@ -640,6 +694,67 @@
 				</div>
 			</div>
 		{/if}
+	</div>
+
+	<!-- Shipping Service Analysis -->
+	<div class="rounded-xl border bg-card text-card-foreground shadow">
+		<div class="p-6 pb-2">
+			<h3 class="font-semibold leading-none tracking-tight">Profit by Shipping Service</h3>
+		</div>
+		<div class="p-6 pt-0">
+			<div class="relative w-full overflow-auto">
+				<table class="w-full caption-bottom text-sm">
+					<thead class="[&_tr]:border-b">
+						<tr class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[300px]"
+								>Service</th
+							>
+							<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+								>Orders</th
+							>
+							<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+								>Revenue</th
+							>
+							<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+								>Total Profit</th
+							>
+							<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+								>Avg Profit / Order</th
+							>
+						</tr>
+					</thead>
+					<tbody class="[&_tr:last-child]:border-0">
+						{#each shippingStatsList as stat}
+							<tr class="border-b transition-colors hover:bg-muted/50">
+								<td class="p-4 align-middle font-medium">{stat.name}</td>
+								<td class="p-4 align-middle text-right">{stat.orderCount}</td>
+								<td class="p-4 align-middle text-right">{formatCurrency(stat.totalRevenue)}</td>
+								<td
+									class="p-4 align-middle text-right {stat.totalProfit > 0
+										? 'text-green-600'
+										: 'text-red-600'}"
+								>
+									{formatCurrency(stat.totalProfit)}
+								</td>
+								<td
+									class="p-4 align-middle text-right {stat.totalProfit > 0
+										? 'text-green-600'
+										: 'text-red-600'}"
+								>
+									{formatCurrency(stat.orderCount ? stat.totalProfit / stat.orderCount : 0)}
+								</td>
+							</tr>
+						{/each}
+						{#if shippingStatsList.length === 0}
+							<tr>
+								<td colspan="5" class="p-4 text-center text-muted-foreground">No data available</td>
+							</tr>
+						{/if}
+					</tbody>
+				</table>
+			</div>
+		</div>
 	</div>
 
 	<div class="grid gap-4 md:grid-cols-2">
@@ -911,7 +1026,7 @@
 								onclick={() => toggleSort('order_total')}
 							>
 								<div class="flex items-center gap-1">
-									Total
+									Sale Price
 									{#if sortColumn === 'order_total'}
 										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
 												class="h-3 w-3"
@@ -926,7 +1041,10 @@
 								onclick={() => toggleSort('total_cost')}
 							>
 								<div class="flex items-center gap-1">
-									Est. Cost
+									<div class="flex flex-col">
+										<span>Total Cost</span>
+										<span class="text-[10px] font-normal font-medium">(Inc. Shipping)</span>
+									</div>
 									{#if sortColumn === 'total_cost'}
 										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
 												class="h-3 w-3"
@@ -1192,7 +1310,7 @@
 							<tr
 								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
 							>
-								<td colspan="10" class="p-4 align-middle text-center py-8 text-muted-foreground">
+								<td colspan="13" class="p-4 align-middle text-center py-8 text-muted-foreground">
 									No orders found. Click "Sync Yesterday's Orders" to fetch data.
 								</td>
 							</tr>
