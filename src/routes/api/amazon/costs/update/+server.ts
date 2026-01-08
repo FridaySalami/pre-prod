@@ -75,7 +75,7 @@ export async function POST({ request }) {
       child_titles: JSON.stringify([title]),
       child_quantities: JSON.stringify([1]),
       child_prices: JSON.stringify([parseFloat(total_value) || 0]),
-      child_vats: JSON.stringify([parseFloat(vat_rate) || 20]),
+      child_vats: JSON.stringify([parseFloat(vat_rate) || 0]),
       updated_at: new Date().toISOString()
     };
 

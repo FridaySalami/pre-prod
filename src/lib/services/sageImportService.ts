@@ -138,18 +138,18 @@ export class SageImportService {
     const deduplicatedItems = Array.from(deduplicatedMap.values());
     console.log(`After deduplication: ${deduplicatedItems.length} items (removed ${validItems.length - deduplicatedItems.length} duplicates)`);
 
-    // STEP 2: Get all existing records in bulk to check for database duplicates
+    // STEP 2: Get all existing records in bulk to check for database duplicates and fetch current values for merging
     const stockCodes = deduplicatedItems.map(item => item.transformed.stockCode);
     const { data: existingRecords } = await db
       .from('sage_reports')
-      .select('id, stock_code, company_name')
+      .select('id, stock_code, company_name, tax_rate') // Fetch tax_rate to preserve it
       .in('stock_code', stockCodes);
 
-    // Create lookup map for existing records (using just stock_code since that's the unique constraint)
+    // Create lookup map for existing records
     const existingMap = new Map();
     if (existingRecords) {
       existingRecords.forEach(record => {
-        existingMap.set(record.stock_code, record.id);
+        existingMap.set(record.stock_code, record); // Store full record
       });
     }
 
@@ -159,10 +159,17 @@ export class SageImportService {
 
     for (const item of deduplicatedItems) {
       const stockCode = item.transformed.stockCode;
-      const existingId = existingMap.get(stockCode);
+      const existingRecord = existingMap.get(stockCode);
 
-      if (existingId) {
-        updateItems.push({ id: existingId, data: item.supabaseData });
+      if (existingRecord) {
+        // MERGE LOGIC: If incoming tax_rate is undefined/null, preserve existing one
+        const mergedData = { ...item.supabaseData };
+
+        if (mergedData.tax_rate === undefined || mergedData.tax_rate === null) {
+          mergedData.tax_rate = existingRecord.tax_rate;
+        }
+
+        updateItems.push({ id: existingRecord.id, data: mergedData });
       } else {
         newItems.push(item.supabaseData);
       }

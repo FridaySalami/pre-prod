@@ -57,7 +57,9 @@ export const POST: RequestHandler = async ({ request }) => {
       // User's file uses "Code"
       stockCode: findColumnIndex(rawHeaders, ['Code', 'Stock Code', 'StockItem']),
       // User's file uses "Standard Cost"
-      standardCost: findColumnIndex(rawHeaders, ['Standard Cost', 'StandardCost', 'Cost'])
+      standardCost: findColumnIndex(rawHeaders, ['Standard Cost', 'StandardCost', 'Cost']),
+      // Optional: Tax Rate
+      taxRate: findColumnIndex(rawHeaders, ['Tax Rate', 'TaxRate', 'Tax', 'Vat Rate', 'Vat'])
     };
 
     if (columnMap.stockCode === -1 || columnMap.standardCost === -1) {
@@ -78,10 +80,20 @@ export const POST: RequestHandler = async ({ request }) => {
       const stockCode = columns[columnMap.stockCode]?.trim();
       const standardCostStr = columns[columnMap.standardCost]?.replace(/[^\d.-]/g, '');
 
+      // Parse tax rate if column exists
+      let taxRate = undefined;
+      if (columnMap.taxRate !== -1 && columns[columnMap.taxRate]) {
+        const taxStr = columns[columnMap.taxRate].replace(/[^\d.-]/g, '');
+        if (taxStr) {
+          taxRate = parseFloat(taxStr);
+        }
+      }
+
       if (stockCode) {
         batch.push({
           stockCode,
-          standardCost: standardCostStr ? parseFloat(standardCostStr) : 0
+          standardCost: standardCostStr ? parseFloat(standardCostStr) : 0,
+          taxRate // Will be undefined if not found, preserving existing value
         });
       }
     }
