@@ -216,7 +216,7 @@
 
 	$: skuList = Object.values(skuStats).map((stat) => ({
 		...stat,
-		avgProfit: stat.soldCount > 0 ? stat.totalProfit / stat.soldCount : 0
+		avgProfit: stat.orderCount > 0 ? stat.totalProfit / stat.orderCount : 0
 	}));
 
 	$: topSellingSkus = [...skuList].sort((a, b) => b.orderCount - a.orderCount).slice(0, 10);
@@ -226,11 +226,11 @@
 		.slice(0, 10);
 	$: mostProfitableSkus = [...skuList]
 		.filter((s) => s.hasCostData)
-		.sort((a, b) => b.avgProfit - a.avgProfit)
+		.sort((a, b) => b.totalProfit - a.totalProfit)
 		.slice(0, 10);
 	$: leastProfitableSkus = [...skuList]
 		.filter((s) => s.hasCostData && s.orderCount > 0)
-		.sort((a, b) => a.avgProfit - b.avgProfit)
+		.sort((a, b) => a.totalProfit - b.totalProfit)
 		.slice(0, 10);
 
 	// Profit Analysis (Bottom 50% Performers)
@@ -592,6 +592,10 @@
 					<Upload class="mr-2 h-4 w-4" />
 					Upload Shipping Costs
 				</Button>
+				<Button variant="outline" onclick={() => goto('/cost-price-upload')}>
+					<Upload class="mr-2 h-4 w-4" />
+					Update Cost Pricing
+				</Button>
 				<Button variant="outline" onclick={downloadCSV}>
 					<Download class="mr-2 h-4 w-4" />
 					Export CSV
@@ -849,7 +853,7 @@
 		<!-- Most Profitable SKUs -->
 		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
 			<div class="p-6 pb-2">
-				<h3 class="font-semibold leading-none tracking-tight">Most Profitable SKUs (Avg)</h3>
+				<h3 class="font-semibold leading-none tracking-tight">Most Profitable SKUs (Total)</h3>
 			</div>
 			<div class="p-6 pt-0">
 				<div class="relative w-full overflow-auto max-h-[400px]">
@@ -905,7 +909,7 @@
 		<!-- Least Profitable SKUs -->
 		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
 			<div class="p-6 pb-2">
-				<h3 class="font-semibold leading-none tracking-tight">Least Profitable SKUs (Avg)</h3>
+				<h3 class="font-semibold leading-none tracking-tight">Least Profitable SKUs (Total)</h3>
 			</div>
 			<div class="p-6 pt-0">
 				<div class="relative w-full overflow-auto max-h-[400px]">
@@ -922,6 +926,9 @@
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
 									>Unit Count</th
+								>
+								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+									>Total Profit</th
 								>
 								<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
 									>Avg Profit</th
@@ -945,6 +952,11 @@
 									</td>
 									<td class="p-4 align-middle text-right">{sku.orderCount}</td>
 									<td class="p-4 align-middle text-right">{sku.unitCount}</td>
+									<td
+										class="p-4 align-middle text-right {sku.totalProfit < 0
+											? 'text-red-600'
+											: 'text-green-600'}">{formatCurrency(sku.totalProfit)}</td
+									>
 									<td
 										class="p-4 align-middle text-right {sku.avgProfit < 0
 											? 'text-red-600'
@@ -1043,7 +1055,7 @@
 								<div class="flex items-center gap-1">
 									<div class="flex flex-col">
 										<span>Total Cost</span>
-										<span class="text-[10px] font-normal font-medium">(Inc. Shipping)</span>
+										<span class="text-[10px] font-medium">(Inc. Shipping)</span>
 									</div>
 									{#if sortColumn === 'total_cost'}
 										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown

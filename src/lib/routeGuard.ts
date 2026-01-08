@@ -32,6 +32,7 @@ const ROUTE_PROTECTION = {
     '/linnworks-composition',
     '/amazon-listings',
     '/sage-reports',
+    '/cost-price-upload',
     '/inventory-profit-calculator',
     '/buy-box-monitor', // Moved from manager to authenticated
     '/buy-box-manager'  // Moved from admin to authenticated
