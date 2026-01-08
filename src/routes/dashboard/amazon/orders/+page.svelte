@@ -1343,7 +1343,16 @@ ${htmlBody}`;
 											: 'hover:bg-muted/50'
 									: 'hover:bg-muted/50'}
 							<tr class="border-b transition-colors data-[state=selected]:bg-muted {rowClass}">
-								<td class="p-4 align-middle font-medium">{order.amazon_order_id}</td>
+								<td class="p-4 align-middle font-medium">
+									<a
+										href={`https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}`}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-blue-600 hover:underline"
+									>
+										{order.amazon_order_id}
+									</a>
+								</td>
 								<td class="p-4 align-middle">{formatDate(order.purchase_date)}</td>
 								<td class="p-4 align-middle">
 									<div
