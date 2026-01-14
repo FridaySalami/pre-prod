@@ -3724,7 +3724,7 @@
 		{#if !isLoading && buyboxData.length > 0}
 			<div class="bg-white border border-gray-200 rounded-lg mb-2 overflow-hidden">
 				<!-- Status Header -->
-				<div class="bg-gradient-to-r from-blue-50 to-green-50 px-3 py-2 border-b">
+				<div class="bg-linear-to-r from-blue-50 to-green-50 px-3 py-2 border-b">
 					<div class="flex justify-between items-center">
 						<div class="flex items-center gap-2">
 							<div class="text-sm font-medium text-gray-900">📊 Dataset Status</div>
@@ -3898,7 +3898,7 @@
 		<!-- Feed Status Monitor -->
 		{#if feedStatusChecks.size > 0}
 			<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
-				<div class="bg-gradient-to-r from-orange-50 to-blue-50 px-4 py-3 border-b">
+				<div class="bg-linear-to-r from-orange-50 to-blue-50 px-4 py-3 border-b">
 					<div class="flex justify-between items-center">
 						<div class="flex items-center gap-3">
 							<div class="text-lg font-medium text-gray-900">📡 Feed Status Monitor</div>
@@ -4511,8 +4511,8 @@
 																	role="button"
 																	tabindex="0"
 																>
-																	<span class="mr-1 flex-shrink-0">#{index + 1}</span>
-																	<span class="mr-1 flex-shrink-0">{merchantInfo.icon}</span>
+																	<span class="mr-1 shrink-0">#{index + 1}</span>
+																	<span class="mr-1 shrink-0">{merchantInfo.icon}</span>
 																	<span class="truncate">{merchantInfo.displayName}</span>
 																	<span class="ml-1 text-gray-400 text-xs">📋</span>
 																</div>

@@ -1,0 +1,1781 @@
+<script lang="ts">
+	import { Button } from '$lib/shadcn/ui/button';
+	import {
+		ArrowUpDown,
+		ArrowUp,
+		ArrowDown,
+		Pencil,
+		Bug,
+		ArrowLeft,
+		Download,
+		RefreshCw
+	} from 'lucide-svelte';
+	import { showToast } from '$lib/toastStore';
+	import { goto } from '$app/navigation';
+	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
+	import DebugModal from '$lib/components/DebugModal.svelte';
+	import { onMount } from 'svelte';
+	import Chart from 'chart.js/auto';
+	import 'chartjs-adapter-date-fns';
+
+	export let data;
+
+	let sortColumn = 'purchase_date';
+	let sortDirection: 'asc' | 'desc' = 'desc';
+
+	// Chart state
+	let chartCanvas: HTMLCanvasElement;
+	let chartInstance: Chart;
+	let elasticityChartCanvas: HTMLCanvasElement;
+	let elasticityChartInstance: Chart;
+
+	// Enriched Data Structure
+	interface EnrichedOrder {
+		amazon_order_id: string;
+		purchase_date: string;
+		order_status: string;
+		currency_code: string;
+
+		// Order Level (Basket)
+		orderRevenue: number;
+		orderCost: number;
+		orderProfit: number;
+		orderShippingCost: number;
+
+		// SKU Level (Line)
+		skuRevenue: number;
+		skuCost: number;
+		skuProfit: number;
+		skuUnits: number;
+
+		// Expanded properties from original order
+		[key: string]: any;
+	}
+
+	function localDateKey(dateInput: string | number | Date) {
+		const d = new Date(dateInput);
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	}
+
+	// Helper functions defined first so they can be used in enrichment
+	function getShippingCostDisplay(order: any) {
+		if (order.shipping_cost !== null && order.shipping_cost !== undefined) {
+			return {
+				amount: Number(order.shipping_cost),
+				type: '(Actual)',
+				class: 'text-blue-600 font-medium'
+			};
+		}
+
+		if (!order.amazon_order_items)
+			return { amount: 0, type: '(Est.)', class: 'text-muted-foreground' };
+
+		const estimatedTotal = order.amazon_order_items.reduce((sum: number, item: any) => {
+			if (item.costs) {
+				return sum + (Number(item.costs.shippingCost) || 0) * (Number(item.quantity_ordered) || 0);
+			}
+			return sum;
+		}, 0);
+
+		return {
+			amount: estimatedTotal,
+			type: '(Est.)',
+			class: 'text-muted-foreground'
+		};
+	}
+
+	function calculateOrderCost(order: any): number {
+		if (!order.amazon_order_items) return 0;
+		return order.amazon_order_items.reduce((sum: number, item: any) => {
+			if (item.costs) {
+				const material = Number(item.costs.materialTotalCost) || 0;
+				const shipping = Number(item.costs.shippingCost) || 0;
+				const fee = Number(item.costs.amazonFee) || 0;
+				const salesVat = Number(item.costs.salesVat) || 0;
+				const qty = Number(item.quantity_ordered) || 0;
+				return sum + (material + shipping + fee + salesVat) * qty;
+			}
+			return sum;
+		}, 0);
+	}
+
+	function enrichOrders(orders: any[], targetSku: string): EnrichedOrder[] {
+		return orders.map((order: any) => {
+			// 1. Order Level Calculations
+			const orderRevenue = parseFloat(order.order_total) || 0;
+			const orderCost = calculateOrderCost(order);
+			const orderProfit = orderRevenue - orderCost;
+
+			const shippingDisplay = getShippingCostDisplay(order);
+			const orderShippingCost = shippingDisplay.amount;
+
+			// 2. SKU Level Calculations
+			let skuRevenue = 0;
+			let skuCost = 0;
+			let skuUnits = 0;
+
+			if (order.amazon_order_items) {
+				order.amazon_order_items.forEach((item: any) => {
+					if (item.seller_sku === targetSku) {
+						// Revenue: item_price_amount is usually the line total
+						skuRevenue += parseFloat(item.item_price_amount) || 0;
+
+						const qty = Number(item.quantity_ordered) || 0;
+						const bundleQty = Number(item.bundle_quantity) || 1;
+						const units = qty * bundleQty;
+
+						skuUnits += units;
+
+						if (item.costs) {
+							const material = Number(item.costs.materialTotalCost) || 0;
+							const shipping = Number(item.costs.shippingCost) || 0;
+							const fee = Number(item.costs.amazonFee) || 0;
+							const salesVat = Number(item.costs.salesVat) || 0;
+							// Costs are per "Sold Item" (Pack), including fees/shipping.
+							skuCost += (material + shipping + fee + salesVat) * qty;
+						}
+					}
+				});
+			}
+
+			const skuProfit = skuRevenue - skuCost;
+
+			return {
+				...order, // Spread original properties for compatibility
+
+				orderRevenue,
+				orderCost,
+				orderProfit,
+				orderShippingCost,
+
+				skuRevenue,
+				skuCost,
+				skuProfit,
+				skuUnits
+			} as EnrichedOrder;
+		});
+	}
+
+	$: enrichedOrders = enrichOrders(data.orders || [], data.sku);
+
+	$: filteredOrders = enrichedOrders; // Keep for compatibility if needed, or replace usages
+
+	function createElasticityChart() {
+		if (!elasticityChartCanvas || !enrichedOrders || enrichedOrders.length < 5) return;
+
+		if (elasticityChartInstance) {
+			elasticityChartInstance.destroy();
+		}
+
+		const ctx = elasticityChartCanvas.getContext('2d');
+		if (!ctx) return;
+
+		// 1. Group orders by Date to get Daily metrics (using SKU Level data)
+		const dailyMap = new Map<string, { units: number; revenue: number; profit: number }>();
+
+		enrichedOrders.forEach((order) => {
+			if (order.order_status === 'Canceled') return;
+			if (order.skuUnits <= 0) return; // Guard logic
+
+			// Use Local Date for better bucketing (User's locale / server locale)
+			// toISOString() is UTC and can shift evening orders to the next day.
+			const dateKey = localDateKey(order.purchase_date);
+
+			if (dailyMap.has(dateKey)) {
+				const existing = dailyMap.get(dateKey)!;
+				existing.units += order.skuUnits;
+				existing.revenue += order.skuRevenue;
+				existing.profit += order.skuProfit;
+			} else {
+				dailyMap.set(dateKey, {
+					units: order.skuUnits,
+					revenue: order.skuRevenue,
+					profit: order.skuProfit
+				});
+			}
+		});
+
+		// 2. Convert to scatter points: X=Avg Price, Y=Daily Units
+		const points = Array.from(dailyMap.entries())
+			.map(([date, metrics]) => {
+				if (metrics.units === 0) return null;
+				const avgPrice = metrics.revenue / metrics.units;
+				return {
+					x: avgPrice, // Price per unit (averaged for the day)
+					y: metrics.units, // Total units sold that day
+					date: date,
+					profit: metrics.profit
+				};
+			})
+			.filter((p) => p !== null);
+
+		elasticityChartInstance = new Chart(ctx, {
+			type: 'scatter',
+			data: {
+				datasets: [
+					{
+						label: 'Daily Sales Volume vs Price',
+						data: points,
+						backgroundColor: function (context) {
+							const val = context.raw as any;
+							return val && val.profit > 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)';
+						},
+						borderColor: function (context) {
+							const val = context.raw as any;
+							return val && val.profit > 0 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)';
+						},
+						borderWidth: 1,
+						pointRadius: 5,
+						pointHoverRadius: 7
+					}
+				]
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				scales: {
+					x: {
+						title: {
+							display: true,
+							text: 'Unit Sale Price (£)'
+						},
+						ticks: {
+							callback: function (value) {
+								return '£' + value;
+							}
+						}
+					},
+					y: {
+						title: {
+							display: true,
+							text: 'Daily Units Sold'
+						},
+						beginAtZero: true
+					}
+				},
+				plugins: {
+					tooltip: {
+						callbacks: {
+							label: function (context) {
+								const raw = context.raw as any;
+								return [
+									`Date: ${raw.date}`,
+									`Price: £${raw.x.toFixed(2)}`,
+									`Volume: ${raw.y} units`,
+									`Profit: £${raw.profit.toFixed(2)}`
+								];
+							}
+						}
+					},
+					legend: {
+						display: false
+					}
+				}
+			}
+		});
+	}
+
+	function createChart() {
+		if (!chartCanvas || !enrichedOrders || enrichedOrders.length === 0) return;
+
+		if (chartInstance) {
+			chartInstance.destroy();
+		}
+
+		const ctx = chartCanvas.getContext('2d');
+		if (!ctx) return;
+
+		// Sort orders by date (oldest to newest) for the chart
+		const chartData = [...enrichedOrders]
+			.filter((order) => order.order_status !== 'Canceled')
+			.sort((a, b) => new Date(a.purchase_date).getTime() - new Date(b.purchase_date).getTime());
+
+		// Prepare data using pre-calculated SKU metrics
+		// Note: unitRevenue, unitCost, unitProfit here are "Per Underlying Unit" (e.g. if bundle=2, cost is halved)
+		const processedData = chartData
+			.map((order) => {
+				if (order.skuUnits === 0) return null;
+
+				const unitRevenue = order.skuRevenue / order.skuUnits;
+				const unitCost = order.skuCost / order.skuUnits; // This averages cost per unit if multiple units
+				const unitProfit = unitRevenue - unitCost;
+
+				return {
+					x: new Date(order.purchase_date).getTime(),
+					unitRevenue,
+					unitCost,
+					unitProfit,
+					qty: order.skuUnits,
+					orderId: order.amazon_order_id
+				};
+			})
+			.filter((d) => d !== null);
+
+		chartInstance = new Chart(ctx, {
+			type: 'line',
+			data: {
+				datasets: [
+					{
+						label: 'Unit Sale Price',
+						data: processedData.map((d) => ({ x: d.x, y: d.unitRevenue, qty: d.qty })),
+						borderColor: 'rgb(59, 130, 246)', // Blue
+						backgroundColor: 'rgba(59, 130, 246, 0.1)',
+						borderWidth: 2,
+						pointRadius: 2,
+						tension: 0.1
+					},
+					{
+						label: 'Unit Cost',
+						data: processedData.map((d) => ({ x: d.x, y: d.unitCost, qty: d.qty })),
+						borderColor: 'rgb(249, 115, 22)', // Orange
+						backgroundColor: 'rgba(249, 115, 22, 0.1)',
+						borderWidth: 2,
+						pointRadius: 2,
+						tension: 0.1
+					},
+					{
+						label: 'Unit Profit',
+						data: processedData.map((d) => ({ x: d.x, y: d.unitProfit, qty: d.qty })),
+						borderColor: 'rgb(34, 197, 94)', // Green
+						backgroundColor: 'rgba(34, 197, 94, 0.1)',
+						borderWidth: 2,
+						pointRadius: 2,
+						tension: 0.1
+					}
+				]
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				scales: {
+					x: {
+						type: 'time',
+						time: {
+							unit: 'day',
+							displayFormats: {
+								day: 'MMM d'
+							}
+						},
+						grid: {
+							display: false
+						}
+					},
+					y: {
+						beginAtZero: true,
+						ticks: {
+							callback: function (value) {
+								return '£' + value;
+							}
+						}
+					}
+				},
+				interaction: {
+					mode: 'index',
+					intersect: false
+				},
+				plugins: {
+					tooltip: {
+						callbacks: {
+							label: function (context) {
+								let label = context.dataset.label || '';
+								if (label) {
+									label += ': ';
+								}
+								if (context.parsed.y !== null) {
+									label += new Intl.NumberFormat('en-GB', {
+										style: 'currency',
+										currency: 'GBP'
+									}).format(context.parsed.y);
+								}
+
+								// Show quantity if > 1
+								const raw = context.raw as any;
+								if (raw && raw.qty > 1) {
+									label += ` (Qty: ${raw.qty})`;
+								}
+
+								return label;
+							},
+							title: (tooltipItems) => {
+								if (tooltipItems.length > 0) {
+									const timestamp = tooltipItems[0].parsed.x;
+									if (timestamp !== null) {
+										return new Date(timestamp).toLocaleString();
+									}
+								}
+								return '';
+							}
+						}
+					}
+				}
+			}
+		});
+	}
+
+	onMount(() => {
+		createChart();
+		createElasticityChart();
+		return () => {
+			if (chartInstance) {
+				chartInstance.destroy();
+			}
+			if (elasticityChartInstance) {
+				elasticityChartInstance.destroy();
+			}
+		};
+	});
+
+	$: chartKey =
+		enrichedOrders.length > 0
+			? `${data.sku}:${enrichedOrders.length}:${Math.round(
+					enrichedOrders.reduce((a, o) => a + o.skuRevenue + o.skuCost, 0) * 100
+				)}`
+			: '';
+
+	$: if (chartCanvas && chartKey) {
+		queueMicrotask(() => createChart());
+	}
+
+	$: if (elasticityChartCanvas && chartKey) {
+		queueMicrotask(() => createElasticityChart());
+	}
+
+	// Modal state
+	let showUpdateCostModal = false;
+	let selectedSku = '';
+	let selectedTitle = '';
+	let selectedAsin = '';
+
+	// Debug Modal state
+	let showDebugModal = false;
+	let debugLogs: string[] = [];
+	let debugTitle = '';
+
+	function openUpdateCostModal(sku: string, title: string, asin: string) {
+		selectedSku = sku;
+		selectedTitle = title;
+		selectedAsin = asin;
+		showUpdateCostModal = true;
+	}
+
+	async function openDebugModal(orderId: string, sku: string) {
+		debugTitle = `Debug: ${sku}`;
+		debugLogs = ['Loading...'];
+		showDebugModal = true;
+
+		try {
+			const res = await fetch(
+				`/api/amazon/orders/debug?orderId=${orderId}&sku=${encodeURIComponent(sku)}`
+			);
+			const data = await res.json();
+			if (data.logs) {
+				debugLogs = data.logs;
+			} else {
+				debugLogs = ['No logs returned', JSON.stringify(data)];
+			}
+		} catch (e) {
+			debugLogs = ['Error fetching debug info', String(e)];
+		}
+	}
+
+	async function syncSingleOrder(orderId: string) {
+		try {
+			showToast(`Syncing order ${orderId}...`, 'info');
+			const res = await fetch(`/api/amazon/orders/sync-single?orderId=${orderId}`);
+			const data = await res.json();
+
+			if (data.success) {
+				showToast('Order synced successfully', 'success');
+				setTimeout(() => window.location.reload(), 1000);
+			} else {
+				showToast(data.error || 'Failed to sync order', 'error');
+			}
+		} catch (e) {
+			showToast('Error syncing order', 'error');
+			console.error(e);
+		}
+	}
+
+	// SKU Stats Interface
+	interface SkuStats {
+		sku: string;
+		title: string;
+		asin: string;
+		orderCount: number;
+		unitCount: number;
+		soldCount: number;
+		totalRevenue: number;
+		totalProfit: number;
+		avgProfit: number;
+		hasCostData: boolean;
+	}
+
+	// SKU Stats (Related Items) - iterates items to find other SKUs
+	$: skuStats = enrichedOrders.reduce((acc: Record<string, SkuStats>, order: any) => {
+		if (!order.amazon_order_items) return acc;
+		if (order.order_status === 'Canceled') return acc;
+
+		order.amazon_order_items.forEach((item: any) => {
+			if (!item.seller_sku) return;
+
+			const sku = item.seller_sku;
+			if (!acc[sku]) {
+				acc[sku] = {
+					sku,
+					title: item.title || 'Unknown',
+					asin: item.asin || '',
+					orderCount: 0,
+					unitCount: 0,
+					soldCount: 0,
+					totalRevenue: 0,
+					totalProfit: 0,
+					avgProfit: 0,
+					hasCostData: false
+				};
+			}
+
+			const qty = Number(item.quantity_ordered) || 0;
+			const bundleQty = Number(item.bundle_quantity) || 1;
+
+			acc[sku].soldCount += qty;
+			acc[sku].unitCount += qty * bundleQty;
+			acc[sku].orderCount += 1;
+
+			// Calculate profit for this item
+			const itemPrice = Number(item.item_price_amount) || 0;
+			const revenue = itemPrice;
+			acc[sku].totalRevenue += revenue;
+
+			let itemCost = 0;
+			if (item.costs) {
+				acc[sku].hasCostData = true;
+				const material = Number(item.costs.materialTotalCost) || 0;
+				const shipping = Number(item.costs.shippingCost) || 0;
+				const fee = Number(item.costs.amazonFee) || 0;
+				const salesVat = Number(item.costs.salesVat) || 0;
+				itemCost = (material + shipping + fee + salesVat) * qty;
+			}
+
+			const profit = revenue - itemCost;
+			acc[sku].totalProfit += profit;
+		});
+		return acc;
+	}, {});
+
+	$: skuList = Object.values(skuStats).map((stat) => ({
+		...stat,
+		avgProfit: stat.orderCount > 0 ? stat.totalProfit / stat.orderCount : 0
+	}));
+
+	$: topSellingSkus = [...skuList].sort((a, b) => b.orderCount - a.orderCount).slice(0, 10);
+
+	let showProfitStats = false; // Kept for UI state if needed, but section removed
+
+	const dateCols = new Set(['purchase_date']);
+	const numericCols = new Set([
+		'orderRevenue',
+		'orderCost',
+		'orderProfit',
+		'orderShippingCost',
+		'skuRevenue',
+		'skuCost',
+		'skuProfit',
+		'skuUnits'
+	]);
+
+	$: sortedOrders = [...enrichedOrders].sort((a, b) => {
+		let aValue: any = a[sortColumn as keyof EnrichedOrder] ?? a[sortColumn];
+		let bValue: any = b[sortColumn as keyof EnrichedOrder] ?? b[sortColumn];
+
+		if (dateCols.has(sortColumn)) {
+			aValue = new Date(a.purchase_date).getTime();
+			bValue = new Date(b.purchase_date).getTime();
+		} else if (numericCols.has(sortColumn)) {
+			aValue = Number(aValue) || 0;
+			bValue = Number(bValue) || 0;
+		} else {
+			aValue = String(aValue ?? '').toLowerCase();
+			bValue = String(bValue ?? '').toLowerCase();
+		}
+
+		if (aValue === bValue) return 0;
+		const comparison = aValue > bValue ? 1 : -1;
+		return sortDirection === 'asc' ? comparison : -comparison;
+	});
+
+	// Summary Cards Stats (SKU Specific Truth) as requested?
+	// Or did the user want explicit separation?
+	// "Total Sales" on this page usually refers to the SKU sales.
+	// We will use the SKU metrics from EnrichedOrders.
+	$: summaryStats = enrichedOrders.reduce(
+		(acc, order) => {
+			if (order.order_status === 'Canceled') return acc;
+			acc.sales += order.skuRevenue;
+			acc.costs += order.skuCost;
+			acc.units += order.skuUnits;
+			return acc;
+		},
+		{ sales: 0, costs: 0, units: 0 }
+	);
+
+	$: totalSales = summaryStats.sales;
+	$: totalCosts = summaryStats.costs;
+	$: totalProfit = summaryStats.sales - summaryStats.costs;
+	$: totalUnitsSold = summaryStats.units;
+
+	// Order Composition Analysis
+	$: compositionStats = (() => {
+		if (!filteredOrders.length) return null;
+
+		let singleUnitOrders = 0;
+		let multiUnitOrders = 0;
+		let soloPurchaseMetric = 0; // Sold alone
+		let basketBuilderMetric = 0; // Sold with other items
+		let totalOrders = 0;
+
+		filteredOrders.forEach((order) => {
+			if (order.order_status === 'Canceled') return;
+			totalOrders++;
+
+			// Check SKU quantity within order
+			let skuQty = 0;
+			let otherSkus = false;
+
+			if (order.amazon_order_items) {
+				order.amazon_order_items.forEach((item: any) => {
+					if (item.seller_sku === data.sku) {
+						const qty = Number(item.quantity_ordered) || 0;
+						const bundleQty = Number(item.bundle_quantity) || 1;
+						skuQty += qty * bundleQty;
+					} else {
+						otherSkus = true;
+					}
+				});
+			}
+
+			if (skuQty > 1) {
+				multiUnitOrders++;
+			} else {
+				singleUnitOrders++;
+			}
+
+			if (otherSkus) {
+				basketBuilderMetric++;
+			} else {
+				soloPurchaseMetric++;
+			}
+		});
+
+		if (totalOrders === 0) return null;
+
+		return {
+			multiRate: (multiUnitOrders / totalOrders) * 100,
+			singleRate: (singleUnitOrders / totalOrders) * 100,
+			basketBuilderRate: (basketBuilderMetric / totalOrders) * 100,
+			soloRate: (soloPurchaseMetric / totalOrders) * 100,
+			totalOrders
+		};
+	})();
+
+	// Shipping Service Analysis
+	$: shippingStats = filteredOrders.reduce((acc: Record<string, any>, order: any) => {
+		const totalCost = calculateOrderCost(order);
+
+		// Only include orders with cost data to avoid skewing profit stats
+		if (totalCost <= 0) return acc;
+
+		const carrier = order.automated_carrier || 'Unknown';
+		const method =
+			order.automated_ship_method || order.shipment_service_level_category || 'Unknown';
+
+		// Exclude Return to Origin (RTO) shipments as they are not valid sales
+		if (method === 'SWA-UK-RTO' || method === 'Amazon Return to Origin') return acc;
+
+		const service = `${carrier} - ${method}`;
+
+		if (!acc[service]) {
+			acc[service] = {
+				name: service,
+				orderCount: 0,
+				totalProfit: 0,
+				totalRevenue: 0
+			};
+		}
+
+		acc[service].orderCount += 1;
+
+		const revenue = parseFloat(order.order_total) || 0;
+		const profit = revenue - totalCost;
+
+		acc[service].totalProfit += profit;
+		acc[service].totalRevenue += revenue;
+
+		return acc;
+	}, {});
+
+	$: shippingStatsList = Object.values(shippingStats).sort(
+		(a: any, b: any) => b.totalProfit - a.totalProfit
+	);
+
+	// Velocity Analysis
+	$: velocityStats = (() => {
+		if (!filteredOrders.length) return null;
+
+		const sorted = [...filteredOrders]
+			.filter((o) => o.order_status !== 'Canceled')
+			.sort((a, b) => new Date(a.purchase_date).getTime() - new Date(b.purchase_date).getTime());
+
+		if (sorted.length < 2) return null;
+
+		// Average TBO
+		let totalDiffMs = 0;
+		for (let i = 1; i < sorted.length; i++) {
+			totalDiffMs +=
+				new Date(sorted[i].purchase_date).getTime() -
+				new Date(sorted[i - 1].purchase_date).getTime();
+		}
+		const avgTboMs = totalDiffMs / (sorted.length - 1);
+		const avgTboHours = avgTboMs / (1000 * 60 * 60);
+
+		// Alive Check
+		const lastOrder = sorted[sorted.length - 1];
+		const lastOrderDate = new Date(lastOrder.purchase_date).getTime();
+		const now = Date.now();
+		const hoursSinceLastSale = (now - lastOrderDate) / (1000 * 60 * 60);
+
+		// Heatmap (Day of Week vs Hour)
+		// each cell = { count, revenue, avgPrice }
+		const heatmap = Array(7)
+			.fill(0)
+			.map(() =>
+				Array(24)
+					.fill(0)
+					.map(() => ({ count: 0, revenue: 0, units: 0 }))
+			);
+
+		sorted.forEach((order) => {
+			const d = new Date(order.purchase_date);
+			const day = d.getDay(); // 0 = Sunday
+			const hour = d.getHours();
+
+			const cell = heatmap[day][hour];
+			cell.count += 1;
+			cell.revenue += order.skuRevenue;
+			cell.units += order.skuUnits;
+		});
+
+		// Calculate max for opacity scaling
+		const maxCount = Math.max(...heatmap.flat().map((c) => c.count)) || 1;
+
+		return {
+			avgTboHours,
+			hoursSinceLastSale,
+			heatmap,
+			lastOrderDate,
+			maxCount
+		};
+	})();
+
+	// Stability & Volatility Analysis (Risk)
+	$: stabilityStats = (() => {
+		if (!filteredOrders.length) return null;
+
+		const validOrders = filteredOrders
+			.filter((o) => o.order_status !== 'Canceled')
+			.sort((a, b) => new Date(a.purchase_date).getTime() - new Date(b.purchase_date).getTime());
+
+		if (validOrders.length < 2) return null;
+
+		const firstDate = new Date(validOrders[0].purchase_date);
+		const lastDate = new Date(validOrders[validOrders.length - 1].purchase_date);
+
+		// 1. Daily Sales Volatility
+		const dailySales: Record<string, number> = {};
+		const dayMs = 24 * 60 * 60 * 1000;
+		const totalDays = Math.ceil((lastDate.getTime() - firstDate.getTime()) / dayMs) + 1;
+
+		for (let i = 0; i < totalDays; i++) {
+			const d = new Date(firstDate.getTime() + i * dayMs);
+			const dateKey = localDateKey(d);
+			dailySales[dateKey] = 0;
+		}
+
+		validOrders.forEach((order) => {
+			const dateKey = localDateKey(order.purchase_date);
+			let units = 0;
+			if (order.amazon_order_items) {
+				order.amazon_order_items.forEach((item: any) => {
+					if (item.seller_sku === data.sku) {
+						units += (Number(item.quantity_ordered) || 0) * (Number(item.bundle_quantity) || 1);
+					}
+				});
+			}
+			if (dailySales[dateKey] !== undefined) {
+				dailySales[dateKey] += units;
+			}
+		});
+
+		const values = Object.values(dailySales);
+		if (values.length === 0) return null;
+
+		const sum = values.reduce((a, b) => a + b, 0);
+		const mean = sum / values.length;
+
+		const squaredDiffs = values.map((v) => Math.pow(v - mean, 2));
+		const avgSquaredDiff = squaredDiffs.reduce((a, b) => a + b, 0) / values.length;
+		const stdDev = Math.sqrt(avgSquaredDiff);
+		const cv = mean > 0 ? stdDev / mean : 0;
+
+		// 2. Returns & Cancellations
+		let cancelCount = 0;
+		let returnCount = 0;
+
+		filteredOrders.forEach((order) => {
+			if (order.order_status === 'Canceled') {
+				cancelCount++;
+			}
+			const method = order.automated_ship_method || order.shipment_service_level_category || '';
+			if (method === 'SWA-UK-RTO' || method === 'Amazon Return to Origin') {
+				returnCount++;
+			}
+		});
+
+		const totalExamined = filteredOrders.length;
+		const defectRate = totalExamined > 0 ? ((cancelCount + returnCount) / totalExamined) * 100 : 0;
+
+		return {
+			stdDev,
+			mean,
+			cv,
+			cancelCount,
+			returnCount,
+			defectRate,
+			totalDays
+		};
+	})();
+
+	function toggleSort(column: string) {
+		if (sortColumn === column) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortColumn = column;
+			// Default to descending for money columns, ascending for text
+			if (
+				[
+					'orderRevenue',
+					'orderCost',
+					'orderProfit',
+					'orderShippingCost',
+					'skuRevenue',
+					'skuCost',
+					'skuProfit',
+					'skuUnits'
+				].includes(column)
+			) {
+				sortDirection = 'desc';
+			} else {
+				sortDirection = 'asc';
+			}
+		}
+	}
+
+	function getStatusColor(status: string) {
+		switch (status) {
+			case 'Shipped':
+				return 'bg-green-100 text-green-800 border-green-200';
+			case 'Unshipped':
+				return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+			case 'Canceled':
+				return 'bg-red-100 text-red-800 border-red-200';
+			case 'Pending':
+				return 'bg-blue-100 text-blue-800 border-blue-200';
+			default:
+				return 'bg-gray-100 text-gray-800 border-gray-200';
+		}
+	}
+
+	function formatDate(dateString: string) {
+		if (!dateString) return '-';
+		return new Date(dateString).toLocaleString();
+	}
+
+	function formatCurrency(amount: number | null, currency: string | null = 'GBP') {
+		if (amount === null || amount === undefined) return '-';
+		const safeCurrency = currency || 'GBP';
+		try {
+			return new Intl.NumberFormat('en-GB', { style: 'currency', currency: safeCurrency }).format(
+				amount
+			);
+		} catch (e) {
+			return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+		}
+	}
+
+	function getProfitAnalysis(sku: SkuStats) {
+		if (sku.orderCount === 0) return { label: 'No Orders', color: 'text-gray-500' };
+		if (sku.totalRevenue === 0) return { label: 'No Revenue', color: 'text-orange-500' };
+		if (sku.avgProfit === 0) return { label: 'Break-even', color: 'text-yellow-600' };
+		if (sku.avgProfit < 0) return { label: 'Loss Making', color: 'text-red-600' };
+		return { label: 'Low Margin', color: 'text-yellow-600' };
+	}
+
+	function downloadCSV() {
+		const headers = [
+			'Order ID',
+			'Purchase Date',
+			'Status',
+			'SKU Revenue',
+			'SKU Cost',
+			'SKU Profit',
+			'SKU Units',
+			'Order Revenue',
+			'Order Cost',
+			'Order Profit',
+			'Shipping Cost',
+			'Currency'
+		];
+
+		const csvCell = (v: any) => {
+			const s = String(v ?? '');
+			return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+		};
+
+		const rows = sortedOrders.map((order) => {
+			return [
+				order.amazon_order_id,
+				order.purchase_date,
+				order.order_status,
+				(order.skuRevenue || 0).toFixed(2),
+				(order.skuCost || 0).toFixed(2),
+				(order.skuProfit || 0).toFixed(2),
+				order.skuUnits,
+				(order.orderRevenue || 0).toFixed(2),
+				(order.orderCost || 0).toFixed(2),
+				(order.orderProfit || 0).toFixed(2),
+				(order.orderShippingCost || 0).toFixed(2),
+				order.currency_code
+			]
+				.map(csvCell)
+				.join(',');
+		});
+
+		const csvContent = [headers.join(','), ...rows].join('\n');
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const link = document.createElement('a');
+		const url = URL.createObjectURL(blob);
+		link.setAttribute('href', url);
+		link.setAttribute('download', `amazon_orders_sku_${data.sku}.csv`);
+		link.style.visibility = 'hidden';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+	}
+</script>
+
+<div class="flex flex-col gap-6 p-6">
+	<!-- Back Button -->
+	<div>
+		<Button variant="outline" onclick={() => goto('/dashboard/amazon/orders')}>
+			<ArrowLeft class="mr-2 h-4 w-4" />
+			Back to Orders
+		</Button>
+	</div>
+
+	<div class="flex items-center justify-between">
+		<div>
+			<h1 class="text-3xl font-bold tracking-tight">Orders for SKU: {data.sku}</h1>
+			<p class="text-muted-foreground">
+				View order history and profitability for this specific SKU
+			</p>
+		</div>
+		<div class="flex items-center gap-2">
+			<Button variant="outline" onclick={downloadCSV}>
+				<Download class="mr-2 h-4 w-4" />
+				Export CSV
+			</Button>
+		</div>
+	</div>
+
+	{#if data.error}
+		<div class="bg-red-50 border-l-4 border-red-400 p-4">
+			<div class="flex">
+				<div class="ml-3">
+					<p class="text-sm text-red-700">
+						<span class="font-medium">Error</span>: {data.error}
+					</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<div class="grid gap-4 md:grid-cols-5">
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
+				<h3 class="tracking-tight text-sm font-medium">Total Orders</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="text-2xl font-bold">{filteredOrders.length}</div>
+			</div>
+		</div>
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
+				<h3 class="tracking-tight text-sm font-medium">Units Sold</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="text-2xl font-bold">{totalUnitsSold}</div>
+			</div>
+		</div>
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
+				<h3 class="tracking-tight text-sm font-medium">Total Sales</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="text-2xl font-bold">{formatCurrency(totalSales)}</div>
+			</div>
+		</div>
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
+				<h3 class="tracking-tight text-sm font-medium">Total Costs</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="text-2xl font-bold">{formatCurrency(totalCosts)}</div>
+			</div>
+		</div>
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
+				<h3 class="tracking-tight text-sm font-medium">Total Profit</h3>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="text-2xl font-bold {totalProfit > 0 ? 'text-green-600' : 'text-red-600'}">
+					{totalProfit > 0 ? '+' : ''}{formatCurrency(totalProfit)}
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Order Performance Chart -->
+	<div class="rounded-xl border bg-card text-card-foreground shadow">
+		<div class="p-6 pb-2">
+			<h3 class="font-semibold leading-none tracking-tight">Order Performance (Per Unit)</h3>
+			<p class="text-sm text-muted-foreground">
+				Tracking Unit Price, Unit Cost, and Unit Profit over time.
+			</p>
+		</div>
+		<div class="p-6 pt-0">
+			<div class="relative w-full h-[350px]">
+				<canvas bind:this={chartCanvas}></canvas>
+			</div>
+		</div>
+	</div>
+
+	<!-- Velocity & Timing Analysis -->
+	{#if velocityStats}
+		<div class="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
+			<div class="px-6 py-4 bg-muted/30 border-b">
+				<h3 class="font-semibold text-foreground">Velocity & Timing Analysis</h3>
+			</div>
+			<div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+				<!-- Metrics -->
+				<div class="space-y-4">
+					<div class="p-4 bg-card rounded-lg border shadow-sm">
+						<p class="text-sm font-medium text-muted-foreground mb-1">Avg Time Between Orders</p>
+						<p class="text-2xl font-bold">
+							{velocityStats.avgTboHours < 1
+								? `${Math.round(velocityStats.avgTboHours * 60)} mins`
+								: `${velocityStats.avgTboHours.toFixed(1)} hours`}
+						</p>
+						<p class="text-xs text-muted-foreground mt-1">Lower is better (higher velocity)</p>
+					</div>
+
+					<div class="p-4 bg-card rounded-lg border shadow-sm">
+						<p class="text-sm font-medium text-muted-foreground mb-1">Time Since Last Order</p>
+						<p class="text-2xl font-bold">
+							{velocityStats.hoursSinceLastSale < 1
+								? `${Math.round(velocityStats.hoursSinceLastSale * 60)} mins`
+								: `${velocityStats.hoursSinceLastSale.toFixed(1)} hours`}
+						</p>
+						<p class="text-xs text-muted-foreground mt-1">
+							Last: {new Date(velocityStats.lastOrderDate).toLocaleDateString()}
+						</p>
+					</div>
+				</div>
+
+				<!-- Heatmap -->
+				<div class="col-span-2 border rounded-lg p-4">
+					<div class="flex items-center justify-between mb-4">
+						<h4 class="text-sm font-medium">Sales Heatmap (Day vs Hour)</h4>
+						<div class="flex items-center gap-2 text-xs text-muted-foreground">
+							<span class="inline-block w-3 h-3 bg-blue-100 rounded-sm"></span> Low
+							<span class="inline-block w-3 h-3 bg-blue-500 rounded-sm"></span> High
+						</div>
+					</div>
+
+					<div class="grid grid-cols-[auto_1fr] gap-2">
+						<!-- Y-Axis Labels (Days) -->
+						<div class="grid grid-rows-7 text-xs font-medium text-muted-foreground mr-1 gap-1">
+							{#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as day}
+								<div class="flex items-center h-6">{day}</div>
+							{/each}
+						</div>
+
+						<!-- Heatmap Grid -->
+						<div class="grid grid-rows-7 gap-1">
+							{#each velocityStats.heatmap as hours, dayIndex}
+								<div
+									class="grid gap-1 h-6"
+									style="grid-template-columns: repeat(24, minmax(0, 1fr))"
+								>
+									{#each hours as cell, hourIndex}
+										<div
+											class="rounded-sm transition-all hover:ring-2 hover:ring-blue-400 cursor-help"
+											style="background-color: rgba(59, 130, 246, {cell.count === 0
+												? 0.05
+												: Math.max(0.2, Math.min(1, cell.count / velocityStats.maxCount))});"
+											title="{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][
+												dayIndex
+											]} {hourIndex}:00 - {hourIndex + 1}:00
+Orders: {cell.count}
+Units: {cell.units}
+Revenue: {formatCurrency(cell.revenue)}
+Avg Price: {formatCurrency(cell.units ? cell.revenue / cell.units : 0)}"
+										></div>
+									{/each}
+								</div>
+							{/each}
+						</div>
+
+						<!-- X-Axis Labels (Hours) -->
+						<div></div>
+						<!-- Spacer for Y-axis -->
+						<div
+							class="grid mt-1 text-[10px] text-muted-foreground"
+							style="grid-template-columns: repeat(24, minmax(0, 1fr))"
+						>
+							{#each Array(24) as _, i}
+								<div class="text-center">{i % 6 === 0 ? i : ''}</div>
+							{/each}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Related SKUs (if any orders contain multiple items) -->
+	{#if skuList.length > 1}
+		<div class="grid gap-4 md:grid-cols-2">
+			<!-- Top Selling SKUs in these orders -->
+			<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+				<div class="p-6 pb-2">
+					<h3 class="font-semibold leading-none tracking-tight">Related SKUs in Orders</h3>
+				</div>
+				<div class="p-6 pt-0">
+					<div class="relative w-full overflow-auto max-h-[400px]">
+						<table class="w-full caption-bottom text-sm">
+							<thead class="[&_tr]:border-b sticky top-0 bg-card">
+								<tr
+									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+								>
+									<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+										>SKU</th
+									>
+									<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+										>Order Count</th
+									>
+									<th class="h-12 px-4 text-right align-middle font-medium text-muted-foreground"
+										>Unit Count</th
+									>
+								</tr>
+							</thead>
+							<tbody class="[&_tr:last-child]:border-0">
+								{#each topSellingSkus as sku}
+									<tr
+										class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted {sku.sku ===
+										data.sku
+											? 'bg-blue-50/50'
+											: ''}"
+									>
+										<td class="p-4 align-middle font-medium">
+											<div class="flex flex-col">
+												<span>{sku.sku}</span>
+												<span class="text-xs text-muted-foreground">{sku.title}</span>
+											</div>
+										</td>
+										<td class="p-4 align-middle text-right">{sku.orderCount}</td>
+										<td class="p-4 align-middle text-right">{sku.unitCount}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Price Elasticity Analysis -->
+	{#if filteredOrders.length >= 5}
+		<div class="rounded-xl border bg-card text-card-foreground shadow">
+			<div class="p-6 pb-2">
+				<h3 class="font-semibold leading-none tracking-tight">Price Elasticity Analysis</h3>
+				<p class="text-sm text-muted-foreground">
+					Daily Sales Volume vs Unit Price. (Green = Profitable Day, Red = Loss Making Day)
+				</p>
+			</div>
+			<div class="p-6 pt-0">
+				<div class="relative w-full h-[400px]">
+					<canvas bind:this={elasticityChartCanvas}></canvas>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Order Composition Analysis -->
+	{#if compositionStats}
+		<div class="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
+			<div class="px-6 py-4 bg-muted/30 border-b">
+				<h3 class="font-semibold text-foreground">Order Composition Analysis</h3>
+			</div>
+			<div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+				<!-- Multi-Quantity Rate -->
+				<div class="space-y-4">
+					<div class="flex items-center justify-between">
+						<div>
+							<h4 class="font-medium text-sm">Multi-Unit Orders</h4>
+							<p class="text-xs text-muted-foreground">
+								Percentage of orders with 2+ units of this SKU
+							</p>
+						</div>
+						<div
+							class="text-2xl font-bold {compositionStats.multiRate > 20
+								? 'text-green-600'
+								: 'text-foreground'}"
+						>
+							{compositionStats.multiRate.toFixed(1)}%
+						</div>
+					</div>
+
+					<!-- Progress Bar -->
+					<div class="h-4 w-full bg-secondary rounded-full overflow-hidden flex">
+						<div
+							class="h-full bg-blue-500"
+							style="width: {compositionStats.singleRate}%"
+							title="Single Unit Orders: {compositionStats.singleRate.toFixed(1)}%"
+						></div>
+						<div
+							class="h-full bg-orange-500"
+							style="width: {compositionStats.multiRate}%"
+							title="Multi Unit Orders: {compositionStats.multiRate.toFixed(1)}%"
+						></div>
+					</div>
+					<div class="flex justify-between text-xs text-muted-foreground">
+						<div class="flex items-center gap-2">
+							<span class="w-2 h-2 rounded-full bg-blue-500"></span>
+							Single Unit ({compositionStats.singleRate.toFixed(0)}%)
+						</div>
+						<div class="flex items-center gap-2">
+							<span class="w-2 h-2 rounded-full bg-orange-500"></span>
+							Multi Unit ({compositionStats.multiRate.toFixed(0)}%)
+						</div>
+					</div>
+
+					{#if compositionStats.multiRate > 25}
+						<div
+							class="mt-2 text-xs bg-orange-50 text-orange-800 p-2 rounded border border-orange-100 flex gap-2 items-start"
+						>
+							<div class="mt-0.5">💡</div>
+							<div>
+								<strong>High Multi-Unit Rate:</strong> Consider creating a "Pack of 2" variation to save
+								on FBA fees and shipping.
+							</div>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Basket Value Contribution -->
+				<div class="space-y-4">
+					<div class="flex items-center justify-between">
+						<div>
+							<h4 class="font-medium text-sm">Basket Builder Rate</h4>
+							<p class="text-xs text-muted-foreground">
+								Percentage of orders containing OTHER items
+							</p>
+						</div>
+						<div
+							class="text-2xl font-bold {compositionStats.basketBuilderRate > 50
+								? 'text-green-600'
+								: 'text-foreground'}"
+						>
+							{compositionStats.basketBuilderRate.toFixed(1)}%
+						</div>
+					</div>
+
+					<!-- Progress Bar -->
+					<div class="h-4 w-full bg-secondary rounded-full overflow-hidden flex">
+						<div
+							class="h-full bg-indigo-500"
+							style="width: {compositionStats.soloRate}%"
+							title="Solo Orders: {compositionStats.soloRate.toFixed(1)}%"
+						></div>
+						<div
+							class="h-full bg-purple-500"
+							style="width: {compositionStats.basketBuilderRate}%"
+							title="Mixed Basket: {compositionStats.basketBuilderRate.toFixed(1)}%"
+						></div>
+					</div>
+					<div class="flex justify-between text-xs text-muted-foreground">
+						<div class="flex items-center gap-2">
+							<span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+							Solo Purchase ({compositionStats.soloRate.toFixed(0)}%)
+						</div>
+						<div class="flex items-center gap-2">
+							<span class="w-2 h-2 rounded-full bg-purple-500"></span>
+							With Other Items ({compositionStats.basketBuilderRate.toFixed(0)}%)
+						</div>
+					</div>
+
+					{#if compositionStats.basketBuilderRate > 40}
+						<div
+							class="mt-2 text-xs bg-purple-50 text-purple-800 p-2 rounded border border-purple-100 flex gap-2 items-start"
+						>
+							<div class="mt-0.5">🛒</div>
+							<div>
+								<strong>Basket Builder:</strong> This item is frequently bought with others. It can drive
+								cart value even at lower margins.
+							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Stability & Volatility Analysis (Risk) -->
+	{#if stabilityStats}
+		<div class="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
+			<div class="px-6 py-4 bg-muted/30 border-b">
+				<h3 class="font-semibold text-foreground">Risk Analysis</h3>
+			</div>
+			<div class="p-6">
+				<!-- Defect Rate Impact -->
+				<div class="space-y-4">
+					<div class="flex items-center justify-between">
+						<div>
+							<h4 class="font-medium text-sm">Defect Rate</h4>
+							<p class="text-xs text-muted-foreground">Cancellations & Returns (RTO)</p>
+						</div>
+						<div
+							class="text-2xl font-bold {stabilityStats.defectRate < 5
+								? 'text-green-600'
+								: stabilityStats.defectRate < 10
+									? 'text-yellow-600'
+									: 'text-red-600'}"
+						>
+							{stabilityStats.defectRate.toFixed(1)}%
+						</div>
+					</div>
+
+					<div class="flex gap-2">
+						<div class="flex-1 bg-red-50 p-2 rounded border border-red-100 text-center">
+							<span class="block text-xl font-bold text-red-700">{stabilityStats.cancelCount}</span>
+							<span class="text-xs text-muted-foreground">Cancellations</span>
+						</div>
+						<div class="flex-1 bg-orange-50 p-2 rounded border border-orange-100 text-center">
+							<span class="block text-xl font-bold text-orange-700"
+								>{stabilityStats.returnCount}</span
+							>
+							<span class="text-xs text-muted-foreground">Returns (RTO)</span>
+						</div>
+					</div>
+
+					{#if stabilityStats.defectRate > 10}
+						<div
+							class="mt-2 text-xs bg-red-50 text-red-800 p-2 rounded border border-red-100 flex gap-2 items-start"
+						>
+							<div class="mt-0.5">🚨</div>
+							<div>
+								<strong>High Defect Rate:</strong> Over 10% of orders are canceled or returned. Investigate
+								product quality or listing accuracy.
+							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Orders History -->
+	<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+		<div class="flex flex-col space-y-1.5 p-6">
+			<h3 class="text-2xl font-semibold leading-none tracking-tight">Orders History</h3>
+			<p class="text-sm text-muted-foreground">A list of all orders containing {data.sku}.</p>
+		</div>
+		<div class="p-6 pt-0">
+			<div class="relative w-full overflow-auto">
+				<table class="w-full caption-bottom text-sm">
+					<thead class="[&_tr]:border-b">
+						<tr class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('amazon_order_id')}
+							>
+								<div class="flex items-center gap-1">
+									Order ID
+									{#if sortColumn === 'amazon_order_id'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('purchase_date')}
+							>
+								<div class="flex items-center gap-1">
+									Date
+									{#if sortColumn === 'purchase_date'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('order_status')}
+							>
+								<div class="flex items-center gap-1">
+									Status
+									{#if sortColumn === 'order_status'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<!-- SKU Specific Columns -->
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap bg-blue-50/50 cursor-pointer"
+								onclick={() => toggleSort('skuRevenue')}
+							>
+								<div class="flex items-center gap-1">
+									SKU Revenue
+									{#if sortColumn === 'skuRevenue'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap bg-blue-50/50 cursor-pointer"
+								onclick={() => toggleSort('skuProfit')}
+							>
+								<div class="flex items-center gap-1">
+									SKU Profit
+									{#if sortColumn === 'skuProfit'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap bg-blue-50/50 cursor-pointer"
+								onclick={() => toggleSort('skuUnits')}
+							>
+								<div class="flex items-center gap-1">
+									SKU Units
+									{#if sortColumn === 'skuUnits'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+
+							<!-- Order Level Columns -->
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('orderRevenue')}
+							>
+								<div class="flex items-center gap-1">
+									Order Total
+									{#if sortColumn === 'orderRevenue'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('orderProfit')}
+							>
+								<div class="flex items-center gap-1">
+									Order Profit
+									{#if sortColumn === 'orderProfit'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+
+							<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+								>Order Items</th
+							>
+							<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+								>Order Units</th
+							>
+							<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+								>Products</th
+							>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('automated_carrier')}
+							>
+								<div class="flex items-center gap-1">
+									Carrier
+									{#if sortColumn === 'automated_carrier'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('automated_ship_method')}
+							>
+								<div class="flex items-center gap-1">
+									Ship Method
+									{#if sortColumn === 'automated_ship_method'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
+						</tr>
+					</thead>
+					<tbody class="[&_tr:last-child]:border-0">
+						{#each sortedOrders as order}
+							<!-- Pre-calculated fields from enrichedOrders -->
+							{@const orderProfit = order.orderProfit}
+							{@const skuProfit = order.skuProfit}
+							{@const totalUnits = order.skuUnits}
+							<!-- This was sku units in logic above or total? Enriched has skuUnits and orderUnits logic might be needed if we want order total units -->
+							<!-- Wait, totalUnits in old logic was summing ALL items in order. Enriched order has access to full items. -->
+							{@const orderTotalUnits =
+								order.amazon_order_items?.reduce(
+									(sum: number, item: any) =>
+										sum + (Number(item.quantity_ordered) || 0) * (item.bundle_quantity || 1),
+									0
+								) || 0}
+
+							{@const rowClass =
+								skuProfit < 0
+									? 'bg-red-50/60 hover:bg-red-100/60'
+									: skuProfit > 0
+										? 'bg-green-50/40 hover:bg-green-100/50'
+										: 'hover:bg-muted/50'}
+							<tr class="border-b transition-colors data-[state=selected]:bg-muted {rowClass}">
+								<td class="p-4 align-middle font-medium">
+									<a
+										href={`https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}`}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-blue-600 hover:underline"
+									>
+										{order.amazon_order_id}
+									</a>
+								</td>
+								<td class="p-4 align-middle">{formatDate(order.purchase_date)}</td>
+								<td class="p-4 align-middle">
+									<div
+										class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 {getStatusColor(
+											order.order_status
+										)}"
+									>
+										{order.order_status}
+									</div>
+								</td>
+
+								<!-- SKU Specific Columns -->
+								<td class="p-4 align-middle bg-blue-50/30 font-medium">
+									{formatCurrency(order.skuRevenue, order.currency_code)}
+								</td>
+								<td class="p-4 align-middle bg-blue-50/30">
+									<span class="font-medium {skuProfit > 0 ? 'text-green-600' : 'text-red-600'}">
+										{skuProfit > 0 ? '+' : ''}{formatCurrency(skuProfit, order.currency_code)}
+									</span>
+								</td>
+								<td class="p-4 align-middle bg-blue-50/30">
+									{totalUnits}
+								</td>
+
+								<!-- Order Level Columns -->
+								<td class="p-4 align-middle">
+									{formatCurrency(order.orderRevenue, order.currency_code)}
+								</td>
+								<td class="p-4 align-middle">
+									<span class="font-medium {orderProfit > 0 ? 'text-green-600' : 'text-red-600'}">
+										{orderProfit > 0 ? '+' : ''}{formatCurrency(orderProfit, order.currency_code)}
+									</span>
+								</td>
+
+								<td class="p-4 align-middle">
+									{order.number_of_items_shipped} / {order.number_of_items_unshipped}
+								</td>
+								<td class="p-4 align-middle">
+									{orderTotalUnits}
+								</td>
+								<td class="p-4 align-middle">
+									{#if order.amazon_order_items && order.amazon_order_items.length > 0}
+										<div class="flex flex-col gap-2">
+											{#each order.amazon_order_items as item}
+												<div class="text-xs flex flex-col mb-2 last:mb-0">
+													<div class="flex items-center gap-1 flex-wrap">
+														<span
+															class="font-semibold {item.seller_sku === data.sku
+																? 'bg-yellow-200 px-1 rounded'
+																: ''}">{item.seller_sku || 'No SKU'}</span
+														>
+														<span class="text-muted-foreground bg-muted px-1 rounded"
+															>ASIN: {item.asin}</span
+														>
+														<span class="font-bold">x{item.quantity_ordered}</span>
+														{#if item.bundle_quantity > 1}
+															<span class="text-xs text-muted-foreground ml-1">
+																({item.bundle_quantity * item.quantity_ordered} units)
+															</span>
+														{/if}
+														{#if item.shipping_price_amount > 0}
+															<span class="text-xs text-muted-foreground ml-1">
+																(+{formatCurrency(
+																	item.shipping_price_amount,
+																	item.shipping_price_currency
+																)} ship)
+															</span>
+														{/if}
+														<button
+															class="ml-2 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
+															title="Update Cost Data"
+															onclick={() =>
+																openUpdateCostModal(item.seller_sku, item.title, item.asin)}
+														>
+															<Pencil class="h-3 w-3" />
+														</button>
+														<button
+															class="ml-1 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
+															title="Debug Cost Calculation"
+															onclick={() => openDebugModal(order.amazon_order_id, item.seller_sku)}
+														>
+															<Bug class="h-3 w-3" />
+														</button>
+													</div>
+													<div
+														class="truncate max-w-[250px] text-muted-foreground"
+														title={item.title}
+													>
+														{item.title}
+													</div>
+												</div>
+											{/each}
+										</div>
+									{:else}
+										<div class="flex items-center gap-2">
+											<span class="text-muted-foreground text-xs italic">No items synced</span>
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-6 text-xs"
+												onclick={() => syncSingleOrder(order.amazon_order_id)}
+											>
+												<RefreshCw class="mr-1 h-3 w-3" />
+												Sync Items
+											</Button>
+										</div>
+									{/if}
+								</td>
+								<td class="p-4 align-middle">{order.automated_carrier || '-'}</td>
+								<td class="p-4 align-middle">
+									{order.automated_ship_method || order.shipment_service_level_category || '-'}
+								</td>
+								<td class="p-4 align-middle">
+									<div class="flex gap-1">
+										{#if order.is_prime}
+											<div
+												class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-blue-200 text-blue-800 bg-blue-50"
+											>
+												Prime
+											</div>
+										{/if}
+										{#if order.is_business_order}
+											<div
+												class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-purple-200 text-purple-800 bg-purple-50"
+											>
+												B2B
+											</div>
+										{/if}
+										{#if order.is_premium_order}
+											<div
+												class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-amber-200 text-amber-800 bg-amber-50"
+											>
+												Premium
+											</div>
+										{/if}
+									</div>
+								</td>
+							</tr>
+						{/each}
+						{#if filteredOrders.length === 0}
+							<tr
+								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+							>
+								<td colspan="13" class="p-4 align-middle text-center py-8 text-muted-foreground">
+									No orders found for this SKU.
+								</td>
+							</tr>
+						{/if}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>
+
+<UpdateCostModal
+	bind:open={showUpdateCostModal}
+	sku={selectedSku}
+	title={selectedTitle}
+	asin={selectedAsin}
+	on:success={() => {
+		// Refresh the page to show updated costs
+		window.location.reload();
+	}}
+/>
+
+<DebugModal bind:open={showDebugModal} logs={debugLogs} title={debugTitle} />

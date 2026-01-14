@@ -963,7 +963,14 @@ ${htmlBody}`;
 								>
 									<td class="p-4 align-middle font-medium">
 										<div class="flex flex-col">
-											<span>{sku.sku}</span>
+											<a
+												href="/dashboard/amazon/orders/sku/{sku.sku
+													.replace(/\s+-\s+/g, '-')
+													.replace(/\s+/g, '-')}"
+												class="font-semibold text-blue-600 hover:underline"
+											>
+												{sku.sku}
+											</a>
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
@@ -1007,7 +1014,14 @@ ${htmlBody}`;
 								>
 									<td class="p-4 align-middle font-medium">
 										<div class="flex flex-col">
-											<span>{sku.sku}</span>
+											<a
+												href="/dashboard/amazon/orders/sku/{sku.sku
+													.replace(/\s+-\s+/g, '-')
+													.replace(/\s+/g, '-')}"
+												class="font-semibold text-blue-600 hover:underline"
+											>
+												{sku.sku}
+											</a>
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
@@ -1057,7 +1071,14 @@ ${htmlBody}`;
 								>
 									<td class="p-4 align-middle font-medium">
 										<div class="flex flex-col">
-											<span>{sku.sku}</span>
+											<a
+												href="/dashboard/amazon/orders/sku/{sku.sku
+													.replace(/\s+-\s+/g, '-')
+													.replace(/\s+/g, '-')}"
+												class="font-semibold text-blue-600 hover:underline"
+											>
+												{sku.sku}
+											</a>
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
@@ -1117,7 +1138,14 @@ ${htmlBody}`;
 								>
 									<td class="p-4 align-middle font-medium">
 										<div class="flex flex-col">
-											<span>{sku.sku}</span>
+											<a
+												href="/dashboard/amazon/orders/sku/{sku.sku
+													.replace(/\s+-\s+/g, '-')
+													.replace(/\s+/g, '-')}"
+												class="font-semibold text-blue-600 hover:underline"
+											>
+												{sku.sku}
+											</a>
 											<span class="text-xs text-muted-foreground">{sku.title}</span>
 										</div>
 									</td>
@@ -1409,7 +1437,18 @@ ${htmlBody}`;
 											{#each order.amazon_order_items as item}
 												<div class="text-xs flex flex-col mb-2 last:mb-0">
 													<div class="flex items-center gap-1 flex-wrap">
-														<span class="font-semibold">{item.seller_sku || 'No SKU'}</span>
+														{#if item.seller_sku}
+															<a
+																href="/dashboard/amazon/orders/sku/{item.seller_sku
+																	.replace(/\s+-\s+/g, '-')
+																	.replace(/\s+/g, '-')}"
+																class="font-semibold text-blue-600 hover:underline"
+															>
+																{item.seller_sku}
+															</a>
+														{:else}
+															<span class="font-semibold">No SKU</span>
+														{/if}
 														<span class="text-muted-foreground bg-muted px-1 rounded"
 															>ASIN: {item.asin}</span
 														>
