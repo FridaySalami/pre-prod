@@ -171,7 +171,10 @@
 		});
 	}
 
-	$: enrichedOrders = enrichOrders(data.orders || [], data.sku);
+	$: enrichedOrders = enrichOrders(
+		(data.orders || []).filter((o) => o.order_status !== 'Pending'),
+		data.sku
+	);
 
 	$: filteredOrders = enrichedOrders; // Keep for compatibility if needed, or replace usages
 

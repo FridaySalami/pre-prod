@@ -118,6 +118,26 @@ export async function POST({ request }) {
         shippingCost = 5.37;
       }
       console.log(`Calculated DPD Cost: ${shippingCost} (Count: ${labelCount})`);
+    } else if (carrier.toUpperCase().includes('ROYAL MAIL')) {
+      const rmPrices: Record<string, number> = {
+        'Royal Mail 2nd Class Small Parcel': 3.50,
+        'Royal Mail 48 (Parcel) (CRL)': 4.27,
+        'Royal Mail 1st Class Small Parcel': 4.40,
+        'Royal Mail Signed For 2nd Class Small Parcel': 5.00,
+        'Royal Mail 2nd Class Medium Parcel': 5.25,
+        'Royal Mail 24 (Parcel) (CRL)': 5.83,
+        'Royal Mail Signed For 1st Class Small Parcel': 5.90,
+        'Royal Mail 1st Class Medium Parcel': 6.15,
+        'Royal Mail Signed For 2nd Class Medium Parcel': 6.75,
+        'Royal Mail Signed For 1st Class Medium Parcel': 7.65,
+        'Royal Mail Special Delivery Guaranteed by 1pm (Drop Off)': 14.25
+      };
+
+      const match = Object.keys(rmPrices).find(k => k.toLowerCase() === serviceName.toLowerCase().trim());
+      if (match) {
+        shippingCost = rmPrices[match];
+      }
+      console.log(`Calculated Royal Mail Cost: ${shippingCost} (Service: ${serviceName})`);
     }
 
     // Format tracking ID to include count if > 1
@@ -126,18 +146,26 @@ export async function POST({ request }) {
       finalTrackingDisplay = `${trackingNumber} (${labelCount} Parcels)`;
     }
 
+    // Determine if we should update status to Shipped
+    let updateData: any = {
+      automated_carrier: carrier,
+      automated_ship_method: serviceName,
+      tracking_id: finalTrackingDisplay,
+      shipping_source: 'LINNWORKS', // Mark source
+      shipping_cost: shippingCost > 0 ? shippingCost : undefined, // Only update if calculated
+      shipping_imported_at: new Date().toISOString()
+    };
+
+    const shippedCarriers = ['DHL', 'DPD', 'ROYAL MAIL', 'PARCEL FORCE'];
+    if (carrier && shippedCarriers.some(c => carrier.toUpperCase().includes(c))) {
+      updateData.order_status = 'Shipped';
+    }
+
     // 3. Update Supabase
     // We update: automated_carrier, automated_ship_method, tracking_id, shipping_source, shipping_cost
     const { error: dbError } = await db
       .from('amazon_orders')
-      .update({
-        automated_carrier: carrier,
-        automated_ship_method: serviceName,
-        tracking_id: finalTrackingDisplay,
-        shipping_source: 'LINNWORKS', // Mark source
-        shipping_cost: shippingCost > 0 ? shippingCost : undefined, // Only update if calculated
-        shipping_imported_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('amazon_order_id', orderId);
 
     if (dbError) {

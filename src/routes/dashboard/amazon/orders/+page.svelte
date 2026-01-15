@@ -222,7 +222,7 @@
 		}, 0);
 	}
 
-	$: filteredOrders = data.orders || [];
+	$: filteredOrders = (data.orders || []).filter((o) => o.order_status !== 'Pending');
 
 	// SKU Analysis
 	interface SkuStats {
@@ -539,7 +539,7 @@
 			.map(
 				(sku) => `
         <tr>
-            <td style="padding: 5px; border: 1px solid #ddd;">${sku.sku}</td>
+            <td style="padding: 5px; border: 1px solid #ddd;"><a href="https://operations.chefstorecookbook.com/dashboard/amazon/orders/sku/${encodeURIComponent(sku.sku)}">${sku.sku}</a></td>
             <td style="padding: 5px; border: 1px solid #ddd;">${sku.title}</td>
             <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${sku.soldCount}</td>
             <td style="padding: 5px; border: 1px solid #ddd; text-align: right; color: green;">${formatCurrency(sku.totalProfit)}</td>
@@ -554,7 +554,7 @@
 			.map(
 				(sku) => `
         <tr>
-            <td style="padding: 5px; border: 1px solid #ddd;">${sku.sku}</td>
+            <td style="padding: 5px; border: 1px solid #ddd;"><a href="https://operations.chefstorecookbook.com/dashboard/amazon/orders/sku/${encodeURIComponent(sku.sku)}">${sku.sku}</a></td>
             <td style="padding: 5px; border: 1px solid #ddd;">${sku.title}</td>
             <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${sku.soldCount}</td>
             <td style="padding: 5px; border: 1px solid #ddd; text-align: right; color: red;">${formatCurrency(sku.totalProfit)}</td>
@@ -570,7 +570,13 @@
 				const shippingDisplay = getShippingCostDisplay(order);
 				const orderTotal = parseFloat(order.order_total) || 0;
 				const profit = orderTotal - totalCost;
-				const skus = order.amazon_order_items?.map((i: any) => i.seller_sku).join('; ') || '';
+				const skus =
+					order.amazon_order_items
+						?.map(
+							(i: any) =>
+								`<a href="https://operations.chefstorecookbook.com/dashboard/amazon/orders/sku/${encodeURIComponent(i.seller_sku)}">${i.seller_sku}</a>`
+						)
+						.join('; ') || '';
 				const units =
 					order.amazon_order_items?.reduce(
 						(sum: number, i: any) => sum + (Number(i.quantity_ordered) || 0),
@@ -581,7 +587,7 @@
 
 				return `
         <tr>
-            <td style="padding: 5px; border: 1px solid #ddd;">${order.amazon_order_id}</td>
+            <td style="padding: 5px; border: 1px solid #ddd;"><a href="https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}">${order.amazon_order_id}</a></td>
             <td style="padding: 5px; border: 1px solid #ddd; font-size: 0.8em; max-width: 150px; word-wrap: break-word;">${skus}</td>
             <td style="padding: 5px; border: 1px solid #ddd;">${order.order_status}</td>
             <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${formatCurrency(orderTotal)}</td>
