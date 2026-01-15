@@ -47,6 +47,7 @@
 		skuCost: number;
 		skuProfit: number;
 		skuUnits: number;
+		skuPacks: number; // Number of packs sold (qty)
 
 		// Expanded properties from original order
 		[key: string]: any;
@@ -84,6 +85,16 @@
 		};
 	}
 
+	function getOrderShippingClass(order: any) {
+		const display = getShippingCostDisplay(order);
+		return display.class;
+	}
+
+	function getShippingTypeLabel(order: any) {
+		const display = getShippingCostDisplay(order);
+		return display.type;
+	}
+
 	function calculateOrderCost(order: any): number {
 		if (!order.amazon_order_items) return 0;
 		return order.amazon_order_items.reduce((sum: number, item: any) => {
@@ -113,6 +124,7 @@
 			let skuRevenue = 0;
 			let skuCost = 0;
 			let skuUnits = 0;
+			let skuPacks = 0;
 
 			if (order.amazon_order_items) {
 				order.amazon_order_items.forEach((item: any) => {
@@ -121,6 +133,8 @@
 						skuRevenue += parseFloat(item.item_price_amount) || 0;
 
 						const qty = Number(item.quantity_ordered) || 0;
+						skuPacks += qty;
+
 						const bundleQty = Number(item.bundle_quantity) || 1;
 						const units = qty * bundleQty;
 
@@ -151,7 +165,8 @@
 				skuRevenue,
 				skuCost,
 				skuProfit,
-				skuUnits
+				skuUnits,
+				skuPacks
 			} as EnrichedOrder;
 		});
 	}
@@ -291,20 +306,20 @@
 			.sort((a, b) => new Date(a.purchase_date).getTime() - new Date(b.purchase_date).getTime());
 
 		// Prepare data using pre-calculated SKU metrics
-		// Note: unitRevenue, unitCost, unitProfit here are "Per Underlying Unit" (e.g. if bundle=2, cost is halved)
+		// Note: unitRevenue is now "Per Sold Pack" (Amazon Listing Price)
 		const processedData = chartData
 			.map((order) => {
 				if (order.skuUnits === 0) return null;
 
-				const unitRevenue = order.skuRevenue / order.skuUnits;
-				const unitCost = order.skuCost / order.skuUnits; // This averages cost per unit if multiple units
-				const unitProfit = unitRevenue - unitCost;
+				const packs = order.skuPacks || order.skuUnits; // Fallback to units if packs is 0 (shouldn't happen)
+				const unitRevenue = order.skuRevenue / packs;
 
 				return {
 					x: new Date(order.purchase_date).getTime(),
 					unitRevenue,
-					unitCost,
-					unitProfit,
+					skuCost: order.skuCost,
+					skuProfit: order.skuProfit,
+					skuRevenue: order.skuRevenue,
 					qty: order.skuUnits,
 					orderId: order.amazon_order_id
 				};
@@ -316,8 +331,13 @@
 			data: {
 				datasets: [
 					{
-						label: 'Unit Sale Price',
-						data: processedData.map((d) => ({ x: d.x, y: d.unitRevenue, qty: d.qty })),
+						label: 'Amazon Listing Price',
+						data: processedData.map((d) => ({
+							x: d.x,
+							y: d.unitRevenue,
+							qty: d.qty,
+							skuRevenue: d.skuRevenue
+						})),
 						borderColor: 'rgb(59, 130, 246)', // Blue
 						backgroundColor: 'rgba(59, 130, 246, 0.1)',
 						borderWidth: 2,
@@ -325,17 +345,28 @@
 						tension: 0.1
 					},
 					{
-						label: 'Unit Cost',
-						data: processedData.map((d) => ({ x: d.x, y: d.unitCost, qty: d.qty })),
-						borderColor: 'rgb(249, 115, 22)', // Orange
-						backgroundColor: 'rgba(249, 115, 22, 0.1)',
-						borderWidth: 2,
-						pointRadius: 2,
+						label: 'Order Cost',
+						data: processedData.map((d) => ({
+							x: d.x,
+							y: d.skuCost,
+							qty: d.qty,
+							skuRevenue: d.skuRevenue
+						})),
+						borderColor: 'rgba(249, 115, 22, 0.7)', // Faint Orange
+						backgroundColor: 'rgba(249, 115, 22, 0.05)',
+						borderWidth: 1.5,
+						borderDash: [4, 4], // Dashed line
+						pointRadius: 1,
 						tension: 0.1
 					},
 					{
-						label: 'Unit Profit',
-						data: processedData.map((d) => ({ x: d.x, y: d.unitProfit, qty: d.qty })),
+						label: 'Order Profit',
+						data: processedData.map((d) => ({
+							x: d.x,
+							y: d.skuProfit,
+							qty: d.qty,
+							skuRevenue: d.skuRevenue
+						})),
 						borderColor: 'rgb(34, 197, 94)', // Green
 						backgroundColor: 'rgba(34, 197, 94, 0.1)',
 						borderWidth: 2,
@@ -376,6 +407,18 @@
 				plugins: {
 					tooltip: {
 						callbacks: {
+							footer: (tooltipItems) => {
+								if (tooltipItems.length > 0) {
+									const raw = tooltipItems[0].raw as any;
+									if (raw && raw.skuRevenue !== undefined) {
+										return `Order Revenue: ${new Intl.NumberFormat('en-GB', {
+											style: 'currency',
+											currency: 'GBP'
+										}).format(raw.skuRevenue)}`;
+									}
+								}
+								return '';
+							},
 							label: function (context) {
 								let label = context.dataset.label || '';
 								if (label) {
@@ -475,6 +518,28 @@
 			}
 		} catch (e) {
 			debugLogs = ['Error fetching debug info', String(e)];
+		}
+	}
+
+	async function syncLinnworksOrder(orderId: string) {
+		try {
+			showToast(`Syncing Linnworks data for ${orderId}...`, 'info');
+			const res = await fetch('/api/linnworks/sync-order', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ orderId })
+			});
+			const data = await res.json();
+
+			if (res.ok && data.success) {
+				showToast(`Synced: ${data.data.service}`, 'success');
+				setTimeout(() => window.location.reload(), 1000);
+			} else {
+				showToast(data.error || 'Failed to sync with Linnworks', 'error');
+			}
+		} catch (e) {
+			showToast('Error syncing Linnworks data', 'error');
+			console.error(e);
 		}
 	}
 
@@ -919,6 +984,13 @@
 		return { label: 'Low Margin', color: 'text-yellow-600' };
 	}
 
+	function testLinnworksSync() {
+		const orderId = prompt('Enter Amazon Order ID to sync with Linnworks:', '026-1322675-7177918');
+		if (orderId) {
+			syncLinnworksOrder(orderId);
+		}
+	}
+
 	function downloadCSV() {
 		const headers = [
 			'Order ID',
@@ -989,6 +1061,10 @@
 			</p>
 		</div>
 		<div class="flex items-center gap-2">
+			<Button variant="outline" onclick={testLinnworksSync}>
+				<RefreshCw class="mr-2 h-4 w-4" />
+				Test Linnworks
+			</Button>
 			<Button variant="outline" onclick={downloadCSV}>
 				<Download class="mr-2 h-4 w-4" />
 				Export CSV
@@ -1538,6 +1614,21 @@ Avg Price: {formatCurrency(cell.units ? cell.revenue / cell.units : 0)}"
 									{/if}
 								</div>
 							</th>
+							<th
+								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"
+								onclick={() => toggleSort('orderShippingCost')}
+							>
+								<div class="flex items-center gap-1">
+									Shipping Cost
+									{#if sortColumn === 'orderShippingCost'}
+										{#if sortDirection === 'asc'}<ArrowUp class="h-3 w-3" />{:else}<ArrowDown
+												class="h-3 w-3"
+											/>{/if}
+									{:else}
+										<ArrowUpDown class="h-3 w-3 opacity-50" />
+									{/if}
+								</div>
+							</th>
 
 							<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
 								>Order Items</th
@@ -1647,6 +1738,17 @@ Avg Price: {formatCurrency(cell.units ? cell.revenue / cell.units : 0)}"
 								</td>
 
 								<td class="p-4 align-middle">
+									{#if order.orderShippingCost > 0}
+										<span class={getOrderShippingClass(order)}>
+											{formatCurrency(order.orderShippingCost, order.currency_code)}
+											<!-- {getShippingTypeLabel(order)} -->
+										</span>
+									{:else}
+										<span class="text-muted-foreground">-</span>
+									{/if}
+								</td>
+
+								<td class="p-4 align-middle">
 									{order.number_of_items_shipped} / {order.number_of_items_unshipped}
 								</td>
 								<td class="p-4 align-middle">
@@ -1720,7 +1822,20 @@ Avg Price: {formatCurrency(cell.units ? cell.revenue / cell.units : 0)}"
 										</div>
 									{/if}
 								</td>
-								<td class="p-4 align-middle">{order.automated_carrier || '-'}</td>
+								<td class="p-4 align-middle">
+									<div class="flex items-center gap-2">
+										<span>{order.automated_carrier || '-'}</span>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-6 w-6 text-muted-foreground hover:text-primary"
+											title="Sync from Linnworks"
+											onclick={() => syncLinnworksOrder(order.amazon_order_id)}
+										>
+											<RefreshCw class="h-3 w-3" />
+										</Button>
+									</div>
+								</td>
 								<td class="p-4 align-middle">
 									{order.automated_ship_method || order.shipment_service_level_category || '-'}
 								</td>

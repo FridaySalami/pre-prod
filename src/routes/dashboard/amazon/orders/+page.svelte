@@ -75,6 +75,82 @@
 		}
 	}
 
+	let isSyncingProcessing = false;
+
+	async function syncLinnworksOrder(orderId: string, skipReload = false) {
+		try {
+			if (!skipReload) showToast(`Syncing Linnworks data for ${orderId}...`, 'info');
+			const res = await fetch('/api/linnworks/sync-order', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ orderId })
+			});
+			const data = await res.json();
+
+			if (res.ok && data.success) {
+				if (!skipReload) {
+					showToast(`Synced: ${data.data.service}`, 'success');
+					setTimeout(() => window.location.reload(), 1000);
+				}
+				return true;
+			} else {
+				if (!skipReload) showToast(data.error || 'Failed to sync with Linnworks', 'error');
+				return false;
+			}
+		} catch (e) {
+			if (!skipReload) showToast('Error syncing Linnworks data', 'error');
+			console.error(e);
+			return false;
+		}
+	}
+
+	async function syncMissingCarriers() {
+		// Modified: Sync ALL non-canceled orders for testing, except Amazon Shipping
+		const targetOrders = (filteredOrders || []).filter(
+			(o) =>
+				o.order_status !== 'Canceled' &&
+				o.order_status !== 'Pending' &&
+				(!o.automated_carrier || !o.automated_carrier.toLowerCase().includes('amazon')) &&
+				(!o.shipment_service_level_category ||
+					!o.shipment_service_level_category.toLowerCase().includes('amazon'))
+		);
+
+		if (targetOrders.length === 0) {
+			showToast('No eligible orders found (excluding Amazon).', 'info');
+			return;
+		}
+
+		if (
+			!confirm(
+				`Found ${targetOrders.length} eligible orders (excluding Amazon). Sync ALL with Linnworks now? This may take a moment.`
+			)
+		) {
+			return;
+		}
+
+		isSyncingProcessing = true;
+		let successCount = 0;
+		let failCount = 0;
+
+		showToast(`Starting sync for ${targetOrders.length} orders...`, 'info');
+
+		// Process sequentially to be gentle on the API
+		for (let i = 0; i < targetOrders.length; i++) {
+			const order = targetOrders[i];
+			// Optional: Update global progress toast here if we had one
+			const success = await syncLinnworksOrder(order.amazon_order_id, true);
+			if (success) successCount++;
+			else failCount++;
+
+			// Small delay between requests
+			await new Promise((r) => setTimeout(r, 300));
+		}
+
+		isSyncingProcessing = false;
+		showToast(`Sync Complete. Updated: ${successCount}. Failed/Not Found: ${failCount}`, 'success');
+		setTimeout(() => window.location.reload(), 1500);
+	}
+
 	async function syncSingleOrder(orderId: string) {
 		try {
 			showToast(`Syncing order ${orderId}...`, 'info');
@@ -766,6 +842,10 @@ ${htmlBody}`;
 				<Button variant="outline" onclick={downloadEmailReport}>
 					<Mail class="mr-2 h-4 w-4" />
 					Email Report
+				</Button>
+				<Button variant="outline" onclick={syncMissingCarriers} disabled={isSyncingProcessing}>
+					<RefreshCw class="mr-2 h-4 w-4 {isSyncingProcessing ? 'animate-spin' : ''}" />
+					{isSyncingProcessing ? 'Syncing...' : 'Sync All (Test)'}
 				</Button>
 				<Button variant="outline" onclick={downloadCSV}>
 					<Download class="mr-2 h-4 w-4" />
