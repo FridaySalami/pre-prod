@@ -21,6 +21,91 @@
 
 	export let data;
 
+	let orders: any[] = [];
+	let isLoadingOrders = false;
+
+	// Use a weak map or simple logic to prevent race conditions
+	let currentLoadId = 0;
+
+	$: if (data.streamed?.orders) {
+		isLoadingOrders = true;
+		orders = [];
+		const loadId = ++currentLoadId;
+
+		data.streamed.orders
+			.then((res: any[]) => {
+				if (loadId === currentLoadId) {
+					// Pre-calculate costs once per load for sorting performance
+					orders = res.map(enrichOrderWithTotals);
+					isLoadingOrders = false;
+				}
+			})
+			.catch((err) => {
+				if (loadId === currentLoadId) {
+					console.error('Failed to load orders', err);
+					orders = [];
+					isLoadingOrders = false;
+				}
+			});
+	}
+
+	function enrichOrderWithTotals(order: any) {
+		let totalCost = 0;
+		let estimatedShipping = 0;
+
+		const enrichedItems = (order.amazon_order_items || []).map((item: any) => {
+			let itemTotalCost = 0;
+			if (item.costs) {
+				const material = Number(item.costs.materialTotalCost) || 0;
+				const shipping = Number(item.costs.shippingCost) || 0;
+				const fee = Number(item.costs.amazonFee) || 0;
+				const salesVat = Number(item.costs.salesVat) || 0;
+				const qty = Number(item.quantity_ordered) || 0;
+
+				itemTotalCost = (material + shipping + fee + salesVat) * qty;
+				estimatedShipping += shipping * qty;
+			}
+			return {
+				...item,
+				_calculated: {
+					totalCost: itemTotalCost
+				}
+			};
+		});
+
+		totalCost = enrichedItems.reduce((sum: number, i: any) => sum + i._calculated.totalCost, 0);
+
+		const orderRevenue = parseFloat(order.order_total) || 0;
+		const startProfit = (order.order_status === 'Canceled' ? 0 : orderRevenue) - totalCost;
+
+		// Logic derived from getShippingCostDisplay
+		let shippingDisplay;
+		if (order.shipping_cost !== null && order.shipping_cost !== undefined) {
+			shippingDisplay = {
+				amount: Number(order.shipping_cost),
+				type: '(Actual)',
+				class: 'text-blue-600 font-medium'
+			};
+		} else {
+			shippingDisplay = {
+				amount: Number(estimatedShipping),
+				type: '(Est.)',
+				class: 'text-muted-foreground'
+			};
+		}
+
+		return {
+			...order,
+			amazon_order_items: enrichedItems,
+			_calculated: {
+				totalCost,
+				profit: startProfit,
+				orderRevenue,
+				shippingDisplay
+			}
+		};
+	}
+
 	let sortColumn = 'purchase_date';
 	let sortDirection: 'asc' | 'desc' = 'desc';
 
@@ -222,7 +307,7 @@
 		}, 0);
 	}
 
-	$: filteredOrders = (data.orders || []).filter((o) => o.order_status !== 'Pending');
+	$: filteredOrders = (orders || []).filter((o) => o.order_status !== 'Pending');
 
 	// SKU Analysis
 	interface SkuStats {
@@ -276,7 +361,11 @@
 
 			// Item Cost
 			let itemCost = 0;
-			if (item.costs) {
+
+			if (item._calculated) {
+				itemCost = item._calculated.totalCost;
+				if (item.costs) acc[sku].hasCostData = true;
+			} else if (item.costs) {
 				acc[sku].hasCostData = true;
 				const material = Number(item.costs.materialTotalCost) || 0;
 				const shipping = Number(item.costs.shippingCost) || 0;
@@ -326,11 +415,16 @@
 							const qty = Number(item.quantity_ordered) || 0;
 							const revenue = Number(item.item_price_amount) || 0;
 
-							const material = Number(item.costs.materialTotalCost) || 0;
-							const shipping = Number(item.costs.shippingCost) || 0;
-							const fee = Number(item.costs.amazonFee) || 0;
-							const salesVat = Number(item.costs.salesVat) || 0;
-							const cost = (material + shipping + fee + salesVat) * qty;
+							let cost = 0;
+							if (item._calculated) {
+								cost = item._calculated.totalCost;
+							} else {
+								const material = Number(item.costs.materialTotalCost) || 0;
+								const shipping = Number(item.costs.shippingCost) || 0;
+								const fee = Number(item.costs.amazonFee) || 0;
+								const salesVat = Number(item.costs.salesVat) || 0;
+								cost = (material + shipping + fee + salesVat) * qty;
+							}
 
 							acc.revenue += revenue;
 							acc.cost += cost;
@@ -367,32 +461,31 @@
 	let showProfitStats = false;
 
 	$: sortedOrders = [...filteredOrders].sort((a, b) => {
-		let aValue = a[sortColumn];
-		let bValue = b[sortColumn];
+		// Use cached values for sorting
+		let aValue: any;
+		let bValue: any;
 
 		if (sortColumn === 'order_total') {
-			aValue = parseFloat(aValue) || 0;
-			bValue = parseFloat(bValue) || 0;
+			aValue = a._calculated.orderRevenue;
+			bValue = b._calculated.orderRevenue;
 		} else if (sortColumn === 'total_cost') {
-			aValue = calculateOrderCost(a);
-			bValue = calculateOrderCost(b);
+			aValue = a._calculated.totalCost;
+			bValue = b._calculated.totalCost;
 		} else if (sortColumn === 'shipping_cost') {
-			aValue = getShippingCostDisplay(a).amount;
-			bValue = getShippingCostDisplay(b).amount;
+			aValue = a._calculated.shippingDisplay.amount;
+			bValue = b._calculated.shippingDisplay.amount;
 		} else if (sortColumn === 'profit') {
-			const aCost = calculateOrderCost(a);
-			const bCost = calculateOrderCost(b);
-			const aTotal = parseFloat(a.order_total) || 0;
-			const bTotal = parseFloat(b.order_total) || 0;
-			aValue = aTotal - aCost;
-			bValue = bTotal - bCost;
+			aValue = a._calculated.profit;
+			bValue = b._calculated.profit;
+		} else {
+			// specific standard column handling
+			aValue = a[sortColumn];
+			bValue = b[sortColumn];
 		}
 
 		if (aValue === bValue) return 0;
-
-		// Handle nulls
-		if (aValue === null) return 1;
-		if (bValue === null) return -1;
+		if (aValue === null || aValue === undefined) return 1;
+		if (bValue === null || bValue === undefined) return -1;
 
 		const comparison = aValue > bValue ? 1 : -1;
 		return sortDirection === 'asc' ? comparison : -comparison;
@@ -567,12 +660,13 @@
 
 		// Sort orders by profit (highest first) for the email report
 		const emailOrders = [...filteredOrders].sort((a, b) => {
-			let profitA = (parseFloat(a.order_total) || 0) - calculateOrderCost(a);
-			let profitB = (parseFloat(b.order_total) || 0) - calculateOrderCost(b);
-
-			// Treat cancelled orders as 0 profit
-			if (a.order_status === 'Canceled') profitA = 0;
-			if (b.order_status === 'Canceled') profitB = 0;
+			// Use cached profit if available
+			let profitA = a._calculated
+				? a._calculated.profit
+				: (parseFloat(a.order_total) || 0) - calculateOrderCost(a);
+			let profitB = b._calculated
+				? b._calculated.profit
+				: (parseFloat(b.order_total) || 0) - calculateOrderCost(b);
 
 			return profitB - profitA;
 		});
@@ -581,14 +675,24 @@
 		const allOrdersRows = emailOrders
 			.map((order) => {
 				const isCanceled = order.order_status === 'Canceled';
-				const totalCost = calculateOrderCost(order);
-				const shippingDisplay = getShippingCostDisplay(order);
-				let orderTotal = parseFloat(order.order_total) || 0;
 
-				// For canceled orders, revenue is 0
-				if (isCanceled) orderTotal = 0;
+				// Use cached values
+				let totalCost, shippingDisplay, profit, orderTotal;
 
-				const profit = orderTotal - totalCost;
+				if (order._calculated) {
+					totalCost = order._calculated.totalCost;
+					shippingDisplay = order._calculated.shippingDisplay;
+					profit = order._calculated.profit;
+					orderTotal = order._calculated.orderRevenue;
+				} else {
+					// Fallback
+					totalCost = calculateOrderCost(order);
+					shippingDisplay = getShippingCostDisplay(order);
+					orderTotal = parseFloat(order.order_total) || 0;
+					if (isCanceled) orderTotal = 0;
+					profit = orderTotal - totalCost;
+				}
+
 				const skus =
 					order.amazon_order_items
 						?.map(
@@ -703,14 +807,19 @@
         </html>
     `;
 
-		const emlContent = `To: 
-Subject: ${subject}
-X-Unsent: 1
-Content-Type: text/html; charset=utf-8
+		const to = '';
+		const headers = [
+			...(to?.trim() ? [`To: ${to.trim()}`] : []),
+			`Subject: ${subject}`,
+			`X-Unsent: 1`,
+			`MIME-Version: 1.0`,
+			`Content-Type: text/html; charset=utf-8`,
+			`Content-Transfer-Encoding: 8bit`
+		].join('\r\n');
 
-${htmlBody}`;
+		const emlContent = `${headers}\r\n\r\n${htmlBody}`;
 
-		const blob = new Blob([emlContent], { type: 'application/octet-stream' });
+		const blob = new Blob([emlContent], { type: 'message/rfc822' });
 		const url = URL.createObjectURL(blob);
 		const link = document.createElement('a');
 		link.href = url;
@@ -718,6 +827,7 @@ ${htmlBody}`;
 		document.body.appendChild(link);
 		link.click();
 		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
 	}
 
 	function downloadCSV() {
@@ -742,10 +852,20 @@ ${htmlBody}`;
 		];
 
 		const rows = sortedOrders.map((order) => {
-			const totalCost = calculateOrderCost(order);
-			const shippingDisplay = getShippingCostDisplay(order);
-			const orderTotal = parseFloat(order.order_total) || 0;
-			const profit = orderTotal - totalCost;
+			let totalCost, shippingDisplay, orderTotal, profit;
+
+			if (order._calculated) {
+				totalCost = order._calculated.totalCost;
+				shippingDisplay = order._calculated.shippingDisplay;
+				orderTotal = order._calculated.orderRevenue;
+				profit = order._calculated.profit;
+			} else {
+				totalCost = calculateOrderCost(order);
+				shippingDisplay = getShippingCostDisplay(order);
+				orderTotal = parseFloat(order.order_total) || 0;
+				profit = orderTotal - totalCost;
+			}
+
 			const skus = order.amazon_order_items?.map((i: any) => i.seller_sku).join('; ') || '';
 
 			return [
@@ -782,7 +902,7 @@ ${htmlBody}`;
 	}
 </script>
 
-{#if $navigating}
+{#if $navigating || isLoadingOrders}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
 	>
@@ -790,7 +910,7 @@ ${htmlBody}`;
 			<div
 				class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
 			></div>
-			<p class="text-sm font-medium text-muted-foreground">Loading...</p>
+			<p class="text-sm font-medium text-muted-foreground">Loading orders...</p>
 		</div>
 	</div>
 {/if}
@@ -1457,199 +1577,212 @@ ${htmlBody}`;
 						</tr>
 					</thead>
 					<tbody class="[&_tr:last-child]:border-0">
-						{#each sortedOrders as order}
-							{@const totalCost = calculateOrderCost(order)}
-							{@const shippingDisplay = getShippingCostDisplay(order)}
-							{@const profit = order.order_total ? parseFloat(order.order_total) - totalCost : 0}
-							{@const totalUnits =
-								order.amazon_order_items?.reduce(
-									(sum: number, item: any) =>
-										sum + (Number(item.quantity_ordered) || 0) * (item.bundle_quantity || 1),
-									0
-								) || 0}
-							{@const rowClass =
-								totalCost > 0
-									? profit < 0
-										? 'bg-red-50/60 hover:bg-red-100/60'
-										: profit > 0
-											? 'bg-green-50/40 hover:bg-green-100/50'
-											: 'hover:bg-muted/50'
-									: 'hover:bg-muted/50'}
-							<tr class="border-b transition-colors data-[state=selected]:bg-muted {rowClass}">
-								<td class="p-4 align-middle font-medium">
-									<a
-										href={`https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}`}
-										target="_blank"
-										rel="noopener noreferrer"
-										class="text-blue-600 hover:underline"
-									>
-										{order.amazon_order_id}
-									</a>
-								</td>
-								<td class="p-4 align-middle">{formatDate(order.purchase_date)}</td>
-								<td class="p-4 align-middle">
-									<div
-										class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 {getStatusColor(
-											order.order_status
-										)}"
-									>
-										{order.order_status}
+						{#if isLoadingOrders}
+							<tr>
+								<td colspan="13" class="p-8 text-center">
+									<div class="flex flex-col items-center justify-center gap-2">
+										<RefreshCw class="h-8 w-8 animate-spin text-muted-foreground" />
+										<p class="text-muted-foreground">Loading orders...</p>
 									</div>
 								</td>
-								<td class="p-4 align-middle">
-									{formatCurrency(order.order_total, order.currency_code)}
-								</td>
-								<td class="p-4 align-middle">
-									{#if totalCost > 0}
-										<span class="font-medium">{formatCurrency(totalCost, order.currency_code)}</span
+							</tr>
+						{:else}
+							{#each sortedOrders as order}
+								{@const totalCost = order._calculated.totalCost}
+								{@const shippingDisplay = order._calculated.shippingDisplay}
+								{@const profit = order._calculated.profit}
+								{@const totalUnits =
+									order.amazon_order_items?.reduce(
+										(sum: number, item: any) =>
+											sum + (Number(item.quantity_ordered) || 0) * (item.bundle_quantity || 1),
+										0
+									) || 0}
+								{@const rowClass =
+									totalCost > 0
+										? profit < 0
+											? 'bg-red-50/60 hover:bg-red-100/60'
+											: profit > 0
+												? 'bg-green-50/40 hover:bg-green-100/50'
+												: 'hover:bg-muted/50'
+										: 'hover:bg-muted/50'}
+								<tr class="border-b transition-colors data-[state=selected]:bg-muted {rowClass}">
+									<td class="p-4 align-middle font-medium">
+										<a
+											href={`https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}`}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="text-blue-600 hover:underline"
 										>
-									{:else}
-										<span class="text-muted-foreground">-</span>
-									{/if}
-								</td>
-								<td class="p-4 align-middle">
-									{#if shippingDisplay.amount > 0}
-										<div class="flex flex-col">
-											<span class="font-medium {shippingDisplay.class}">
-												{formatCurrency(shippingDisplay.amount, order.currency_code)}
-											</span>
-											<span class="text-[10px] {shippingDisplay.class}">
-												{shippingDisplay.type}
-											</span>
+											{order.amazon_order_id}
+										</a>
+									</td>
+									<td class="p-4 align-middle">{formatDate(order.purchase_date)}</td>
+									<td class="p-4 align-middle">
+										<div
+											class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 {getStatusColor(
+												order.order_status
+											)}"
+										>
+											{order.order_status}
 										</div>
-									{:else}
-										<span class="text-muted-foreground">-</span>
-									{/if}
-								</td>
-								<td class="p-4 align-middle">
-									{#if totalCost > 0 && order.order_total}
-										<span class="font-medium {profit > 0 ? 'text-green-600' : 'text-red-600'}">
-											{profit > 0 ? '+' : ''}{formatCurrency(profit, order.currency_code)}
-										</span>
-									{:else}
-										<span class="text-muted-foreground">-</span>
-									{/if}
-								</td>
-								<td class="p-4 align-middle">
-									{order.number_of_items_shipped} / {order.number_of_items_unshipped}
-								</td>
-								<td class="p-4 align-middle">
-									{totalUnits}
-								</td>
-								<td class="p-4 align-middle">
-									{#if order.amazon_order_items && order.amazon_order_items.length > 0}
-										<div class="flex flex-col gap-2">
-											{#each order.amazon_order_items as item}
-												<div class="text-xs flex flex-col mb-2 last:mb-0">
-													<div class="flex items-center gap-1 flex-wrap">
-														{#if item.seller_sku}
-															<a
-																href="/dashboard/amazon/orders/sku/{item.seller_sku
-																	.replace(/\s+-\s+/g, '-')
-																	.replace(/\s+/g, '-')}"
-																class="font-semibold text-blue-600 hover:underline"
+									</td>
+									<td class="p-4 align-middle">
+										{formatCurrency(order.order_total, order.currency_code)}
+									</td>
+									<td class="p-4 align-middle">
+										{#if totalCost > 0}
+											<span class="font-medium"
+												>{formatCurrency(totalCost, order.currency_code)}</span
+											>
+										{:else}
+											<span class="text-muted-foreground">-</span>
+										{/if}
+									</td>
+									<td class="p-4 align-middle">
+										{#if shippingDisplay.amount > 0}
+											<div class="flex flex-col">
+												<span class="font-medium {shippingDisplay.class}">
+													{formatCurrency(shippingDisplay.amount, order.currency_code)}
+												</span>
+												<span class="text-[10px] {shippingDisplay.class}">
+													{shippingDisplay.type}
+												</span>
+											</div>
+										{:else}
+											<span class="text-muted-foreground">-</span>
+										{/if}
+									</td>
+									<td class="p-4 align-middle">
+										{#if totalCost > 0 && order.order_total}
+											<span class="font-medium {profit > 0 ? 'text-green-600' : 'text-red-600'}">
+												{profit > 0 ? '+' : ''}{formatCurrency(profit, order.currency_code)}
+											</span>
+										{:else}
+											<span class="text-muted-foreground">-</span>
+										{/if}
+									</td>
+									<td class="p-4 align-middle">
+										{order.number_of_items_shipped} / {order.number_of_items_unshipped}
+									</td>
+									<td class="p-4 align-middle">
+										{totalUnits}
+									</td>
+									<td class="p-4 align-middle">
+										{#if order.amazon_order_items && order.amazon_order_items.length > 0}
+											<div class="flex flex-col gap-2">
+												{#each order.amazon_order_items as item}
+													<div class="text-xs flex flex-col mb-2 last:mb-0">
+														<div class="flex items-center gap-1 flex-wrap">
+															{#if item.seller_sku}
+																<a
+																	href="/dashboard/amazon/orders/sku/{item.seller_sku
+																		.replace(/\s+-\s+/g, '-')
+																		.replace(/\s+/g, '-')}"
+																	class="font-semibold text-blue-600 hover:underline"
+																>
+																	{item.seller_sku}
+																</a>
+															{:else}
+																<span class="font-semibold">No SKU</span>
+															{/if}
+															<span class="text-muted-foreground bg-muted px-1 rounded"
+																>ASIN: {item.asin}</span
 															>
-																{item.seller_sku}
-															</a>
-														{:else}
-															<span class="font-semibold">No SKU</span>
-														{/if}
-														<span class="text-muted-foreground bg-muted px-1 rounded"
-															>ASIN: {item.asin}</span
+															<span class="font-bold">x{item.quantity_ordered}</span>
+															{#if item.bundle_quantity > 1}
+																<span class="text-xs text-muted-foreground ml-1">
+																	({item.bundle_quantity * item.quantity_ordered} units)
+																</span>
+															{/if}
+															{#if item.shipping_price_amount > 0}
+																<span class="text-xs text-muted-foreground ml-1">
+																	(+{formatCurrency(
+																		item.shipping_price_amount,
+																		item.shipping_price_currency
+																	)} ship)
+																</span>
+															{/if}
+															<button
+																class="ml-2 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
+																title="Update Cost Data"
+																onclick={() =>
+																	openUpdateCostModal(item.seller_sku, item.title, item.asin)}
+															>
+																<Pencil class="h-3 w-3" />
+															</button>
+															<button
+																class="ml-1 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
+																title="Debug Cost Calculation"
+																onclick={() =>
+																	openDebugModal(order.amazon_order_id, item.seller_sku)}
+															>
+																<Bug class="h-3 w-3" />
+															</button>
+														</div>
+														<div
+															class="truncate max-w-[250px] text-muted-foreground"
+															title={item.title}
 														>
-														<span class="font-bold">x{item.quantity_ordered}</span>
-														{#if item.bundle_quantity > 1}
-															<span class="text-xs text-muted-foreground ml-1">
-																({item.bundle_quantity * item.quantity_ordered} units)
-															</span>
-														{/if}
-														{#if item.shipping_price_amount > 0}
-															<span class="text-xs text-muted-foreground ml-1">
-																(+{formatCurrency(
-																	item.shipping_price_amount,
-																	item.shipping_price_currency
-																)} ship)
-															</span>
-														{/if}
-														<button
-															class="ml-2 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
-															title="Update Cost Data"
-															onclick={() =>
-																openUpdateCostModal(item.seller_sku, item.title, item.asin)}
-														>
-															<Pencil class="h-3 w-3" />
-														</button>
-														<button
-															class="ml-1 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
-															title="Debug Cost Calculation"
-															onclick={() => openDebugModal(order.amazon_order_id, item.seller_sku)}
-														>
-															<Bug class="h-3 w-3" />
-														</button>
+															{item.title}
+														</div>
 													</div>
-													<div
-														class="truncate max-w-[250px] text-muted-foreground"
-														title={item.title}
-													>
-														{item.title}
-													</div>
+												{/each}
+											</div>
+										{:else}
+											<div class="flex items-center gap-2">
+												<span class="text-muted-foreground text-xs italic">No items synced</span>
+												<Button
+													variant="outline"
+													size="sm"
+													class="h-6 text-xs"
+													onclick={() => syncSingleOrder(order.amazon_order_id)}
+												>
+													<RefreshCw class="mr-1 h-3 w-3" />
+													Sync Items
+												</Button>
+											</div>
+										{/if}
+									</td>
+									<td class="p-4 align-middle">{order.automated_carrier || '-'}</td>
+									<td class="p-4 align-middle">
+										{order.automated_ship_method || order.shipment_service_level_category || '-'}
+									</td>
+									<td class="p-4 align-middle">
+										<div class="flex gap-1">
+											{#if order.is_prime}
+												<div
+													class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-blue-200 text-blue-800 bg-blue-50"
+												>
+													Prime
 												</div>
-											{/each}
+											{/if}
+											{#if order.is_business_order}
+												<div
+													class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-purple-200 text-purple-800 bg-purple-50"
+												>
+													B2B
+												</div>
+											{/if}
+											{#if order.is_premium_order}
+												<div
+													class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-amber-200 text-amber-800 bg-amber-50"
+												>
+													Premium
+												</div>
+											{/if}
 										</div>
-									{:else}
-										<div class="flex items-center gap-2">
-											<span class="text-muted-foreground text-xs italic">No items synced</span>
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-6 text-xs"
-												onclick={() => syncSingleOrder(order.amazon_order_id)}
-											>
-												<RefreshCw class="mr-1 h-3 w-3" />
-												Sync Items
-											</Button>
-										</div>
-									{/if}
-								</td>
-								<td class="p-4 align-middle">{order.automated_carrier || '-'}</td>
-								<td class="p-4 align-middle">
-									{order.automated_ship_method || order.shipment_service_level_category || '-'}
-								</td>
-								<td class="p-4 align-middle">
-									<div class="flex gap-1">
-										{#if order.is_prime}
-											<div
-												class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-blue-200 text-blue-800 bg-blue-50"
-											>
-												Prime
-											</div>
-										{/if}
-										{#if order.is_business_order}
-											<div
-												class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-purple-200 text-purple-800 bg-purple-50"
-											>
-												B2B
-											</div>
-										{/if}
-										{#if order.is_premium_order}
-											<div
-												class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-amber-200 text-amber-800 bg-amber-50"
-											>
-												Premium
-											</div>
-										{/if}
-									</div>
-								</td>
-							</tr>
-						{/each}
-						{#if data.orders.length === 0}
-							<tr
-								class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
-							>
-								<td colspan="13" class="p-4 align-middle text-center py-8 text-muted-foreground">
-									No orders found. Click "Sync Yesterday's Orders" to fetch data.
-								</td>
-							</tr>
+									</td>
+								</tr>
+							{/each}
+							{#if orders.length === 0}
+								<tr
+									class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+								>
+									<td colspan="13" class="p-4 align-middle text-center py-8 text-muted-foreground">
+										No orders found. Click "Sync Yesterday's Orders" to fetch data.
+									</td>
+								</tr>
+							{/if}
 						{/if}
 					</tbody>
 				</table>

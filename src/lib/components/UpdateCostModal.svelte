@@ -27,7 +27,7 @@
 	let product_cost = '0';
 	let material_cost = '0.35';
 	let box_cost = '0';
-	let vat_rate = '20';
+	let vat_rate = '0';
 	let is_fragile = false;
 
 	$: total_value = (
@@ -79,14 +79,35 @@
 		['Poly Bag', 0.04]
 	]);
 
-	// Filter for valid dimension keys (containing 'x')
-	$: boxOptions = Array.from(boxSizeCosts.keys())
+	const commonBoxSizes = new Set([
+		'6.25x6.25x6.25',
+		'9.25x6.25x6.25',
+		'9.25x9.25x9.25',
+		'12.25x9.25x6.25',
+		'14.25x4.25x4.25',
+		'14.25x10.5x12.25',
+		'16.25x11.25x7.25',
+		'18.25x12.25x7.25',
+		'18.25x12.25x12.25',
+		'18.25x18.25x18.25',
+		'10.25x8.25x6.25'
+	]);
+
+	$: allBoxOptions = Array.from(boxSizeCosts.keys())
 		.filter((k) => k.includes('x') && !k.includes('0x0x0'))
 		.sort();
+
+	$: commonOptions = allBoxOptions.filter((o) => commonBoxSizes.has(o));
+	$: otherOptions = allBoxOptions.filter((o) => !commonBoxSizes.has(o));
 
 	function handleBoxPresetChange(e: Event) {
 		const val = (e.target as HTMLSelectElement).value;
 		if (val && val !== 'custom') {
+			const cost = boxSizeCosts.get(val);
+			if (cost !== undefined) {
+				box_cost = cost.toFixed(2);
+			}
+
 			const [w, h, d] = val.split('x');
 			width = w;
 			height = h;
@@ -322,9 +343,16 @@
 							value={`${width}x${height}x${depth}`}
 						>
 							<option value="custom">Custom Size</option>
-							{#each boxOptions as option}
-								<option value={option}>{option}</option>
-							{/each}
+							<optgroup label="Common Sizes">
+								{#each commonOptions as option}
+									<option value={option}>{option}</option>
+								{/each}
+							</optgroup>
+							<optgroup label="All Sizes">
+								{#each otherOptions as option}
+									<option value={option}>{option}</option>
+								{/each}
+							</optgroup>
 						</select>
 					</div>
 					<div class="flex gap-4">

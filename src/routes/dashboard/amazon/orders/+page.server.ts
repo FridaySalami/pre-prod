@@ -15,9 +15,58 @@ export async function load({ url }) {
   const searchParam = url.searchParams.get('search');
   const viewParam = url.searchParams.get('view') || 'daily';
 
+  // Calculate startDate based on params immediately so we can return it
+  let startDate: Date;
+  let endDate: Date;
+
+  if (!searchParam) {
+    if (dateParam) {
+      const targetDate = new Date(dateParam);
+      endDate = new Date(targetDate);
+      endDate.setHours(23, 59, 59, 999);
+
+      if (viewParam === 'weekly') {
+        startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 6); // 7 days inclusive
+        startDate.setHours(0, 0, 0, 0);
+      } else {
+        startDate = new Date(targetDate);
+        startDate.setHours(0, 0, 0, 0);
+      }
+    } else {
+      // Default to yesterday
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+
+      endDate = new Date(yesterday);
+      endDate.setHours(23, 59, 59, 999);
+
+      if (viewParam === 'weekly') {
+        startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 6);
+        startDate.setHours(0, 0, 0, 0);
+      } else {
+        startDate = new Date(yesterday);
+        startDate.setHours(0, 0, 0, 0);
+      }
+    }
+  }
+
+  return {
+    streamed: {
+      orders: getOrdersData(url, startDate!, endDate!)
+    },
+    date: dateParam || (startDate! ? startDate!.toISOString().split('T')[0] : ''),
+    search: searchParam || ''
+  };
+}
+
+async function getOrdersData(url: URL, startDate: Date, endDate: Date) {
+  const searchParam = url.searchParams.get('search');
+
   let orders: any[] = [];
   let error = null;
-  let startDate: Date | undefined;
 
   if (searchParam) {
     const term = searchParam.trim();
@@ -53,40 +102,6 @@ export async function load({ url }) {
       error = searchError;
     }
   } else {
-    let endDate: Date;
-
-    if (dateParam) {
-      const targetDate = new Date(dateParam);
-      endDate = new Date(targetDate);
-      endDate.setHours(23, 59, 59, 999);
-
-      if (viewParam === 'weekly') {
-        startDate = new Date(endDate);
-        startDate.setDate(startDate.getDate() - 6); // 7 days inclusive
-        startDate.setHours(0, 0, 0, 0);
-      } else {
-        startDate = new Date(targetDate);
-        startDate.setHours(0, 0, 0, 0);
-      }
-    } else {
-      // Default to yesterday
-      const now = new Date();
-      const yesterday = new Date(now);
-      yesterday.setDate(now.getDate() - 1);
-
-      endDate = new Date(yesterday);
-      endDate.setHours(23, 59, 59, 999);
-
-      if (viewParam === 'weekly') {
-        startDate = new Date(endDate);
-        startDate.setDate(startDate.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
-      } else {
-        startDate = new Date(yesterday);
-        startDate.setHours(0, 0, 0, 0);
-      }
-    }
-
     // Fetch all orders with pagination to bypass 1000 row limit
     let allOrders: any[] = [];
     let page = 0;
@@ -124,7 +139,7 @@ export async function load({ url }) {
 
   if (error) {
     console.error('Error fetching amazon orders:', error);
-    return { orders: [] };
+    return [];
   }
 
   // Fetch all necessary data for cost calculations in bulk
@@ -224,9 +239,5 @@ export async function load({ url }) {
     };
   });
 
-  return {
-    orders: enrichedOrders ?? [],
-    date: dateParam || (startDate ? startDate.toISOString().split('T')[0] : ''),
-    search: searchParam || ''
-  };
+  return enrichedOrders ?? [];
 }
