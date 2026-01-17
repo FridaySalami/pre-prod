@@ -530,7 +530,9 @@
 	}
 
 	function downloadEmailReport() {
-		const subject = `Amazon Orders Report - ${new Date().toLocaleDateString()}`;
+		const dateObj = selectedDate ? new Date(selectedDate) : new Date();
+		const dateStr = dateObj.toLocaleDateString();
+		const subject = `Amazon Orders Report - ${dateStr}`;
 		const period = view === 'daily' ? 'Daily' : view === 'weekly' ? 'Weekly' : 'Monthly';
 
 		// Top 5 Profitable
@@ -563,12 +565,29 @@
 			)
 			.join('');
 
+		// Sort orders by profit (highest first) for the email report
+		const emailOrders = [...filteredOrders].sort((a, b) => {
+			let profitA = (parseFloat(a.order_total) || 0) - calculateOrderCost(a);
+			let profitB = (parseFloat(b.order_total) || 0) - calculateOrderCost(b);
+
+			// Treat cancelled orders as 0 profit
+			if (a.order_status === 'Canceled') profitA = 0;
+			if (b.order_status === 'Canceled') profitB = 0;
+
+			return profitB - profitA;
+		});
+
 		// All Orders Table Rows
-		const allOrdersRows = sortedOrders
+		const allOrdersRows = emailOrders
 			.map((order) => {
+				const isCanceled = order.order_status === 'Canceled';
 				const totalCost = calculateOrderCost(order);
 				const shippingDisplay = getShippingCostDisplay(order);
-				const orderTotal = parseFloat(order.order_total) || 0;
+				let orderTotal = parseFloat(order.order_total) || 0;
+
+				// For canceled orders, revenue is 0
+				if (isCanceled) orderTotal = 0;
+
 				const profit = orderTotal - totalCost;
 				const skus =
 					order.amazon_order_items
@@ -610,7 +629,7 @@
                     https://operations.chefstorecookbook.com/dashboard/amazon/orders?date=${selectedDate}&view=${view}
                 </a>
             </p>
-            <p>Date: ${new Date().toLocaleDateString()}</p>
+            <p>Date: ${dateStr}</p>
             
             <h3>Summary</h3>
             <table style="border-collapse: collapse; width: 100%; max-width: 600px; margin-bottom: 20px;">

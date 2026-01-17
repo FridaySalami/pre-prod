@@ -78,7 +78,7 @@ export async function getLinnworksAuth(): Promise<{ token: string, server: strin
  */
 export async function callLinnworksApi<T>(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: any): Promise<T> {
   // Get auth first
-  const auth = await getLinnworksAuth();
+  let auth = await getLinnworksAuth();
 
   const headers: Record<string, string> = {
     'Authorization': auth.token,
@@ -97,7 +97,24 @@ export async function callLinnworksApi<T>(endpoint: string, method: 'GET' | 'POS
   const url = `${auth.server}/api/${endpoint}`;
   console.log(`Making API call to ${url} with method ${method}`);
 
-  const response = await fetch(url, options);
+  let response = await fetch(url, options);
+
+  // If we get a 401, the token might be expired. Try to re-authenticate once
+  if (response.status === 401) {
+    console.log('Got 401 error, token might be expired. Re-authenticating...');
+
+    // Clear the cached token
+    authToken = null;
+    serverURL = null;
+
+    // Get a fresh token
+    auth = await getLinnworksAuth();
+    headers['Authorization'] = auth.token;
+
+    // Retry the request with the new token
+    console.log(`Retrying API call to ${url} with fresh token`);
+    response = await fetch(url, options);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
