@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import {
 		format,
@@ -25,7 +26,28 @@
 		UserMinus
 	} from 'lucide-svelte';
 
-	export let data;
+	let holidays: any[] = [];
+	let loadingHolidays = true;
+
+	onMount(() => {
+		fetchHolidays();
+	});
+
+	async function fetchHolidays() {
+		loadingHolidays = true;
+		try {
+			const res = await fetch('/api/holidays');
+			if (res.ok) {
+				holidays = await res.json();
+			} else {
+				console.error('Failed to fetch holidays');
+			}
+		} catch (e) {
+			console.error('Error fetching holidays', e);
+		} finally {
+			loadingHolidays = false;
+		}
+	}
 
 	let syncing = false;
 	let syncMessage = '';
@@ -224,7 +246,7 @@
 
 			if (res.ok) {
 				syncMessage = `Success! ${result.message}`;
-				await invalidateAll(); // Refresh data
+				await fetchHolidays(); // Refresh data manually
 				setTimeout(() => (syncMessage = ''), 3000);
 			} else {
 				syncMessage = `Error: ${result.error}`;
@@ -382,7 +404,7 @@
 				{#each calendarDays as day}
 					{@const isCurrentMonth = isSameMonth(day, currentDate)}
 					{@const isToday = isSameDay(day, new Date())}
-					{@const dayHolidays = getHolidaysForDay(day, data.holidays)}
+					{@const dayHolidays = getHolidaysForDay(day, holidays)}
 
 					<div
 						class="min-h-[120px] bg-white p-2 relative group {isCurrentMonth
@@ -471,14 +493,18 @@
 					</tr>
 				</thead>
 				<tbody class="bg-white divide-y divide-gray-200">
-					{#if data.holidays.length === 0}
+					{#if holidays.length === 0}
 						<tr>
 							<td colspan="5" class="px-6 py-4 text-center text-gray-500">
-								No holidays found. Click "Sync Data" to fetch data.
+								{#if loadingHolidays}
+									Loading holidays...
+								{:else}
+									No holidays found. Click "Sync Data" to fetch data.
+								{/if}
 							</td>
 						</tr>
 					{:else}
-						{#each data.holidays as holiday}
+						{#each holidays as holiday}
 							<tr>
 								<td class="px-6 py-4 whitespace-nowrap">
 									<div class="text-sm font-medium text-gray-900">{holiday.employee_name}</div>

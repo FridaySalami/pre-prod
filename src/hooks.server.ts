@@ -135,21 +135,22 @@ export const handle: Handle = async ({ event, resolve }) => {
   // Helper function to get session with enhanced error handling
   event.locals.getSession = async () => {
     try {
-      console.log('🔐 Getting session, cookies available:', Object.keys(event.cookies.getAll()));
+      // 1. Get the session (tokens) from cookies
+      const { data: { session } } = await event.locals.supabase.auth.getSession();
 
-      const { data: { session }, error } = await event.locals.supabase.auth.getSession();
+      if (!session) return null;
 
-      console.log('🔐 Session retrieval result:', {
-        hasSession: !!session,
-        sessionUserId: session?.user?.id,
-        error: error?.message
-      });
+      // 2. Validate with getUser() to ensure token is not revoked/user deleted
+      // This prevents "insecure session" warnings and real security risks
+      const { data: { user }, error } = await event.locals.supabase.auth.getUser();
 
-      if (error) {
-        console.warn('🔐 Session retrieval error:', error.message);
+      if (error || !user) {
+        console.warn('🔐 Session invalid (getUser failed):', error?.message);
         return null;
       }
 
+      // 3. Update the session.user with the fresh, validated user object
+      session.user = user;
       return session;
     } catch (error) {
       console.error('🔐 Unexpected error getting session:', error);
