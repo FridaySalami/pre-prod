@@ -1,3 +1,4 @@
+
 import { db } from '$lib/supabaseServer';
 import { CostCalculator } from '$lib/server/cost-calculator';
 
@@ -10,83 +11,82 @@ interface AmazonOrderItem {
   [key: string]: any;
 }
 
-export async function load({ params }) {
-  const { sku } = params;
+export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm?: string) {
   let orders: any[] = [];
   let error = null;
 
-  if (!sku) {
-    return { orders: [], sku };
-  }
+  if (searchTerm) {
+    const term = searchTerm.trim();
 
-  // Helper to generate SKU candidates from cleaned URL (e.g. "A-B-C")
-  // Generates permutations like "A - B - C", "A B C", "A - B C", etc.
-  function generateCandidates(cleanSku: string) {
-    // Normalize input first: ensure it's dash-separated
-    // This handles "A - B" or "A B" coming in as input -> "A-B"
-    const normalized = cleanSku.replace(/\s+/g, '-').replace(/-+/g, '-');
-    const parts = normalized.split('-');
-
-    if (parts.length === 1) return [normalized, cleanSku];
-
-    const separators = ['-', ' - ', ' '];
-    let results: string[] = [];
-
-    function backtrack(index: number, currentString: string) {
-      if (index === parts.length - 1) {
-        results.push(currentString + parts[index]);
-        return;
-      }
-
-      const part = parts[index];
-      for (const sep of separators) {
-        backtrack(index + 1, currentString + part + sep);
-      }
-    }
-
-    backtrack(0, '');
-    return results;
-  }
-
-  // Generate candidate SKUs to allow for "clean" URLs
-  const candidates = new Set([
-    sku,
-    ...generateCandidates(sku)
-  ]);
-  const candidateList = Array.from(candidates);
-
-  // 1. Find all order items for this SKU (or candidates)
-  const { data: orderItems, error: itemsError } = await db
-    .from('amazon_order_items')
-    .select('amazon_order_id, seller_sku') // Fetch seller_sku to identify the winner
-    .in('seller_sku', candidateList);
-
-  if (itemsError) {
-    console.error('Error fetching order items for SKU:', itemsError);
-    return { orders: [], sku, error: itemsError.message };
-  }
-
-  // Determine the canonical SKU from the results (if any)
-  // Prefer the one that matches the DB most frequently, or just the first one found.
-  // If we searched for 'OIL02H-001' and found 'OIL02H - 001', we use the latter.
-  const foundSku = orderItems?.[0]?.seller_sku || sku;
-
-  const orderIds = Array.from(new Set(orderItems?.map(item => item.amazon_order_id) || []));
-
-  if (orderIds.length > 0) {
-    // Fetch orders details
-    const { data: skuOrders, error: ordersError } = await db
+    // 1. Search orders by ID
+    const { data: ordersById, error: error1 } = await db
       .from('amazon_orders')
-      .select('*, amazon_order_items(*)')
-      .in('amazon_order_id', orderIds)
-      .order('purchase_date', { ascending: false });
+      .select('amazon_order_id')
+      .ilike('amazon_order_id', `%${term}%`);
 
-    if (ordersError) {
-      console.error('Error fetching orders for SKU:', ordersError);
-      error = ordersError;
-    } else {
-      orders = skuOrders || [];
+    // 2. Search items by SKU or ASIN
+    const { data: itemsBySkuOrAsin, error: error2 } = await db
+      .from('amazon_order_items')
+      .select('amazon_order_id')
+      .or(`seller_sku.ilike.%${term}%,asin.ilike.%${term}%`);
+
+    if (error1) console.error('Error searching orders:', error1);
+    if (error2) console.error('Error searching items:', error2);
+
+    const orderIds = new Set([
+      ...(ordersById?.map(o => o.amazon_order_id) || []),
+      ...(itemsBySkuOrAsin?.map(i => i.amazon_order_id) || [])
+    ]);
+
+    if (orderIds.size > 0) {
+      const { data: searchResults, error: searchError } = await db
+        .from('amazon_orders')
+        .select('*, amazon_order_items(*)')
+        .in('amazon_order_id', Array.from(orderIds))
+        .order('purchase_date', { ascending: false });
+
+      orders = searchResults || [];
+      error = searchError;
     }
+  } else {
+    // Fetch all orders with pagination to bypass 1000 row limit
+    let allOrders: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data: dateOrders, error: dateError } = await db
+        .from('amazon_orders')
+        .select('*, amazon_order_items(*)')
+        .gte('purchase_date', startDate.toISOString())
+        .lte('purchase_date', endDate.toISOString())
+        .order('purchase_date', { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (dateError) {
+        error = dateError;
+        break;
+      }
+
+      if (dateOrders && dateOrders.length > 0) {
+        allOrders = [...allOrders, ...dateOrders];
+        if (dateOrders.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
+
+    orders = allOrders;
+  }
+
+  if (error) {
+    console.error('Error fetching amazon orders:', error);
+    return [];
   }
 
   // Fetch all necessary data for cost calculations in bulk
@@ -174,8 +174,6 @@ export async function load({ params }) {
         let customFragileCharge: number | undefined = undefined;
         if (product.is_fragile && totalFragileUnits > 0) {
           customFragileCharge = 1.00 / totalFragileUnits;
-        } else if (!product.is_fragile) {
-          customFragileCharge = 0.00;
         }
 
         costs = calculator.calculate(item.seller_sku!, itemPrice, product, skuMapping, linnworksData, {
@@ -208,8 +206,5 @@ export async function load({ params }) {
     };
   });
 
-  return {
-    orders: enrichedOrders ?? [],
-    sku: foundSku // Return the canonical SKU found in DB
-  };
+  return enrichedOrders ?? [];
 }

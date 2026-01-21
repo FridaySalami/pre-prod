@@ -12,6 +12,7 @@
 	} from '$lib/shadcn/ui/dialog';
 	import { showToast } from '$lib/toastStore';
 	import { createEventDispatcher } from 'svelte';
+	import { Copy, Check } from 'lucide-svelte';
 
 	export let open = false;
 	export let sku = '';
@@ -29,6 +30,16 @@
 	let box_cost = '0';
 	let vat_rate = '0';
 	let is_fragile = false;
+	let copied = false;
+
+	function copySku() {
+		navigator.clipboard.writeText(sku);
+		copied = true;
+		showToast('SKU copied to clipboard', 'success');
+		setTimeout(() => {
+			copied = false;
+		}, 2000);
+	}
 
 	$: total_value = (
 		(parseFloat(product_cost) || 0) +
@@ -179,7 +190,8 @@
 					weight,
 					merchant_shipping_group,
 					total_value: product_cost,
-					vat_rate
+					vat_rate,
+					is_fragile
 				})
 			});
 
@@ -206,7 +218,19 @@
 		<DialogHeader>
 			<DialogTitle>Update Cost Data</DialogTitle>
 			<DialogDescription>
-				Enter the missing information for SKU: <span class="font-mono font-bold">{sku}</span>
+				<span class="flex items-center gap-2">
+					<span
+						>Enter the missing information for SKU: <span class="font-mono font-bold">{sku}</span
+						></span
+					>
+					<Button variant="ghost" size="icon" class="h-6 w-6" onclick={copySku} title="Copy SKU">
+						{#if copied}
+							<Check class="h-3.5 w-3.5 text-green-500" />
+						{:else}
+							<Copy class="h-3.5 w-3.5" />
+						{/if}
+					</Button>
+				</span>
 			</DialogDescription>
 		</DialogHeader>
 		<div class="grid gap-6 py-4">

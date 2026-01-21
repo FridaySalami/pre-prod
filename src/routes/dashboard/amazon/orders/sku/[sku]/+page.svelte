@@ -785,6 +785,121 @@
 		(a: any, b: any) => b.totalProfit - a.totalProfit
 	);
 
+	// Last 7 Days Analysis
+	$: last7DaysDailyStats = (() => {
+		const now = new Date();
+		const days = [];
+		// Generate last 7 days (excluding today, going back 1 further)
+		for (let i = 1; i <= 7; i++) {
+			const d = new Date(now);
+			d.setDate(d.getDate() - i);
+			// Reset time to start of day for easier comparison or just use date string
+			d.setHours(0, 0, 0, 0);
+			days.push(d);
+		}
+
+		// Map each day to its stats
+		return days
+			.map((dayStart) => {
+				const dayEnd = new Date(dayStart);
+				dayEnd.setHours(23, 59, 59, 999);
+
+				// Filter orders for this specific day
+				const daysOrders = filteredOrders.filter((o) => {
+					if (o.order_status === 'Canceled') return false;
+					const pDate = new Date(o.purchase_date);
+					return pDate >= dayStart && pDate <= dayEnd;
+				});
+
+				const ordersCount = daysOrders.length;
+				const unitsSold = daysOrders.reduce((sum, o) => sum + o.skuUnits, 0);
+				const revenue = daysOrders.reduce((sum, o) => sum + o.skuRevenue, 0);
+				const profit = daysOrders.reduce((sum, o) => sum + o.skuProfit, 0);
+
+				return {
+					date: dayStart,
+					dayName: dayStart.toLocaleDateString('en-GB', { weekday: 'short' }), // Mon, Tue...
+					dateStr: dayStart.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }), // 20/01
+					ordersCount,
+					unitsSold,
+					revenue,
+					profit
+				};
+			})
+			.reverse(); // Reverse so it goes oldest -> newest (Left to Right)
+	})();
+
+	// Weekly Trend Analysis (Last 7 Days vs Previous 7 Days)
+	$: weeklyTrends = (() => {
+		const now = new Date();
+
+		// Current Period: Last 7 Days (excluding today)
+		// e.g. T-7 to T-1
+		const currentEnd = new Date(now);
+		currentEnd.setDate(currentEnd.getDate() - 1);
+		currentEnd.setHours(23, 59, 59, 999);
+
+		const currentStart = new Date(currentEnd);
+		currentStart.setDate(currentStart.getDate() - 6);
+		currentStart.setHours(0, 0, 0, 0);
+
+		// Previous Period: The 7 days before that
+		// e.g. T-14 to T-8
+		const prevEnd = new Date(currentStart);
+		prevEnd.setDate(prevEnd.getDate() - 1);
+		prevEnd.setHours(23, 59, 59, 999);
+
+		const prevStart = new Date(prevEnd);
+		prevStart.setDate(prevStart.getDate() - 6);
+		prevStart.setHours(0, 0, 0, 0);
+
+		const getPeriodStats = (start: Date, end: Date) => {
+			const orders = filteredOrders.filter((o) => {
+				if (o.order_status === 'Canceled') return false;
+				const pDate = new Date(o.purchase_date);
+				return pDate >= start && pDate <= end;
+			});
+
+			return {
+				orders: orders.length,
+				units: orders.reduce((sum, o) => sum + o.skuUnits, 0),
+				sales: orders.reduce((sum, o) => sum + o.skuRevenue, 0),
+				profit: orders.reduce((sum, o) => sum + o.skuProfit, 0)
+			};
+		};
+
+		const current = getPeriodStats(currentStart, currentEnd);
+		const previous = getPeriodStats(prevStart, prevEnd);
+
+		const calcTrend = (curr: number, prev: number) => {
+			if (prev === 0) return curr > 0 ? 100 : 0;
+			return ((curr - prev) / prev) * 100;
+		};
+
+		return {
+			orders: {
+				current: current.orders,
+				prev: previous.orders,
+				trend: calcTrend(current.orders, previous.orders)
+			},
+			units: {
+				current: current.units,
+				prev: previous.units,
+				trend: calcTrend(current.units, previous.units)
+			},
+			sales: {
+				current: current.sales,
+				prev: previous.sales,
+				trend: calcTrend(current.sales, previous.sales)
+			},
+			profit: {
+				current: current.profit,
+				prev: previous.profit,
+				trend: calcTrend(current.profit, previous.profit)
+			}
+		};
+	})();
+
 	// Velocity Analysis
 	$: velocityStats = (() => {
 		if (!filteredOrders.length) return null;
@@ -1131,6 +1246,204 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Week on Week Breakdown -->
+	{#if weeklyTrends}
+		<div class="space-y-2">
+			<h3 class="font-semibold leading-none tracking-tight">
+				Week on Week Performance (Last 7 Days vs Previous)
+			</h3>
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+				<!-- Orders Trend -->
+				<div class="rounded-xl border bg-card text-card-foreground shadow p-4 space-y-2">
+					<div class="flex items-center justify-between">
+						<span class="text-sm font-medium text-muted-foreground">Orders</span>
+						{#if weeklyTrends.orders.trend > 0}
+							<div
+								class="flex items-center text-green-600 bg-green-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowUp class="w-3 h-3 mr-1" />
+								{weeklyTrends.orders.trend.toFixed(1)}%
+							</div>
+						{:else if weeklyTrends.orders.trend < 0}
+							<div
+								class="flex items-center text-red-600 bg-red-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowDown class="w-3 h-3 mr-1" />
+								{Math.abs(weeklyTrends.orders.trend).toFixed(1)}%
+							</div>
+						{:else}
+							<div
+								class="flex items-center text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								-
+							</div>
+						{/if}
+					</div>
+					<div class="flex items-end justify-between">
+						<div class="text-2xl font-bold">{weeklyTrends.orders.current}</div>
+						<div class="text-xs text-muted-foreground pb-1">
+							prev: {weeklyTrends.orders.prev}
+						</div>
+					</div>
+				</div>
+
+				<!-- Units Trend -->
+				<div class="rounded-xl border bg-card text-card-foreground shadow p-4 space-y-2">
+					<div class="flex items-center justify-between">
+						<span class="text-sm font-medium text-muted-foreground">Units</span>
+						{#if weeklyTrends.units.trend > 0}
+							<div
+								class="flex items-center text-green-600 bg-green-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowUp class="w-3 h-3 mr-1" />
+								{weeklyTrends.units.trend.toFixed(1)}%
+							</div>
+						{:else if weeklyTrends.units.trend < 0}
+							<div
+								class="flex items-center text-red-600 bg-red-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowDown class="w-3 h-3 mr-1" />
+								{Math.abs(weeklyTrends.units.trend).toFixed(1)}%
+							</div>
+						{:else}
+							<div
+								class="flex items-center text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								-
+							</div>
+						{/if}
+					</div>
+					<div class="flex items-end justify-between">
+						<div class="text-2xl font-bold">{weeklyTrends.units.current}</div>
+						<div class="text-xs text-muted-foreground pb-1">
+							prev: {weeklyTrends.units.prev}
+						</div>
+					</div>
+				</div>
+
+				<!-- Sales Trend -->
+				<div class="rounded-xl border bg-card text-card-foreground shadow p-4 space-y-2">
+					<div class="flex items-center justify-between">
+						<span class="text-sm font-medium text-muted-foreground">Sales</span>
+						{#if weeklyTrends.sales.trend > 0}
+							<div
+								class="flex items-center text-green-600 bg-green-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowUp class="w-3 h-3 mr-1" />
+								{weeklyTrends.sales.trend.toFixed(1)}%
+							</div>
+						{:else if weeklyTrends.sales.trend < 0}
+							<div
+								class="flex items-center text-red-600 bg-red-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowDown class="w-3 h-3 mr-1" />
+								{Math.abs(weeklyTrends.sales.trend).toFixed(1)}%
+							</div>
+						{:else}
+							<div
+								class="flex items-center text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								-
+							</div>
+						{/if}
+					</div>
+					<div class="flex items-end justify-between">
+						<div class="text-2xl font-bold">{formatCurrency(weeklyTrends.sales.current)}</div>
+						<div class="text-xs text-muted-foreground pb-1">
+							prev: {formatCurrency(weeklyTrends.sales.prev)}
+						</div>
+					</div>
+				</div>
+
+				<!-- Profit Trend -->
+				<div class="rounded-xl border bg-card text-card-foreground shadow p-4 space-y-2">
+					<div class="flex items-center justify-between">
+						<span class="text-sm font-medium text-muted-foreground">Profit</span>
+						{#if weeklyTrends.profit.trend > 0}
+							<div
+								class="flex items-center text-green-600 bg-green-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowUp class="w-3 h-3 mr-1" />
+								{weeklyTrends.profit.trend.toFixed(1)}%
+							</div>
+						{:else if weeklyTrends.profit.trend < 0}
+							<div
+								class="flex items-center text-red-600 bg-red-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								<ArrowDown class="w-3 h-3 mr-1" />
+								{Math.abs(weeklyTrends.profit.trend).toFixed(1)}%
+							</div>
+						{:else}
+							<div
+								class="flex items-center text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full text-xs font-bold"
+							>
+								-
+							</div>
+						{/if}
+					</div>
+					<div class="flex items-end justify-between">
+						<div
+							class="text-2xl font-bold {weeklyTrends.profit.current > 0
+								? 'text-green-600'
+								: 'text-red-600'}"
+						>
+							{formatCurrency(weeklyTrends.profit.current)}
+						</div>
+						<div class="text-xs text-muted-foreground pb-1">
+							prev: {formatCurrency(weeklyTrends.profit.prev)}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Last 7 Days Daily Breakdown -->
+	{#if last7DaysDailyStats && last7DaysDailyStats.length > 0}
+		<div class="space-y-2">
+			<h3 class="font-semibold leading-none tracking-tight">Last 7 Days Performance</h3>
+			<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+				{#each last7DaysDailyStats as dayStat}
+					<div
+						class="rounded-xl border bg-card text-card-foreground shadow p-4 flex flex-col justify-between space-y-2"
+					>
+						<div class="flex justify-between items-center border-b pb-2">
+							<span class="font-bold text-sm">{dayStat.dayName}</span>
+							<span class="text-xs text-muted-foreground">{dayStat.dateStr}</span>
+						</div>
+
+						<div class="space-y-1">
+							<div class="flex justify-between text-xs">
+								<span class="text-muted-foreground">Orders:</span>
+								<span class="font-medium">{dayStat.ordersCount}</span>
+							</div>
+							<div class="flex justify-between text-xs">
+								<span class="text-muted-foreground">Units:</span>
+								<span class="font-medium">{dayStat.unitsSold}</span>
+							</div>
+							<div class="flex justify-between text-xs">
+								<span class="text-muted-foreground">Sales:</span>
+								<span class="font-medium">{formatCurrency(dayStat.revenue)}</span>
+							</div>
+							<div class="flex justify-between text-xs pt-1 border-t mt-1">
+								<span class="text-muted-foreground">Profit:</span>
+								<span
+									class="font-bold {dayStat.profit > 0
+										? 'text-green-600'
+										: dayStat.profit < 0
+											? 'text-red-600'
+											: ''}"
+								>
+									{formatCurrency(dayStat.profit)}
+								</span>
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Order Performance Chart -->
 	<div class="rounded-xl border bg-card text-card-foreground shadow">

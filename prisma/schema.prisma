@@ -138,3 +138,23 @@ model AuditLog {
   
   @@map("audit_log")
 }
+
+// Holidays imported from myHRtoolkit
+model Holiday {
+  id                                     Int       @id
+  user_id                                Int?
+  employee_name                          String?
+  from_date                              DateTime? @db.Timestamptz
+  to_date                                DateTime? @db.Timestamptz
+  duration                               String?
+  units                                  String?
+  notes                                  String?
+  status                                 String?
+  date_holiday_requested_to_be_withdrawn DateTime? @db.Timestamptz
+  dates_to_exclude                       String?
+  raw_data                               Json?
+  created_at                             DateTime  @default(now()) @db.Timestamptz
+  updated_at                             DateTime  @default(now()) @updatedAt @db.Timestamptz
+
+  @@map("holidays")
+}

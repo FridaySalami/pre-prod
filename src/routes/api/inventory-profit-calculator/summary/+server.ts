@@ -46,7 +46,8 @@ export async function GET({ url }) {
           retail_price,
           title,
           tracked,
-          weight
+          weight,
+          is_fragile
         `)
         .range(startIndex, startIndex + chunkSize - 1);
 
@@ -306,33 +307,8 @@ export async function GET({ url }) {
       // Material cost (tape, paper, bubblewrap) - fixed value for all products
       const materialCost = 0.20;
 
-      // Fragile charge lookup - hardcoded list of SKUs that require fragile packing
-      const fragileSKUs = new Set([
-        'Bundle - 008', 'Bundle - 008 Prime', 'CRI23', 'CRI30', 'CRI30 - 002 Prime', 'CRI31', 'CRI31 - 005',
-        'CRI33', 'CRI34', 'CRI35', 'CRI37', 'CRI38', 'CRI38 - 001', 'CRI39', 'CRI39 - 001 Prime',
-        'Crisps Bundle - 001 Prime', 'Crisps Bundle - 002 Prime', 'Crisps Bundle - 003 Prime',
-        'Crisps Bundle - 004 Prime', 'Crisps Bundle - 005 Prime', 'Crisps Bundle - 006 Prime',
-        'Crisps Bundle - 007 Prime', 'Crisps Bundle - 008 Prime', 'Crisps Bundle - 009 Prime',
-        'Crisps Bundle - 010 Prime', 'KY-B3GZ-JQ9Y', 'CRI10', 'CRI10 - 001', 'CRI10 - 002',
-        'CRI10 - 002 Prime', 'CRI10 uk shipping', 'Bundle - 159 Prime', 'TAR00', 'TAR02', 'TAR02 - 001 Prime',
-        'TAR05C', 'TAR05C - 001', 'TAR10B', 'TAR10B - 010 Prime', 'TAR10B - 011 Prime', 'TAR11', 'TAR11 - 001',
-        'TAR14', 'TAR16', 'TAR17', 'TAR31', 'TAR31 - 002', 'TAR31 - 002 uk shipping', 'TAR31 - 003 Prime',
-        'TAR31-001', 'TAR31-001 Prime', 'TAR31A', 'TAR31A - 001 Prime', 'TAR32', 'TAR32 - 001', 'TAR32 - 001 Prime',
-        'TAR34', 'TAR34A', 'TAR34A - 001 Prime', 'TAR35', 'TAR36', 'TAR36 - 001', 'TAR36A', 'TAR37', 'TAR37 - 001',
-        'BAR80', 'BAR80 - 001 Prime', 'BAR80A', 'SWE01', 'SWE01 - 005', 'SWE01 - 005 Prime', 'SWE01 - 006',
-        'SWE01 - 006 Prime', 'SWE01 - 007', 'SWE01 - 007 Prime', 'SWE01 - 008', 'SWE01 - 008 Prime',
-        'SWE01 - 009', 'SWE01 - 009 Prime', 'SWE01 - 010', 'SWE01 - 010 Prime', 'SWE01 - 011', 'SWE01 - 011 Prime',
-        'SWE01 - 012', 'SWE01 - 012 Prime', 'SWE71F', 'SWE71F - 101', 'SWE71F - 102', 'SWE71F - 103',
-        'SWE71G', 'SWE71H', 'BODER002 - 005', 'BODER002 - 005 - prime', 'BORDER002', 'BORDER002 - 003',
-        'BORDER002 - 003 - Prime', 'BORDER002 - 004', 'BORDER002 - 004 Prime', 'BORDER002 - 006',
-        'BORDER002 - 006 Prime', 'BORDER002 - 007', 'BORDER002 - 008', 'BORDER002 - 008 Prime',
-        'BORDER002 - 010', 'BORDER002 - 011', 'BORDER002 - 011 Prime', 'BORDER002 - 012', 'BORDER002 - 012 Prime',
-        'BORDER02 - 001', 'Bundle - 149 Prime', 'SOUTHD001 - 001', 'SOUTHD002 - 001', 'SOUTHD003 - 001',
-        'SOUTHD004 - 001', 'COR50 - 001 Prime', 'COR50 - 004 Prime', 'COR50 - 102', 'COR51 - 005 Prime',
-        'COR51 - 102', 'COR52 - 002 Prime', 'COR52 - 102', 'WATER009 - 001', 'WATER005 - 002 Prime',
-        'PES07C - 001 Prime', 'SOUTHD009 - 001', 'SOUTHD005 - 001 Prime', 'SOUTHD008 - 001 Prime'
-      ]);
-      const fragileCharge = fragileSKUs.has(p.sku) ? 0.66 : 0.00;
+      // Fragile charge lookup - from database
+      const fragileCharge = (p.is_fragile || false) ? 1.00 : 0.00;
 
       // Debug: Log when box size is not found
       if (boxCost === 0 && box !== '0x0x0' && box !== 'xxx') {

@@ -276,6 +276,28 @@ export const actions = {
         await context.storageState({ path: authFile });
       }
 
+      // Handle "Satisfaction Survey" Modal if present (blocks interaction)
+      try {
+        const feedbackModal = page.locator('text=Overall, how satisfied are you with Amazon Shipping?');
+        // Short timeout check - don't block for long if it's not there
+        if (await feedbackModal.isVisible({ timeout: 5000 })) {
+          console.log('Feedback modal detected. Attempting to close...');
+
+          // Try to find a close button (checking specific selectors or generic close buttons)
+          const closeBtn = page.locator('button[aria-label*="Close"], button.close, [class*="close-button"], .modal-close, text="✕", text="x"').first();
+
+          if (await closeBtn.isVisible()) {
+            await closeBtn.click();
+            console.log('Closed modal via button');
+          } else {
+            console.log('Close button not found for modal. Proceeding...');
+          }
+          await page.waitForTimeout(1000);
+        }
+      } catch (e) {
+        // Ignore check errors
+      }
+
       // 3. Select All Shipments
       // Try to leverage the table structure if possible, otherwise fallback to first input checkbox
       await page.waitForLoadState('domcontentloaded');

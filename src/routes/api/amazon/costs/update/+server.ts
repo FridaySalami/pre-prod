@@ -14,7 +14,8 @@ export async function POST({ request }) {
       weight,
       merchant_shipping_group,
       total_value,
-      vat_rate
+      vat_rate,
+      is_fragile
     } = body;
 
     if (!sku) {
@@ -31,6 +32,7 @@ export async function POST({ request }) {
         height: parseFloat(height) || 0,
         depth: parseFloat(depth) || 0,
         weight: parseFloat(weight) || 0,
+        is_fragile: !!is_fragile,
         updated_at: new Date().toISOString()
       }, { onConflict: 'sku' });
 

@@ -2,8 +2,25 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { userSession } from '$lib/sessionStore';
-	import { format, addDays, isWeekend } from 'date-fns';
+	import {
+		format,
+		addDays,
+		isWeekend,
+		startOfMonth,
+		startOfWeek,
+		endOfMonth,
+		endOfWeek,
+		eachDayOfInterval,
+		isSameMonth,
+		isSameDay,
+		isWithinInterval,
+		startOfDay,
+		endOfDay,
+		addMonths,
+		subMonths
+	} from 'date-fns';
 	import { supabase } from '$lib/supabaseClient';
+	import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-svelte';
 	import { getHoursByRoleForDate } from '$lib/employeeHoursService';
 	import {
 		Card,
@@ -17,6 +34,54 @@
 		Badge
 	} from '$lib/shadcn/components';
 	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
+
+	let holidays: any[] = [];
+	let calendarDate = new Date();
+
+	// Calendar reactive variables
+	$: monthStart = startOfMonth(calendarDate);
+	$: monthEnd = endOfMonth(calendarDate);
+	$: startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+	$: endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+	$: calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
+
+	function getHolidaysForDay(day: Date, holidays: any[]) {
+		return holidays.filter((h) => {
+			if (!h.from_date || !h.to_date) return false;
+			const start = startOfDay(new Date(h.from_date));
+			const end = endOfDay(new Date(h.to_date));
+			const current = startOfDay(day);
+
+			const inRange = isWithinInterval(current, { start, end });
+			if (!inRange) return false;
+
+			if (h.dates_to_exclude) {
+				const dayStr = format(current, 'yyyy-MM-dd');
+				if (h.dates_to_exclude.includes(dayStr)) return false;
+			}
+			return true;
+		});
+	}
+
+	function previousMonth() {
+		calendarDate = subMonths(calendarDate, 1);
+	}
+	function nextMonth() {
+		calendarDate = addMonths(calendarDate, 1);
+	}
+	function goToToday() {
+		calendarDate = new Date();
+	}
+
+	function getStatusStyles(status: string) {
+		const s = status?.toLowerCase() || '';
+		if (s === 'accepted') return 'bg-green-50 text-green-800 border-green-100';
+		if (s.includes('rejected') || s.includes('declined'))
+			return 'bg-red-50 text-red-800 border-red-100';
+		if (s.includes('withdrawn') || s.includes('cancelled') || s.includes('removed'))
+			return 'bg-gray-50 text-gray-600 border-gray-100 decoration-line-through';
+		return 'bg-yellow-50 text-yellow-800 border-yellow-100';
+	}
 
 	// Add authentication check
 	// Start with session as undefined (unknown)
@@ -267,6 +332,13 @@
 			// First request critical data in sequence to ensure dependencies are met
 			await fetchWeeklyStaff();
 			await fetchNextWeekStaff();
+
+			// Fetch holidays for the calendar widget
+			const { data: holidayData } = await supabase
+				.from('holidays')
+				.select('*')
+				.not('internal_employee_id', 'is', null);
+			if (holidayData) holidays = holidayData;
 
 			// Then load other data in parallel
 			await Promise.all([fetchUpcomingLeave(), fetchWeather(), fetchYesterdayMetrics()]);
@@ -1399,7 +1471,7 @@
 				<AlertDescription class="flex items-center justify-between">
 					<span>{errorMessage}</span>
 					<button
-						on:click={() => window.location.reload()}
+						onclick={() => window.location.reload()}
 						class="text-sm underline hover:no-underline ml-4"
 					>
 						Refresh Page
@@ -1408,477 +1480,325 @@
 			</Alert>
 		{/if}
 
-		<div class="dashboard-header">
-			<h1>
-				Welcome{session?.user?.user_metadata?.name ? ', ' + session.user.user_metadata.name : ''}
-			</h1>
-			<div class="date-display">Today is {format(today, 'EEEE, do MMMM yyyy')}</div>
+		<div class="dashboard-header flex justify-between items-end mb-8 border-b pb-6">
+			<div>
+				<h1 class="text-3xl font-bold tracking-tight text-gray-900 mb-2">
+					Welcome{session?.user?.user_metadata?.name ? ', ' + session.user.user_metadata.name : ''}
+				</h1>
+				<div class="text-gray-500 font-medium">Today is {format(today, 'EEEE, do MMMM yyyy')}</div>
+			</div>
+
+			<!-- Simplified Weather Content -->
+			{#if weatherData && !isLoading.weather}
+				<div
+					class="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-200"
+				>
+					<img
+						src={weatherData.current.condition.icon}
+						alt={weatherData.current.condition.text}
+						class="w-10 h-10"
+					/>
+					<div class="text-xl font-bold text-slate-700">
+						{Math.round(weatherData.current.temp_c)}°C
+					</div>
+				</div>
+			{/if}
 		</div>
 
-		<!-- Main dashboard grid layout -->
-		<div class="dashboard-grid">
-			<!-- Left Column - Main column now contains only weekly staff & upcoming leave -->
-			<div class="main-column">
-				<!-- Combined Weekly Staff View -->
-				<Card class="weekly-staff-card mb-6">
-					<CardHeader>
-						<CardTitle>Weekly Staffing</CardTitle>
-					</CardHeader>
-					<CardContent>
-						{#if isLoading.staff}
-							<div class="space-y-4">
-								<Skeleton class="h-4 w-full" />
-								<Skeleton class="h-4 w-3/4" />
-								<Skeleton class="h-4 w-1/2" />
-							</div>
-						{:else}
-							<!-- This Week's Staffing Section -->
-							<div class="mb-8">
-								<h3 class="text-lg font-medium mb-4">This Week's Staffing</h3>
-								{#if weeklyStaff.length === 0}
-									<p class="text-muted-foreground text-center py-8">No staff scheduled this week</p>
-								{:else}
-									<div class="weekly-staff-grid">
-										{#each weeklyStaff as dayData, index}
-											<div
-												class="day-column"
-												class:today={format(dayData.date, 'yyyy-MM-dd') ===
-													format(today, 'yyyy-MM-dd')}
-											>
-												<div class="day-header">
-													<div class="day-name">{dayData.dayOfWeek}</div>
-													<div class="day-date">{format(dayData.date, 'do MMM')}</div>
-													<div class="day-iso-date" style="font-size: 0.7rem; color: #999;">
-														{format(dayData.date, 'yyyy-MM-dd')}
-													</div>
-												</div>
-
-												{#if dayData.staff.length === 0}
-													<div class="day-empty">No staff</div>
-												{:else}
-													<!-- Calculate active staff count (excluding those on leave) -->
-													{@const activeStaffCount = dayData.staff.filter(
-														(person) => !person.onLeave
-													).length}
-
-													<!-- Show active count with "staff" label -->
-													<div class="staff-count">{activeStaffCount} staff</div>
-
-													<ul class="staff-list compact">
-														{#each groupStaffByRole(dayData.staff) as { role, staff }, i}
-															{#if i > 0}
-																<li class="role-separator"></li>
-															{/if}
-															{#each staff as person}
-																<li class="staff-item compact" class:on-leave={person.onLeave}>
-																	<span class="staff-name">
-																		{#if person.onLeave}
-																			<span class="leave-icon" aria-label="On leave">🌴</span>
-																		{/if}
-																		{person.name}
-																	</span>
-																</li>
-															{/each}
-														{/each}
-													</ul>
-												{/if}
-											</div>
-										{/each}
-									</div>
-								{/if}
-							</div>
-
-							<!-- Next Week's Staffing Section -->
-							<div>
-								<h3 class="text-lg font-medium mb-4">Next Week's Staffing</h3>
-								{#if nextWeekStaff.length === 0}
-									<p class="text-muted-foreground text-center py-8">No staff scheduled next week</p>
-								{:else}
-									<div class="weekly-staff-grid">
-										{#each nextWeekStaff as dayData, index}
-											<div class="day-column">
-												<div class="day-header">
-													<div class="day-name">{dayData.dayOfWeek}</div>
-													<div class="day-date">{format(dayData.date, 'do MMM')}</div>
-													<div class="day-iso-date" style="font-size: 0.7rem; color: #999;">
-														{format(dayData.date, 'yyyy-MM-dd')}
-													</div>
-												</div>
-
-												{#if dayData.staff.length === 0}
-													<div class="day-empty">No staff</div>
-												{:else}
-													<!-- Calculate active staff count (excluding those on leave) -->
-													{@const activeStaffCount = dayData.staff.filter(
-														(person) => !person.onLeave
-													).length}
-
-													<!-- Show active count with "staff" label -->
-													{#if activeStaffCount > 0}
-														<div class="staff-count">{activeStaffCount} staff</div>
-													{/if}
-
-													<ul class="staff-list compact">
-														{#each sortStaffByRank(dayData.staff) as person}
-															<li class="staff-item compact" class:on-leave={person.onLeave}>
-																<span class="staff-name">
-																	{#if person.onLeave}
-																		<span class="leave-icon">🏖️</span>
-																	{/if}
-																	{person.name}
-																</span>
-															</li>
-														{/each}
-													</ul>
-												{/if}
-											</div>
-										{/each}
-									</div>
-								{/if}
-							</div>
-						{/if}
-					</CardContent>
-				</Card>
-
-				<!-- Upcoming Leave - moved to left column under weekly staff -->
-				<Card class="mb-6">
-					<CardHeader>
-						<CardTitle>Upcoming Leave</CardTitle>
-					</CardHeader>
-					<CardContent>
-						{#if isLoading.leave}
-							<div class="space-y-3">
-								<Skeleton class="h-4 w-full" />
-								<Skeleton class="h-4 w-2/3" />
-								<Skeleton class="h-4 w-1/3" />
-							</div>
-						{:else if leaveRanges.length === 0}
-							<p class="text-muted-foreground text-center py-8">No upcoming leave scheduled</p>
-						{:else}
-							<div class="leave-list-container">
-								{#each leaveRanges as leaveGroup}
-									<div class="leave-section">
-										<div class="leave-date-header">
-											{#if leaveGroup.isRange}
-												{#if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime()) && leaveGroup.endDate instanceof Date && !isNaN(leaveGroup.endDate.getTime())}
-													{format(leaveGroup.startDate, 'EEEE, do MMMM')} - {format(
-														leaveGroup.endDate,
-														'EEEE, do MMMM'
-													)}
-												{:else}
-													Invalid Date Range
-												{/if}
-											{:else if leaveGroup.startDate instanceof Date && !isNaN(leaveGroup.startDate.getTime())}
-												{format(leaveGroup.startDate, 'EEEE, do MMMM')}
-											{:else}
-												Invalid Date
-											{/if}
-										</div>
-										<ul class="leave-staff-list simple">
-											{#each leaveGroup.staff as person}
-												<li class="leave-staff-item simple">
-													{person.name}
-												</li>
-											{/each}
-										</ul>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</CardContent>
-				</Card>
-			</div>
-
-			<!-- Right Column - Now contains performance metrics on top & weather below -->
-			<div class="sidebar-column">
-				<!-- Performance Metrics - moved to top of right column -->
-				<Card class="mb-6">
-					<CardHeader>
-						<CardTitle class="text-base font-medium text-slate-800 flex items-center gap-2">
-							Performance Metrics
-							<Badge variant="secondary" class="text-xs">
-								{format(addDays(today, -1), 'do MMM')}
-							</Badge>
-						</CardTitle>
-					</CardHeader>
-					<CardContent>
-						{#if isLoading.metrics}
-							<div class="space-y-4">
-								<Skeleton class="h-4 w-full" />
-								<Skeleton class="h-4 w-3/4" />
-								<Skeleton class="h-4 w-1/2" />
-							</div>
-						{:else}
-							<div class="flex flex-col gap-4">
-								<!-- B2C Amazon Fulfillment (1.x series) -->
-								<div
-									class="bg-white border border-blue-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow"
-								>
-									<h3 class="text-sm font-semibold text-blue-800 mb-4 uppercase tracking-wide">
-										Fulfillment Operations
-									</h3>
-									<div class="grid grid-cols-2 gap-y-4 gap-x-2">
-										<div>
-											<div class="text-xs text-slate-500 mb-1">Shipments Packed</div>
-											<div class="text-xl font-bold text-slate-900">
-												{metrics.shipmentsPacked}
-											</div>
-										</div>
-
-										<div>
-											<div class="text-xs text-slate-500 mb-1">Hours Worked</div>
-											<div class="text-xl font-bold text-slate-900">
-												{metrics.actualHoursWorked.toFixed(1)}<span
-													class="text-sm font-normal text-slate-500 ml-1">h</span
-												>
-											</div>
-										</div>
-
-										<div>
-											<div class="text-xs text-slate-500 mb-1">Labor Efficiency</div>
-											<div class="text-xl font-bold text-slate-900">
-												{metrics.laborEfficiency.toFixed(1)}<span
-													class="text-sm font-normal text-slate-500 ml-1">/hr</span
-												>
-											</div>
-										</div>
-
-										{#if metrics.laborUtilization > 0}
-											<div>
-												<div class="text-xs text-slate-500 mb-1">Labor Utilization</div>
-												<div class="text-xl font-bold text-slate-900">
-													{metrics.laborUtilization.toFixed(1)}<span
-														class="text-sm font-normal text-slate-500 ml-1">%</span
-													>
-												</div>
-											</div>
-										{/if}
-									</div>
-								</div>
-
-								<!-- B2C Amazon Financials (2.0 series) -->
-								<div
-									class="bg-white border border-green-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow"
-								>
-									<h3 class="text-sm font-semibold text-green-800 mb-4 uppercase tracking-wide">
-										Financial Performance
-									</h3>
-									<div class="grid grid-cols-2 gap-y-4 gap-x-2">
-										<div class="col-span-2">
-											<div class="text-xs text-slate-500 mb-1">Total Sales</div>
-											<div class="text-2xl font-bold text-slate-900">
-												£{metrics.totalSales.toLocaleString('en-GB', {
-													minimumFractionDigits: 2,
-													maximumFractionDigits: 2
-												})}
-											</div>
-										</div>
-
-										<div>
-											<div class="text-xs text-slate-500 mb-1">Amazon Sales</div>
-											<div class="text-lg font-semibold text-slate-900">
-												£{metrics.amazonSales.toLocaleString('en-GB', {
-													minimumFractionDigits: 0,
-													maximumFractionDigits: 0
-												})}
-											</div>
-										</div>
-
-										<div>
-											<div class="text-xs text-slate-500 mb-1">eBay/Shopify</div>
-											<div class="text-lg font-semibold text-slate-900">
-												£{(metrics.ebaySales + metrics.shopifySales).toLocaleString('en-GB', {
-													minimumFractionDigits: 0,
-													maximumFractionDigits: 0
-												})}
-											</div>
-										</div>
-									</div>
-								</div>
-
-								<!-- Orders (2.1 series) -->
-								<div
-									class="bg-white border border-orange-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow"
-								>
-									<h3 class="text-sm font-semibold text-orange-800 mb-4 uppercase tracking-wide">
-										Order Volume
-									</h3>
-									<div class="grid grid-cols-2 gap-4">
-										<div>
-											<div class="text-xs text-slate-500 mb-1">Total Orders</div>
-											<div class="text-xl font-bold text-slate-900">
-												{metrics.linnworksTotalOrders}
-											</div>
-										</div>
-
-										<div>
-											<div class="text-xs text-slate-500 mb-1">Amazon</div>
-											<div class="text-lg font-semibold text-slate-900">
-												{metrics.linnworksAmazonOrders}
-												{#if metrics.amazonOrdersPercent > 0}
-													<span class="text-xs font-normal text-slate-500 block mt-0.5">
-														{metrics.amazonOrdersPercent.toFixed(1)}%
-													</span>
-												{/if}
-											</div>
-										</div>
-
-										<div>
-											<div class="text-xs text-slate-500 mb-1">eBay</div>
-											<div class="text-lg font-semibold text-slate-900">
-												{metrics.linnworksEbayOrders}
-												{#if metrics.ebayOrdersPercent > 0}
-													<span class="text-xs font-normal text-slate-500 block mt-0.5">
-														{metrics.ebayOrdersPercent.toFixed(1)}%
-													</span>
-												{/if}
-											</div>
-										</div>
-
-										<div>
-											<div class="text-xs text-slate-500 mb-1">Shopify</div>
-											<div class="text-lg font-semibold text-slate-900">
-												{metrics.linnworksShopifyOrders}
-												{#if metrics.shopifyOrdersPercent > 0}
-													<span class="text-xs font-normal text-slate-500 block mt-0.5">
-														{metrics.shopifyOrdersPercent.toFixed(1)}%
-													</span>
-												{/if}
-											</div>
-										</div>
-									</div>
-								</div>
-							</div>
-						{/if}
-					</CardContent>
-				</Card>
-
-				<!-- Weather Widget - moved below performance metrics -->
-				<Card>
-					<CardHeader class="pb-3">
-						<div class="flex items-center justify-between">
-							<CardTitle>Weather</CardTitle>
-							<Badge variant="secondary">
-								{weatherData?.location?.name || 'Southampton'}, UK
-							</Badge>
+		<!-- Full Width Layout -->
+		<div class="space-y-8">
+			<!-- Performance Metrics (Full Width - Compact) -->
+			<Card>
+				<CardContent class="p-6">
+					{#if isLoading.metrics}
+						<div class="space-y-4">
+							<Skeleton class="h-4 w-full" />
+							<Skeleton class="h-4 w-3/4" />
+							<Skeleton class="h-4 w-1/2" />
 						</div>
-					</CardHeader>
-					<CardContent>
-						{#if isLoading.weather}
-							<div class="space-y-4">
-								<div class="flex items-center space-x-4">
-									<Skeleton class="h-16 w-16 rounded-full" />
-									<div class="space-y-2">
-										<Skeleton class="h-6 w-20" />
-										<Skeleton class="h-4 w-32" />
+					{:else}
+						<div
+							class="grid grid-cols-1 lg:grid-cols-3 gap-8 divide-y lg:divide-y-0 lg:divide-x divide-slate-100"
+						>
+							<!-- B2C Amazon Fulfillment (1.x series) -->
+							<div class="lg:pr-8">
+								<div class="flex items-center justify-between mb-4">
+									<h3 class="text-sm font-semibold text-blue-800 uppercase tracking-wide">
+										Fulfillment
+									</h3>
+									<Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-5">
+										{format(addDays(today, -1), 'do MMM')}
+									</Badge>
+								</div>
+								<div class="grid grid-cols-4 gap-4">
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Packed
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.shipmentsPacked}
+										</div>
 									</div>
-								</div>
-								<div class="grid grid-cols-2 gap-4">
-									<Skeleton class="h-4 w-full" />
-									<Skeleton class="h-4 w-full" />
-								</div>
-							</div>
-						{:else if weatherError}
-							<div class="text-destructive text-center py-4">{weatherError}</div>
-						{:else if weatherData}
-							<div class="weather-content">
-								<!-- Today's Weather -->
-								<div class="weather-main">
-									<div class="weather-icon-temp">
-										<img
-											src={weatherData.current.condition.icon.replace('64x64', '128x128')}
-											alt={weatherData.current.condition.text}
-											class="weather-icon"
-										/>
+
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Hours
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.actualHoursWorked.toFixed(1)}<span
+												class="text-xs font-normal text-slate-400 ml-0.5">h</span
+											>
+										</div>
+									</div>
+
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Efficiency
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.laborEfficiency.toFixed(1)}<span
+												class="text-xs font-normal text-slate-400 ml-0.5">/hr</span
+											>
+										</div>
+									</div>
+
+									{#if metrics.laborUtilization > 0}
 										<div>
-											<div class="weather-temp">{weatherData.current.temp_c}°C</div>
-											<div class="weather-condition">{weatherData.current.condition.text}</div>
-
-											<!-- High/Low Temperature -->
-											{#if weatherData.forecast?.forecastday?.[0]?.day}
-												{@const maxTemp = Math.max(
-													weatherData.current.temp_c,
-													weatherData.forecast.forecastday[0].day.maxtemp_c
-												)}
-												<div class="high-low">
-													<span class="high">H: {maxTemp.toFixed(0)}°</span>
-													<span class="low"
-														>L: {weatherData.forecast.forecastday[0].day.mintemp_c.toFixed(
-															0
-														)}°</span
-													>
-												</div>
-											{/if}
-										</div>
-									</div>
-									<div class="weather-updated">
-										<span>Updated</span>
-										{weatherData.current.last_updated.split(' ')[1]}
-									</div>
-								</div>
-
-								<!-- Weather Details for Today -->
-								<div class="weather-details">
-									<div class="weather-detail-item">
-										<div class="detail-label">Feels like</div>
-										<div class="detail-value">{weatherData.current.feelslike_c}°C</div>
-									</div>
-									<div class="weather-detail-item">
-										<div class="detail-label">Humidity</div>
-										<div class="detail-value">{weatherData.current.humidity}%</div>
-									</div>
-									<div class="weather-detail-item">
-										<div class="detail-label">Wind</div>
-										<div class="detail-value">
-											{weatherData.current.wind_mph} mph {weatherData.current.wind_dir}
-										</div>
-									</div>
-									<div class="weather-detail-item">
-										<div class="detail-label">Rain chance</div>
-										<div class="detail-value">
-											{weatherData.forecast?.forecastday?.[0]?.day?.daily_chance_of_rain || 0}%
-										</div>
-									</div>
-								</div>
-
-								<!-- Tomorrow's Forecast -->
-								{#if weatherData.forecast?.forecastday?.[1]?.day}
-									<div class="tomorrow-forecast">
-										<div class="tomorrow-header">
-											<span>Tomorrow</span>
-											<span>{format(tomorrow, 'EEE, do')}</span>
-										</div>
-										<div class="tomorrow-content">
-											<div class="tomorrow-icon-temp">
-												<img
-													src={weatherData.forecast.forecastday[1].day.condition.icon}
-													alt={weatherData.forecast.forecastday[1].day.condition.text}
-													class="tomorrow-icon"
-												/>
-												<div class="tomorrow-condition">
-													{weatherData.forecast.forecastday[1].day.condition.text}
-												</div>
+											<div
+												class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											>
+												Util %
 											</div>
-											<div class="tomorrow-temps">
-												<div class="tomorrow-high">
-													H: {weatherData.forecast.forecastday[1].day.maxtemp_c.toFixed(0)}°
-												</div>
-												<div class="tomorrow-low">
-													L: {weatherData.forecast.forecastday[1].day.mintemp_c.toFixed(0)}°
-												</div>
-												<div class="tomorrow-rain">
-													<span class="rain-icon">💧</span>
-													{weatherData.forecast.forecastday[1].day.daily_chance_of_rain}%
-												</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.laborUtilization.toFixed(0)}<span
+													class="text-xs font-normal text-slate-400 ml-0.5">%</span
+												>
 											</div>
 										</div>
-									</div>
-								{/if}
+									{/if}
+								</div>
 							</div>
-						{/if}
-					</CardContent>
-				</Card>
-			</div>
+
+							<!-- B2C Amazon Financials (2.0 series) -->
+							<div class="pt-6 lg:pt-0 lg:px-8">
+								<h3 class="text-sm font-semibold text-green-800 mb-4 uppercase tracking-wide">
+									Financials
+								</h3>
+								<div class="grid grid-cols-3 gap-4">
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Total Sales
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											£{metrics.totalSales.toLocaleString('en-GB', {
+												minimumFractionDigits: 0,
+												maximumFractionDigits: 0
+											})}
+										</div>
+									</div>
+
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Amazon
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											£{metrics.amazonSales.toLocaleString('en-GB', {
+												minimumFractionDigits: 0,
+												maximumFractionDigits: 0
+											})}
+										</div>
+									</div>
+
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Other
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											£{(metrics.ebaySales + metrics.shopifySales).toLocaleString('en-GB', {
+												minimumFractionDigits: 0,
+												maximumFractionDigits: 0
+											})}
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<!-- Orders (2.1 series) -->
+							<div class="pt-6 lg:pt-0 lg:pl-8">
+								<h3 class="text-sm font-semibold text-orange-800 mb-4 uppercase tracking-wide">
+									Orders
+								</h3>
+								<div class="grid grid-cols-4 gap-4">
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Total
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.linnworksTotalOrders}
+										</div>
+									</div>
+
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Amazon
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.linnworksAmazonOrders}
+										</div>
+									</div>
+
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											eBay
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.linnworksEbayOrders}
+										</div>
+									</div>
+
+									<div>
+										<div
+											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+										>
+											Shopify
+										</div>
+										<div class="text-lg font-bold text-slate-900">
+											{metrics.linnworksShopifyOrders}
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
+				</CardContent>
+			</Card>
+
+			<!-- Holiday Calendar Widget (Full Width) -->
+			<Card class="h-[800px]">
+				<CardHeader class="py-3 px-4 border-b">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-6">
+							<CardTitle>Holiday Calendar</CardTitle>
+							<div class="hidden md:flex items-center gap-3">
+								<div class="flex items-center gap-1.5 text-xs text-slate-600">
+									<div class="w-2.5 h-2.5 rounded-[2px] bg-green-50 border border-green-200"></div>
+									<span class="font-medium">Approved</span>
+								</div>
+								<div class="flex items-center gap-1.5 text-xs text-slate-600">
+									<div
+										class="w-2.5 h-2.5 rounded-[2px] bg-yellow-50 border border-yellow-200"
+									></div>
+									<span class="font-medium">Pending</span>
+								</div>
+								<div class="flex items-center gap-1.5 text-xs text-slate-600">
+									<div class="w-2.5 h-2.5 rounded-[2px] bg-red-50 border border-red-200"></div>
+									<span class="font-medium">Rejected</span>
+								</div>
+								<div class="flex items-center gap-1.5 text-xs text-slate-600">
+									<div class="w-2.5 h-2.5 rounded-[2px] bg-gray-50 border border-gray-200"></div>
+									<span class="font-medium">Cancelled</span>
+								</div>
+							</div>
+						</div>
+						<div class="flex items-center gap-1 bg-gray-50 rounded-md p-1 border">
+							<button
+								class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
+								onclick={previousMonth}
+							>
+								<ChevronLeft class="w-4 h-4 text-gray-600" />
+							</button>
+							<button
+								class="px-2 py-0.5 text-xs font-semibold min-w-[90px] text-center"
+								onclick={goToToday}
+							>
+								{format(calendarDate, 'MMMM yyyy')}
+							</button>
+							<button
+								class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
+								onclick={nextMonth}
+							>
+								<ChevronRight class="w-4 h-4 text-gray-600" />
+							</button>
+						</div>
+					</div>
+				</CardHeader>
+				<div class="flex flex-col h-[calc(800px-57px)]">
+					<div class="grid grid-cols-7 border-b bg-gray-50/50">
+						{#each ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as day}
+							<div
+								class="py-2 text-center text-sm font-semibold text-gray-500 uppercase tracking-wider"
+							>
+								{day}
+							</div>
+						{/each}
+					</div>
+					<div class="grid grid-cols-7 auto-rows-fr h-full bg-gray-100 gap-px">
+						{#each calendarDays as day}
+							{@const isCurrentMonth = isSameMonth(day, calendarDate)}
+							{@const isToday = isSameDay(day, new Date())}
+							{@const dayHolidays = getHolidaysForDay(day, holidays)}
+
+							<div
+								class="bg-white p-2 relative h-full flex flex-col {isCurrentMonth
+									? ''
+									: 'bg-gray-50/50 text-gray-300'}"
+							>
+								<div class="flex justify-between items-start mb-1">
+									<span
+										class="text-sm font-medium rounded-full w-7 h-7 flex items-center justify-center {isToday
+											? 'bg-blue-600 text-white'
+											: isCurrentMonth
+												? 'text-gray-700'
+												: 'text-gray-400'}"
+									>
+										{format(day, 'd')}
+									</span>
+								</div>
+								<div class="flex-1 overflow-hidden flex flex-col gap-1">
+									{#each dayHolidays.slice(0, 5) as holiday}
+										{@const nameParts = holiday.employee_name.split(' ')}
+										{@const displayName =
+											nameParts.length > 1
+												? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}`
+												: nameParts[0]}
+										<div
+											class="px-1.5 py-1 text-xs rounded border truncate leading-tight {getStatusStyles(
+												holiday.status
+											)}"
+											title={holiday.employee_name}
+										>
+											{displayName}
+										</div>
+									{/each}
+									{#if dayHolidays.length > 5}
+										<div class="text-xs text-gray-400 pl-1 leading-none">
+											+{dayHolidays.length - 5}
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			</Card>
 		</div>
 	</div>
 
@@ -1950,7 +1870,7 @@
 	/* Dashboard Container */
 	.dashboard-container {
 		padding: 32px;
-		max-width: 1400px;
+		max-width: 100%;
 		margin: 0 auto;
 		font-family: var(--font-sans);
 		color: var(--neutral-900);
@@ -1986,124 +1906,6 @@
 		grid-template-columns: 1fr 380px;
 		gap: 32px;
 		align-items: start;
-	}
-
-	/* Weekly Staff Grid - 3x2 Layout */
-	.weekly-staff-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 16px;
-		margin-top: 20px;
-	}
-
-	.day-column {
-		background: #fff;
-		border: 1px solid var(--neutral-200);
-		border-radius: 12px;
-		padding: 16px;
-		transition: all 0.2s ease;
-	}
-
-	.day-column:hover {
-		border-color: #d1d5db;
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-	}
-
-	.day-column.today {
-		background-color: #f0fdf4; /* Light green tint */
-		border-color: var(--primary);
-		box-shadow: 0 0 0 1px var(--primary);
-	}
-
-	.day-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		border-bottom: 1px solid var(--neutral-100);
-		padding-bottom: 10px;
-		margin-bottom: 12px;
-	}
-
-	.day-name {
-		font-weight: 700;
-		font-size: 1rem;
-		color: var(--neutral-900);
-	}
-
-	.day-date {
-		font-size: 0.875rem;
-		color: #6b7280;
-		font-weight: 500;
-	}
-
-	.day-iso-date {
-		display: none;
-	}
-
-	.day-column.today .day-name {
-		color: var(--primary);
-	}
-
-	.day-empty {
-		color: #9ca3af;
-		font-size: 0.875rem;
-		padding: 20px 0;
-		text-align: center;
-		font-style: italic;
-	}
-
-	.staff-count {
-		background: var(--neutral-100);
-		border-radius: 9999px;
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #4b5563;
-		padding: 2px 10px;
-		display: inline-block;
-		margin-bottom: 12px;
-	}
-
-	.day-column.today .staff-count {
-		background: rgba(26, 127, 76, 0.1);
-		color: var(--primary);
-	}
-
-	/* Staff List */
-	.staff-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.staff-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 6px 0;
-		font-size: 0.9375rem; /* 15px */
-	}
-
-	.role-separator {
-		height: 1px;
-		background: var(--neutral-100);
-		margin: 8px 0;
-	}
-
-	.staff-name {
-		font-weight: 400;
-		color: var(--neutral-800);
-	}
-
-	.staff-item.on-leave .staff-name {
-		color: #9ca3af;
-		text-decoration: line-through;
-	}
-
-	.leave-icon {
-		font-size: 0.9em;
-		margin-right: 6px;
-		text-decoration: none !important;
-		display: inline-block;
 	}
 
 	/* Leave List */
@@ -2283,23 +2085,9 @@
 	}
 
 	/* Responsive */
-	@media (max-width: 1024px) {
-		.dashboard-grid {
-			grid-template-columns: 1fr;
-		}
-
-		.weekly-staff-grid {
-			grid-template-columns: repeat(2, 1fr);
-		}
-	}
-
 	@media (max-width: 640px) {
 		.dashboard-container {
 			padding: 16px;
-		}
-
-		.weekly-staff-grid {
-			grid-template-columns: 1fr;
 		}
 
 		.dashboard-header {

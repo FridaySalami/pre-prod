@@ -26,6 +26,7 @@ export async function GET({ url }) {
         depth,
         height,
         width,
+        is_fragile,
         title,
         tracked,
         weight
@@ -117,11 +118,7 @@ export async function GET({ url }) {
     const materialCost = 0.20;
 
     // Fragile charge lookup
-    const fragileSKUs = new Set([
-      'Bundle - 008', 'Bundle - 008 Prime', 'CRI23', 'CRI30', 'CRI30 - 002 Prime', 'CRI31', 'CRI31 - 005',
-      // ... (full list as in original)
-    ]);
-    const fragileCharge = fragileSKUs.has(sku) ? 0.66 : 0.00;
+    const fragileCharge = (product.is_fragile || false) ? 1.00 : 0.00;
 
     // VAT calculation
     let vatCode = 0;

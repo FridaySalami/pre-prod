@@ -2,7 +2,6 @@ import { db } from '$lib/supabaseServer';
 
 export class CostCalculator {
   private boxSizeCosts!: Map<string, number>;
-  private fragileSKUs!: Set<string>;
   private shippingTable!: any[];
 
   constructor() {
@@ -43,27 +42,6 @@ export class CostCalculator {
       ['Maggi Box', 1.52],
       ['20.25x15.25x6.25', 1.52],
       ['Poly Bag', 0.04]
-    ]);
-
-    // Fragile SKUs
-    this.fragileSKUs = new Set([
-      'Bundle - 008', 'Bundle - 008 Prime', 'CRI23', 'CRI30', 'CRI30 - 002 Prime', 'CRI31', 'CRI31 - 005',
-      'CRI32', 'CRI32 - 020', 'CRI33', 'CRI33 - 014', 'CRI34', 'CRI34 - 017', 'CRI35', 'CRI35 - 027',
-      'CRI36', 'CRI36 - 032', 'CRI37', 'CRI37 - 039', 'CRI38', 'CRI38 - 031', 'CRI39', 'CRI39 - 041',
-      'CRI40', 'CRI40 - 051', 'EQ01 - 012', 'GLA01', 'GLA01 - 012', 'GLA02', 'GLA02 - 016', 'GLA03',
-      'GLA03 - 020', 'GLA04', 'GLA04 - 024', 'GLA05', 'GLA05 - 034', 'GLA06', 'GLA06 - 029', 'GLA07',
-      'GLA07 - 033', 'GLA08', 'GLA08 - 037', 'GLA09', 'GLA09 - 045', 'GLA10', 'GLA10 - 049', 'GLA11',
-      'GLA11 - 053', 'GLA12', 'GLA12 - 057', 'GLA13', 'GLA13 - 061', 'LIG05', 'LIG05 - 007', 'MUG01',
-      'MUG01 - 004', 'MUG02', 'MUG02 - 008', 'MUG03', 'MUG03 - 013', 'MUG04', 'MUG04 - 018', 'MUG05',
-      'MUG05 - 023', 'MUG06', 'MUG06 - 028', 'MUG07', 'MUG07 - 036', 'MUG08', 'MUG08 - 040', 'MUG09',
-      'MUG09 - 044', 'MUG10', 'MUG10 - 048', 'MUG11', 'MUG11 - 052', 'MUG12', 'MUG12 - 056', 'MUG13',
-      'MUG13 - 060', 'PLA01', 'PLA01 - 001', 'PLA02', 'PLA02 - 005', 'PLA03', 'PLA03 - 009', 'PLA04',
-      'PLA04 - 015', 'PLA05', 'PLA05 - 019', 'PLA06', 'PLA06 - 025', 'PLA07', 'PLA07 - 030', 'PLA08',
-      'PLA08 - 035', 'PLA09', 'PLA09 - 043', 'PLA10', 'PLA10 - 047', 'PLA11', 'PLA11 - 055', 'PLA12',
-      'PLA12 - 059', 'TAB01', 'TAB01 - 003', 'TAB02', 'TAB02 - 006', 'TAB03', 'TAB03 - 011', 'TAB04',
-      'TAB04 - 017', 'TAB05', 'TAB05 - 022', 'TAB06', 'TAB06 - 026', 'TAB07', 'TAB07 - 038', 'TAB08',
-      'TAB08 - 042', 'TAB09', 'TAB09 - 046', 'TAB10', 'TAB10 - 050', 'TAB11', 'TAB11 - 054', 'TAB12',
-      'TAB12 - 058', 'TAB13', 'TAB13 - 062'
     ]);
 
     // Shipping table
@@ -116,12 +94,12 @@ export class CostCalculator {
     return price < 10 ? 0.08 : 0.153;
   }
 
-  async calculateProductCosts(sku: string, price: number = 0, options: { isPrime?: boolean, actualTax?: number, quantity?: number } = {}) {
+  async calculateProductCosts(sku: string, price: number = 0, options: { isPrime?: boolean, actualTax?: number, quantity?: number, customFragileCharge?: number } = {}) {
     try {
       // Fetch product data
       const { data: product, error: productError } = await db
         .from('inventory')
-        .select('id, sku, depth, height, width, weight')
+        .select('id, sku, depth, height, width, weight, is_fragile')
         .eq('sku', sku)
         .single();
 
@@ -158,7 +136,7 @@ export class CostCalculator {
     product: any,
     skuMapping: any,
     linnworksData: any,
-    options: { isPrime?: boolean, actualTax?: number, quantity?: number } = {}
+    options: { isPrime?: boolean, actualTax?: number, quantity?: number, customFragileCharge?: number } = {}
   ) {
     try {
       const quantity = options.quantity || 1;
@@ -182,7 +160,14 @@ export class CostCalculator {
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
       const materialCost = 0.35;
-      const fragileCharge = this.fragileSKUs.has(sku) ? 0.66 : 0.00;
+
+      let fragileCharge = 0.00;
+      if (options.customFragileCharge !== undefined) {
+        fragileCharge = options.customFragileCharge;
+      } else {
+        // Default: 1.00 per box. Amortize over quantity assuming 1 box.
+        fragileCharge = (product.is_fragile || false) ? (1.00 / quantity) : 0.00;
+      }
 
       // VAT calculation
       let vatCode = 0;

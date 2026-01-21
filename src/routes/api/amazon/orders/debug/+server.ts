@@ -34,6 +34,29 @@ export async function GET({ url }) {
 
     log(`Is Prime: ${order.is_prime}`);
 
+    // Calculate total fragile units in order for shared charge logic
+    // We need to fetch inventory data for ALL items to know which are fragile
+    const allSkus = order.amazon_order_items
+      .map((i: any) => i.seller_sku)
+      .filter((s: any) => s) as string[];
+
+    const { data: allInventory } = await db
+      .from('inventory')
+      .select('sku, is_fragile')
+      .in('sku', allSkus);
+
+    const fragileInventoryMap = new Map();
+    allInventory?.forEach((p: any) => fragileInventoryMap.set(p.sku, p.is_fragile));
+
+    let totalFragileUnits = 0;
+    order.amazon_order_items.forEach((i: any) => {
+      if (fragileInventoryMap.get(i.seller_sku)) {
+        totalFragileUnits += (i.quantity_ordered || 0);
+      }
+    });
+    log(`Total Fragile Units in Order: ${totalFragileUnits}`);
+
+
     const item = order.amazon_order_items.find((i: any) => i.seller_sku === sku);
     if (!item) {
       log('Item not found in order');
@@ -55,40 +78,47 @@ export async function GET({ url }) {
     if (invError) log(invError);
     else log(product);
 
-    // 2. Fetch Mapping
-    const { data: mapping, error: mapError } = await db
-      .from('sku_asin_mapping')
-      .select('*')
-      .eq('seller_sku', sku)
-      .single();
-    log('Mapping Data:');
-    if (mapError) log(mapError);
-    else log(mapping);
+    // Calculate fragile charge override
+    let customFragileCharge: number | undefined = undefined;
+    const isTargetItemFragile = product?.is_fragile; // or check map
 
-    // 3. Fetch Linnworks
-    const { data: linnworks, error: linnError } = await db
-      .from('linnworks_composition_summary')
-      .select('*')
-      .eq('parent_sku', sku)
-      .single();
-    log('Linnworks Data:');
-    if (linnError) log(linnError);
-    else log(linnworks);
+    if (isTargetItemFragile && totalFragileUnits > 0) {
+      customFragileCharge = 1.00 / totalFragileUnits;
+      log(`Applying shared fragile charge: 1.00 / ${totalFragileUnits} = ${customFragileCharge}`);
+      const { data: mapping, error: mapError } = await db
+        .from('sku_asin_mapping')
+        .select('*')
+        .eq('seller_sku', sku)
+        .single();
+      log('Mapping Data:');
+      if (mapError) log(mapError);
+      else log(mapping);
 
-    // 4. Run Calculator
-    const calculator = new CostCalculator();
-    const costs = await calculator.calculateProductCosts(sku, itemPrice, {
-      isPrime: order.is_prime,
-      actualTax: itemTax,
-      quantity: item.quantity_ordered
-    });
-    log('Calculated Costs:');
-    log(costs);
+      // 3. Fetch Linnworks
+      const { data: linnworks, error: linnError } = await db
+        .from('linnworks_composition_summary')
+        .select('*')
+        .eq('parent_sku', sku)
+        .single();
+      log('Linnworks Data:');
+      if (linnError) log(linnError);
+      else log(linnworks);
 
-    return json({ logs });
+      // 4. Run Calculator
+      const calculator = new CostCalculator();
+      const costs = await calculator.calculateProductCosts(sku, itemPrice, {
+        isPrime: order.is_prime,
+        actualTax: itemTax,
+        quantity: item.quantity_ordered,
+        customFragileCharge
+      });
+      log('Calculated Costs:');
+      log(costs);
 
-  } catch (e) {
-    log(`Error: ${e}`);
-    return json({ logs });
+      return json({ logs });
+
+    } catch (e) {
+      log(`Error: ${e}`);
+      return json({ logs });
+    }
   }
-}

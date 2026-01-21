@@ -77,9 +77,11 @@ const ROUTE_PROTECTION = {
     '/inventory-profit-calculator',
     '/buy-box-monitor', // Moved from manager to authenticated
     '/buy-box-manager', // Moved from admin to authenticated
+    '/holiday-calendar', // New Holiday Calendar feature
     '/api/live-pricing',
     '/api/match-buybox',
-    '/api/match-buy-box'
+    '/api/match-buy-box',
+    '/api/holidays'
   ],
 
   // Routes requiring manager privileges (can read pricing data but not modify)

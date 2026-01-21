@@ -9,7 +9,9 @@
 		Bug,
 		Download,
 		Upload,
-		Mail
+		Mail,
+		ChevronDown,
+		X
 	} from 'lucide-svelte';
 	import { showToast } from '$lib/toastStore';
 	import { onDestroy } from 'svelte';
@@ -233,7 +235,45 @@
 
 		isSyncingProcessing = false;
 		showToast(`Sync Complete. Updated: ${successCount}. Failed/Not Found: ${failCount}`, 'success');
-		setTimeout(() => window.location.reload(), 1500);
+
+		// Run Validation Check
+		// We check ALL filtered orders (not just the ones synced) to ensure the full report is ready
+		const ordersToValidate = (filteredOrders || []).map((o) => o.amazon_order_id);
+		await runValidationCheck(ordersToValidate);
+
+		setTimeout(() => window.location.reload(), 4000);
+	}
+
+	async function runValidationCheck(orderIds: string[]) {
+		showToast('Running Fulfillment Validation...', 'info');
+		try {
+			const res = await fetch('/api/amazon/orders/validate-fulfillment', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					orderIds,
+					sendEmail: true // Enable auto-send if criteria met
+				})
+			});
+			const result = await res.json();
+
+			if (result.success) {
+				if (result.data.reportReady) {
+					let msg = `✅ ${result.message}`;
+					if (result.data.emailSent) msg += ' (Email Sent)';
+					showToast(msg, 'success');
+				} else {
+					showToast(`⚠️ ${result.message} (${result.data.incomplete} incomplete)`, 'warning');
+					console.warn('Incomplete Orders:', result.data.details);
+					// alert(`Validation Report:\n${result.message}\nIncomplete: ${result.data.incomplete}\nCheck Console for details.`);
+				}
+			} else {
+				showToast('Validation Check Failed', 'error');
+			}
+		} catch (e) {
+			console.error(e);
+			showToast('Error running validation', 'error');
+		}
 	}
 
 	async function syncSingleOrder(orderId: string) {
@@ -459,6 +499,61 @@
 	})();
 
 	let showProfitStats = false;
+	let openCostBreakdownId: string | null = null;
+
+	function handleWindowClick(event: MouseEvent) {
+		if (openCostBreakdownId && !(event.target as Element).closest('.cost-breakdown-popup')) {
+			openCostBreakdownId = null;
+		}
+	}
+
+	function getOrderCostBreakdown(order: any) {
+		if (!order.amazon_order_items) return null;
+
+		const breakdown = {
+			productCost: 0,
+			boxCost: 0,
+			materialCost: 0, // Packaging/other material
+			fragileCharge: 0,
+			totalMaterial: 0,
+			shipping: 0,
+			fees: 0,
+			vat: 0,
+			total: 0
+		};
+
+		order.amazon_order_items.forEach((item: any) => {
+			if (item.costs) {
+				const qty = Number(item.quantity_ordered) || 0;
+
+				breakdown.productCost += (Number(item.costs.baseCost) || 0) * qty;
+				breakdown.boxCost += (Number(item.costs.boxCost) || 0) * qty;
+				breakdown.materialCost += (Number(item.costs.materialCost) || 0) * qty;
+				breakdown.fragileCharge += (Number(item.costs.fragileCharge) || 0) * qty;
+
+				// Fallback if individual fields aren't present but total is
+				const matTotal = Number(item.costs.materialTotalCost) || 0;
+				const sumParts =
+					(Number(item.costs.baseCost) || 0) +
+					(Number(item.costs.boxCost) || 0) +
+					(Number(item.costs.materialCost) || 0) +
+					(Number(item.costs.fragileCharge) || 0);
+
+				// If we have a total but parts are 0 (legacy data?), use total as product cost or separate line?
+				// For now trust the parts if recent data, or validation ensures consistency.
+				// Just summing parts for consistency in display.
+
+				breakdown.totalMaterial += matTotal * qty;
+
+				breakdown.shipping += (Number(item.costs.shippingCost) || 0) * qty;
+				breakdown.fees += (Number(item.costs.amazonFee) || 0) * qty;
+				breakdown.vat += (Number(item.costs.salesVat) || 0) * qty;
+			}
+		});
+
+		breakdown.total = breakdown.totalMaterial + breakdown.shipping + breakdown.fees + breakdown.vat;
+		return breakdown;
+	}
 
 	$: sortedOrders = [...filteredOrders].sort((a, b) => {
 		// Use cached values for sorting
@@ -901,6 +996,8 @@
 		document.body.removeChild(link);
 	}
 </script>
+
+<svelte:window onclick={handleWindowClick} />
 
 {#if $navigating || isLoadingOrders}
 	<div
@@ -1629,11 +1726,115 @@
 									<td class="p-4 align-middle">
 										{formatCurrency(order.order_total, order.currency_code)}
 									</td>
-									<td class="p-4 align-middle">
+									<td class="p-4 align-middle relative">
 										{#if totalCost > 0}
-											<span class="font-medium"
-												>{formatCurrency(totalCost, order.currency_code)}</span
-											>
+											<div class="flex items-center gap-1">
+												<span class="font-medium"
+													>{formatCurrency(totalCost, order.currency_code)}</span
+												>
+												<button
+													class="text-muted-foreground hover:text-foreground transition-colors p-1 cost-breakdown-trigger"
+													onclick={(e) => {
+														e.stopPropagation();
+														openCostBreakdownId =
+															openCostBreakdownId === order.amazon_order_id
+																? null
+																: order.amazon_order_id;
+													}}
+													title="View Cost Breakdown"
+												>
+													<ChevronDown class="h-4 w-4" />
+												</button>
+											</div>
+
+											{#if openCostBreakdownId === order.amazon_order_id}
+												{@const breakdown = getOrderCostBreakdown(order)}
+												{#if breakdown}
+													<div
+														class="absolute z-50 top-8 left-0 mt-1 w-64 rounded-md border bg-white dark:bg-slate-950 shadow-lg p-3 cost-breakdown-popup"
+													>
+														<div class="flex items-center justify-between mb-3 border-b pb-2">
+															<span class="font-semibold text-xs uppercase tracking-wider"
+																>Cost Breakdown</span
+															>
+															<button
+																class="text-muted-foreground hover:text-foreground"
+																onclick={(e) => {
+																	e.stopPropagation();
+																	openCostBreakdownId = null;
+																}}
+															>
+																<X class="h-3 w-3" />
+															</button>
+														</div>
+														<div class="grid gap-1.5 text-xs">
+															<div
+																class="flex justify-between items-center pl-2 border-l-2 border-slate-100"
+															>
+																<span class="text-muted-foreground">Product Cost:</span>
+																<span
+																	>{formatCurrency(
+																		breakdown.productCost,
+																		order.currency_code
+																	)}</span
+																>
+															</div>
+															<div
+																class="flex justify-between items-center pl-2 border-l-2 border-slate-100"
+															>
+																<span class="text-muted-foreground">Material Cost:</span>
+																<span
+																	>{formatCurrency(
+																		breakdown.materialCost,
+																		order.currency_code
+																	)}</span
+																>
+															</div>
+															<div
+																class="flex justify-between items-center pl-2 border-l-2 border-slate-100"
+															>
+																<span class="text-muted-foreground">Box Cost:</span>
+																<span>{formatCurrency(breakdown.boxCost, order.currency_code)}</span
+																>
+															</div>
+															{#if breakdown.fragileCharge > 0}
+																<div
+																	class="flex justify-between items-center pl-2 border-l-2 border-slate-100"
+																>
+																	<span class="text-muted-foreground">Fragile Charge:</span>
+																	<span
+																		>{formatCurrency(
+																			breakdown.fragileCharge,
+																			order.currency_code
+																		)}</span
+																	>
+																</div>
+															{/if}
+
+															<div class="my-1 border-t border-dashed"></div>
+
+															<div class="flex justify-between items-center">
+																<span class="text-muted-foreground">Shipping (Alloc):</span>
+																<span
+																	>{formatCurrency(breakdown.shipping, order.currency_code)}</span
+																>
+															</div>
+															<div class="flex justify-between items-center">
+																<span class="text-muted-foreground">Amazon Fees:</span>
+																<span>{formatCurrency(breakdown.fees, order.currency_code)}</span>
+															</div>
+															<div class="flex justify-between items-center">
+																<span class="text-muted-foreground">VAT:</span>
+																<span>{formatCurrency(breakdown.vat, order.currency_code)}</span>
+															</div>
+															<div class="border-t pt-2 mt-1 flex justify-between font-bold">
+																<span>Total:</span>
+																<span>{formatCurrency(breakdown.total, order.currency_code)}</span>
+															</div>
+														</div>
+													</div>
+												{/if}
+											{/if}
 										{:else}
 											<span class="text-muted-foreground">-</span>
 										{/if}

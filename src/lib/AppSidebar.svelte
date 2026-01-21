@@ -177,6 +177,12 @@
 			title: 'Core Operations'
 		},
 		{
+			title: 'Holiday Calendar',
+			url: '/holiday-calendar',
+			icon: 'date_range',
+			requiredRole: 'user'
+		},
+		{
 			title: 'Schedules',
 			url: '/schedules',
 			icon: 'calendar_today',
