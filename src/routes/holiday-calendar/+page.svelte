@@ -20,7 +20,9 @@
 		ChevronRight,
 		RefreshCw,
 		Calendar as CalendarIcon,
-		List as ListIcon
+		List as ListIcon,
+		UserPlus,
+		UserMinus
 	} from 'lucide-svelte';
 
 	export let data;
@@ -28,6 +30,138 @@
 	let syncing = false;
 	let syncMessage = '';
 	let viewMode: 'calendar' | 'list' = 'calendar';
+
+	// Employee Add State
+	let isAddEmployeeOpen = false;
+	let availableUsers: any[] = [];
+	let loadingUsers = false;
+	let fetchError = '';
+	let selectedUser: any = null;
+	let selectedRole = 'Warehouse Operative';
+	let addingEmployee = false;
+
+	async function openAddEmployee() {
+		isAddEmployeeOpen = true;
+		availableUsers = [];
+		selectedUser = null;
+		loadingUsers = true;
+		fetchError = '';
+
+		try {
+			const res = await fetch('/api/employees/fetch-external', { method: 'POST' });
+			if (res.ok) {
+				const data = await res.json();
+				console.log('Received users from API:', data.users);
+				availableUsers = data.users || [];
+			} else {
+				const err = await res.json().catch(() => ({}));
+				fetchError = err.error || 'Failed to fetch external users';
+				console.error('Failed to fetch external users', err);
+			}
+		} catch (e) {
+			console.error(e);
+			fetchError = 'Network error fetching users';
+		} finally {
+			loadingUsers = false;
+		}
+	}
+
+	async function handleAddEmployee() {
+		if (!selectedUser) return;
+		addingEmployee = true;
+
+		try {
+			const fullName = `${selectedUser.firstname} ${selectedUser.surname}`;
+
+			// 1. Add Employee to DB
+			const addRes = await fetch('/api/employees/add', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: fullName, role: selectedRole })
+			});
+
+			if (!addRes.ok) {
+				const err = await addRes.json();
+				if (addRes.status === 409) {
+					alert(`Employee ${fullName} is already tracked.`);
+				} else {
+					alert('Error adding employee: ' + err.error);
+				}
+				return;
+			}
+
+			// 2. Trigger Sync
+			await syncHolidays();
+			isAddEmployeeOpen = false;
+		} catch (e) {
+			console.error('Error adding employee:', e);
+			alert('An error occurred.');
+		} finally {
+			addingEmployee = false;
+		}
+	}
+
+	// Employee Remove State
+	let isStopTrackingOpen = false;
+	let trackedUsers: any[] = [];
+	let loadingTrackedUsers = false;
+	let selectedTrackedUser: any = null;
+	let removingEmployee = false;
+
+	async function openStopTracking() {
+		isStopTrackingOpen = true;
+		trackedUsers = [];
+		selectedTrackedUser = null;
+		loadingTrackedUsers = true;
+
+		try {
+			const res = await fetch('/api/employees/list');
+			if (res.ok) {
+				const data = await res.json();
+				trackedUsers = data.employees || [];
+			} else {
+				console.error('Failed to fetch tracked employees');
+			}
+		} catch (e) {
+			console.error(e);
+		} finally {
+			loadingTrackedUsers = false;
+		}
+	}
+
+	async function handleStopTracking() {
+		if (!selectedTrackedUser) return;
+		if (
+			!confirm(
+				`Are you sure you want to stop tracking ${selectedTrackedUser.name}? This will remove them from the system.`
+			)
+		)
+			return;
+		removingEmployee = true;
+
+		try {
+			const res = await fetch('/api/employees/delete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ id: selectedTrackedUser.id })
+			});
+
+			if (!res.ok) {
+				const err = await res.json();
+				alert('Error removing employee: ' + err.error);
+				return;
+			}
+
+			// Trigger Sync to refresh
+			await syncHolidays();
+			isStopTrackingOpen = false;
+		} catch (e) {
+			console.error('Error removing employee:', e);
+			alert('An error occurred.');
+		} finally {
+			removingEmployee = false;
+		}
+	}
 
 	// Calendar state
 	let currentDate = new Date();
@@ -135,7 +269,7 @@
 					class="px-3 py-1 rounded-md text-sm font-medium transition-colors {viewMode === 'calendar'
 						? 'bg-white shadow text-blue-600'
 						: 'text-gray-600 hover:text-gray-900'}"
-					on:click={() => (viewMode = 'calendar')}
+					onclick={() => (viewMode = 'calendar')}
 				>
 					Calendar
 				</button>
@@ -143,7 +277,7 @@
 					class="px-3 py-1 rounded-md text-sm font-medium transition-colors {viewMode === 'list'
 						? 'bg-white shadow text-blue-600'
 						: 'text-gray-600 hover:text-gray-900'}"
-					on:click={() => (viewMode = 'list')}
+					onclick={() => (viewMode = 'list')}
 				>
 					List
 				</button>
@@ -151,6 +285,20 @@
 		</div>
 
 		<div class="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+			<button
+				onclick={openAddEmployee}
+				class="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg border transition-colors shadow-sm"
+			>
+				<UserPlus class="w-4 h-4" />
+				Add Employee
+			</button>
+			<button
+				onclick={openStopTracking}
+				class="flex items-center gap-2 bg-white hover:bg-gray-50 text-red-600 px-4 py-2 rounded-lg border border-red-200 transition-colors shadow-sm"
+			>
+				<UserMinus class="w-4 h-4" />
+				Stop Tracking
+			</button>
 			{#if syncMessage}
 				<span
 					class="text-sm {syncMessage.includes('Error')
@@ -159,7 +307,7 @@
 				>
 			{/if}
 			<button
-				on:click={syncHolidays}
+				onclick={syncHolidays}
 				disabled={syncing}
 				class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50 transition-colors shadow-sm"
 			>
@@ -202,16 +350,16 @@
 						{format(currentDate, 'MMMM yyyy')}
 					</h2>
 					<div class="flex items-center bg-white rounded-md border shadow-sm">
-						<button class="p-1.5 hover:bg-gray-100 rounded-l-md border-r" on:click={previousMonth}>
+						<button class="p-1.5 hover:bg-gray-100 rounded-l-md border-r" onclick={previousMonth}>
 							<ChevronLeft class="w-5 h-5 text-gray-600" />
 						</button>
 						<button
 							class="px-3 py-1.5 text-sm font-medium hover:bg-gray-100 text-gray-700"
-							on:click={goToToday}
+							onclick={goToToday}
 						>
 							Today
 						</button>
-						<button class="p-1.5 hover:bg-gray-100 rounded-r-md border-l" on:click={nextMonth}>
+						<button class="p-1.5 hover:bg-gray-100 rounded-r-md border-l" onclick={nextMonth}>
 							<ChevronRight class="w-5 h-5 text-gray-600" />
 						</button>
 					</div>
@@ -367,6 +515,122 @@
 		</div>
 	{/if}
 </div>
+
+{#if isAddEmployeeOpen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+		<div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl space-y-6 relative">
+			<div class="space-y-1.5">
+				<h3 class="text-lg font-semibold leading-none tracking-tight">
+					Add Employee to Monitoring
+				</h3>
+				<p class="text-sm text-gray-500">
+					Select an employee from HR Toolkit to add to the holiday tracking system.
+				</p>
+			</div>
+
+			{#if fetchError}
+				<div class="p-3 text-sm text-red-600 bg-red-50 rounded-md border border-red-200">
+					{fetchError}
+				</div>
+			{/if}
+
+			<div class="space-y-2">
+				<label
+					for="employee"
+					class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+				>
+					Select Employee
+				</label>
+				<select
+					id="employee"
+					bind:value={selectedUser}
+					disabled={loadingUsers}
+					class="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					<option value="">{loadingUsers ? 'Loading employees...' : 'Select an employee...'}</option>
+					{#each availableUsers.sort((a, b) => a.firstname.localeCompare(b.firstname)) as user}
+						<option value={user}>
+							{user.firstname}
+							{user.surname}
+						</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="flex justify-end gap-3">
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white hover:bg-gray-100 hover:text-gray-900 h-10 px-4 py-2"
+					onclick={() => (isAddEmployeeOpen = false)}
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-gray-900 text-gray-50 hover:bg-gray-900/90 h-10 px-4 py-2"
+					onclick={handleAddEmployee}
+					disabled={!selectedUser || addingEmployee}
+				>
+					{addingEmployee ? 'Adding...' : 'Add Employee'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if isStopTrackingOpen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+		<div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl space-y-6 relative">
+			<div class="space-y-1.5">
+				<h3 class="text-lg font-semibold leading-none tracking-tight">Stop Tracking Employee</h3>
+				<p class="text-sm text-gray-500">
+					Select an employee to remove from the holiday tracking system.
+				</p>
+			</div>
+
+			<div class="space-y-2">
+				<label
+					for="tracked-employee"
+					class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+				>
+					Select Employee
+				</label>
+				<select
+					id="tracked-employee"
+					bind:value={selectedTrackedUser}
+					disabled={loadingTrackedUsers}
+					class="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					<option value="">{loadingTrackedUsers ? 'Loading employees...' : 'Select an employee...'}</option>
+					{#each trackedUsers as user}
+						<option value={user}>
+							{user.name}
+							({user.role})
+						</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="flex justify-end gap-3">
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white hover:bg-gray-100 hover:text-gray-900 h-10 px-4 py-2"
+					onclick={() => (isStopTrackingOpen = false)}
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-red-600 text-white hover:bg-red-700 h-10 px-4 py-2"
+					onclick={handleStopTracking}
+					disabled={!selectedTrackedUser || removingEmployee}
+				>
+					{removingEmployee ? 'Removing...' : 'Stop Tracking'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.custom-scrollbar::-webkit-scrollbar {

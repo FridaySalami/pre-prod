@@ -183,12 +183,6 @@
 			requiredRole: 'user'
 		},
 		{
-			title: 'Schedules',
-			url: '/schedules',
-			icon: 'calendar_today',
-			requiredRole: 'user'
-		},
-		{
 			title: 'Buy Box Manager',
 			url: '/buy-box-manager',
 			icon: 'manage_search',
