@@ -85,40 +85,42 @@ export async function GET({ url }) {
     if (isTargetItemFragile && totalFragileUnits > 0) {
       customFragileCharge = 1.00 / totalFragileUnits;
       log(`Applying shared fragile charge: 1.00 / ${totalFragileUnits} = ${customFragileCharge}`);
-      const { data: mapping, error: mapError } = await db
-        .from('sku_asin_mapping')
-        .select('*')
-        .eq('seller_sku', sku)
-        .single();
-      log('Mapping Data:');
-      if (mapError) log(mapError);
-      else log(mapping);
-
-      // 3. Fetch Linnworks
-      const { data: linnworks, error: linnError } = await db
-        .from('linnworks_composition_summary')
-        .select('*')
-        .eq('parent_sku', sku)
-        .single();
-      log('Linnworks Data:');
-      if (linnError) log(linnError);
-      else log(linnworks);
-
-      // 4. Run Calculator
-      const calculator = new CostCalculator();
-      const costs = await calculator.calculateProductCosts(sku, itemPrice, {
-        isPrime: order.is_prime,
-        actualTax: itemTax,
-        quantity: item.quantity_ordered,
-        customFragileCharge
-      });
-      log('Calculated Costs:');
-      log(costs);
-
-      return json({ logs });
-
-    } catch (e) {
-      log(`Error: ${e}`);
-      return json({ logs });
     }
+
+    const { data: mapping, error: mapError } = await db
+      .from('sku_asin_mapping')
+      .select('*')
+      .eq('seller_sku', sku)
+      .single();
+    log('Mapping Data:');
+    if (mapError) log(mapError);
+    else log(mapping);
+
+    // 3. Fetch Linnworks
+    const { data: linnworks, error: linnError } = await db
+      .from('linnworks_composition_summary')
+      .select('*')
+      .eq('parent_sku', sku)
+      .single();
+    log('Linnworks Data:');
+    if (linnError) log(linnError);
+    else log(linnworks);
+
+    // 4. Run Calculator
+    const calculator = new CostCalculator();
+    const costs = await calculator.calculateProductCosts(sku, itemPrice, {
+      isPrime: order.is_prime,
+      actualTax: itemTax,
+      quantity: item.quantity_ordered,
+      customFragileCharge
+    });
+    log('Calculated Costs:');
+    log(costs);
+
+    return json({ logs });
+
+  } catch (e) {
+    log(`Error: ${e}`);
+    return json({ logs });
   }
+}
