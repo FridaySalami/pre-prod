@@ -1,7 +1,9 @@
 
-import { render } from 'better-svelte-email';
+import { Renderer } from 'better-svelte-email';
 // @ts-ignore
 import DailyReport from '$lib/emails/DailyReport.svelte';
+
+const renderer = new Renderer();
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-GB', {
@@ -26,7 +28,7 @@ function calculateOrderCost(order: any): number {
   }, 0);
 }
 
-export function generateDailyReportHtml(orders: any[], date: Date) {
+export async function generateDailyReportHtml(orders: any[], date: Date) {
   const validOrders = orders.filter(o => o.order_status !== 'Pending');
   const dateStr = date.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -100,8 +102,7 @@ export function generateDailyReportHtml(orders: any[], date: Date) {
   };
 
   // Render the Svelte component to HTML
-  const html = render({
-    template: DailyReport,
+  const html = await renderer.render(DailyReport, {
     props: emailProps
   });
 

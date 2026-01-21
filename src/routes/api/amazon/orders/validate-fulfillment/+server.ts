@@ -103,7 +103,7 @@ export async function POST({ request }) {
       const fullOrdersData = await fetchOrdersData(reportDate, reportEndDate, undefined);
 
       // 2. Generate HTML
-      const html = generateDailyReportHtml(fullOrdersData, reportDate);
+      const html = await generateDailyReportHtml(fullOrdersData, reportDate);
 
       // 3. Send Email
       const recipient = env.ALERT_EMAIL_TO || 'jack.w@parkersfoodservice.co.uk';
