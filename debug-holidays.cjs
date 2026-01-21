@@ -1,9 +1,15 @@
 const axios = require('axios');
+require('dotenv').config();
 
 async function testApi() {
-  const clientId = 'SqVPehHyHNQehV8msK0FBhfpPnQqircl7aAZ';
-  const clientSecret = 'YQmuM4loXH73wqx2S7qu1EWr932nTjxLDGlh';
-  const apiUrl = 'https://api.myhrtoolkit.com';
+  const clientId = process.env.MYHRTOOLKIT_CLIENT_ID;
+  const clientSecret = process.env.MYHRTOOLKIT_CLIENT_SECRET;
+  const apiUrl = process.env.MYHRTOOLKIT_API_URL;
+
+  if (!clientId || !clientSecret || !apiUrl) {
+    console.error("Missing env vars");
+    return;
+  }
 
   try {
     console.log("Authenticating...");

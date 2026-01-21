@@ -4,10 +4,10 @@ require('dotenv').config();
 async function fetchHolidays() {
   const clientId = process.env.MYHRTOOLKIT_CLIENT_ID;
   const clientSecret = process.env.MYHRTOOLKIT_CLIENT_SECRET;
-  const apiUrl = process.env.MYHRTOOLKIT_API_URL || 'https://api.myhrtoolkit.com';
+  const apiUrl = process.env.MYHRTOOLKIT_API_URL;
 
-  if (!clientId || !clientSecret) {
-    console.error("Missing MYHRTOOLKIT credentials in .env");
+  if (!clientId || !clientSecret || !apiUrl) {
+    console.error("Missing MYHRTOOLKIT credentials or API URL in .env");
     return;
   }
 

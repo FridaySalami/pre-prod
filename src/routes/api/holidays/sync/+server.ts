@@ -8,10 +8,10 @@ export async function POST({ locals }) {
   // 1. Check Env Vars
   const clientId = env.MYHRTOOLKIT_CLIENT_ID;
   const clientSecret = env.MYHRTOOLKIT_CLIENT_SECRET;
-  const apiUrl = env.MYHRTOOLKIT_API_URL || 'https://api.myhrtoolkit.com';
+  const apiUrl = env.MYHRTOOLKIT_API_URL;
 
-  if (!clientId || !clientSecret) {
-    return json({ error: 'Missing MYHRTOOLKIT credentials' }, { status: 500 });
+  if (!clientId || !clientSecret || !apiUrl) {
+    return json({ error: 'Missing MYHRTOOLKIT credentials or API URL' }, { status: 500 });
   }
 
   try {

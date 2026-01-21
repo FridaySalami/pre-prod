@@ -15,7 +15,10 @@ async function testApi() {
 
   try {
     console.log("Authenticating with myHRtoolkit...");
-    const authUrl = 'https://api.myhrtoolkit.com/oauth/access_token';
+    const apiUrl = process.env.MYHRTOOLKIT_API_URL;
+    if (!apiUrl) throw new Error("Missing MYHRTOOLKIT_API_URL");
+
+    const authUrl = `${apiUrl}/oauth/access_token`;
 
     // The API expects form-url-encoded data
     const authBody = `grant_type=client_credentials&client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}`;

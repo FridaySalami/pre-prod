@@ -6,7 +6,10 @@ async function attemptAuth(id, secret, method = 'body') {
   console.log(`Client ID: ${id.substring(0, 4)}...`);
   console.log(`Client Secret: ${secret.substring(0, 4)}...`);
 
-  const authUrl = 'https://api.myhrtoolkit.com/oauth/access_token';
+  const apiUrl = process.env.MYHRTOOLKIT_API_URL;
+  if (!apiUrl) throw new Error("Missing MYHRTOOLKIT_API_URL");
+
+  const authUrl = `${apiUrl}/oauth/access_token`;
 
   try {
     let response;
