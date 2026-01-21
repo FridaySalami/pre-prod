@@ -263,12 +263,14 @@
 
 						<div class="space-y-1 overflow-y-auto max-h-[85px] custom-scrollbar">
 							{#each dayHolidays.slice(0, 3) as holiday}
+								{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
 								<div
 									class="px-1.5 py-1 text-xs rounded border truncate {getStatusStyles(
 										holiday.status,
 										false
 									)}"
-									title="{holiday.employee_name} - {holiday.notes || 'Holiday'}"
+									title="{holiday.employee_name}{isHalfDay ? ' (Half Day)' : ''} - {holiday.notes ||
+										'Holiday'}"
 								>
 									{holiday.employee_name.split(' ')[0]}
 									{holiday.employee_name
@@ -276,6 +278,7 @@
 										.slice(1)
 										.map((n: string) => n[0])
 										.join('')}
+									{isHalfDay ? ' (Half Day)' : ''}
 								</div>
 							{/each}
 							{#if dayHolidays.length > 3}

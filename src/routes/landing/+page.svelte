@@ -1775,6 +1775,7 @@
 								<div class="flex-1 overflow-hidden flex flex-col gap-1">
 									{#each dayHolidays.slice(0, 5) as holiday}
 										{@const nameParts = holiday.employee_name.split(' ')}
+										{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
 										{@const displayName =
 											nameParts.length > 1
 												? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}`
@@ -1783,9 +1784,9 @@
 											class="px-1.5 py-1 text-xs rounded border truncate leading-tight {getStatusStyles(
 												holiday.status
 											)}"
-											title={holiday.employee_name}
+											title="{holiday.employee_name}{isHalfDay ? ' (Half Day)' : ''}"
 										>
-											{displayName}
+											{displayName}{isHalfDay ? ' (Half Day)' : ''}
 										</div>
 									{/each}
 									{#if dayHolidays.length > 5}
