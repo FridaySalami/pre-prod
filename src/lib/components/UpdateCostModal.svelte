@@ -2,17 +2,11 @@
 	import { Button } from '$lib/shadcn/ui/button';
 	import { Input } from '$lib/shadcn/ui/input';
 	import { Label } from '$lib/shadcn/ui/label';
-	import {
-		Dialog,
-		DialogContent,
-		DialogDescription,
-		DialogFooter,
-		DialogHeader,
-		DialogTitle
-	} from '$lib/shadcn/ui/dialog';
+	// Replaced Shadcn Dialog with custom implementation to fix width issues
+	import { fade, scale } from 'svelte/transition';
 	import { showToast } from '$lib/toastStore';
 	import { createEventDispatcher } from 'svelte';
-	import { Copy, Check } from 'lucide-svelte';
+	import { Copy, Check, X } from 'lucide-svelte';
 
 	export let open = false;
 	export let sku = '';
@@ -211,14 +205,47 @@
 			loading = false;
 		}
 	}
+	function close() {
+		open = false;
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') close();
+	}
 </script>
 
-<Dialog bind:open>
-	<DialogContent class="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
-		<DialogHeader>
-			<DialogTitle>Update Cost Data</DialogTitle>
-			<DialogDescription>
-				<span class="flex items-center gap-2">
+<svelte:window on:keydown={handleKeydown} />
+
+{#if open}
+	<button
+		class="fixed inset-0 z-50 bg-black/80 border-none cursor-default w-full h-full block"
+		transition:fade={{ duration: 150 }}
+		onclick={close}
+		tabindex="-1"
+		aria-label="Close modal"
+		type="button"
+	></button>
+
+	<div
+		class="fixed left-[50%] top-[50%] z-50 grid w-full max-w-[95vw] sm:max-w-[1000px] translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg max-h-[90vh] overflow-y-auto"
+		transition:scale={{ duration: 150, start: 0.95 }}
+		role="dialog"
+		aria-modal="true"
+	>
+		<div class="flex flex-col gap-2 text-center sm:text-left">
+			<div class="flex justify-between items-start">
+				<h2 class="text-lg font-semibold leading-none tracking-tight">Update Cost Data</h2>
+				<button
+					onclick={close}
+					class="opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
+				>
+					<X class="h-4 w-4" />
+					<span class="sr-only">Close</span>
+				</button>
+			</div>
+
+			<div class="text-sm text-muted-foreground">
+				<span class="flex items-center gap-2 flex-wrap">
 					<span
 						>Enter the missing information for SKU: <span class="font-mono font-bold">{sku}</span
 						></span
@@ -231,8 +258,9 @@
 						{/if}
 					</Button>
 				</span>
-			</DialogDescription>
-		</DialogHeader>
+			</div>
+		</div>
+
 		<div class="grid gap-6 py-4">
 			{#if suggestions.length > 0}
 				<div class="col-span-4">
@@ -267,153 +295,247 @@
 				</div>
 			{/if}
 
-			<div class="grid gap-4 border rounded-lg p-4 bg-card">
-				<h3 class="font-semibold text-sm text-muted-foreground mb-2">Financials</h3>
-				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-2">
-						<Label for="product_cost">Product Cost</Label>
-						<Input id="product_cost" bind:value={product_cost} type="number" step="0.01" />
-					</div>
-					<div class="space-y-2">
-						<Label for="material_cost">Material Cost</Label>
-						<Input
-							id="material_cost"
-							bind:value={material_cost}
-							type="number"
-							step="0.01"
-							readonly
-							class="bg-muted"
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="box_cost">Box Cost</Label>
-						<Input
-							id="box_cost"
-							bind:value={box_cost}
-							type="number"
-							step="0.01"
-							readonly
-							class="bg-muted"
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="vat">VAT Rate (%)</Label>
-						<Input id="vat" bind:value={vat_rate} type="number" />
-					</div>
-				</div>
-
-				<div class="rounded-md bg-muted p-3 text-sm space-y-1">
-					<div class="flex justify-between">
-						<span class="text-muted-foreground">Product Cost:</span>
-						<span>£{(parseFloat(product_cost) || 0).toFixed(2)}</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-muted-foreground">Material Cost:</span>
-						<span>£{(parseFloat(material_cost) || 0).toFixed(2)}</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-muted-foreground">Box Cost:</span>
-						<span>£{(parseFloat(box_cost) || 0).toFixed(2)}</span>
-					</div>
-					{#if is_fragile}
-						<div class="flex justify-between">
-							<span class="text-muted-foreground">Fragile Charge:</span>
-							<span>£1.00</span>
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+				<!-- Left Column: Financials & Summary -->
+				<div class="space-y-6">
+					<div class="grid gap-4 border rounded-lg p-4 bg-card shadow-sm">
+						<h3 class="font-semibold text-sm text-primary flex items-center gap-2">
+							Files & Costs
+						</h3>
+						<!-- Changed from grid-cols-2 to grid-cols-1 to prevent cramping inputs on narrower screens -->
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							<div class="space-y-2">
+								<Label for="product_cost" class="text-xs font-medium">Product Cost</Label>
+								<div class="relative">
+									<span class="absolute left-3 top-2.5 text-muted-foreground text-xs">£</span>
+									<Input
+										id="product_cost"
+										bind:value={product_cost}
+										type="number"
+										step="0.01"
+										class="pl-6 h-9"
+									/>
+								</div>
+							</div>
+							<div class="space-y-2">
+								<Label for="material_cost" class="text-xs font-medium">Material Cost</Label>
+								<div class="relative">
+									<span class="absolute left-3 top-2.5 text-muted-foreground text-xs">£</span>
+									<Input
+										id="material_cost"
+										bind:value={material_cost}
+										type="number"
+										step="0.01"
+										readonly
+										class="pl-6 h-9 bg-muted"
+									/>
+								</div>
+							</div>
+							<div class="space-y-2">
+								<Label for="box_cost" class="text-xs font-medium">Box Cost</Label>
+								<div class="relative">
+									<span class="absolute left-3 top-2.5 text-muted-foreground text-xs">£</span>
+									<Input
+										id="box_cost"
+										bind:value={box_cost}
+										type="number"
+										step="0.01"
+										readonly
+										class="pl-6 h-9 bg-muted"
+									/>
+								</div>
+							</div>
+							<div class="space-y-2">
+								<Label for="vat" class="text-xs font-medium">VAT Rate (%)</Label>
+								<div class="relative">
+									<Input id="vat" bind:value={vat_rate} type="number" class="pl-3 h-9" />
+									<span class="absolute right-3 top-2.5 text-muted-foreground text-xs">%</span>
+								</div>
+							</div>
 						</div>
-					{/if}
-					<div class="flex justify-between border-t border-border/50 pt-1 mt-1">
-						<span class="text-muted-foreground font-medium">Net Cost:</span>
-						<span class="font-medium">£{baseCost.toFixed(2)}</span>
 					</div>
-					<div class="flex justify-between">
-						<span class="text-muted-foreground">VAT ({vat_rate}%):</span>
-						<span>£{vatAmount.toFixed(2)}</span>
-					</div>
-					<div class="flex justify-between font-bold border-t border-border pt-1 mt-1">
-						<span>Total Cost (Inc VAT):</span>
-						<span>£{totalCost.toFixed(2)}</span>
-					</div>
-				</div>
-			</div>
 
-			<div class="grid gap-4 border rounded-lg p-4 bg-card">
-				<h3 class="font-semibold text-sm text-muted-foreground mb-2">Logistics</h3>
-				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-2">
-						<Label for="shipping">Shipping Group</Label>
-						<select
-							id="shipping"
-							bind:value={merchant_shipping_group}
-							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+					<div class="rounded-lg bg-muted/40 p-4 border text-sm space-y-2">
+						<div class="flex justify-between items-center">
+							<span class="text-muted-foreground text-xs uppercase tracking-wider font-medium"
+								>Product</span
+							>
+							<span class="font-mono">£{(parseFloat(product_cost) || 0).toFixed(2)}</span>
+						</div>
+						<div class="flex justify-between items-center">
+							<span class="text-muted-foreground text-xs uppercase tracking-wider font-medium"
+								>Material</span
+							>
+							<span class="font-mono">£{(parseFloat(material_cost) || 0).toFixed(2)}</span>
+						</div>
+						<div class="flex justify-between items-center">
+							<span class="text-muted-foreground text-xs uppercase tracking-wider font-medium"
+								>Box</span
+							>
+							<span class="font-mono">£{(parseFloat(box_cost) || 0).toFixed(2)}</span>
+						</div>
+						{#if is_fragile}
+							<div
+								class="flex justify-between items-center text-amber-600 bg-amber-50 -mx-2 px-2 py-1 rounded"
+							>
+								<span class="text-xs uppercase tracking-wider font-medium">Fragile Fee</span>
+								<span class="font-mono">£1.00</span>
+							</div>
+						{/if}
+						<div
+							class="flex justify-between items-center border-t border-dashed border-border/60 pt-2 mt-2"
 						>
-							<option value="Nationwide Prime">Nationwide Prime</option>
-							<option value="UK Shipping">UK Shipping</option>
-							<option value="UK shipping One day">UK shipping One day</option>
-							<option value="Off Amazon">Off Amazon</option>
-						</select>
-					</div>
-					<div class="space-y-2">
-						<Label for="weight">Weight (kg)</Label>
-						<Input id="weight" bind:value={weight} type="number" step="0.01" />
-					</div>
-				</div>
-
-				<div class="space-y-2">
-					<div class="flex items-center justify-between">
-						<Label>Dimensions (cm)</Label>
-						<select
-							class="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-							onchange={handleBoxPresetChange}
-							value={`${width}x${height}x${depth}`}
+							<span class="text-foreground font-medium">Net Cost</span>
+							<span class="font-mono font-medium">£{baseCost.toFixed(2)}</span>
+						</div>
+						<div class="flex justify-between items-center text-muted-foreground">
+							<span class="text-xs">VAT ({vat_rate}%)</span>
+							<span class="font-mono text-xs">£{vatAmount.toFixed(2)}</span>
+						</div>
+						<div
+							class="flex justify-between items-center font-bold text-lg border-t border-border pt-2 mt-2"
 						>
-							<option value="custom">Custom Size</option>
-							<optgroup label="Common Sizes">
-								{#each commonOptions as option}
-									<option value={option}>{option}</option>
-								{/each}
-							</optgroup>
-							<optgroup label="All Sizes">
-								{#each otherOptions as option}
-									<option value={option}>{option}</option>
-								{/each}
-							</optgroup>
-						</select>
-					</div>
-					<div class="flex gap-4">
-						<div class="relative flex-1">
-							<Input placeholder="W" bind:value={width} type="number" class="pl-6" />
-							<span class="absolute left-2 top-2.5 text-xs text-muted-foreground">W</span>
-						</div>
-						<div class="relative flex-1">
-							<Input placeholder="H" bind:value={height} type="number" class="pl-6" />
-							<span class="absolute left-2 top-2.5 text-xs text-muted-foreground">H</span>
-						</div>
-						<div class="relative flex-1">
-							<Input placeholder="D" bind:value={depth} type="number" class="pl-6" />
-							<span class="absolute left-2 top-2.5 text-xs text-muted-foreground">D</span>
+							<span>Total Cost</span>
+							<span class="font-mono text-primary">£{totalCost.toFixed(2)}</span>
 						</div>
 					</div>
 				</div>
 
-				<div class="flex items-center space-x-2">
-					<input
-						type="checkbox"
-						id="fragile"
-						bind:checked={is_fragile}
-						class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-					/>
-					<Label
-						for="fragile"
-						class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-						>Fragile Item (+£1.00)</Label
-					>
+				<!-- Right Column: Logistics -->
+				<div class="space-y-6">
+					<div class="grid gap-4 border rounded-lg p-4 bg-card shadow-sm h-full content-start">
+						<h3 class="font-semibold text-sm text-primary flex items-center gap-2">
+							Logistics & Shipping
+						</h3>
+
+						<div class="space-y-4">
+							<div class="grid grid-cols-1 gap-4">
+								<div class="space-y-2">
+									<Label for="shipping" class="text-xs font-medium">Shipping Group</Label>
+									<select
+										id="shipping"
+										bind:value={merchant_shipping_group}
+										class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										<option value="Nationwide Prime">Nationwide Prime</option>
+										<option value="UK Shipping">UK Shipping</option>
+										<option value="UK shipping One day">UK shipping One day</option>
+										<option value="Off Amazon">Off Amazon</option>
+									</select>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="weight" class="text-xs font-medium">Weight</Label>
+									<div class="relative">
+										<Input
+											id="weight"
+											bind:value={weight}
+											type="number"
+											step="0.01"
+											class="pl-3 pr-8 h-9"
+										/>
+										<span class="absolute right-3 top-2.5 text-muted-foreground text-xs">kg</span>
+									</div>
+								</div>
+
+								<div class="space-y-2 flex items-center p-2 rounded-md border bg-muted/20">
+									<input
+										type="checkbox"
+										id="fragile"
+										bind:checked={is_fragile}
+										class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary mr-2"
+									/>
+									<Label for="fragile" class="text-xs font-medium cursor-pointer"
+										>Fragile Item (+£1)</Label
+									>
+								</div>
+							</div>
+
+							<div class="space-y-3 pt-2 border-t">
+								<div class="flex items-center justify-between">
+									<Label class="text-xs font-medium">Dimensions (cm)</Label>
+									<select
+										class="h-8 rounded-md border border-input bg-background/50 px-2 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary"
+										onchange={handleBoxPresetChange}
+										value={`${width}x${height}x${depth}`}
+									>
+										<option value="custom">Custom Size</option>
+										<optgroup label="Common Sizes">
+											{#each commonOptions as option}
+												<option value={option}>{option}</option>
+											{/each}
+										</optgroup>
+										<optgroup label="All Sizes">
+											{#each otherOptions as option}
+												<option value={option}>{option}</option>
+											{/each}
+										</optgroup>
+									</select>
+								</div>
+
+								<div class="grid grid-cols-3 gap-3">
+									<div class="space-y-1.5">
+										<div class="relative">
+											<span
+												class="absolute left-2.5 top-2.5 text-[10px] uppercase text-muted-foreground font-bold tracking-wider"
+												>W</span
+											>
+											<Input
+												placeholder="0"
+												bind:value={width}
+												type="number"
+												class="pl-7 h-9 text-center font-mono"
+											/>
+										</div>
+									</div>
+									<div class="space-y-1.5">
+										<div class="relative">
+											<span
+												class="absolute left-2.5 top-2.5 text-[10px] uppercase text-muted-foreground font-bold tracking-wider"
+												>H</span
+											>
+											<Input
+												placeholder="0"
+												bind:value={height}
+												type="number"
+												class="pl-7 h-9 text-center font-mono"
+											/>
+										</div>
+									</div>
+									<div class="space-y-1.5">
+										<div class="relative">
+											<span
+												class="absolute left-2.5 top-2.5 text-[10px] uppercase text-muted-foreground font-bold tracking-wider"
+												>D</span
+											>
+											<Input
+												placeholder="0"
+												bind:value={depth}
+												type="number"
+												class="pl-7 h-9 text-center font-mono"
+											/>
+										</div>
+									</div>
+								</div>
+
+								<div class="text-[10px] text-muted-foreground text-center bg-muted/20 py-1 rounded">
+									Volume: {(
+										((parseFloat(width) || 0) *
+											(parseFloat(height) || 0) *
+											(parseFloat(depth) || 0)) /
+										1000
+									).toFixed(2)} L
+								</div>
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
-		<DialogFooter>
+		<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
 			<Button type="submit" onclick={handleSubmit} disabled={loading} class="w-full sm:w-auto">
 				{loading ? 'Saving...' : 'Save changes'}
 			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+		</div>
+	</div>
+{/if}

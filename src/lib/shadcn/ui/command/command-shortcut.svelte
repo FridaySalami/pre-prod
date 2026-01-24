@@ -1,5 +1,5 @@
 <script>
-	import { cn } from "$lib/shadcn/utils/index.js";
+	import { cn } from "$lib/utils.js";
 	let {
 		ref = $bindable(null),
 		class: className,
@@ -11,7 +11,7 @@
 <span
 	bind:this={ref}
 	data-slot="command-shortcut"
-	class={cn("text-muted-foreground ml-auto text-xs tracking-widest", className)}
+	class={cn("text-muted-foreground ms-auto text-xs tracking-widest", className)}
 	{...restProps}
 >
 	{@render children?.()}

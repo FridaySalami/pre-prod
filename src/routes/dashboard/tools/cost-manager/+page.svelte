@@ -4,13 +4,30 @@
 	import { showToast } from '$lib/toastStore';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { Search, Loader2, Save } from 'lucide-svelte';
+	import { Search, Loader2, Save, Copy, Filter } from 'lucide-svelte';
+	import * as Popover from '$lib/shadcn/ui/popover';
+	import { Checkbox } from '$lib/shadcn/ui/checkbox';
+	import { Label } from '$lib/shadcn/ui/label';
 
 	export let data;
 
 	let searchTerm = data.search;
+	let missingCost = data.missingCost;
+	let selectedShippingGroups: string[] = data.shippingGroups || [];
+
+	$: searchTerm = data.search;
+	$: missingCost = data.missingCost;
+	$: selectedShippingGroups = data.shippingGroups || [];
+
+	const shippingOptions = ['Nationwide Prime', 'UK Shipping', 'UK shipping One day', 'Off Amazon'];
+
 	let loading = false;
 	let updating = new Set<string>(); // Set of SKUs currently being updated
+
+	function copyToClipboard(text: string) {
+		navigator.clipboard.writeText(text);
+		showToast('Copied to clipboard', 'success');
+	}
 
 	function handleSearch() {
 		const params = new URLSearchParams($page.url.searchParams);
@@ -20,7 +37,31 @@
 		} else {
 			params.delete('q');
 		}
+
+		if (missingCost) {
+			params.set('missing_cost', 'true');
+			params.set('page', '1');
+		} else {
+			params.delete('missing_cost');
+		}
+
+		if (selectedShippingGroups.length > 0) {
+			params.set('shipping_groups', selectedShippingGroups.join(','));
+			params.set('page', '1');
+		} else {
+			params.delete('shipping_groups');
+		}
+
 		goto(`?${params.toString()}`);
+	}
+
+	function toggleShippingGroup(group: string) {
+		if (selectedShippingGroups.includes(group)) {
+			selectedShippingGroups = selectedShippingGroups.filter((g) => g !== group);
+		} else {
+			selectedShippingGroups = [...selectedShippingGroups, group];
+		}
+		handleSearch();
 	}
 
 	async function updateCost(item: any) {
@@ -65,6 +106,12 @@
 			updating = updating;
 		}
 	}
+
+	function handlePageChange(newPage: number) {
+		const params = new URLSearchParams($page.url.searchParams);
+		params.set('page', String(newPage));
+		goto(`?${params.toString()}`);
+	}
 </script>
 
 <div class="h-full flex-1 flex-col space-y-8 p-8 md:flex">
@@ -98,6 +145,15 @@
 			/>
 		</div>
 		<Button onclick={handleSearch} disabled={loading}>Search</Button>
+		<Button
+			variant={missingCost ? 'default' : 'outline'}
+			onclick={() => {
+				missingCost = !missingCost;
+				handleSearch();
+			}}
+		>
+			{missingCost ? 'Missing Costs Only' : 'Show Missing Costs'}
+		</Button>
 	</div>
 
 	<div class="rounded-md border">
@@ -114,9 +170,42 @@
 						<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-20"
 							>VAT (%)</th
 						>
-						<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
-							>Shipping Group</th
-						>
+						<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+							<div class="flex items-center space-x-2">
+								<span>Shipping Group</span>
+								<Popover.Root>
+									<Popover.Trigger>
+										<Button variant="ghost" size="icon" class="h-6 w-6">
+											<Filter
+												class="h-3 w-3 {selectedShippingGroups.length > 0 ? 'text-primary' : ''}"
+											/>
+										</Button>
+									</Popover.Trigger>
+									<Popover.Content class="w-56 p-2">
+										<div class="space-y-2">
+											<h4 class="font-medium leading-none">Filter Shipping Groups</h4>
+											<div class="grid gap-2">
+												{#each shippingOptions as option}
+													<div class="flex items-center space-x-2">
+														<Checkbox
+															id={option}
+															checked={selectedShippingGroups.includes(option)}
+															onCheckedChange={() => toggleShippingGroup(option)}
+														/>
+														<Label
+															for={option}
+															class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+														>
+															{option}
+														</Label>
+													</div>
+												{/each}
+											</div>
+										</div>
+									</Popover.Content>
+								</Popover.Root>
+							</div>
+						</th>
 						<th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
 							>Box (cm)</th
 						>
@@ -128,7 +217,20 @@
 				<tbody class="[&_tr:last-child]:border-0">
 					{#each data.items as item (item.sku)}
 						<tr class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-							<td class="p-4 align-middle font-medium">{item.sku}</td>
+							<td class="p-4 align-middle font-medium">
+								<div class="flex items-center space-x-2">
+									<span>{item.sku}</span>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-6 w-6"
+										onclick={() => copyToClipboard(item.sku)}
+										title="Copy SKU"
+									>
+										<Copy class="h-3 w-3" />
+									</Button>
+								</div>
+							</td>
 							<td class="p-4 align-middle text-xs max-w-[300px] truncate" title={item.title}
 								>{item.title}</td
 							>
@@ -181,7 +283,7 @@
 		<Button
 			variant="outline"
 			size="sm"
-			onclick={() => goto(`?page=${(data.page ?? 1) - 1}&q=${searchTerm || ''}`)}
+			onclick={() => handlePageChange((data.page ?? 1) - 1)}
 			disabled={(data.page ?? 1) <= 1}
 		>
 			Previous
@@ -189,7 +291,7 @@
 		<Button
 			variant="outline"
 			size="sm"
-			onclick={() => goto(`?page=${(data.page ?? 1) + 1}&q=${searchTerm || ''}`)}
+			onclick={() => handlePageChange((data.page ?? 1) + 1)}
 			disabled={data.items.length < (data.limit ?? 50)}
 		>
 			Next

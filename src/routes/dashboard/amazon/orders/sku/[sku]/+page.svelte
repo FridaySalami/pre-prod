@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/shadcn/ui/button';
+	import { Input } from '$lib/shadcn/ui/input';
 	import {
 		ArrowUpDown,
 		ArrowUp,
@@ -8,7 +9,8 @@
 		Bug,
 		ArrowLeft,
 		Download,
-		RefreshCw
+		RefreshCw,
+		Search
 	} from 'lucide-svelte';
 	import { showToast } from '$lib/toastStore';
 	import { goto } from '$app/navigation';
@@ -19,6 +21,52 @@
 	import 'chartjs-adapter-date-fns';
 
 	export let data;
+
+	let searchSku = '';
+	let suggestions: string[] = [];
+	let showSuggestions = false;
+	let searchTimeout: NodeJS.Timeout;
+
+	function handleInput() {
+		clearTimeout(searchTimeout);
+		if (searchSku.length < 2) {
+			suggestions = [];
+			showSuggestions = false;
+			return;
+		}
+
+		searchTimeout = setTimeout(async () => {
+			try {
+				const res = await fetch(`/api/amazon/sku-search?q=${encodeURIComponent(searchSku)}`);
+				if (res.ok) {
+					suggestions = await res.json();
+					showSuggestions = suggestions.length > 0;
+				}
+			} catch (e) {
+				console.error('Error fetching suggestions', e);
+			}
+		}, 300);
+	}
+
+	function selectSuggestion(sku: string) {
+		searchSku = sku;
+		showSuggestions = false;
+		handleSkuSearch();
+	}
+
+	function handleBlur() {
+		// Delay hiding to allow click event on suggestion to fire
+		setTimeout(() => {
+			showSuggestions = false;
+		}, 200);
+	}
+
+	function handleSkuSearch() {
+		showSuggestions = false; // ensure closed
+		if (searchSku.trim()) {
+			goto(`/dashboard/amazon/orders/sku/${encodeURIComponent(searchSku.trim())}`);
+		}
+	}
 
 	let sortColumn = 'purchase_date';
 	let sortDirection: 'asc' | 'desc' = 'desc';
@@ -1179,6 +1227,38 @@
 			</p>
 		</div>
 		<div class="flex items-center gap-2">
+			<div class="flex w-full max-w-sm items-center space-x-2 mr-2 relative">
+				<div class="relative w-full">
+					<Input
+						type="text"
+						placeholder="Search another SKU..."
+						bind:value={searchSku}
+						oninput={handleInput}
+						onblur={handleBlur}
+						onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && handleSkuSearch()}
+						autocomplete="off"
+					/>
+					{#if showSuggestions && suggestions.length > 0}
+						<div
+							class="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+						>
+							<div class="py-1">
+								{#each suggestions as suggestion}
+									<button
+										class="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 text-left"
+										onclick={() => selectSuggestion(suggestion)}
+									>
+										{suggestion}
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+				<Button type="submit" size="icon" variant="ghost" onclick={handleSkuSearch}>
+					<Search class="h-4 w-4" />
+				</Button>
+			</div>
 			<Button variant="outline" onclick={testLinnworksSync}>
 				<RefreshCw class="mr-2 h-4 w-4" />
 				Test Linnworks

@@ -1,13 +1,13 @@
 <script>
-	import { Dialog as DialogPrimitive } from 'bits-ui';
 	import { cn } from '$lib/utils.js';
+	import { Popover as PopoverPrimitive } from 'bits-ui';
 
 	let { ref = $bindable(null), class: className = undefined, ...restProps } = $props();
 </script>
 
-<DialogPrimitive.Description
+<PopoverPrimitive.Trigger
 	bind:ref
-	data-slot="dialog-description"
-	class={cn('text-muted-foreground text-sm', className)}
+	data-slot="popover-trigger"
+	class={cn('', className)}
 	{...restProps}
 />
