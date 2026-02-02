@@ -36,6 +36,7 @@
 	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
 
 	let holidays: any[] = [];
+	let pendingHolidays: any[] = [];
 	let calendarDate = new Date();
 
 	// Calendar reactive variables
@@ -276,6 +277,32 @@
 	let dataLoaded = false;
 	let retryCount = 0;
 
+	// Fetch pending holidays for tracked employees
+	async function fetchPendingHolidays() {
+		try {
+			const { data, error } = await supabase
+				.from('holidays')
+				.select(
+					`
+					*,
+					employees!inner(id, name)
+				`
+				)
+				.ilike('status', 'requested%')
+				.not('internal_employee_id', 'is', null)
+				.order('from_date', { ascending: true });
+
+			if (error) {
+				console.error('Error fetching pending holidays:', error);
+				return;
+			}
+
+			pendingHolidays = data || [];
+		} catch (error) {
+			console.error('Error in fetchPendingHolidays:', error);
+		}
+	}
+
 	// Update the onMount function to properly sequence data loading
 	onMount(async () => {
 		// Create a timeout promise to ensure we don't wait forever
@@ -341,7 +368,12 @@
 			if (holidayData) holidays = holidayData;
 
 			// Then load other data in parallel
-			await Promise.all([fetchUpcomingLeave(), fetchWeather(), fetchYesterdayMetrics()]);
+			await Promise.all([
+				fetchUpcomingLeave(),
+				fetchWeather(),
+				fetchYesterdayMetrics(),
+				fetchPendingHolidays()
+			]);
 
 			// Data loaded successfully
 			dataLoaded = true;
@@ -1800,6 +1832,68 @@
 					</div>
 				</div>
 			</Card>
+
+			<!-- Pending Holiday Approvals -->
+			{#if pendingHolidays.length > 0}
+				<Card class="mt-4">
+					<CardHeader>
+						<CardTitle class="text-base font-semibold flex items-center gap-2">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								class="text-yellow-600"
+							>
+								<circle cx="12" cy="12" r="10"></circle>
+								<line x1="12" y1="8" x2="12" y2="12"></line>
+								<line x1="12" y1="16" x2="12.01" y2="16"></line>
+							</svg>
+							Pending Holiday Approvals
+							<Badge variant="secondary" class="ml-auto">{pendingHolidays.length}</Badge>
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div class="space-y-3">
+							{#each pendingHolidays as holiday}
+								{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
+								{@const fromDate = new Date(holiday.from_date)}
+								{@const toDate = new Date(holiday.to_date)}
+								{@const isSameDay = format(fromDate, 'yyyy-MM-dd') === format(toDate, 'yyyy-MM-dd')}
+								<div
+									class="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
+								>
+									<div class="flex-1 min-w-0">
+										<div class="flex items-baseline gap-2 flex-wrap">
+											<span class="font-semibold text-gray-900">{holiday.employee_name}</span>
+											{#if isHalfDay}
+												<Badge variant="outline" class="text-xs">Half Day</Badge>
+											{/if}
+										</div>
+										<div class="text-sm text-gray-600 mt-1">
+											{#if isSameDay}
+												{format(fromDate, 'EEE, d MMM yyyy')}
+											{:else}
+												{format(fromDate, 'EEE, d MMM yyyy')} → {format(toDate, 'EEE, d MMM yyyy')}
+											{/if}
+											<span class="text-gray-400 mx-2">·</span>
+											<span class="font-medium">{holiday.duration} {holiday.units}</span>
+										</div>
+										{#if holiday.notes}
+											<div class="text-sm text-gray-500 mt-1 italic">"{holiday.notes}"</div>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					</CardContent>
+				</Card>
+			{/if}
 		</div>
 	</div>
 
