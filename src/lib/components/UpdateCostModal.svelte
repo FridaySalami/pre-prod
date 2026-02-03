@@ -12,6 +12,7 @@
 	export let sku = '';
 	export let title = '';
 	export let asin = '';
+	export let shippingDetails = '';
 
 	let loading = false;
 	let width = '10';
@@ -244,20 +245,41 @@
 				</button>
 			</div>
 
-			<div class="text-sm text-muted-foreground">
-				<span class="flex items-center gap-2 flex-wrap">
-					<span
-						>Enter the missing information for SKU: <span class="font-mono font-bold">{sku}</span
-						></span
-					>
-					<Button variant="ghost" size="icon" class="h-6 w-6" onclick={copySku} title="Copy SKU">
-						{#if copied}
-							<Check class="h-3.5 w-3.5 text-green-500" />
-						{:else}
-							<Copy class="h-3.5 w-3.5" />
-						{/if}
-					</Button>
-				</span>
+			<div class="space-y-2">
+				{#if title}
+					<div class="font-medium text-base text-foreground border-b pb-2 mb-2">{title}</div>
+				{/if}
+
+				<div class="flex flex-col gap-1 text-sm text-muted-foreground">
+					<div class="flex items-center gap-2 flex-wrap">
+						<span class="text-muted-foreground">SKU:</span>
+						<span class="font-mono font-bold text-foreground bg-muted px-1.5 py-0.5 rounded"
+							>{sku}</span
+						>
+						<Button
+							variant="ghost"
+							size="icon"
+							class="h-6 w-6 -ml-1"
+							onclick={copySku}
+							title="Copy SKU"
+						>
+							{#if copied}
+								<Check class="h-3.5 w-3.5 text-green-500" />
+							{:else}
+								<Copy class="h-3.5 w-3.5" />
+							{/if}
+						</Button>
+					</div>
+
+					{#if shippingDetails}
+						<div class="flex items-center gap-2 flex-wrap">
+							<span class="text-muted-foreground">Ship:</span>
+							<span class="font-medium text-foreground">{shippingDetails}</span>
+						</div>
+					{/if}
+
+					<div class="text-xs text-muted-foreground pt-1">Enter the missing information below.</div>
+				</div>
 			</div>
 		</div>
 

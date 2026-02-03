@@ -143,16 +143,23 @@
 	let selectedSku = '';
 	let selectedTitle = '';
 	let selectedAsin = '';
+	let selectedShippingDetails = '';
 
 	// Debug Modal state
 	let showDebugModal = false;
 	let debugLogs: string[] = [];
 	let debugTitle = '';
 
-	function openUpdateCostModal(sku: string, title: string, asin: string) {
+	function openUpdateCostModal(
+		sku: string,
+		title: string,
+		asin: string,
+		shippingDetails: string = ''
+	) {
 		selectedSku = sku;
 		selectedTitle = title;
 		selectedAsin = asin;
+		selectedShippingDetails = shippingDetails;
 		showUpdateCostModal = true;
 	}
 
@@ -1920,7 +1927,12 @@
 																class="ml-2 inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 w-6"
 																title="Update Cost Data"
 																onclick={() =>
-																	openUpdateCostModal(item.seller_sku, item.title, item.asin)}
+																	openUpdateCostModal(
+																		item.seller_sku,
+																		item.title,
+																		item.asin,
+																		`${order.automated_carrier || '-'} / ${order.automated_ship_method || order.shipment_service_level_category || '-'}`
+																	)}
 															>
 																<Pencil class="h-3 w-3" />
 															</button>
@@ -2010,6 +2022,7 @@
 	sku={selectedSku}
 	title={selectedTitle}
 	asin={selectedAsin}
+	shippingDetails={selectedShippingDetails}
 	on:success={() => {
 		// Refresh the page to show updated costs
 		window.location.reload();
