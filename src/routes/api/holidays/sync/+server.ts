@@ -39,15 +39,12 @@ export async function POST({ locals }) {
       });
     }
 
-    // 3. Fetch Holidays (Next 6 months only)
+    // 3. Fetch Holidays (Current Year + Next Year)
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Start of today
 
-    const futureDate = new Date(today);
-    futureDate.setMonth(today.getMonth() + 6);
-
     // Calculate unique years to fetch
-    const yearsToFetch = new Set([today.getFullYear(), futureDate.getFullYear()]);
+    const yearsToFetch = new Set([today.getFullYear(), today.getFullYear() + 1]);
     let allHolidays: any[] = [];
 
     for (const year of yearsToFetch) {
@@ -92,14 +89,8 @@ export async function POST({ locals }) {
       return json({ message: 'No holidays found or API error', count: 0 });
     }
 
-    // Filter: Future dates up to 6 months from today
-    // Include holidays that haven't ended yet (end date >= today)
-    // And start within the next 6 months
-    const filteredHolidays = allHolidays.filter(h => {
-      const holidayEnd = new Date(h.to);
-      const holidayStart = new Date(h.from);
-      return holidayEnd >= today && holidayStart <= futureDate;
-    });
+    // Filter: Use all holidays returned (whole year)
+    const filteredHolidays = allHolidays;
 
     // 4. Save to Supabase
     // Transform data to match our schema if needed, but our schema matches the API fields mostly

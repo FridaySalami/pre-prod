@@ -64,6 +64,31 @@
 		});
 	}
 
+	function getConflicts(pendingHoliday: any) {
+		if (!pendingHoliday || !holidays.length) return [];
+
+		const pStart = startOfDay(new Date(pendingHoliday.from_date));
+		const pEnd = endOfDay(new Date(pendingHoliday.to_date));
+
+		return holidays.filter((h) => {
+			// Skip self
+			if (h.id === pendingHoliday.id) return false;
+			// Skip same person (optional, but requested "anyone else")
+			if (h.internal_employee_id === pendingHoliday.internal_employee_id) return false;
+
+			// Only check Accepted or Requested
+			const status = h.status?.toLowerCase() || '';
+			// Check for 'accepted' or 'requested'
+			if (!status.includes('accepted') && !status.includes('requested')) return false;
+
+			const hStart = startOfDay(new Date(h.from_date));
+			const hEnd = endOfDay(new Date(h.to_date));
+
+			// Check overlap: start <= hEnd && end >= hStart
+			return pStart <= hEnd && pEnd >= hStart;
+		});
+	}
+
 	function previousMonth() {
 		calendarDate = subMonths(calendarDate, 1);
 	}
@@ -1865,6 +1890,7 @@
 								{@const fromDate = new Date(holiday.from_date)}
 								{@const toDate = new Date(holiday.to_date)}
 								{@const isSameDay = format(fromDate, 'yyyy-MM-dd') === format(toDate, 'yyyy-MM-dd')}
+								{@const conflicts = getConflicts(holiday)}
 								<div
 									class="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
 								>
@@ -1886,6 +1912,46 @@
 										</div>
 										{#if holiday.notes}
 											<div class="text-sm text-gray-500 mt-1 italic">"{holiday.notes}"</div>
+										{/if}
+
+										{#if conflicts.length > 0}
+											<div class="mt-2 pt-2 border-t border-yellow-200/60">
+												<span class="text-xs font-medium text-yellow-800 uppercase tracking-wider"
+													>Overlaps with:</span
+												>
+												<div class="flex flex-wrap gap-1 mt-1">
+													{#each conflicts as conflict}
+														{@const isApproved = conflict.status
+															?.toLowerCase()
+															.includes('accepted')}
+														<span
+															class="inline-flex items-center px-1.5 py-0.5 rounded text-xs border {isApproved
+																? 'bg-red-50 text-red-700 border-red-200'
+																: 'bg-orange-50 text-orange-700 border-orange-200'}"
+														>
+															{conflict.employee_name} ({isApproved ? 'Approved' : 'Pending'})
+														</span>
+													{/each}
+												</div>
+											</div>
+										{:else}
+											<div class="mt-2 pt-1">
+												<span class="text-xs text-green-600 flex items-center gap-1">
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														width="12"
+														height="12"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														><polyline points="20 6 9 17 4 12"></polyline></svg
+													>
+													No conflicts found
+												</span>
+											</div>
 										{/if}
 									</div>
 								</div>
