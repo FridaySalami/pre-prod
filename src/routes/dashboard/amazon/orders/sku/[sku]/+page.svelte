@@ -237,38 +237,38 @@
 		if (!ctx) return;
 
 		// 1. Group orders by Date to get Daily metrics (using SKU Level data)
-		const dailyMap = new Map<string, { units: number; revenue: number; profit: number }>();
+		const dailyMap = new Map<
+			string,
+			{ units: number; packs: number; revenue: number; profit: number }
+		>();
 
 		enrichedOrders.forEach((order) => {
 			if (order.order_status === 'Canceled') return;
-			if (order.skuUnits <= 0) return; // Guard logic
-
-			// Use Local Date for better bucketing (User's locale / server locale)
-			// toISOString() is UTC and can shift evening orders to the next day.
+			// Use local date for bucket
 			const dateKey = localDateKey(order.purchase_date);
 
-			if (dailyMap.has(dateKey)) {
-				const existing = dailyMap.get(dateKey)!;
-				existing.units += order.skuUnits;
-				existing.revenue += order.skuRevenue;
-				existing.profit += order.skuProfit;
-			} else {
-				dailyMap.set(dateKey, {
-					units: order.skuUnits,
-					revenue: order.skuRevenue,
-					profit: order.skuProfit
-				});
-			}
+			if (!dailyMap.has(dateKey))
+				dailyMap.set(dateKey, { units: 0, packs: 0, revenue: 0, profit: 0 });
+			const entry = dailyMap.get(dateKey)!;
+
+			entry.units += order.skuUnits;
+			// Fallback: if packs logic isn't populated for older data, assume packs = units / bundle size?
+			// Enriched data guarantees skuPacks is at least units/bundle or raw qty.
+			// If skuPacks is 0/undefined, fallback to skuUnits (assume single item)
+			entry.packs += order.skuPacks || order.skuUnits;
+			entry.revenue += order.skuRevenue;
+			entry.profit += order.skuProfit;
 		});
 
-		// 2. Convert to scatter points: X=Avg Price, Y=Daily Units
+		// 2. Convert to scatter points: X=Avg Price (Per Pack), Y=Daily Packs Sold
 		const points = Array.from(dailyMap.entries())
 			.map(([date, metrics]) => {
-				if (metrics.units === 0) return null;
-				const avgPrice = metrics.revenue / metrics.units;
+				if (metrics.packs === 0) return null;
+				// Avg Price per PACK (SKU Price), not per inner unit
+				const avgPrice = metrics.revenue / metrics.packs;
 				return {
-					x: avgPrice, // Price per unit (averaged for the day)
-					y: metrics.units, // Total units sold that day
+					x: avgPrice,
+					y: metrics.packs, // Daily Packs Sold
 					date: date,
 					profit: metrics.profit
 				};
@@ -280,7 +280,7 @@
 			data: {
 				datasets: [
 					{
-						label: 'Daily Sales Volume vs Price',
+						label: 'Daily Sales Volume (Packs) vs Price',
 						data: points,
 						backgroundColor: function (context) {
 							const val = context.raw as any;
@@ -303,7 +303,7 @@
 					x: {
 						title: {
 							display: true,
-							text: 'Unit Sale Price (£)'
+							text: 'SKU Sale Price (£)'
 						},
 						ticks: {
 							callback: function (value) {
@@ -314,7 +314,7 @@
 					y: {
 						title: {
 							display: true,
-							text: 'Daily Units Sold'
+							text: 'Daily Packs Sold'
 						},
 						beginAtZero: true
 					}
@@ -326,8 +326,8 @@
 								const raw = context.raw as any;
 								return [
 									`Date: ${raw.date}`,
-									`Price: £${raw.x.toFixed(2)}`,
-									`Volume: ${raw.y} units`,
+									`SKU Price: £${raw.x.toFixed(2)}`,
+									`Volume: ${raw.y} packs`,
 									`Profit: £${raw.profit.toFixed(2)}`
 								];
 							}
@@ -1085,6 +1085,103 @@
 		};
 	})();
 
+	$: priceAnalysis = (() => {
+		if (!enrichedOrders || enrichedOrders.length < 5) return null;
+
+		// 1. Group daily stats first
+		const dailyMap = new Map<
+			string,
+			{ units: number; packs: number; revenue: number; profit: number }
+		>();
+		enrichedOrders.forEach((order) => {
+			if (order.order_status === 'Canceled' || order.skuUnits <= 0) return;
+			// Use Local Date for bucket
+			const dateKey = localDateKey(order.purchase_date);
+
+			if (!dailyMap.has(dateKey))
+				dailyMap.set(dateKey, { units: 0, packs: 0, revenue: 0, profit: 0 });
+			const entry = dailyMap.get(dateKey)!;
+			entry.units += order.skuUnits;
+			entry.packs += order.skuPacks || order.skuUnits;
+			entry.revenue += order.skuRevenue;
+			entry.profit += order.skuProfit;
+		});
+
+		// 2. Group by Price Bin
+		// We'll group by rounding to nearest £0.10 to cluster similar prices
+		const priceBins = new Map<
+			string,
+			{
+				count: number;
+				totalPacks: number;
+				totalProfit: number;
+				totalRevenue: number;
+				actualPriceSum: number;
+			}
+		>();
+
+		dailyMap.forEach((metrics) => {
+			if (metrics.packs === 0) return;
+			const avgPrice = metrics.revenue / metrics.packs;
+			// Bin Key: Round to nearest 0.1
+			const binKey = (Math.round(avgPrice * 10) / 10).toFixed(2);
+
+			if (!priceBins.has(binKey)) {
+				priceBins.set(binKey, {
+					count: 0,
+					totalPacks: 0,
+					totalProfit: 0,
+					totalRevenue: 0,
+					actualPriceSum: 0
+				});
+			}
+			const bin = priceBins.get(binKey)!;
+			bin.count++;
+			bin.totalPacks += metrics.packs;
+			bin.totalProfit += metrics.profit;
+			bin.totalRevenue += metrics.revenue;
+			bin.actualPriceSum += avgPrice;
+		});
+
+		const results = Array.from(priceBins.entries())
+			.map(([key, bin]) => {
+				const avgPrice = bin.actualPriceSum / bin.count;
+				const dailyVolume = bin.totalPacks / bin.count;
+				const dailyProfit = bin.totalProfit / bin.count;
+				const dailyRevenue = bin.totalRevenue / bin.count;
+
+				return {
+					priceLabel: `£${parseFloat(key).toFixed(2)}`,
+					displayPrice: avgPrice,
+					dailyVolume,
+					dailyProfit,
+					dailyRevenue,
+					days: bin.count
+				};
+			})
+			.sort((a, b) => a.displayPrice - b.displayPrice);
+
+		if (results.length === 0) return null;
+
+		// Find Optimal Points
+		const maxProfit = results.reduce((prev, current) =>
+			prev.dailyProfit > current.dailyProfit ? prev : current
+		);
+		const maxRevenue = results.reduce((prev, current) =>
+			prev.dailyRevenue > current.dailyRevenue ? prev : current
+		);
+		const maxVolume = results.reduce((prev, current) =>
+			prev.dailyVolume > current.dailyVolume ? prev : current
+		);
+
+		return {
+			points: results,
+			maxProfit,
+			maxRevenue,
+			maxVolume
+		};
+	})();
+
 	function toggleSort(column: string) {
 		if (sortColumn === column) {
 			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
@@ -1698,6 +1795,85 @@ Avg Price: {formatCurrency(cell.units ? cell.revenue / cell.units : 0)}"
 				<div class="relative w-full h-[400px]">
 					<canvas bind:this={elasticityChartCanvas}></canvas>
 				</div>
+
+				{#if priceAnalysis}
+					<div class="mt-6 border-t pt-4">
+						<h4 class="text-sm font-semibold mb-3">Optimal Price Analysis</h4>
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+							<div class="p-3 bg-green-50 rounded border border-green-100">
+								<span class="text-xs text-muted-foreground uppercase tracking-wider block"
+									>Best Daily Profit</span
+								>
+								<span class="text-lg font-bold text-green-700"
+									>{priceAnalysis.maxProfit.priceLabel}</span
+								>
+								<span class="text-xs text-muted-foreground block">
+									{formatCurrency(priceAnalysis.maxProfit.dailyProfit)} profit / day
+								</span>
+							</div>
+							<div class="p-3 bg-blue-50 rounded border border-blue-100">
+								<span class="text-xs text-muted-foreground uppercase tracking-wider block"
+									>Best Daily Revenue</span
+								>
+								<span class="text-lg font-bold text-blue-700"
+									>{priceAnalysis.maxRevenue.priceLabel}</span
+								>
+								<span class="text-xs text-muted-foreground block">
+									{formatCurrency(priceAnalysis.maxRevenue.dailyRevenue)} revenue / day
+								</span>
+							</div>
+							<div class="p-3 bg-purple-50 rounded border border-purple-100">
+								<span class="text-xs text-muted-foreground uppercase tracking-wider block"
+									>Max Volume</span
+								>
+								<span class="text-lg font-bold text-purple-700"
+									>{priceAnalysis.maxVolume.priceLabel}</span
+								>
+								<span class="text-xs text-muted-foreground block">
+									{priceAnalysis.maxVolume.dailyVolume.toFixed(1)} units / day
+								</span>
+							</div>
+						</div>
+
+						<div class="relative w-full overflow-auto border rounded-md">
+							<table class="w-full caption-bottom text-xs">
+								<thead class="bg-muted/50">
+									<tr class="border-b">
+										<th class="h-8 px-4 text-left font-medium text-muted-foreground">Price Point</th
+										>
+										<th class="h-8 px-4 text-right font-medium text-muted-foreground">Days</th>
+										<th class="h-8 px-4 text-right font-medium text-muted-foreground"
+											>Avg Vol/Day</th
+										>
+										<th class="h-8 px-4 text-right font-medium text-muted-foreground"
+											>Avg Rev/Day</th
+										>
+										<th class="h-8 px-4 text-right font-medium text-muted-foreground"
+											>Avg Profit/Day</th
+										>
+									</tr>
+								</thead>
+								<tbody>
+									{#each priceAnalysis.points as point}
+										<tr class="border-b transition-colors hover:bg-muted/50">
+											<td class="p-2 px-4 font-medium">{point.priceLabel}</td>
+											<td class="p-2 px-4 text-right">{point.days}</td>
+											<td class="p-2 px-4 text-right">{point.dailyVolume.toFixed(1)}</td>
+											<td class="p-2 px-4 text-right">{formatCurrency(point.dailyRevenue)}</td>
+											<td
+												class="p-2 px-4 text-right font-semibold {point.dailyProfit > 0
+													? 'text-green-600'
+													: 'text-red-600'}"
+											>
+												{formatCurrency(point.dailyProfit)}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/if}
