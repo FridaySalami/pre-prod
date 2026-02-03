@@ -26,24 +26,38 @@
 	let orders: any[] = [];
 	let isLoadingOrders = false;
 
-	// Use a weak map or simple logic to prevent race conditions
-	let currentLoadId = 0;
+	// Track the current promise to prevent race conditions
+	let currentOrdersPromise: Promise<any[]> | null = null;
 
-	$: if (data.streamed?.orders) {
+	$: handleOrdersLoad(data.streamed?.orders);
+
+	function handleOrdersLoad(promise: Promise<any[]> | undefined) {
+		if (!promise) return;
+
 		isLoadingOrders = true;
 		orders = [];
-		const loadId = ++currentLoadId;
+		currentOrdersPromise = promise; // Update reference
 
-		data.streamed.orders
+		// Safety timeout to prevent infinite loading state
+		const timeoutId = setTimeout(() => {
+			if (currentOrdersPromise === promise) {
+				isLoadingOrders = false;
+				showToast('Loading orders took too long. Please refresh.', 'warning');
+			}
+		}, 60000); // 1 minute timeout
+
+		promise
 			.then((res: any[]) => {
-				if (loadId === currentLoadId) {
+				if (currentOrdersPromise === promise) {
+					clearTimeout(timeoutId);
 					// Pre-calculate costs once per load for sorting performance
 					orders = res.map(enrichOrderWithTotals);
 					isLoadingOrders = false;
 				}
 			})
 			.catch((err) => {
-				if (loadId === currentLoadId) {
+				if (currentOrdersPromise === promise) {
+					clearTimeout(timeoutId);
 					console.error('Failed to load orders', err);
 					orders = [];
 					isLoadingOrders = false;
@@ -1021,8 +1035,7 @@
 			<div class="ml-3">
 				<p class="text-sm text-yellow-700">
 					<span class="font-medium">Work in Progress</span>
-					- This page is currently under active development. Data and calculations may be subject to
-					verification.
+					- This page is currently under active development. Data and calculations may be subject to verification.
 				</p>
 			</div>
 		</div>
