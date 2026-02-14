@@ -173,6 +173,12 @@
 			requiredRole: 'user'
 		},
 		{
+			title: 'Dolphin Logs',
+			url: '/dashboard/dolphin-logs',
+			icon: 'receipt_long',
+			requiredRole: 'user'
+		},
+		{
 			type: 'section',
 			title: 'Core Operations'
 		},
