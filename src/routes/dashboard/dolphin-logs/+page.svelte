@@ -10,7 +10,9 @@
 		Search,
 		X,
 		Copy,
-		Check
+		Check,
+		Maximize2,
+		Minimize2
 	} from 'lucide-svelte';
 
 	export let data;
@@ -144,14 +146,26 @@
 			});
 		}
 
-		// Default expand all if only a few orders
-		if (result.length < 5 && Object.keys(expandedOrders).length === 0) {
+		// Default expand all (user request)
+		if (Object.keys(expandedOrders).length === 0 && result.length > 0) {
 			result.forEach((g) => (expandedOrders[g.orderId] = true));
 		}
 
 		return result;
 	}
 
+	function expandAll() {
+		const newExpanded = { ...expandedOrders };
+		filteredGroups.forEach((g: any) => (newExpanded[g.orderId] = true));
+		expandedOrders = newExpanded;
+	}
+
+	function collapseAll() {
+		const newExpanded = { ...expandedOrders };
+		filteredGroups.forEach((g: any) => (newExpanded[g.orderId] = false));
+		expandedOrders = newExpanded;
+	}
+	
 	function toggleOrder(orderId: string) {
 		expandedOrders[orderId] = !expandedOrders[orderId];
 	}
@@ -357,32 +371,51 @@
 	{/if}
 
 	{#if groupByOrder}
-		<!-- Status Filters -->
-		<div class="flex flex-wrap gap-2 mb-4">
-			<button
-				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-				on:click={() => (filterStatus = 'all')}
-			>
-				All
-			</button>
-			<button
-				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'errors' ? 'bg-red-100 text-red-800 border-red-200 ring-1 ring-red-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-				on:click={() => (filterStatus = 'errors')}
-			>
-				Errors
-			</button>
-			<button
-				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'warnings' ? 'bg-yellow-100 text-yellow-800 border-yellow-200 ring-1 ring-yellow-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-				on:click={() => (filterStatus = 'warnings')}
-			>
-				Warnings
-			</button>
-			<button
-				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'incomplete' ? 'bg-orange-100 text-orange-800 border-orange-200 ring-1 ring-orange-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-				on:click={() => (filterStatus = 'incomplete')}
-			>
-				Incomplete
-			</button>
+		<!-- Status Filters and Actions -->
+		<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+			<div class="flex flex-wrap gap-2">
+				<button
+					class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+					on:click={() => (filterStatus = 'all')}
+				>
+					All
+				</button>
+				<button
+					class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'errors' ? 'bg-red-100 text-red-800 border-red-200 ring-1 ring-red-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+					on:click={() => (filterStatus = 'errors')}
+				>
+					Errors
+				</button>
+				<button
+					class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'warnings' ? 'bg-yellow-100 text-yellow-800 border-yellow-200 ring-1 ring-yellow-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+					on:click={() => (filterStatus = 'warnings')}
+				>
+					Warnings
+				</button>
+				<button
+					class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'incomplete' ? 'bg-orange-100 text-orange-800 border-orange-200 ring-1 ring-orange-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+					on:click={() => (filterStatus = 'incomplete')}
+				>
+					Incomplete
+				</button>
+			</div>
+
+			<div class="flex items-center space-x-2">
+				<button
+					class="p-1.5 text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+					title="Expand All"
+					on:click={expandAll}
+				>
+					<Maximize2 class="h-4 w-4" />
+				</button>
+				<button
+					class="p-1.5 text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+					title="Collapse All"
+					on:click={collapseAll}
+				>
+					<Minimize2 class="h-4 w-4" />
+				</button>
+			</div>
 		</div>
 
 		<div class="space-y-4">
