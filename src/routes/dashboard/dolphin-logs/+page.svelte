@@ -2,7 +2,16 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { slide } from 'svelte/transition';
-	import { ChevronDown, ChevronRight, Package, AlertCircle, Search, X } from 'lucide-svelte';
+	import {
+		ChevronDown,
+		ChevronRight,
+		Package,
+		AlertCircle,
+		Search,
+		X,
+		Copy,
+		Check
+	} from 'lucide-svelte';
 
 	export let data;
 
@@ -56,8 +65,19 @@
 	let groupByOrder = true;
 	let expandedOrders: Record<string, boolean> = {};
 
+	// Filter state
+	let filterStatus: 'all' | 'errors' | 'warnings' | 'incomplete' = 'all';
+
 	// Computed grouped logs
-	$: groupedLogs = groupByOrder ? groupLogsByOrder(logs) : [];
+	$: allGroups = groupByOrder ? groupLogsByOrder(logs) : [];
+
+	$: filteredGroups = allGroups.filter((group) => {
+		if (filterStatus === 'all') return true;
+		if (filterStatus === 'errors') return group.hasErrors;
+		if (filterStatus === 'warnings') return group.hasWarnings;
+		if (filterStatus === 'incomplete') return !group.isProcessed && group.orderId !== 'No Order ID';
+		return true;
+	});
 
 	function groupLogsByOrder(logs: any[]) {
 		if (!logs) return [];
@@ -87,6 +107,9 @@
 			const hasErrors = groupLogs.some((l) => l.level === 'ERROR' || l.level === 'CRITICAL');
 			const hasWarnings = groupLogs.some((l) => l.level === 'WARN');
 
+			// Check if completed (has ORDER_PROCESSED)
+			const isProcessed = groupLogs.some((l) => l.event_type === 'ORDER_PROCESSED');
+
 			// Calculate total duration
 			const totalDuration = groupLogs.reduce((sum, log) => sum + (log.duration_seconds || 0), 0);
 
@@ -98,6 +121,7 @@
 				latestTime,
 				hasErrors,
 				hasWarnings,
+				isProcessed,
 				totalDuration,
 				user: groupLogs.find((l) => l.user_id)?.user_id || 'Unknown'
 			};
@@ -114,6 +138,7 @@
 				latestTime: 0,
 				hasErrors: noOrderLogs.some((l) => l.level === 'ERROR' || l.level === 'CRITICAL'),
 				hasWarnings: noOrderLogs.some((l) => l.level === 'WARN'),
+				isProcessed: true, // System logs don't need processing
 				totalDuration: noOrderLogs.reduce((sum, log) => sum + (log.duration_seconds || 0), 0),
 				user: '-'
 			});
@@ -175,7 +200,25 @@
 		}
 	}
 
+	function getDurationClass(seconds: number) {
+		if (!seconds) return 'text-gray-500';
+		if (seconds < 45) return 'text-green-600 font-medium';
+		return 'text-red-600 font-bold';
+	}
+
 	function getDisplaySku(log: any) {
+		// Priority 1: SCAN_MISMATCH special format
+		if (log.event_type === 'SCAN_MISMATCH' && log.details) {
+			try {
+				const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+				if (details.scanned_barcode) {
+					return `📱 Scanned: ${details.scanned_barcode}`;
+				}
+			} catch (e) {
+				// continue
+			}
+		}
+
 		if (log.sku && log.sku !== '-') return log.sku;
 
 		// Attempt to extract from details
@@ -184,6 +227,24 @@
 		try {
 			// Handle details being string or object
 			const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+
+			// Priority 2: ORDER_PROCESSED with item summary
+			if (log.event_type === 'ORDER_PROCESSED' && details.items && Array.isArray(details.items)) {
+				const count = details.items.length;
+				if (count > 0) {
+					const firstItem = details.items[0];
+					// Try to get a friendly name, fallback to SKU
+					const name = firstItem.Title || firstItem.item_name || firstItem.sku || 'Unknown Item';
+					// Truncate name if too long
+					const truncatedName = name.length > 30 ? name.substring(0, 30) + '...' : name;
+
+					if (count === 1) {
+						return `1 Item: ${truncatedName}`;
+					} else {
+						return `${count} Items: ${truncatedName} (+${count - 1} more)`;
+					}
+				}
+			}
 
 			if (details.sku) return details.sku;
 			if (details.items && Array.isArray(details.items)) {
@@ -205,6 +266,18 @@
 		} catch (e) {
 			return String(details);
 		}
+	}
+
+	// State for copied items
+	let copiedOrders: Record<string, boolean> = {};
+
+	function copyToClipboard(e: Event, text: string) {
+		e.stopPropagation();
+		navigator.clipboard.writeText(text);
+		copiedOrders[text] = true;
+		setTimeout(() => {
+			copiedOrders[text] = false;
+		}, 2000);
 	}
 
 	function changePage(newPage: number) {
@@ -284,8 +357,36 @@
 	{/if}
 
 	{#if groupByOrder}
+		<!-- Status Filters -->
+		<div class="flex flex-wrap gap-2 mb-4">
+			<button
+				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+				on:click={() => (filterStatus = 'all')}
+			>
+				All
+			</button>
+			<button
+				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'errors' ? 'bg-red-100 text-red-800 border-red-200 ring-1 ring-red-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+				on:click={() => (filterStatus = 'errors')}
+			>
+				Errors
+			</button>
+			<button
+				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'warnings' ? 'bg-yellow-100 text-yellow-800 border-yellow-200 ring-1 ring-yellow-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+				on:click={() => (filterStatus = 'warnings')}
+			>
+				Warnings
+			</button>
+			<button
+				class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors border ${filterStatus === 'incomplete' ? 'bg-orange-100 text-orange-800 border-orange-200 ring-1 ring-orange-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+				on:click={() => (filterStatus = 'incomplete')}
+			>
+				Incomplete
+			</button>
+		</div>
+
 		<div class="space-y-4">
-			{#each groupedLogs as group (group.orderId)}
+			{#each filteredGroups as group (group.orderId)}
 				<div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
 					<!-- svelte-ignore a11y-click-events-have-key-events -->
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -306,6 +407,21 @@
 										? 'System Logs / No Order'
 										: `Order #${group.orderId}`}
 								</span>
+
+								{#if group.orderId !== 'No Order ID'}
+									<button
+										class="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
+										title="Copy Order ID"
+										on:click={(e) => copyToClipboard(e, group.orderId)}
+									>
+										{#if copiedOrders[group.orderId]}
+											<Check class="h-4 w-4 text-green-600" />
+										{:else}
+											<Copy class="h-4 w-4" />
+										{/if}
+									</button>
+								{/if}
+
 								{#if group.hasErrors}
 									<span
 										class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
@@ -319,6 +435,13 @@
 										Has Warnings
 									</span>
 								{/if}
+								{#if !group.isProcessed && group.orderId !== 'No Order ID'}
+									<span
+										class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
+									>
+										Incomplete
+									</span>
+								{/if}
 							</div>
 						</div>
 
@@ -328,7 +451,9 @@
 							</div>
 							{#if group.totalDuration > 0}
 								<div>
-									Time: <span class="font-medium">{formatDuration(group.totalDuration)}</span>
+									Time: <span class={getDurationClass(group.totalDuration)}
+										>{formatDuration(group.totalDuration)}</span
+									>
 								</div>
 							{/if}
 							<div>
@@ -388,10 +513,12 @@
 												<td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
 													{log.event_type}
 												</td>
-												<td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
-													{log.duration_seconds && log.duration_seconds > 0
-														? formatDuration(log.duration_seconds)
-														: '-'}
+												<td class="px-6 py-3 whitespace-nowrap text-sm">
+													<span class={getDurationClass(log.duration_seconds)}>
+														{log.duration_seconds && log.duration_seconds > 0
+															? formatDuration(log.duration_seconds)
+															: '-'}
+													</span>
 												</td>
 												<td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 font-mono">
 													{getDisplaySku(log)}
@@ -414,13 +541,25 @@
 				</div>
 			{/each}
 
-			{#if groupedLogs.length === 0}
+			{#if filteredGroups.length === 0}
 				<div class="text-center py-12 bg-white rounded-lg shadow">
 					<Package class="mx-auto h-12 w-12 text-gray-400" />
 					<h3 class="mt-2 text-sm font-medium text-gray-900">No logs found</h3>
 					<p class="mt-1 text-sm text-gray-500">
-						{searchQuery ? `No logs match "${searchQuery}"` : 'Get scanning to see data here.'}
+						{filterStatus !== 'all'
+							? `No groups match the "${filterStatus}" filter on this page.`
+							: searchQuery
+								? `No logs match "${searchQuery}"`
+								: 'Get scanning to see data here.'}
 					</p>
+					{#if filterStatus !== 'all'}
+						<button
+							class="mt-4 text-sm font-medium text-blue-600 hover:text-blue-500 hover:underline"
+							on:click={() => (filterStatus = 'all')}
+						>
+							Clear filter
+						</button>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -490,10 +629,12 @@
 									<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
 										{log.event_type}
 									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-										{log.duration_seconds && log.duration_seconds > 0
-											? formatDuration(log.duration_seconds)
-											: '-'}
+									<td class="px-6 py-4 whitespace-nowrap text-sm">
+										<span class={getDurationClass(log.duration_seconds)}>
+											{log.duration_seconds && log.duration_seconds > 0
+												? formatDuration(log.duration_seconds)
+												: '-'}
+										</span>
 									</td>
 									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
 										{log.order_id || '-'}
