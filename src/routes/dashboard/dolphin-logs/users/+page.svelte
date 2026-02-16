@@ -60,7 +60,7 @@
 	}
 
 	async function generateQrForUser(user: any) {
-		const qrData = `DOLPHIN|${user.first_name}_${user.last_name}`;
+		const qrData = user.login_code || `DOLPHIN|${user.first_name}_${user.last_name}`;
 		generatedQrCodeUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
 		generatedUser = { firstName: user.first_name, lastName: user.last_name };
 
@@ -84,10 +84,18 @@
 		}
 
 		try {
+			const loginCode = `DOLPHIN|${firstName}_${lastName}`;
+
 			// 1. Save to Supabase
 			const { data, error: insertError } = await supabase
 				.from('dolphin_users')
-				.insert([{ first_name: firstName, last_name: lastName }])
+				.insert([
+					{
+						first_name: firstName,
+						last_name: lastName,
+						login_code: loginCode
+					}
+				])
 				.select()
 				.single();
 
@@ -100,8 +108,7 @@
 			}
 
 			// 2. Generate QR Code
-			const qrData = `DOLPHIN|${firstName}_${lastName}`;
-			generatedQrCodeUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
+			generatedQrCodeUrl = await QRCode.toDataURL(loginCode, { width: 300, margin: 2 });
 			generatedUser = { firstName: data.first_name, lastName: data.last_name };
 
 			success = 'User created successfully!';
@@ -120,11 +127,66 @@
 	}
 
 	function printQrCode() {
-		window.print();
+		// Create a temporary print window or iframe
+		const printWindow = window.open('', '_blank');
+		if (printWindow && generatedQrCodeUrl && generatedUser) {
+			printWindow.document.write(`
+				<html>
+					<head>
+						<title>Print Login QR Code</title>
+						<style>
+							body {
+								display: flex;
+								flex-direction: column;
+								align-items: center;
+								justify-content: center;
+								height: 100vh;
+								margin: 0;
+								font-family: sans-serif;
+							}
+							img {
+								max-width: 400px;
+								width: 100%;
+								height: auto;
+							}
+							.qr-text {
+								font-family: monospace;
+								font-size: 24px;
+								margin-top: 20px;
+								color: black;
+								font-weight: bold;
+							}
+							.user-name {
+								font-size: 18px;
+								margin-top: 10px;
+								color: #333;
+							}
+							h1 {
+								font-size: 2rem;
+								margin-bottom: 1rem;
+							}
+						</style>
+					</head>
+					<body>
+						<h1>Dolphin Scanner Login</h1>
+						<img src="${generatedQrCodeUrl}" alt="Login QR Code" />
+						<div class="qr-text">DOLPHIN|${generatedUser.firstName}_${generatedUser.lastName}</div>
+						<div class="user-name">${generatedUser.firstName} ${generatedUser.lastName}</div>
+						<script>
+							window.onload = function() {
+								window.print();
+								window.close();
+							}
+						<\/script>
+					</body>
+				</html>
+			`);
+			printWindow.document.close();
+		}
 	}
 </script>
 
-<div class="container mx-auto px-4 py-8 max-w-2xl print:hidden">
+<div class="container mx-auto px-4 py-8 max-w-2xl">
 	<div class="mb-6">
 		<a
 			href="/dashboard/dolphin-logs"
@@ -302,58 +364,9 @@
 		</div>
 
 		<!-- This part is only visible when printing -->
-		<div class="printable-area hidden">
-			<div class="text-center">
-				<h1 class="text-3xl font-bold mb-4">Dolphin Scanner Login</h1>
-				<img src={generatedQrCodeUrl} alt="Login QR Code" width="400" height="400" />
-				<div class="qr-text">DOLPHIN|{generatedUser.firstName}_{generatedUser.lastName}</div>
-				<div class="user-name">{generatedUser.firstName} {generatedUser.lastName}</div>
-			</div>
-		</div>
 	{/if}
 </div>
 
 <style>
-	@media print {
-		/* Hide everything by default */
-		:global(body > *) {
-			display: none !important;
-		}
-
-		/* Show only the QR code printable area */
-		.printable-area {
-			display: flex !important;
-			flex-direction: column;
-			align-items: center;
-			justify-content: center;
-			position: absolute;
-			top: 0;
-			left: 0;
-			width: 100%;
-			height: 100%;
-			background: white;
-		}
-
-		/* Ensure the image and text are visible and styled correctly */
-		.printable-area img {
-			max-width: 400px;
-			width: 100%;
-			height: auto;
-		}
-
-		.printable-area .qr-text {
-			font-family: monospace;
-			font-size: 24px;
-			margin-top: 20px;
-			color: black;
-			font-weight: bold;
-		}
-
-		.printable-area .user-name {
-			font-family: sans-serif;
-			font-size: 18px;
-			margin-top: 10px;
-			color: #333;
-		}
-	}
+	/* styles removed as we now use window.open for printing */
 </style>
