@@ -12,7 +12,8 @@
 		Copy,
 		Check,
 		Maximize2,
-		Minimize2
+		Minimize2,
+		Users
 	} from 'lucide-svelte';
 
 	export let data;
@@ -165,7 +166,7 @@
 		filteredGroups.forEach((g: any) => (newExpanded[g.orderId] = false));
 		expandedOrders = newExpanded;
 	}
-	
+
 	function toggleOrder(orderId: string) {
 		expandedOrders[orderId] = !expandedOrders[orderId];
 	}
@@ -304,9 +305,20 @@
 
 <div class="container mx-auto px-4 py-8">
 	<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-		<div>
-			<h1 class="text-2xl font-bold text-gray-900">Dolphin Scanner Logs</h1>
-			<p class="text-sm text-gray-500 mt-1">Real-time logs from scanning and packing operations</p>
+		<div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+			<div>
+				<h1 class="text-2xl font-bold text-gray-900">Dolphin Scanner Logs</h1>
+				<p class="text-sm text-gray-500 mt-1">
+					Real-time logs from scanning and packing operations
+				</p>
+			</div>
+			<a
+				href="/dashboard/dolphin-logs/users"
+				class="inline-flex items-center px-3 py-2 border border-blue-200 text-sm font-medium rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+			>
+				<Users class="h-4 w-4 mr-2" />
+				Users
+			</a>
 		</div>
 
 		<div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full md:w-auto">
