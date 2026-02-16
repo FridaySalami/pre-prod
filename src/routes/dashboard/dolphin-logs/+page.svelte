@@ -286,6 +286,15 @@
 	// State for copied items
 	let copiedOrders: Record<string, boolean> = {};
 
+	function formatUser(userId: string) {
+		if (!userId) return 'Unknown';
+		if (userId.startsWith('DOLPHIN|')) {
+			const name = userId.split('|')[1];
+			return name.replace(/_/g, ' ');
+		}
+		return userId;
+	}
+
 	function copyToClipboard(e: Event, text: string) {
 		e.stopPropagation();
 		navigator.clipboard.writeText(text);
@@ -492,7 +501,7 @@
 
 						<div class="flex items-center space-x-6 text-sm text-gray-500">
 							<div>
-								User: <span class="font-medium">{group.user}</span>
+								User: <span class="font-medium">{formatUser(group.user)}</span>
 							</div>
 							{#if group.totalDuration > 0}
 								<div>
