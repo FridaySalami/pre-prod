@@ -2,7 +2,16 @@
 	import { onMount } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
 	import QRCode from 'qrcode';
-	import { Users, Save, ArrowLeft, Loader2, Download, Trash2, QrCode } from 'lucide-svelte';
+	import {
+		Users,
+		Save,
+		ArrowLeft,
+		Loader2,
+		Download,
+		Trash2,
+		QrCode,
+		Printer
+	} from 'lucide-svelte';
 
 	let firstName = '';
 	let lastName = '';
@@ -54,7 +63,7 @@
 		const qrData = `DOLPHIN|${user.first_name}_${user.last_name}`;
 		generatedQrCodeUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
 		generatedUser = { firstName: user.first_name, lastName: user.last_name };
-		
+
 		// Scroll to bottom to see QR code
 		setTimeout(() => {
 			window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -99,7 +108,7 @@
 			// Clear form
 			firstName = '';
 			lastName = '';
-			
+
 			// Refresh list
 			fetchUsers();
 		} catch (err: any) {
@@ -110,19 +119,12 @@
 		}
 	}
 
-	function downloadQrCode() {
-		if (generatedQrCodeUrl && generatedUser) {
-			const link = document.createElement('a');
-			link.href = generatedQrCodeUrl;
-			link.download = `dolphin-login-${generatedUser.firstName}-${generatedUser.lastName}.png`;
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-		}
+	function printQrCode() {
+		window.print();
 	}
 </script>
 
-<div class="container mx-auto px-4 py-8 max-w-2xl">
+<div class="container mx-auto px-4 py-8 max-w-2xl print:hidden">
 	<div class="mb-6">
 		<a
 			href="/dashboard/dolphin-logs"
@@ -212,14 +214,11 @@
 	<div class="mt-8 bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
 		<div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
 			<h2 class="text-lg font-medium text-gray-900">Existing Users</h2>
-			<button
-				on:click={fetchUsers}
-				class="text-sm text-blue-600 hover:text-blue-800 font-medium"
-			>
+			<button on:click={fetchUsers} class="text-sm text-blue-600 hover:text-blue-800 font-medium">
 				Refresh
 			</button>
 		</div>
-		
+
 		{#if usersLoading}
 			<div class="p-8 text-center text-gray-500">
 				<Loader2 class="h-8 w-8 mx-auto animate-spin mb-2" />
@@ -232,7 +231,9 @@
 		{:else}
 			<ul class="divide-y divide-gray-100">
 				{#each users as user (user.id)}
-					<li class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+					<li
+						class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+					>
 						<div class="flex items-center">
 							<div class="bg-gray-100 rounded-full h-10 w-10 flex items-center justify-center mr-4">
 								<span class="text-gray-600 font-bold">
@@ -241,10 +242,12 @@
 							</div>
 							<div>
 								<p class="text-sm font-medium text-gray-900">{user.first_name} {user.last_name}</p>
-								<p class="text-xs text-gray-500">Created: {new Date(user.created_at).toLocaleDateString()}</p>
+								<p class="text-xs text-gray-500">
+									Created: {new Date(user.created_at).toLocaleDateString()}
+								</p>
 							</div>
 						</div>
-						
+
 						<div class="flex items-center space-x-2">
 							<button
 								on:click={() => generateQrForUser(user)}
@@ -269,7 +272,7 @@
 
 	{#if generatedQrCodeUrl && generatedUser}
 		<div
-			class="mt-8 bg-white shadow rounded-lg border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+			class="mt-8 bg-white shadow rounded-lg border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 print:hidden"
 		>
 			<div class="p-6 text-center">
 				<h3 class="text-lg font-medium text-gray-900 mb-2">Login QR Code Generated</h3>
@@ -289,13 +292,68 @@
 				</div>
 
 				<button
-					on:click={downloadQrCode}
+					on:click={printQrCode}
 					class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
 				>
-					<Download class="h-4 w-4 mr-2" />
-					Download QR Code
+					<Printer class="h-4 w-4 mr-2" />
+					Print QR Code
 				</button>
+			</div>
+		</div>
+
+		<!-- This part is only visible when printing -->
+		<div class="printable-area hidden">
+			<div class="text-center">
+				<h1 class="text-3xl font-bold mb-4">Dolphin Scanner Login</h1>
+				<img src={generatedQrCodeUrl} alt="Login QR Code" width="400" height="400" />
+				<div class="qr-text">DOLPHIN|{generatedUser.firstName}_{generatedUser.lastName}</div>
+				<div class="user-name">{generatedUser.firstName} {generatedUser.lastName}</div>
 			</div>
 		</div>
 	{/if}
 </div>
+
+<style>
+	@media print {
+		/* Hide everything by default */
+		:global(body > *) {
+			display: none !important;
+		}
+
+		/* Show only the QR code printable area */
+		.printable-area {
+			display: flex !important;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background: white;
+		}
+
+		/* Ensure the image and text are visible and styled correctly */
+		.printable-area img {
+			max-width: 400px;
+			width: 100%;
+			height: auto;
+		}
+
+		.printable-area .qr-text {
+			font-family: monospace;
+			font-size: 24px;
+			margin-top: 20px;
+			color: black;
+			font-weight: bold;
+		}
+
+		.printable-area .user-name {
+			font-family: sans-serif;
+			font-size: 18px;
+			margin-top: 10px;
+			color: #333;
+		}
+	}
+</style>

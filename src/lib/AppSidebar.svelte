@@ -106,6 +106,7 @@
 		url: string;
 		icon: string;
 		requiredRole?: 'user' | 'manager' | 'admin'; // Add role requirement
+		children?: NavigationItem[];
 	};
 
 	type SeparatorItem = {
@@ -176,7 +177,7 @@
 			title: 'Dolphin Logs',
 			url: '/dashboard/dolphin-logs',
 			icon: 'receipt_long',
-			requiredRole: 'user'
+			requiredRole: 'user',
 		},
 		{
 			type: 'section',
@@ -382,7 +383,9 @@
 							<Sidebar.MenuItem class="">
 								<Sidebar.MenuButton
 									isActive={currentPath === item.url ||
-										(item.url !== '/landing' && currentPath.startsWith(item.url))}
+										(item.url !== '/landing' &&
+											currentPath.startsWith(item.url) &&
+											!item.children?.some((c) => currentPath === c.url))}
 									class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground py-2.5 pl-4"
 									children={() => {}}
 									tooltipContent={item.title}
@@ -418,6 +421,31 @@
 										</a>
 									{/snippet}
 								</Sidebar.MenuButton>
+								{#if isNavigationItem(item) && item.children && item.children.length > 0}
+									<Sidebar.MenuSub class="ml-0 pl-11 border-l border-gray-200">
+										{#each item.children as subItem}
+											<Sidebar.MenuSubItem class="">
+												<Sidebar.MenuSubButton
+													isActive={currentPath === subItem.url}
+													class="text-sm py-2"
+													href={subItem.url}
+													children={() => {}}
+												>
+													{#snippet child({ props }: { props: any })}
+														<a
+															href={subItem.url}
+															{...props}
+															class="block w-full text-gray-600 hover:text-gray-900 transition-colors"
+															onclick={handleNavClick}
+														>
+															{subItem.title}
+														</a>
+													{/snippet}
+												</Sidebar.MenuSubButton>
+											</Sidebar.MenuSubItem>
+										{/each}
+									</Sidebar.MenuSub>
+								{/if}
 							</Sidebar.MenuItem>
 						{/if}
 					{/each}
