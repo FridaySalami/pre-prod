@@ -21,7 +21,7 @@ export async function POST({ request }) {
   if (!PUBLIC_SUPABASE_URL || !env.PRIVATE_SUPABASE_SERVICE_KEY) {
     return json({ error: 'Server configuration error' }, { status: 500 });
   }
-  
+
   const supabase = createClient(PUBLIC_SUPABASE_URL, env.PRIVATE_SUPABASE_SERVICE_KEY, {
     auth: {
       autoRefreshToken: false,

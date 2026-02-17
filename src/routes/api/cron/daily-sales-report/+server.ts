@@ -41,7 +41,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
   // Try multiple sources for the secret
   const cronSecret = privateEnv.CRON_SECRET ||
-    platform?.env?.CRON_SECRET ||
     process.env.CRON_SECRET;
 
   // Debug logging

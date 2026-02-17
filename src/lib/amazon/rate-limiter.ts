@@ -195,6 +195,6 @@ export const RateLimiters = {
   // Default for unknown endpoints: Conservative
   default: new RateLimiter({
     requestsPerSecond: 0.5,
-    burstLimit: 2
+    burstLimit: 30
   })
 };

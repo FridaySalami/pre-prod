@@ -1,3 +1,4 @@
+import { RateLimiters } from '$lib/amazon/rate-limiter';
 import { SPAPIClient } from '$lib/amazon/sp-api-client';
 import { db } from '$lib/supabaseServer';
 import { env } from '$env/dynamic/private';
@@ -124,6 +125,26 @@ async function runPool<T>(
   await Promise.all(runners);
 }
 
+// Global instance to reuse between requests (preserves LWA token cache)
+let spApiClientInstance: SPAPIClient | null = null;
+
+function getSpApiClient() {
+  if (!spApiClientInstance) {
+    spApiClientInstance = new SPAPIClient({
+      clientId: env.AMAZON_CLIENT_ID,
+      clientSecret: env.AMAZON_CLIENT_SECRET,
+      refreshToken: env.AMAZON_REFRESH_TOKEN,
+      awsAccessKeyId: env.AMAZON_AWS_ACCESS_KEY_ID,
+      awsSecretAccessKey: env.AMAZON_AWS_SECRET_ACCESS_KEY,
+      awsRegion: 'eu-west-1',
+      marketplaceId: 'A1F83G8C2ARO7P',
+      sellerId: env.AMAZON_SELLER_ID,
+      roleArn: env.AMAZON_ROLE_ARN
+    });
+  }
+  return spApiClientInstance;
+}
+
 export async function GET({ url }: { url: URL }) {
   const stream = new ReadableStream({
     async start(controller) {
@@ -134,17 +155,7 @@ export async function GET({ url }: { url: URL }) {
 
       try {
         // Initialize Amazon SP-API client
-        const spApiClient = new SPAPIClient({
-          clientId: env.AMAZON_CLIENT_ID,
-          clientSecret: env.AMAZON_CLIENT_SECRET,
-          refreshToken: env.AMAZON_REFRESH_TOKEN,
-          awsAccessKeyId: env.AMAZON_AWS_ACCESS_KEY_ID,
-          awsSecretAccessKey: env.AMAZON_AWS_SECRET_ACCESS_KEY,
-          awsRegion: 'eu-west-1',
-          marketplaceId: 'A1F83G8C2ARO7P',
-          sellerId: env.AMAZON_SELLER_ID,
-          roleArn: env.AMAZON_ROLE_ARN
-        });
+        const spApiClient = getSpApiClient();
 
         // Calculate date range
         const dateParam = url.searchParams.get('date');
@@ -197,7 +208,11 @@ export async function GET({ url }: { url: URL }) {
           const response = await spApiClient.request(
             'GET',
             '/orders/v0/orders',
-            { queryParams }
+            {
+              queryParams,
+              // Use a dedicated rate limiter for orders to avoid polluting item sync
+              rateLimiter: RateLimiters.listings
+            }
           );
 
           if (response.data?.payload?.Orders) {
@@ -252,6 +267,7 @@ export async function GET({ url }: { url: URL }) {
           updated_at: new Date().toISOString()
         }));
 
+
         // Upsert to Supabase in chunks
         const chunkSize = 500;
         for (let i = 0; i < ordersToUpsert.length; i += chunkSize) {
@@ -268,94 +284,11 @@ export async function GET({ url }: { url: URL }) {
           }
         }
 
-        // Fetch and sync order items
-        console.log(`Fetching items for ${allOrders.length} orders...`);
-        send({ type: 'status', message: `Syncing items for ${allOrders.length} orders...` });
-
-        let itemsSynced = 0;
-        let ordersProcessed = 0;
-
-        // Rate limiter for getOrderItems: 0.5 rps, burst 30
-        const rateLimiter = new TokenBucket(30, 0.5);
-        // Process orders concurrently with rate limiting and pool
-        const processOrder = async (order: AmazonOrder) => {
-          const maxRetries = 5;
-          let attempt = 0;
-          let success = false;
-
-          try {
-            while (attempt < maxRetries && !success) {
-              try {
-                await rateLimiter.consume(1);
-
-                const itemsResponse = await spApiClient.request(
-                  'GET',
-                  `/orders/v0/orders/${order.AmazonOrderId}/orderItems`
-                );
-
-                const items: AmazonOrderItem[] = itemsResponse.data?.payload?.OrderItems || [];
-
-                if (items.length > 0) {
-                  const itemsToUpsert = items.map(item => ({
-                    amazon_order_item_id: item.OrderItemId,
-                    amazon_order_id: order.AmazonOrderId,
-                    asin: item.ASIN,
-                    seller_sku: item.SellerSKU,
-                    title: item.Title,
-                    quantity_ordered: item.QuantityOrdered,
-                    quantity_shipped: item.QuantityShipped,
-                    item_price_amount: item.ItemPrice ? parseFloat(item.ItemPrice.Amount) : null,
-                    item_price_currency: item.ItemPrice?.CurrencyCode,
-                    item_tax_amount: item.ItemTax ? parseFloat(item.ItemTax.Amount) : null,
-                    item_tax_currency: item.ItemTax?.CurrencyCode,
-                    shipping_price_amount: item.ShippingPrice ? parseFloat(item.ShippingPrice.Amount) : null,
-                    shipping_price_currency: item.ShippingPrice?.CurrencyCode,
-                    promotion_discount_amount: item.PromotionDiscount ? parseFloat(item.PromotionDiscount.Amount) : null,
-                    promotion_discount_currency: item.PromotionDiscount?.CurrencyCode,
-                    is_gift: item.IsGift === true || String(item.IsGift) === 'true',
-                    condition_id: item.ConditionId,
-                    condition_subtype_id: item.ConditionSubtypeId,
-                    raw_data: item,
-                    updated_at: new Date().toISOString()
-                  }));
-
-                  const { error: itemsError } = await db
-                    .from('amazon_order_items')
-                    .upsert(itemsToUpsert, { onConflict: 'amazon_order_item_id' });
-
-                  if (itemsError) {
-                    console.error(`Error upserting items for order ${order.AmazonOrderId}:`, itemsError);
-                  } else {
-                    itemsSynced += items.length;
-                  }
-                }
-                success = true;
-              } catch (err: any) {
-                if (err?.response?.status === 429 || err?.message?.includes('Throttled') || err?.message?.includes('TooManyRequests')) {
-                  attempt++;
-                  // Exponential backoff with jitter: 2^attempt * 500ms + jitter
-                  const delay = Math.min(15000, Math.pow(2, attempt) * 500 + Math.random() * 500);
-                  console.log(`Throttled for order ${order.AmazonOrderId}, retrying in ${delay.toFixed(0)}ms (attempt ${attempt}/${maxRetries})`);
-                  await new Promise(r => setTimeout(r, delay));
-                } else {
-                  console.error(`Failed to fetch items for order ${order.AmazonOrderId}:`, err);
-                  break; // Fatal error, don't retry
-                }
-              }
-            }
-          } finally {
-            ordersProcessed++;
-            send({ type: 'progress', ordersProcessed, totalOrders: allOrders.length, itemsSynced });
-          }
-        };
-
-        await runPool(allOrders, processOrder, 8);
-
         send({
           type: 'complete',
-          message: `Successfully synced ${allOrders.length} orders and ${itemsSynced} items`,
+          message: `Successfully synced ${allOrders.length} orders`,
           count: allOrders.length,
-          itemsCount: itemsSynced
+          itemsCount: 0 // No longer syncing items here
         });
         controller.close();
 

@@ -34,83 +34,85 @@ function createSyncStore() {
         update(s => ({ ...s, duration: (Date.now() - s.startTime) / 1000 }));
       }, 100);
 
-      try {
-        console.log(`Fetching /api/amazon/orders/sync?date=${date}&view=${view}...`);
-        const response = await fetch(`/api/amazon/orders/sync?date=${date}&view=${view}`);
+      const processStream = async (url: string, prefix: string) => {
+          console.log(`Fetching ${url}...`);
+          const response = await fetch(url);
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
 
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('Response body is null');
+          const reader = response.body?.getReader();
+          if (!reader) throw new Error('Response body is null');
 
-        const decoder = new TextDecoder();
-        let buffer = '';
+          const decoder = new TextDecoder();
+          let buffer = '';
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n\n');
-          buffer = lines.pop() || '';
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6));
-              console.log('Stream data:', data);
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = JSON.parse(line.slice(6));
+                console.log('Stream data:', data);
 
-              if (data.type === 'status') {
-                update(s => ({ ...s, status: data.message }));
-              } else if (data.type === 'progress') {
-                update(s => ({
-                  ...s,
-                  progress: data.ordersProcessed || 0,
-                  total: data.totalOrders || 0,
-                  status: `Syncing items... ${data.ordersProcessed}/${data.totalOrders} orders processed`
-                }));
-              } else if (data.type === 'complete') {
-                const endTime = Date.now();
-                update(s => {
-                  const duration = (endTime - s.startTime) / 1000;
-                  return {
+                if (data.type === 'status') {
+                  update(s => ({ ...s, status: `${prefix}: ${data.message}` }));
+                } else if (data.type === 'progress') {
+                  update(s => ({
                     ...s,
-                    status: `Complete! Took ${duration.toFixed(1)}s. ${data.message}`,
-                    duration
-                  };
-                });
-                showToast(data.message, 'success');
-
-                // Stop timer
-                if (durationTimer) {
-                  clearInterval(durationTimer);
-                  durationTimer = null;
+                    progress: data.ordersProcessed || 0,
+                    total: data.totalOrders || 0, // This might need adjustment if we chain
+                    status: `${prefix}: ${data.message || `Processing... ${data.ordersProcessed}/${data.totalOrders}`}` // Fallback message
+                  }));
+                } else if (data.type === 'error') {
+                   throw new Error(data.error);
+                } else if (data.type === 'complete') {
+                    // Just log, don't finish global sync yet
+                    console.log(`${prefix} Complete: ${data.message}`);
+                    showToast(data.message, 'success');
                 }
-
-                // Reset syncing state after a delay, but keep the message for a bit? 
-                // Or just let the user see it. The original code reloaded the page.
-                // We should probably emit an event or let the component decide to reload.
-                // For now, we'll just set syncing to false after a short delay to allow the UI to show "Complete"
-                setTimeout(() => {
-                  update(s => ({ ...s, syncing: false }));
-                  // We might want to trigger a reload if we are on the orders page.
-                  // But since this is a global store, we can't easily access window.location.reload() 
-                  // in a way that only affects the orders page if it's active.
-                  // However, the original code did: setTimeout(() => window.location.reload(), 2000);
-                  // We can dispatch a custom event or let the page subscribe to completion.
-                }, 2000);
-              } else if (data.type === 'error') {
-                showToast('Error: ' + data.error, 'error');
-                update(s => ({ ...s, status: 'Error: ' + data.error }));
               }
             }
           }
+      };
+
+      try {
+        // Step 1: Sync Orders
+        await processStream(`/api/amazon/orders/sync?date=${date}&view=${view}`, 'Orders');
+
+        // Step 2: Sync Items
+        await processStream(`/api/amazon/orders/sync-items?date=${date}&view=${view}`, 'Items');
+
+        const endTime = Date.now();
+        update(s => {
+            const duration = (endTime - s.startTime) / 1000;
+            return {
+            ...s,
+            status: `All Syncs Complete! Took ${duration.toFixed(1)}s.`,
+            duration
+            };
+        });
+        
+        // Stop timer
+        if (durationTimer) {
+            clearInterval(durationTimer);
+            durationTimer = null;
         }
-      } catch (e) {
-        showToast('Error syncing orders', 'error');
+
+        setTimeout(() => {
+            update(s => ({ ...s, syncing: false }));
+        }, 2000);
+
+      } catch (e: any) {
+        showToast('Error syncing: ' + e.message, 'error');
         console.error('Sync error:', e);
-        update(s => ({ ...s, status: 'Sync failed', syncing: false }));
+        update(s => ({ ...s, status: 'Sync failed: ' + e.message, syncing: false }));
         if (durationTimer) {
           clearInterval(durationTimer);
           durationTimer = null;
