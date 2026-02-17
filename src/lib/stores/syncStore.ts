@@ -35,51 +35,51 @@ function createSyncStore() {
       }, 100);
 
       const processStream = async (url: string, prefix: string) => {
-          console.log(`Fetching ${url}...`);
-          const response = await fetch(url);
+        console.log(`Fetching ${url}...`);
+        const response = await fetch(url);
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-          const reader = response.body?.getReader();
-          if (!reader) throw new Error('Response body is null');
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('Response body is null');
 
-          const decoder = new TextDecoder();
-          let buffer = '';
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop() || '';
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || '';
 
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = JSON.parse(line.slice(6));
-                console.log('Stream data:', data);
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+              console.log('Stream data:', data);
 
-                if (data.type === 'status') {
-                  update(s => ({ ...s, status: `${prefix}: ${data.message}` }));
-                } else if (data.type === 'progress') {
-                  update(s => ({
-                    ...s,
-                    progress: data.ordersProcessed || 0,
-                    total: data.totalOrders || 0, // This might need adjustment if we chain
-                    status: `${prefix}: ${data.message || `Processing... ${data.ordersProcessed}/${data.totalOrders}`}` // Fallback message
-                  }));
-                } else if (data.type === 'error') {
-                   throw new Error(data.error);
-                } else if (data.type === 'complete') {
-                    // Just log, don't finish global sync yet
-                    console.log(`${prefix} Complete: ${data.message}`);
-                    showToast(data.message, 'success');
-                }
+              if (data.type === 'status') {
+                update(s => ({ ...s, status: `${prefix}: ${data.message}` }));
+              } else if (data.type === 'progress') {
+                update(s => ({
+                  ...s,
+                  progress: data.ordersProcessed || 0,
+                  total: data.totalOrders || 0, // This might need adjustment if we chain
+                  status: `${prefix}: ${data.message || `Processing... ${data.ordersProcessed}/${data.totalOrders}`}` // Fallback message
+                }));
+              } else if (data.type === 'error') {
+                throw new Error(data.error);
+              } else if (data.type === 'complete') {
+                // Just log, don't finish global sync yet
+                console.log(`${prefix} Complete: ${data.message}`);
+                showToast(data.message, 'success');
               }
             }
           }
+        }
       };
 
       try {
@@ -91,22 +91,22 @@ function createSyncStore() {
 
         const endTime = Date.now();
         update(s => {
-            const duration = (endTime - s.startTime) / 1000;
-            return {
+          const duration = (endTime - s.startTime) / 1000;
+          return {
             ...s,
             status: `All Syncs Complete! Took ${duration.toFixed(1)}s.`,
             duration
-            };
+          };
         });
-        
+
         // Stop timer
         if (durationTimer) {
-            clearInterval(durationTimer);
-            durationTimer = null;
+          clearInterval(durationTimer);
+          durationTimer = null;
         }
 
         setTimeout(() => {
-            update(s => ({ ...s, syncing: false }));
+          update(s => ({ ...s, syncing: false }));
         }, 2000);
 
       } catch (e: any) {

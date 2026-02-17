@@ -46,6 +46,8 @@ const ROUTE_PROTECTION = {
     '/api/cron/daily-sales-report', // Daily cron job endpoint with Bearer token auth
     '/api/cron/backfill-sales-report', // One-time backfill endpoint with Bearer token auth
     '/api/cron/sync-holidays', // Sync holidays from MyHRToolkit
+    '/api/amazon/orders/sync', // Pipedream sync endpoint with Bearer token auth
+    '/api/amazon/orders/sync-items', // Pipedream sync endpoint with Bearer token auth
     '/api/debug/settlement-report' // Debug endpoint for settlement reports
     // Note: '/' is NOT public - it should redirect to login if not authenticated
   ],
