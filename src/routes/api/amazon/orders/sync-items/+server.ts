@@ -56,15 +56,15 @@ function getSpApiClient() {
 }
 
 export async function GET({ url, request, locals }: { url: URL; request: Request; locals: App.Locals }) {
-    // Check authentication: either logged in user session OR cron secret
-    const session = await locals.getSession();
-    const authHeader = request.headers.get('Authorization');
-    const cronSecret = env.CRON_SECRET;
-    const isCronAuth = authHeader === `Bearer ${cronSecret}`;
+  // Check authentication: either logged in user session OR cron secret
+  const session = await locals.getSession();
+  const authHeader = request.headers.get('Authorization');
+  const cronSecret = env.CRON_SECRET;
+  const isCronAuth = authHeader === `Bearer ${cronSecret}`;
 
-    if (!session && !isCronAuth) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-    }
+  if (!session && !isCronAuth) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+  }
 
   const stream = new ReadableStream({
     async start(controller) {

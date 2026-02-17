@@ -81,16 +81,19 @@ export class SPAPIClient {
     }
 
     // Refresh token using global LWA endpoint
+    // NOTE: client_id and client_secret must be sent in the body OR Basic Auth header.
+    // SP-API docs say body, but sometimes Basic Auth is more robust.
+    // We stick to body here, but ensure values are clean.
     const response = await fetch(this.LWA_TOKEN_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' // Explicit charset
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        refresh_token: this.config.refreshToken,
-        client_id: this.config.clientId,
-        client_secret: this.config.clientSecret
+        refresh_token: this.config.refreshToken.trim(),
+        client_id: this.config.clientId.trim(),
+        client_secret: this.config.clientSecret.trim()
       })
     });
 
