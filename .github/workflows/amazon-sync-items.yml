@@ -1,25 +1,37 @@
-name: Sync Amazon Order Items
-
+name: Amazon Sync Items (Standalone)
 on:
   schedule:
-    # Run every 5 minutes between 4:00 AM and 7:55 AM UTC
-    # Since Amazon data often settles overnight, early morning is a good time.
-    - cron: '*/5 4-7 * * *'
-  
-  # Allow manual triggering from the GitHub Actions tab for testing
+    - cron: '*/5 4-7 * * *' # Every 5 minutes between 4am and 7am UTC
   workflow_dispatch:
 
 jobs:
   sync-items:
     runs-on: ubuntu-latest
+    timeout-minutes: 300 # 5 hours
     steps:
-      - name: Trigger Sync Items Endpoint
-        run: |
-          # Use curl to hit the endpoint with the Bearer token
-          # We use --fail to ensure the action fails if the server returns a 4xx/5xx error
-          curl --request GET \
-          --url "https://operations.chefstorecookbook.com/api/amazon/orders/sync-items?stream=false" \
-          --header "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-          --header "Accept: application/json" \
-          --fail \
-          --verbose
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Sync Script
+        env:
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          PRIVATE_SUPABASE_SERVICE_KEY: ${{ secrets.PRIVATE_SUPABASE_SERVICE_KEY }}
+          AMAZON_CLIENT_ID: ${{ secrets.AMAZON_CLIENT_ID }}
+          AMAZON_CLIENT_SECRET: ${{ secrets.AMAZON_CLIENT_SECRET }}
+          AMAZON_REFRESH_TOKEN: ${{ secrets.AMAZON_REFRESH_TOKEN }}
+          AMAZON_AWS_ACCESS_KEY_ID: ${{ secrets.AMAZON_AWS_ACCESS_KEY_ID }}
+          AMAZON_AWS_SECRET_ACCESS_KEY: ${{ secrets.AMAZON_AWS_SECRET_ACCESS_KEY }}
+          AMAZON_REGION: ${{ secrets.AMAZON_REGION }}
+          AMAZON_MARKETPLACE_ID: ${{ secrets.AMAZON_MARKETPLACE_ID }}
+          AMAZON_SELLER_ID: ${{ secrets.AMAZON_SELLER_ID }}
+          AMAZON_ROLE_ARN: ${{ secrets.AMAZON_ROLE_ARN }}
+        run: npx tsx scripts/sync-items-standalone.ts
