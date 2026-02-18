@@ -38,8 +38,8 @@ async function main() {
     clientId: process.env.AMAZON_CLIENT_ID || '',
     clientSecret: process.env.AMAZON_CLIENT_SECRET || '',
     refreshToken: process.env.AMAZON_REFRESH_TOKEN || '',
-    awsAccessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID || '',
-    awsSecretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY || '',
+    awsAccessKeyId: (process.env.AMAZON_AWS_ACCESS_KEY_ID || '').trim(),
+    awsSecretAccessKey: (process.env.AMAZON_AWS_SECRET_ACCESS_KEY || '').trim(),
     awsRegion: 'eu-west-1', // Force literal string to avoid any env var issues
     marketplaceId: process.env.AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
     sellerId: process.env.AMAZON_SELLER_ID,

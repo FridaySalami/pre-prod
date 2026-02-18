@@ -147,8 +147,8 @@ export class SPAPIClient {
     const sts = new STSClient({
       region: this.config.awsRegion,
       credentials: {
-        accessKeyId: this.config.awsAccessKeyId!,
-        secretAccessKey: this.config.awsSecretAccessKey!
+        accessKeyId: this.config.awsAccessKeyId!.trim(),
+        secretAccessKey: this.config.awsSecretAccessKey!.trim()
       }
     });
 
