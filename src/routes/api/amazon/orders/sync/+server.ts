@@ -276,24 +276,30 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
 
       // Upsert to Supabase in chunks
       const chunkSize = 500;
+      let totalUpserted = 0;
+
       for (let i = 0; i < ordersToUpsert.length; i += chunkSize) {
         const chunk = ordersToUpsert.slice(i, i + chunkSize);
-        const { error } = await db
+        const result = await db
           .from('amazon_orders')
-          .upsert(chunk, { onConflict: 'amazon_order_id' });
+          .upsert(chunk, { onConflict: 'amazon_order_id', count: 'exact' });
 
-        if (error) {
-          console.error('Error upserting orders to Supabase:', error);
-          send({ type: 'error', error: error.message });
+        if (result.error) {
+          console.error('Error upserting orders to Supabase:', result.error);
+          send({ type: 'error', error: result.error.message });
           return;
+        }
+
+        if (result.count !== null) {
+          totalUpserted += result.count;
         }
       }
 
+      console.log(`Upserted ${totalUpserted} orders to Supabase.`);
+
       send({
         type: 'complete',
-        message: `Successfully synced ${allOrders.length} orders`,
-        count: allOrders.length,
-        itemsCount: 0 // No longer syncing items here
+        message: `Successfully synced ${allOrders.length} orders (Upserted: ${totalUpserted})`,
       });
 
     } catch (error: any) {
