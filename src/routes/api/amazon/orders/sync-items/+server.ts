@@ -131,7 +131,7 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
       let ordersToSyncItems = dbOrders.filter(o => !ordersWithItems.has(o.amazon_order_id));
 
       // Limit to prevent timeouts on Netlify/Pipedream (avoid >30s execution)
-      const MAX_ITEMS_PER_RUN = 15;
+      const MAX_ITEMS_PER_RUN = 5;
       const totalPending = ordersToSyncItems.length;
       if (ordersToSyncItems.length > MAX_ITEMS_PER_RUN) {
         console.log(`Limiting sync to ${MAX_ITEMS_PER_RUN} items (out of ${totalPending} pending) to prevent timeout.`);
