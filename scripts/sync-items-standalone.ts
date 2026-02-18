@@ -40,7 +40,7 @@ async function main() {
     refreshToken: process.env.AMAZON_REFRESH_TOKEN || '',
     awsAccessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID || '',
     awsSecretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY || '',
-    awsRegion: 'eu-west-1',
+    awsRegion: 'eu-west-1', // Force literal string to avoid any env var issues
     marketplaceId: process.env.AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P',
     sellerId: process.env.AMAZON_SELLER_ID,
     roleArn: process.env.AMAZON_ROLE_ARN
