@@ -128,11 +128,16 @@ export class RateLimiter {
    */
   private adjustFromHeaders(headers: any): void {
     const rateLimitHeader = headers?.['x-amzn-ratelimit-limit'];
+    // DISABLED for now: Amazon often returns the *operation* limit, not the bucket setting,
+    // and since we share rate limiters across endpoints, this aggressively throttles high-speed endpoints 
+    // down to the speed of the slowest one called.
 
+    /*
     if (rateLimitHeader) {
       const apiLimit = parseFloat(rateLimitHeader);
 
-      if (apiLimit > 0 && apiLimit !== this.requestsPerSecond) {
+      // Only update if the new limit is significantly different (>10%) to avoid jitter adjustments
+      if (apiLimit > 0 && Math.abs(apiLimit - this.requestsPerSecond) > (this.requestsPerSecond * 0.1)) {
         // Adjust to 80% of the actual limit to be safe
         const newLimit = apiLimit * 0.8;
         console.log(`Rate limiter adjusted: ${this.requestsPerSecond.toFixed(3)} → ${newLimit.toFixed(3)} req/sec`);
@@ -141,6 +146,7 @@ export class RateLimiter {
         this.refillInterval = 1000 / this.requestsPerSecond;
       }
     }
+    */
   }
 
   /**
