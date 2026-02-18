@@ -50,10 +50,10 @@ async function main() {
   const now = new Date();
   const targetDate = new Date(now);
   targetDate.setDate(now.getDate() - 1); // Yesterday
-  
+
   const endDate = new Date(targetDate);
   endDate.setHours(23, 59, 59, 999);
-  
+
   const startDate = new Date(targetDate);
   startDate.setHours(0, 0, 0, 0);
 
@@ -100,8 +100,8 @@ async function main() {
   console.log(`Found ${totalPending} orders missing items. Processing all...`);
 
   if (totalPending === 0) {
-      console.log('All orders have items. Exiting.');
-      return;
+    console.log('All orders have items. Exiting.');
+    return;
   }
 
   // 6. Process orders
@@ -165,8 +165,8 @@ async function main() {
               successCount++;
             }
           } else {
-             // Order has no items? Mark success anyway to avoid retrying forever if that's a valid state
-             successCount++;
+            // Order has no items? Mark success anyway to avoid retrying forever if that's a valid state
+            successCount++;
           }
           success = true;
         } catch (err: any) {
