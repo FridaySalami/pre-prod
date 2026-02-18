@@ -128,10 +128,23 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
       }
 
       // Filter orders that need item sync
-      const ordersToSyncItems = dbOrders.filter(o => !ordersWithItems.has(o.amazon_order_id));
+      let ordersToSyncItems = dbOrders.filter(o => !ordersWithItems.has(o.amazon_order_id));
 
-      console.log(`Found ${ordersToSyncItems.length} orders missing items.`);
-      send({ type: 'status', message: `Found ${ordersToSyncItems.length} orders missing items...` });
+      // Limit to prevent timeouts on Netlify/Pipedream (avoid >30s execution)
+      const MAX_ITEMS_PER_RUN = 15;
+      const totalPending = ordersToSyncItems.length;
+      if (ordersToSyncItems.length > MAX_ITEMS_PER_RUN) {
+        console.log(`Limiting sync to ${MAX_ITEMS_PER_RUN} items (out of ${totalPending} pending) to prevent timeout.`);
+        ordersToSyncItems = ordersToSyncItems.slice(0, MAX_ITEMS_PER_RUN);
+      }
+
+      console.log(`Found ${totalPending} orders missing items. Processing ${ordersToSyncItems.length}...`);
+      send({
+        type: 'status',
+        message: `Found ${totalPending} orders missing items. Processing batch of ${ordersToSyncItems.length}...`,
+        pendingCount: totalPending,
+        processedCount: ordersToSyncItems.length
+      });
 
       let itemsSynced = 0;
       let ordersProcessed = 0;
