@@ -1,7 +1,7 @@
 name: Amazon Sync Items (Standalone)
 on:
   schedule:
-    - cron: '*/5 4-7 * * *' # Every 5 minutes between 4am and 7am UTC
+    - cron: '30 6 * * *' # Once daily at 6:30 AM UTC
   workflow_dispatch:
 
 jobs:
