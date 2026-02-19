@@ -8,8 +8,22 @@ const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE
 export const load: PageServerLoad = async ({ url }) => {
   const page = parseInt(url.searchParams.get('page') || '1', 10);
   const query = url.searchParams.get('q') || '';
-  const startDate = url.searchParams.get('startDate') || '';
-  const endDate = url.searchParams.get('endDate') || '';
+
+  // Handle explicit "all" or initial load
+  let startDate = url.searchParams.get('startDate') || '';
+  let endDate = url.searchParams.get('endDate') || '';
+
+  const hasDateFilter = url.searchParams.has('startDate');
+  const hasEndDateFilter = url.searchParams.has('endDate');
+  const hasSearchQuery = !!query;
+
+  // Default to today only if no query parameters exist (CLEAN landing experience)
+  if (!hasDateFilter && !hasEndDateFilter && !hasSearchQuery) {
+    startDate = new Date().toISOString().split('T')[0];
+  } else if (startDate === 'all') {
+    startDate = ''; // Show everything
+  }
+
   const pageSize = 50;
 
   let supabaseQuery = supabaseAdmin
@@ -21,7 +35,7 @@ export const load: PageServerLoad = async ({ url }) => {
     supabaseQuery = supabaseQuery.or(`order_id.ilike.%${query}%,sku.ilike.%${query}%`);
   }
 
-  if (startDate) {
+  if (startDate && startDate !== 'all') {
     supabaseQuery = supabaseQuery.gte('created_at', startDate);
   }
 

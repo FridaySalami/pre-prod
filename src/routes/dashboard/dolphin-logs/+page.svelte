@@ -65,7 +65,7 @@
 			url.searchParams.set('startDate', lastWeek.toISOString().split('T')[0]);
 			url.searchParams.delete('endDate');
 		} else {
-			url.searchParams.delete('startDate');
+			url.searchParams.set('startDate', 'all');
 			url.searchParams.delete('endDate');
 		}
 
@@ -559,7 +559,7 @@
 	>
 		<div class="flex items-center bg-gray-100 p-1 rounded-lg shrink-0 w-full md:w-auto">
 			<button
-				class={`flex-1 md:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all ${!localStartDate && !localEndDate ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
+				class={`flex-1 md:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all ${localStartDate === 'all' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
 				on:click={() => setTimeframe('all')}
 			>
 				All Time
