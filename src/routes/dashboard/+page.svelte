@@ -106,6 +106,33 @@
 		}
 	};
 
+	let preloadedChartData = {
+		currentWeek: {
+			linnworks: null,
+			financial: null
+		},
+		previousWeek: {
+			linnworks: null,
+			financial: null
+		},
+		// Additional week for navigation support (2 weeks ago)
+		twoWeeksAgo: {
+			linnworks: null,
+			financial: null
+		},
+		employeeHours: {
+			current: null as any,
+			previous: null as any,
+			twoWeeksAgo: null as any
+		},
+		scheduledHours: {
+			current: null as any,
+			previous: null as any,
+			twoWeeksAgo: null as any
+		},
+		usePreloaded: false
+	};
+
 	// Reset dashboard state on each page load
 	function resetDashboardState() {
 		dashboardInitialized = false;
@@ -135,6 +162,16 @@
 				current: { status: 'pending', data: null },
 				previous: { status: 'pending', data: null }
 			}
+		};
+
+		// Reset chart data
+		preloadedChartData = {
+			currentWeek: { linnworks: null, financial: null },
+			previousWeek: { linnworks: null, financial: null },
+			twoWeeksAgo: { linnworks: null, financial: null },
+			employeeHours: { current: null, previous: null, twoWeeksAgo: null },
+			scheduledHours: { current: null, previous: null, twoWeeksAgo: null },
+			usePreloaded: false
 		};
 	}
 
@@ -211,34 +248,6 @@
 	// Enhanced loading features
 	let showDataPreview = false;
 	let shipmentChartRef: any; // Reference to the ShipmentChart component
-
-	// Store preloaded data for ShipmentChart with extended week support
-	let preloadedChartData = {
-		currentWeek: {
-			linnworks: null,
-			financial: null
-		},
-		previousWeek: {
-			linnworks: null,
-			financial: null
-		},
-		// Additional week for navigation support (2 weeks ago)
-		twoWeeksAgo: {
-			linnworks: null,
-			financial: null
-		},
-		employeeHours: {
-			current: null as any,
-			previous: null as any,
-			twoWeeksAgo: null as any
-		},
-		scheduledHours: {
-			current: null as any,
-			previous: null as any,
-			twoWeeksAgo: null as any
-		},
-		usePreloaded: false
-	};
 
 	// Animate progress bars smoothly
 	function animateProgress(metric: string, targetValue: number, duration: number = 300) {
@@ -406,8 +415,12 @@
 			// Start the data loading process - this is now event-driven
 			dataLoadPromise = loadDashboardData();
 
-			// Start the UI loading simulation for better UX
-			simulateLoadingPhases();
+			// Mark local metrics/engine setup as complete after a tiny delay
+			setTimeout(() => {
+				loadingStates.metrics = false;
+				animateProgress('metrics', 100, 400);
+				updateLoadingMessage();
+			}, 400);
 
 			// Wait for actual data loading to complete
 			await dataLoadPromise;
@@ -439,39 +452,6 @@
 			loadingState = 'ERROR';
 			throw err;
 		}
-	}
-
-	// Simulate loading phases for better UX while real data loads
-	function simulateLoadingPhases() {
-		// Phase 1: Basic metrics setup (fast)
-		setTimeout(() => {
-			if (loadingState === 'LOADING_CRITICAL') {
-				console.log('✅ Phase 1: Metrics complete');
-				loadingStates.metrics = false;
-				animateProgress('metrics', 100, 200);
-				updateLoadingMessage();
-			}
-		}, 300);
-
-		// Phase 2: Employee data (medium)
-		setTimeout(() => {
-			if (loadingState === 'LOADING_CRITICAL') {
-				console.log('✅ Phase 2: Employees complete');
-				loadingStates.employees = false;
-				animateProgress('employees', 100, 250);
-				updateLoadingMessage();
-			}
-		}, 600);
-
-		// Phase 3: Schedule data (medium)
-		setTimeout(() => {
-			if (loadingState === 'LOADING_CRITICAL') {
-				console.log('✅ Phase 3: Schedules complete');
-				loadingStates.schedules = false;
-				animateProgress('schedules', 100, 300);
-				updateLoadingMessage();
-			}
-		}, 900);
 	}
 
 	// Validate loaded data and transition to ready state
@@ -745,33 +725,6 @@
 				previousScheduledHours
 			] = await Promise.all(hoursFetches);
 
-			// Build preloaded data structure from successful fetches
-			preloadedChartData = {
-				currentWeek: {
-					linnworks: currentLinnworksData,
-					financial: currentFinancialData
-				},
-				previousWeek: {
-					linnworks: previousLinnworksData,
-					financial: previousFinancialData
-				},
-				twoWeeksAgo: {
-					linnworks: null,
-					financial: null
-				},
-				employeeHours: {
-					current: currentEmployeeHours,
-					previous: previousEmployeeHours,
-					twoWeeksAgo: null // Will be populated by background preload
-				},
-				scheduledHours: {
-					current: currentScheduledHours,
-					previous: previousScheduledHours,
-					twoWeeksAgo: null // Will be populated by background preload
-				},
-				usePreloaded: true
-			};
-
 			// Log partial success results
 			const successful = getSuccessfulDataSources();
 			const failed = getFailedDataSources();
@@ -1013,6 +966,7 @@
 		data: any = null,
 		error?: string
 	) {
+		// Update persistent state
 		if (category === 'currentWeek' || category === 'previousWeek') {
 			if (source === 'linnworks' || source === 'financial') {
 				dataSourceStates[category][source] = {
@@ -1021,8 +975,33 @@
 					error,
 					lastUpdated: new Date()
 				};
+
+				// Sync with preloadedChartData object (for incremental consumption by ShipmentChart)
+				if (category === 'currentWeek') {
+					if (source === 'linnworks') preloadedChartData.currentWeek.linnworks = data;
+					if (source === 'financial') preloadedChartData.currentWeek.financial = data;
+				} else if (category === 'previousWeek') {
+					if (source === 'linnworks') preloadedChartData.previousWeek.linnworks = data;
+					if (source === 'financial') preloadedChartData.previousWeek.financial = data;
+				}
+
+				// Trigger reactivity and mark that we are building the cache
+				preloadedChartData.usePreloaded = true;
+				preloadedChartData = { ...preloadedChartData };
+
+				// Update loading cards for current week data
+				if (category === 'currentWeek') {
+					if (status === 'success' || status === 'cached' || status === 'failed') {
+						loadingStates[source as 'linnworks' | 'financial'] = false;
+						animateProgress(source, 100, 500);
+						updateLoadingMessage();
+					}
+				}
 			}
 		} else if (category === 'employeeHours' || category === 'scheduledHours') {
+			const sourceKey = category === 'employeeHours' ? 'employees' : 'schedules';
+			const period = source === 'current' ? 'current' : 'previous';
+
 			if (source === 'current' || source === 'previous') {
 				dataSourceStates[category][source] = {
 					status,
@@ -1030,8 +1009,30 @@
 					error,
 					lastUpdated: new Date()
 				};
+
+				// Sync with preloadedChartData incrementally
+				if (category === 'employeeHours') {
+					if (source === 'current') preloadedChartData.employeeHours.current = data;
+					if (source === 'previous') preloadedChartData.employeeHours.previous = data;
+				} else if (category === 'scheduledHours') {
+					if (source === 'current') preloadedChartData.scheduledHours.current = data;
+					if (source === 'previous') preloadedChartData.scheduledHours.previous = data;
+				}
+
+				preloadedChartData.usePreloaded = true;
+				preloadedChartData = { ...preloadedChartData };
+
+				// Update loading cards for current period hours
+				if (period === 'current') {
+					if (status === 'success' || status === 'cached' || status === 'failed') {
+						loadingStates[sourceKey as 'employees' | 'schedules'] = false;
+						animateProgress(sourceKey, 100, 500);
+						updateLoadingMessage();
+					}
+				}
 			}
 		}
+
 		console.log(`📊 Data source updated: ${category}.${source} -> ${status}`, {
 			data: !!data,
 			error
@@ -1125,9 +1126,10 @@
 
 	// Progressive enhancement helper functions
 	function checkCriticalDataLoaded(): boolean {
-		return DATA_PRIORITIES.CRITICAL.some((dataPath) => {
+		return DATA_PRIORITIES.CRITICAL.every((dataPath) => {
 			const [category, source] = dataPath.split('.') as [keyof typeof dataSourceStates, string];
-			return isDataSourceLoaded(category, source);
+			const state = getDataSourceState(category, source);
+			return state.status !== 'pending';
 		});
 	}
 
@@ -1222,516 +1224,50 @@
 	}
 </script>
 
-{#if session === undefined || loadingState === 'INITIALIZING' || loadingState === 'LOADING_CRITICAL' || loadingState === 'ERROR'}
-	<div class="loading-container">
-		<div class="loading-content">
-			<!-- Main Content Grid -->
-			<div class="loading-main-grid">
-				<!-- Left Column: Header and Spinner -->
-				<div class="loading-left-panel">
-					<!-- Header Section -->
-					<div class="loading-header">
-						<div class="logo-section">
-							<div class="logo-icon">
-								<svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-									<rect width="40" height="40" rx="12" fill="url(#gradient1)" />
-									<path
-										d="M12 20L18 26L28 14"
-										stroke="white"
-										stroke-width="3"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-									<defs>
-										<linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
-											<stop offset="0%" style="stop-color:#667eea" />
-											<stop offset="100%" style="stop-color:#764ba2" />
-										</linearGradient>
-									</defs>
-								</svg>
-							</div>
-							<div class="logo-text">
-								<h1>Operations Dashboard</h1>
-								<p>Initializing your workspace</p>
-							</div>
-						</div>
-					</div>
-
-					<!-- Main Spinner Section -->
-					<div class="spinner-section">
-						<div class="spinner-container">
-							<svg class="main-spinner" viewBox="0 0 100 100">
-								<defs>
-									<linearGradient id="spinnerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-										<stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
-										<stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
-									</linearGradient>
-								</defs>
-								<circle class="spinner-track" cx="50" cy="50" r="45" />
-								<circle class="spinner-path" cx="50" cy="50" r="45" />
-							</svg>
-							<div class="spinner-center">
-								<div class="pulse-dot"></div>
-							</div>
-						</div>
-						<div class="loading-message-container">
-							<p class="loading-message">{loadingMessage}</p>
-							<div class="message-indicator">
-								<span></span>
-								<span></span>
-								<span></span>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<!-- Right Column: Progress Cards -->
-				<div class="loading-right-panel">
-					{#if loadingState === 'LOADING_CRITICAL'}
-						<div class="progress-grid">
-							<div
-								class="progress-card"
-								class:completed={!loadingStates.metrics}
-								class:active={loadingStates.metrics}
-							>
-								<div class="card-header">
-									<div class="card-icon metrics-icon">
-										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-											<path
-												d="M3 3v18h18"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-											/>
-											<path
-												d="M18 9l-5 5-4-4-5 5"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											/>
-										</svg>
-									</div>
-									<div class="card-status">
-										{#if !loadingStates.metrics}
-											<div class="status-complete">✓</div>
-										{:else}
-											<div class="status-loading">
-												<div class="mini-spinner"></div>
-											</div>
-										{/if}
-									</div>
-								</div>
-								<div class="card-content">
-									<h3>Dashboard Metrics</h3>
-									<p>Setting up analytics engine</p>
-									<div class="progress-track">
-										<div class="progress-bar" style="width: {loadingProgress.metrics}%"></div>
-									</div>
-								</div>
-							</div>
-
-							<div
-								class="progress-card"
-								class:completed={!loadingStates.employees}
-								class:active={loadingStates.employees}
-							>
-								<div class="card-header">
-									<div class="card-icon employees-icon">
-										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-											<path
-												d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"
-												stroke="currentColor"
-												stroke-width="2"
-											/>
-											<circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" />
-											<path d="M22 21v-2a4 4 0 0 0-3-3.87" stroke="currentColor" stroke-width="2" />
-											<path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" />
-										</svg>
-									</div>
-									<div class="card-status">
-										{#if !loadingStates.employees}
-											<div class="status-complete">✓</div>
-										{:else}
-											<div class="status-loading">
-												<div class="mini-spinner"></div>
-											</div>
-										{/if}
-									</div>
-								</div>
-								<div class="card-content">
-									<h3>Employee Data</h3>
-									<p>Loading team information</p>
-									<div class="progress-track">
-										<div class="progress-bar" style="width: {loadingProgress.employees}%"></div>
-									</div>
-								</div>
-							</div>
-
-							<div
-								class="progress-card"
-								class:completed={!loadingStates.schedules}
-								class:active={loadingStates.schedules}
-							>
-								<div class="card-header">
-									<div class="card-icon schedules-icon">
-										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-											<rect
-												x="3"
-												y="4"
-												width="18"
-												height="18"
-												rx="2"
-												ry="2"
-												stroke="currentColor"
-												stroke-width="2"
-											/>
-											<line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2" />
-											<line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2" />
-											<line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2" />
-										</svg>
-									</div>
-									<div class="card-status">
-										{#if !loadingStates.schedules}
-											<div class="status-complete">✓</div>
-										{:else}
-											<div class="status-loading">
-												<div class="mini-spinner"></div>
-											</div>
-										{/if}
-									</div>
-								</div>
-								<div class="card-content">
-									<h3>Schedule Data</h3>
-									<p>Syncing work schedules</p>
-									<div class="progress-track">
-										<div class="progress-bar" style="width: {loadingProgress.schedules}%"></div>
-									</div>
-								</div>
-							</div>
-
-							<div
-								class="progress-card"
-								class:completed={!loadingStates.linnworks}
-								class:active={loadingStates.linnworks}
-							>
-								<div class="card-header">
-									<div class="card-icon linnworks-icon">
-										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-											<path
-												d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
-												stroke="currentColor"
-												stroke-width="2"
-											/>
-											<polyline
-												points="3.27,6.96 12,12.01 20.73,6.96"
-												stroke="currentColor"
-												stroke-width="2"
-											/>
-											<line
-												x1="12"
-												y1="22.08"
-												x2="12"
-												y2="12"
-												stroke="currentColor"
-												stroke-width="2"
-											/>
-										</svg>
-									</div>
-									<div class="card-status">
-										{#if !loadingStates.linnworks}
-											<div class="status-complete">✓</div>
-										{:else}
-											<div class="status-loading">
-												<div class="mini-spinner"></div>
-											</div>
-										{/if}
-									</div>
-								</div>
-								<div class="card-content">
-									<h3>Linnworks API</h3>
-									<p>Fetching order data</p>
-									<div class="progress-track">
-										<div class="progress-bar" style="width: {loadingProgress.linnworks}%"></div>
-									</div>
-								</div>
-							</div>
-
-							<div
-								class="progress-card"
-								class:completed={!loadingStates.financial}
-								class:active={loadingStates.financial}
-							>
-								<div class="card-header">
-									<div class="card-icon financial-icon">
-										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-											<line x1="12" y1="1" x2="12" y2="23" stroke="currentColor" stroke-width="2" />
-											<path
-												d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"
-												stroke="currentColor"
-												stroke-width="2"
-											/>
-										</svg>
-									</div>
-									<div class="card-status">
-										{#if !loadingStates.financial}
-											<div class="status-complete">✓</div>
-										{:else}
-											<div class="status-loading">
-												<div class="mini-spinner"></div>
-											</div>
-										{/if}
-									</div>
-								</div>
-								<div class="card-content">
-									<h3>Financial Data</h3>
-									<p>Processing sales metrics</p>
-									<div class="progress-track">
-										<div class="progress-bar" style="width: {loadingProgress.financial}%"></div>
-									</div>
-								</div>
-							</div>
-						</div>
-					{/if}
+{#if session === undefined}
+	<div class="initial-session-loading">
+		<div class="loading-spinner"></div>
+		<span>Establishing secure session...</span>
+	</div>
+{:else if session === null}
+	<div class="redirect-notice">Redirecting to login...</div>
+{:else if hasGlobalError || error}
+	<div class="dashboard-container">
+		<div class="persistent-status-bar">
+			<div class="status-content error">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<circle cx="12" cy="12" r="10" />
+					<line x1="15" y1="9" x2="9" y2="15" />
+					<line x1="9" y1="9" x2="15" y2="15" />
+				</svg>
+				<span>{error || 'A critical error occurred'}</span>
+				<div class="status-details">
+					<button class="retry-button" on:click={clearCacheAndRefresh}>Retry Loading</button>
 				</div>
 			</div>
-
-			<!-- Enhanced Dashboard Preview -->
-			<div class="dashboard-preview">
-				<div class="preview-header">
-					<div class="preview-title">
-						<div class="shimmer-box title-shimmer"></div>
-						<div class="shimmer-box subtitle-shimmer"></div>
-					</div>
-					<div class="preview-actions">
-						<div class="shimmer-box button-shimmer"></div>
-						<div class="shimmer-box button-shimmer"></div>
-					</div>
-				</div>
-				<div class="preview-content">
-					<div class="preview-chart">
-						<div class="chart-header">
-							<div class="shimmer-box chart-title"></div>
-							<div class="shimmer-box chart-legend"></div>
-						</div>
-						<div class="chart-body">
-							<div class="chart-bars">
-								<div class="chart-bar" style="height: 60%"></div>
-								<div class="chart-bar" style="height: 85%"></div>
-								<div class="chart-bar" style="height: 45%"></div>
-								<div class="chart-bar" style="height: 75%"></div>
-								<div class="chart-bar" style="height: 90%"></div>
-								<div class="chart-bar" style="height: 55%"></div>
-								<div class="chart-bar" style="height: 70%"></div>
-							</div>
-						</div>
-					</div>
-					<div class="preview-metrics">
-						<div class="metric-card">
-							<div class="shimmer-box metric-icon"></div>
-							<div class="metric-content">
-								<div class="shimmer-box metric-value"></div>
-								<div class="shimmer-box metric-label"></div>
-							</div>
-						</div>
-						<div class="metric-card">
-							<div class="shimmer-box metric-icon"></div>
-							<div class="metric-content">
-								<div class="shimmer-box metric-value"></div>
-								<div class="shimmer-box metric-label"></div>
-							</div>
-						</div>
-						<div class="metric-card">
-							<div class="shimmer-box metric-icon"></div>
-							<div class="metric-content">
-								<div class="shimmer-box metric-value"></div>
-								<div class="shimmer-box metric-label"></div>
-							</div>
-						</div>
-					</div>
-
-					<!-- Status Notifications -->
-					{#if showDataPreview}
-						<div class="status-notifications fade-in">
-							<div class="notification success">
-								<div class="notification-icon">
-									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-										<path
-											d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-											fill="currentColor"
-										/>
-									</svg>
-								</div>
-								<div class="notification-content">
-									<h4>Orders Data Synced</h4>
-									<p>Successfully connected to order management system</p>
-								</div>
-							</div>
-							<div class="notification success">
-								<div class="notification-icon">
-									<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-										<path
-											d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"
-											fill="currentColor"
-										/>
-										<path
-											fill-rule="evenodd"
-											d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
-											clip-rule="evenodd"
-											fill="currentColor"
-										/>
-									</svg>
-								</div>
-								<div class="notification-content">
-									<h4>Sales Metrics Ready</h4>
-									<p>Financial data processing completed</p>
-								</div>
-							</div>
-						</div>
-					{/if}
-
-					<!-- Data Source Status Panel -->
-					{#if hasAnyDataLoaded()}
-						<div class="data-sources-panel fade-in">
-							<div class="panel-header">
-								<h3>Data Sources</h3>
-								<div class="panel-indicator">
-									<div class="indicator-dot active"></div>
-									<span>Live</span>
-								</div>
-							</div>
-							<div class="sources-grid">
-								{#if isDataSourceLoaded('currentWeek', 'linnworks')}
-									<div class="source-item">
-										<div class="source-icon linnworks">
-											<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-												<path
-													d="M17.5 13.333V6.667a1.667 1.667 0 00-.833-1.442l-5.834-3.334a1.667 1.667 0 00-1.666 0L3.333 5.225A1.667 1.667 0 002.5 6.667v6.666a1.667 1.667 0 00.833 1.442l5.834 3.334a1.667 1.667 0 001.666 0l5.834-3.334a1.667 1.667 0 00.833-1.442z"
-													stroke="currentColor"
-													stroke-width="1.5"
-												/>
-												<path
-													d="M2.725 5.8L10 10.008l7.275-4.208M10 18.4V10"
-													stroke="currentColor"
-													stroke-width="1.5"
-												/>
-											</svg>
-										</div>
-										<div class="source-details">
-											<h4>Linnworks API</h4>
-											<p>Order management system</p>
-										</div>
-										<div
-											class="source-status {isDataSourceCached('currentWeek', 'linnworks')
-												? 'cached'
-												: 'fresh'}"
-										>
-											{isDataSourceCached('currentWeek', 'linnworks') ? 'Cached' : 'Fresh'}
-										</div>
-									</div>
-								{/if}
-								{#if isDataSourceLoaded('currentWeek', 'financial')}
-									<div class="source-item">
-										<div class="source-icon financial">
-											<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-												<path
-													d="M10 .833L10 19.167M14.167 4.167H7.917a2.917 2.917 0 000 5.833h4.166a2.917 2.917 0 010 5.833H5"
-													stroke="currentColor"
-													stroke-width="1.5"
-												/>
-											</svg>
-										</div>
-										<div class="source-details">
-											<h4>Financial Data</h4>
-											<p>Sales and revenue metrics</p>
-										</div>
-										<div
-											class="source-status {isDataSourceCached('currentWeek', 'financial')
-												? 'cached'
-												: 'fresh'}"
-										>
-											{isDataSourceCached('currentWeek', 'financial') ? 'Cached' : 'Fresh'}
-										</div>
-									</div>
-								{/if}
-							</div>
-						</div>
-					{/if}
-
-					<!-- Processing Status -->
-					{#if showLinnworksStatus}
-						<div class="processing-status fade-in">
-							<div class="status-content">
-								<div class="status-icon-animated">
-									<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-										<path
-											d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linejoin="round"
-										/>
-									</svg>
-								</div>
-								<div class="status-text">
-									<h4>Processing Complete</h4>
-									<p>Linnworks data loaded - Finalizing financial metrics</p>
-								</div>
-							</div>
-							<div class="processing-bar">
-								<div class="processing-fill"></div>
-							</div>
-						</div>
-					{/if}
-
-					<!-- Debug Tools (only show during loading) -->
-					{#if loadingState === 'LOADING_CRITICAL' || loadingState === 'LOADING_BACKGROUND'}
-						<div class="debug-section fade-in" style="margin-top: 2rem;">
-							<button
-								class="debug-btn"
-								on:click={forceLoadingComplete}
-								title="Force complete loading if stuck (development tool)"
-							>
-								🔧 Force Complete Loading
-							</button>
-							<button
-								class="debug-btn"
-								on:click={testApiEndpoints}
-								title="Test API endpoints manually (development tool)"
-								style="margin-left: 1rem;"
-							>
-								🧪 Test APIs
-							</button>
-							<p class="debug-text">Debug tools: Force completion or test API endpoints manually</p>
-						</div>
-					{/if}
+		</div>
+		<div class="dashboard-skeleton">
+			<div class="skeleton-header">
+				<div class="skeleton-title"></div>
+				<div class="skeleton-subtitle"></div>
+			</div>
+			<div class="skeleton-chart">
+				<div class="skeleton-bars">
+					{#each Array(7) as _, i}
+						<div class="skeleton-bar" style="height: {30 + Math.random() * 60}%"></div>
+					{/each}
 				</div>
 			</div>
 		</div>
 	</div>
-{:else if session === null}
-	<!-- When session is null, onMount should have redirected already -->
-	<div>Redirecting to login...</div>
-{:else if hasGlobalError}
-	<ErrorBoundary
-		title="Critical Error"
-		showDetails={true}
-		retryAction={() => {
-			hasGlobalError = false;
-			error = null;
-			retryOperation(initializeDashboard, 'reload dashboard');
-		}}
-		on:error={handleGlobalError}
-	/>
-{:else if error}
-	<ErrorBoundary
-		title="Dashboard Error"
-		showDetails={false}
-		retryAction={() => {
-			error = null;
-			retryOperation(initializeDashboard, 'reload dashboard data');
-		}}
-	/>
-{:else if session}
+{:else}
 	<!-- Dashboard Header -->
 	<div class="dashboard-actions">
 		<div class="dashboard-title">
@@ -1754,9 +1290,9 @@
 		</div>
 	</div>
 
-	<!-- Progressive Dashboard Display -->
+	<!-- Main Dashboard Content -->
 	<div class="dashboard-container">
-		<!-- Persistent Status Container - Always visible to prevent layout shifts -->
+		<!-- Persistent Status Container -->
 		<div class="status-container">
 			{#if loadingState === 'SHOWING_PARTIAL'}
 				<div class="status-banner partial-loaded">
@@ -1791,13 +1327,13 @@
 			{/if}
 		</div>
 
-		<!-- Main Dashboard Content -->
+		<!-- Dashboard Content Grid -->
 		<div
 			class="dashboard-content"
 			class:partial-loaded={loadingState === 'SHOWING_PARTIAL' ||
 				loadingState === 'LOADING_BACKGROUND'}
 		>
-			<!-- Persistent Data Status Bar (similar to employee hours design) -->
+			<!-- Persistent Data Status Bar -->
 			<div class="persistent-status-bar">
 				{#if loadingState === 'READY'}
 					<div class="status-content success">
@@ -1816,124 +1352,24 @@
 						{#if previousWeekPreloading}
 							<div class="preload-indicator">
 								<div class="mini-spinner"></div>
-								<span class="preload-text">Loading previous week comparisons...</span>
+								<span class="preload-text">Loading comparisons...</span>
 							</div>
 						{/if}
-						<div class="status-details">
-							<span class="detail-item">
-								<span class="detail-label">Current Week:</span>
-								<span
-									class="detail-status"
-									class:success={isDataSourceLoaded('currentWeek', 'linnworks')}
-								>
-									{isDataSourceLoaded('currentWeek', 'linnworks') ? '✓' : '✗'} Orders
-								</span>
-								<span
-									class="detail-status"
-									class:success={isDataSourceLoaded('currentWeek', 'financial')}
-								>
-									{isDataSourceLoaded('currentWeek', 'financial') ? '✓' : '✗'} Financial
-								</span>
-							</span>
-							<span class="detail-item">
-								<span class="detail-label">Previous Week:</span>
-								<span
-									class="detail-status"
-									class:success={isDataSourceLoaded('previousWeek', 'linnworks')}
-									class:loading={previousWeekPreloading}
-								>
-									{#if previousWeekPreloading}
-										⏳ Loading comparisons
-									{:else if isDataSourceLoaded('previousWeek', 'linnworks')}
-										✓ Comparisons
-									{:else}
-										✗ Comparisons
-									{/if}
-								</span>
-							</span>
-							<span class="detail-item">
-								<span class="detail-label">Employee Data:</span>
-								<span
-									class="detail-status"
-									class:success={isDataSourceLoaded('employeeHours', 'current')}
-								>
-									{isDataSourceLoaded('employeeHours', 'current') ? '✓' : '✗'} Hours
-								</span>
-							</span>
-						</div>
 					</div>
-				{:else if loadingState === 'LOADING_BACKGROUND'}
+				{:else if loadingState === 'LOADING_BACKGROUND' || loadingState === 'SHOWING_PARTIAL'}
 					<div class="status-content info">
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<circle cx="12" cy="12" r="10" />
-							<path d="M12,16 L12,12" />
-							<path d="M12,8 L12.01,8" />
-						</svg>
-						<span>Dashboard loaded with partial data - loading historical comparisons</span>
-						<div class="status-details">
-							<span class="detail-item">
-								<span class="detail-label">Current Week:</span>
-								<span
-									class="detail-status"
-									class:success={isDataSourceLoaded('currentWeek', 'linnworks')}
-								>
-									{isDataSourceLoaded('currentWeek', 'linnworks') ? '✓' : '⏳'} Orders
-								</span>
-								<span
-									class="detail-status"
-									class:success={isDataSourceLoaded('currentWeek', 'financial')}
-								>
-									{isDataSourceLoaded('currentWeek', 'financial') ? '✓' : '⏳'} Financial
-								</span>
-							</span>
-							<span class="detail-item">
-								<span class="detail-label">Previous Week:</span>
-								<span class="detail-status loading">⏳ Loading comparisons</span>
-							</span>
-						</div>
+						<div class="mini-spinner"></div>
+						<span>Updating dashboard with historical data...</span>
 					</div>
 				{:else if (loadingState as LoadingState) === 'ERROR'}
 					<div class="status-content error">
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<circle cx="12" cy="12" r="10" />
-							<line x1="15" y1="9" x2="9" y2="15" />
-							<line x1="9" y1="9" x2="15" y2="15" />
-						</svg>
-						<span>Failed to load dashboard data</span>
-						<div class="status-details">
-							<span class="detail-item">
-								<button class="retry-button" on:click={clearCacheAndRefresh}>Retry Loading</button>
-							</span>
-						</div>
+						<span>Error loading data</span>
+						<button class="retry-button" on:click={clearCacheAndRefresh}>Retry</button>
 					</div>
 				{:else}
 					<div class="status-content loading">
-						<div class="loading-spinner"></div>
-						<span>Loading dashboard data...</span>
-						<div class="status-details">
-							<span class="detail-item">
-								<span class="detail-label">Progress:</span>
-								<span class="detail-status loading">
-									{(loadingState as LoadingState) === 'LOADING_CRITICAL'
-										? 'Loading critical data'
-										: 'Initializing'}
-								</span>
-							</span>
-						</div>
+						<div class="mini-spinner"></div>
+						<span>{loadingMessage}</span>
 					</div>
 				{/if}
 			</div>
@@ -1942,21 +1378,15 @@
 				<!-- ShipmentChart with Progressive Data -->
 				<ShipmentChart preloadedData={preloadedChartData} />
 
-				<!-- Skeleton/Loading States for Missing Data -->
 				{#if !backgroundDataLoaded}
 					<div class="missing-data-notice">
 						<div class="notice-content">
 							<div class="notice-icon">⏳</div>
 							<div class="notice-text">
 								<h4>Loading Comparisons</h4>
-								<p>Historical data is being loaded to show week-over-week trends</p>
+								<p>Historical data is being loaded to show WoW trends</p>
 							</div>
 						</div>
-					</div>
-				{:else}
-					<!-- Debug: Force complete loading state -->
-					<div class="debug-complete">
-						<button on:click={forceLoadingComplete}>Force Complete Loading</button>
 					</div>
 				{/if}
 			{:else}
@@ -1982,9 +1412,6 @@
 			{/if}
 		</div>
 	</div>
-{:else}
-	<!-- When session is null, onMount should have redirected already -->
-	<div>Redirecting...</div>
 {/if}
 
 <style>
@@ -2030,1026 +1457,29 @@
 		--spacing-2xl: 3rem;
 	}
 
-	/* Main Layout Grid */
-	.loading-main-grid {
-		display: grid;
-		grid-template-columns: 1fr 2fr;
-		gap: var(--spacing-xl);
-		margin-bottom: var(--spacing-lg);
-	}
-
-	.loading-left-panel {
+	/* Initial Session Loading */
+	.initial-session-loading {
+		height: 40vh;
 		display: flex;
 		flex-direction: column;
-		justify-content: center;
-		align-items: center;
-		text-align: center;
-	}
-
-	.loading-right-panel {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-	}
-
-	/* Loading Container */
-	.loading-container {
-		min-height: 50vh;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-		padding: var(--spacing-md);
-		border-radius: var(--radius-lg);
-		margin: var(--spacing-sm);
-		position: relative;
-		overflow: hidden;
-	}
-
-	.loading-container::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background:
-			radial-gradient(circle at 20% 50%, rgba(102, 126, 234, 0.1) 0%, transparent 50%),
-			radial-gradient(circle at 80% 20%, rgba(118, 75, 162, 0.1) 0%, transparent 50%),
-			radial-gradient(circle at 40% 80%, rgba(240, 147, 251, 0.1) 0%, transparent 50%);
-		animation: backgroundShift 20s ease-in-out infinite;
-		pointer-events: none;
-	}
-
-	@keyframes backgroundShift {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.8;
-		}
-	}
-
-	.loading-content {
-		position: relative;
-		max-width: 900px;
-		width: 100%;
-		background: var(--surface-glass);
-		backdrop-filter: blur(20px);
-		border-radius: var(--radius-xl);
-		padding: var(--spacing-lg);
-		box-shadow:
-			var(--shadow-xl),
-			0 0 40px rgba(0, 0, 0, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.8);
-		animation: containerFadeIn 0.8s ease-out;
-	}
-
-	@keyframes containerFadeIn {
-		from {
-			opacity: 0;
-			transform: translateY(30px) scale(0.95);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0) scale(1);
-		}
-	}
-
-	/* Header Section */
-	.loading-header {
-		text-align: center;
-		margin-bottom: var(--spacing-md);
-	}
-
-	.logo-section {
-		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: var(--spacing-md);
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.logo-icon {
-		animation: logoFloat 3s ease-in-out infinite;
-	}
-
-	@keyframes logoFloat {
-		0%,
-		100% {
-			transform: translateY(0px);
-		}
-		50% {
-			transform: translateY(-5px);
-		}
-	}
-
-	.logo-text h1 {
-		margin: 0;
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--text-primary);
-		background: var(--primary-gradient);
-		-webkit-background-clip: text;
-		-webkit-text-fill-color: transparent;
-		background-clip: text;
-	}
-
-	.logo-text p {
-		margin: var(--spacing-xs) 0 0 0;
-		font-size: 1rem;
 		color: var(--text-secondary);
-		font-weight: 500;
-	}
-
-	/* Main Spinner Section */
-	.spinner-section {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--spacing-md);
-		margin-bottom: var(--spacing-lg);
-	}
-
-	.spinner-container {
-		position: relative;
-		width: 80px;
-		height: 80px;
-	}
-
-	.main-spinner {
-		width: 100%;
-		height: 100%;
-		transform: rotate(-90deg);
-		animation: spinRotate 3s linear infinite;
-	}
-
-	.spinner-track {
-		fill: none;
-		stroke: rgba(102, 126, 234, 0.1);
-		stroke-width: 3;
-	}
-
-	.spinner-path {
-		fill: none;
-		stroke: url(#spinnerGradient);
-		stroke-width: 3;
-		stroke-linecap: round;
-		stroke-dasharray: 283;
-		stroke-dashoffset: 283;
-		animation: spinProgress 2s ease-in-out infinite;
-	}
-
-	@keyframes spinRotate {
-		from {
-			transform: rotate(-90deg);
-		}
-		to {
-			transform: rotate(270deg);
-		}
-	}
-
-	@keyframes spinProgress {
-		0% {
-			stroke-dashoffset: 283;
-		}
-		50% {
-			stroke-dashoffset: 70;
-		}
-		100% {
-			stroke-dashoffset: 283;
-		}
-	}
-
-	.spinner-center {
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-	}
-
-	.pulse-dot {
-		width: 16px;
-		height: 16px;
-		background: var(--primary-gradient);
-		border-radius: 50%;
-		animation: pulseGlow 2s ease-in-out infinite;
-		box-shadow: 0 0 20px rgba(102, 126, 234, 0.4);
-	}
-
-	@keyframes pulseGlow {
-		0%,
-		100% {
-			transform: scale(1);
-			box-shadow: 0 0 20px rgba(102, 126, 234, 0.4);
-		}
-		50% {
-			transform: scale(1.2);
-			box-shadow: 0 0 30px rgba(102, 126, 234, 0.8);
-		}
-	}
-
-	/* Loading Message */
-	.loading-message-container {
-		text-align: center;
-	}
-
-	.loading-message {
-		font-size: 1.125rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		margin: 0 0 var(--spacing-md) 0;
-		animation: messageSlide 0.5s ease-out;
-	}
-
-	@keyframes messageSlide {
-		from {
-			opacity: 0;
-			transform: translateY(10px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	.message-indicator {
-		display: flex;
-		justify-content: center;
-		gap: 6px;
-	}
-
-	.message-indicator span {
-		width: 8px;
-		height: 8px;
-		background: var(--primary-gradient);
-		border-radius: 50%;
-		animation: dotBounce 1.4s ease-in-out infinite both;
-	}
-
-	.message-indicator span:nth-child(1) {
-		animation-delay: -0.32s;
-	}
-	.message-indicator span:nth-child(2) {
-		animation-delay: -0.16s;
-	}
-	.message-indicator span:nth-child(3) {
-		animation-delay: 0;
-	}
-
-	@keyframes dotBounce {
-		0%,
-		80%,
-		100% {
-			transform: scale(0.8);
-			opacity: 0.5;
-		}
-		40% {
-			transform: scale(1.2);
-			opacity: 1;
-		}
-	}
-
-	/* Progress Grid */
-	.progress-grid {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: var(--spacing-sm);
-		margin-bottom: 0;
-	}
-
-	.progress-card {
-		background: var(--surface-elevated);
-		backdrop-filter: blur(10px);
-		border-radius: var(--radius-md);
-		padding: var(--spacing-sm);
-		border: 1px solid var(--border-light);
-		box-shadow: var(--shadow-md);
-		transition: all 0.3s ease;
-		position: relative;
-		overflow: hidden;
-	}
-
-	.progress-card::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 3px;
-		background: var(--border-light);
-		transition: all 0.3s ease;
-	}
-
-	.progress-card.active {
-		border-color: var(--border-accent);
-		box-shadow: var(--shadow-lg), var(--shadow-glow);
-		transform: translateY(-2px);
-	}
-
-	.progress-card.active::before {
-		background: var(--primary-gradient);
-	}
-
-	.progress-card.completed {
-		background: linear-gradient(135deg, rgba(79, 172, 254, 0.05) 0%, rgba(0, 242, 254, 0.05) 100%);
-		border-color: rgba(79, 172, 254, 0.3);
-		transform: scale(1.02);
-	}
-
-	.progress-card.completed::before {
-		background: var(--success-gradient);
-	}
-
-	.card-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.card-icon {
-		width: 32px;
-		height: 32px;
-		border-radius: var(--radius-sm);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		transition: all 0.3s ease;
-	}
-
-	.metrics-icon {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-	}
-	.employees-icon {
-		background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-	}
-	.schedules-icon {
-		background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-	}
-	.linnworks-icon {
-		background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-	}
-	.financial-icon {
-		background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-	}
-
-	.card-status {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.status-complete {
-		width: 28px;
-		height: 28px;
-		background: var(--success-gradient);
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		font-weight: 700;
-		font-size: 12px;
-		animation: checkmarkPop 0.5s ease-out;
-	}
-
-	@keyframes checkmarkPop {
-		0% {
-			transform: scale(0);
-			opacity: 0;
-		}
-		50% {
-			transform: scale(1.2);
-		}
-		100% {
-			transform: scale(1);
-			opacity: 1;
-		}
-	}
-
-	.status-loading {
-		width: 28px;
-		height: 28px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.mini-spinner {
-		width: 18px;
-		height: 18px;
-		border: 2px solid var(--border-light);
-		border-top: 2px solid #667eea;
-		border-radius: 50%;
-		animation: miniSpin 1s linear infinite;
-	}
-
-	@keyframes miniSpin {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
-			transform: rotate(360deg);
-		}
-	}
-
-	.card-content h3 {
-		margin: 0 0 var(--spacing-xs) 0;
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.card-content p {
-		margin: 0 0 var(--spacing-sm) 0;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-	}
-
-	.progress-track {
-		width: 100%;
-		height: 6px;
-		background: var(--border-light);
-		border-radius: 3px;
-		overflow: hidden;
-	}
-
-	.progress-bar {
-		height: 100%;
-		background: var(--primary-gradient);
-		border-radius: 3px;
-		transition: width 0.3s ease;
-		position: relative;
-	}
-
-	.progress-bar::after {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		bottom: 0;
-		right: 0;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
-		animation: progressShine 2s ease-in-out infinite;
-	}
-
-	@keyframes progressShine {
-		0% {
-			transform: translateX(-100%);
-		}
-		50%,
-		100% {
-			transform: translateX(100%);
-		}
-	}
-
-	/* Dashboard Preview */
-	.dashboard-preview {
-		background: var(--surface-elevated);
-		backdrop-filter: blur(10px);
+		background: var(--surface-secondary);
 		border-radius: var(--radius-lg);
-		padding: var(--spacing-lg);
-		margin-bottom: var(--spacing-lg);
+		margin: var(--spacing-md);
 		border: 1px solid var(--border-light);
-		box-shadow: var(--shadow-md);
 	}
 
-	.preview-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--spacing-lg);
-	}
-
-	.preview-title {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-sm);
-	}
-
-	.title-shimmer {
-		width: 240px;
-		height: 28px;
-	}
-
-	.subtitle-shimmer {
-		width: 180px;
-		height: 16px;
-	}
-
-	.preview-actions {
-		display: flex;
-		gap: var(--spacing-sm);
-	}
-
-	.button-shimmer {
-		width: 100px;
-		height: 36px;
-	}
-
-	.preview-content {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-lg);
-	}
-
-	.preview-chart {
-		border-radius: var(--radius-md);
-		border: 1px solid var(--border-light);
-		padding: var(--spacing-md);
-		background: var(--surface-primary);
-	}
-
-	.chart-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--spacing-md);
-	}
-
-	.chart-title {
-		width: 160px;
-		height: 20px;
-	}
-
-	.chart-legend {
-		width: 120px;
-		height: 16px;
-	}
-
-	.chart-body {
-		height: 120px;
-		display: flex;
-		align-items: end;
-		justify-content: center;
-		padding: var(--spacing-md);
-	}
-
-	.chart-bars {
-		display: flex;
-		align-items: end;
-		gap: 12px;
-		height: 100%;
-		width: 100%;
-		max-width: 400px;
-	}
-
-	.chart-bar {
-		flex: 1;
-		background: var(--primary-gradient);
-		border-radius: 4px 4px 0 0;
-		min-height: 20px;
-		animation: barGrow 1.5s ease-out;
-		animation-fill-mode: both;
-		opacity: 0.8;
-		transition: opacity 0.3s ease;
-	}
-
-	.chart-bar:hover {
-		opacity: 1;
-	}
-
-	.chart-bar:nth-child(1) {
-		animation-delay: 0.1s;
-	}
-	.chart-bar:nth-child(2) {
-		animation-delay: 0.2s;
-	}
-	.chart-bar:nth-child(3) {
-		animation-delay: 0.3s;
-	}
-	.chart-bar:nth-child(4) {
-		animation-delay: 0.4s;
-	}
-	.chart-bar:nth-child(5) {
-		animation-delay: 0.5s;
-	}
-	.chart-bar:nth-child(6) {
-		animation-delay: 0.6s;
-	}
-	.chart-bar:nth-child(7) {
-		animation-delay: 0.7s;
-	}
-
-	@keyframes barGrow {
-		from {
-			height: 0;
-			opacity: 0;
-		}
-		to {
-			opacity: 0.8;
-		}
-	}
-
-	.preview-metrics {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-		gap: var(--spacing-md);
-	}
-
-	.metric-card {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		padding: var(--spacing-md);
-		background: var(--surface-primary);
-		border-radius: var(--radius-md);
-		border: 1px solid var(--border-light);
-		box-shadow: var(--shadow-sm);
-	}
-
-	.metric-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: var(--radius-sm);
-	}
-
-	.metric-content {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-xs);
-	}
-
-	.metric-value {
-		width: 80px;
-		height: 20px;
-	}
-
-	.metric-label {
-		width: 120px;
-		height: 14px;
-	}
-
-	/* Shimmer Animation */
-	.shimmer-box {
-		background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-		background-size: 200% 100%;
-		animation: shimmer 1.5s infinite;
-		border-radius: var(--radius-sm);
-	}
-
-	@keyframes shimmer {
-		0% {
-			background-position: -200% 0;
-		}
-		100% {
-			background-position: 200% 0;
-		}
-	}
-
-	/* Status Notifications */
-	.status-notifications {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-md);
-		margin-bottom: var(--spacing-2xl);
-	}
-
-	.notification {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
-		padding: var(--spacing-lg);
-		background: var(--surface-elevated);
-		backdrop-filter: blur(10px);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--border-light);
-		box-shadow: var(--shadow-md);
-		animation: notificationSlide 0.5s ease-out;
-	}
-
-	.notification.success {
-		border-color: rgba(79, 172, 254, 0.3);
-		background: linear-gradient(135deg, rgba(79, 172, 254, 0.05) 0%, rgba(0, 242, 254, 0.05) 100%);
-	}
-
-	@keyframes notificationSlide {
-		from {
-			opacity: 0;
-			transform: translateX(-20px);
-		}
-		to {
-			opacity: 1;
-			transform: translateX(0);
-		}
-	}
-
-	.notification-icon {
-		width: 40px;
-		height: 40px;
-		background: var(--success-gradient);
-		border-radius: var(--radius-md);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		flex-shrink: 0;
-	}
-
-	.notification-content h4 {
-		margin: 0 0 var(--spacing-xs) 0;
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.notification-content p {
-		margin: 0;
-		font-size: 0.875rem;
-		color: var(--text-secondary);
-	}
-
-	/* Data Sources Panel */
-	.data-sources-panel {
-		background: var(--surface-elevated);
-		backdrop-filter: blur(10px);
-		border-radius: var(--radius-lg);
+	.redirect-notice {
 		padding: var(--spacing-xl);
-		margin-bottom: var(--spacing-2xl);
-		border: 1px solid var(--border-light);
-		box-shadow: var(--shadow-md);
-	}
-
-	.panel-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--spacing-lg);
-	}
-
-	.panel-header h3 {
-		margin: 0;
-		font-size: 1.25rem;
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.panel-indicator {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: var(--text-secondary);
-	}
-
-	.indicator-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: #22c55e;
-		animation: dotPulse 2s ease-in-out infinite;
-	}
-
-	@keyframes dotPulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.5;
-		}
-	}
-
-	.sources-grid {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-md);
-	}
-
-	.source-item {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
-		padding: var(--spacing-lg);
-		background: var(--surface-primary);
-		border-radius: var(--radius-md);
-		border: 1px solid var(--border-light);
-		box-shadow: var(--shadow-sm);
-		transition: all 0.3s ease;
-	}
-
-	.source-item:hover {
-		box-shadow: var(--shadow-md);
-		transform: translateY(-1px);
-	}
-
-	.source-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: var(--radius-sm);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		flex-shrink: 0;
-	}
-
-	.source-icon.linnworks {
-		background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-	}
-
-	.source-icon.financial {
-		background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-	}
-
-	.source-details {
-		flex: 1;
-	}
-
-	.source-details h4 {
-		margin: 0 0 var(--spacing-xs) 0;
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.source-details p {
-		margin: 0;
-		font-size: 0.875rem;
-		color: var(--text-secondary);
-	}
-
-	.source-status {
-		padding: var(--spacing-xs) var(--spacing-md);
-		border-radius: var(--radius-sm);
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		border: 1px solid;
-	}
-
-	.source-status.cached {
-		background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%);
-		color: #0369a1;
-		border-color: #7dd3fc;
-	}
-
-	.source-status.fresh {
-		background: linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%);
-		color: #166534;
-		border-color: #86efac;
-	}
-
-	/* Processing Status */
-	.processing-status {
-		background: var(--surface-elevated);
-		backdrop-filter: blur(10px);
-		border-radius: var(--radius-lg);
-		padding: var(--spacing-xl);
-		border: 1px solid var(--border-accent);
-		box-shadow: var(--shadow-lg), var(--shadow-glow);
-		position: relative;
-		overflow: hidden;
-	}
-
-	.processing-status::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 3px;
-		background: var(--primary-gradient);
-	}
-
-	.status-content {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-lg);
-		margin-bottom: var(--spacing-lg);
-	}
-
-	.status-icon-animated {
-		width: 48px;
-		height: 48px;
-		background: var(--primary-gradient);
-		border-radius: var(--radius-md);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		animation: iconFloat 2s ease-in-out infinite;
-	}
-
-	@keyframes iconFloat {
-		0%,
-		100% {
-			transform: translateY(0px) rotate(0deg);
-		}
-		50% {
-			transform: translateY(-3px) rotate(5deg);
-		}
-	}
-
-	.status-text h4 {
-		margin: 0 0 var(--spacing-xs) 0;
-		font-size: 1.125rem;
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.status-text p {
-		margin: 0;
-		font-size: 0.875rem;
-		color: var(--text-secondary);
-	}
-
-	.processing-bar {
-		width: 100%;
-		height: 4px;
-		background: var(--border-light);
-		border-radius: 2px;
-		overflow: hidden;
-	}
-
-	.processing-fill {
-		height: 100%;
-		background: var(--primary-gradient);
-		border-radius: 2px;
-		animation: processingFlow 2s ease-in-out infinite;
-	}
-
-	@keyframes processingFlow {
-		0% {
-			width: 0%;
-		}
-		50% {
-			width: 70%;
-		}
-		100% {
-			width: 100%;
-		}
-	}
-
-	/* Debug Section */
-	.debug-section {
 		text-align: center;
-		padding: var(--spacing-lg);
-		background: rgba(255, 255, 255, 0.1);
-		border-radius: var(--radius-md);
-		border: 1px dashed rgba(255, 255, 255, 0.3);
-	}
-
-	.debug-btn {
-		background: linear-gradient(135deg, #ff9500 0%, #ff6b6b 100%);
-		color: white;
-		border: none;
-		padding: var(--spacing-sm) var(--spacing-lg);
-		border-radius: var(--radius-sm);
-		font-size: 0.875rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		box-shadow: var(--shadow-sm);
-	}
-
-	.debug-btn:hover {
-		background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
-	}
-
-	.debug-btn:active:not(:disabled) {
-		transform: translateY(0);
-		box-shadow: 0 2px 4px rgba(255, 107, 107, 0.2);
-	}
-
-	.clear-cache-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-		transform: none;
-	}
-
-	.debug-text {
-		margin: var(--spacing-sm) 0 0 0;
-		font-size: 0.75rem;
-		color: rgba(255, 255, 255, 0.7);
+		color: var(--text-secondary);
 		font-style: italic;
 	}
 
-	/* Fade In Animation */
-	.fade-in {
-		animation: fadeIn 0.8s ease-out;
-	}
-
-	@keyframes fadeIn {
-		from {
-			opacity: 0;
-			transform: translateY(20px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	/* Dashboard Actions (existing styles maintained) */
+	/* Dashboard Header (maintained) */
 	.dashboard-actions {
 		display: flex;
 		justify-content: space-between;
@@ -3109,114 +1539,266 @@
 		transform: none;
 	}
 
-	/* Persistent Status Bar (similar to employee hours design) */
-	.persistent-status-bar {
-		margin-bottom: 16px;
-		min-height: 60px;
+	/* Dashboard Container & Grid */
+	.dashboard-container {
 		display: flex;
-		align-items: center;
-		border-radius: 8px;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		flex-direction: column;
+		gap: var(--spacing-md);
+		padding: 0 var(--spacing-md);
+	}
+
+	.status-container {
+		min-height: 0;
 		transition: all 0.3s ease;
 	}
 
+	.status-banner {
+		padding: var(--spacing-md);
+		border-radius: var(--radius-md);
+		margin-bottom: var(--spacing-sm);
+		animation: slideDown 0.4s ease-out;
+		border: 1px solid transparent;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.status-banner.partial-loaded {
+		background: linear-gradient(135deg, rgba(79, 172, 254, 0.05) 0%, rgba(0, 242, 254, 0.05) 100%);
+		border-color: rgba(79, 172, 254, 0.2);
+	}
+
+	.status-banner.loading {
+		background: var(--surface-tertiary);
+		border-color: var(--border-light);
+	}
+
 	.status-content {
-		padding: 12px 16px;
-		font-size: 0.875rem;
-		font-weight: 500;
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		width: 100%;
+		gap: var(--spacing-md);
+	}
+
+	.status-icon {
+		font-size: 1.25rem;
+	}
+
+	.status-text h4 {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.status-text p {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.status-progress {
+		margin-left: auto;
+		width: 150px;
+	}
+
+	.progress-meter {
+		height: 4px;
+		background: var(--border-light);
+		border-radius: 2px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: var(--primary-gradient);
+		transition: width 0.5s ease;
+	}
+
+	/* Persistent Status Bar */
+	.persistent-status-bar {
+		margin-bottom: 16px;
+		min-height: 48px;
+		display: flex;
+		align-items: center;
 		border-radius: 8px;
 		transition: all 0.3s ease;
-		position: relative;
 	}
 
 	.status-content.success {
 		background: #f0f9ff;
 		border: 1px solid #0ea5e9;
 		color: #0c4a6e;
+		padding: 8px 16px;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.status-content.info {
 		background: #fefce8;
 		border: 1px solid #facc15;
 		color: #a16207;
+		padding: 8px 16px;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.status-content.error {
 		background: #fef2f2;
 		border: 1px solid #fecaca;
 		color: #b91c1c;
+		padding: 8px 16px;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.status-content.loading {
 		background: #f9fafb;
 		border: 1px solid #e5e7eb;
 		color: #6b7280;
-	}
-
-	.status-details {
-		margin-left: auto;
+		padding: 8px 16px;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		width: 100%;
 		display: flex;
 		align-items: center;
-		gap: 16px;
-		font-size: 0.75rem;
+		gap: 8px;
 	}
 
-	.detail-item {
+	.mini-spinner {
+		width: 14px;
+		height: 14px;
+		border: 2px solid rgba(0, 0, 0, 0.1);
+		border-top: 2px solid currentColor;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	/* Skeleton Styles */
+	.dashboard-skeleton {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-lg);
+		padding: var(--spacing-lg);
+		background: var(--surface-glass);
+		backdrop-filter: blur(10px);
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--border-light);
+	}
+
+	.skeleton-header {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.skeleton-title {
+		width: 200px;
+		height: 24px;
+		background: var(--surface-tertiary);
+		border-radius: 4px;
+		animation: pulse 1.5s infinite;
+	}
+
+	.skeleton-subtitle {
+		width: 300px;
+		height: 14px;
+		background: var(--surface-tertiary);
+		border-radius: 4px;
+		animation: pulse 1.5s infinite;
+	}
+
+	.skeleton-chart {
+		height: 300px;
+		background: #f8fafc;
+		border-radius: var(--radius-md);
+		padding: var(--spacing-xl);
+		display: flex;
+		align-items: flex-end;
+	}
+
+	.skeleton-bars {
+		display: flex;
+		align-items: flex-end;
+		gap: var(--spacing-md);
+		width: 100%;
+		height: 100%;
+	}
+
+	.skeleton-bar {
+		flex: 1;
+		background: var(--surface-tertiary);
+		border-radius: 4px 4px 0 0;
+		animation: pulse 1.5s infinite;
+	}
+
+	.skeleton-metrics {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: var(--spacing-md);
+	}
+
+	.skeleton-metric {
+		height: 100px;
+		background: var(--surface-tertiary);
+		border-radius: var(--radius-md);
+		animation: pulse 1.5s infinite;
+	}
+
+	/* Utilities */
+	.missing-data-notice {
+		padding: var(--spacing-lg);
+		background: #fefce8;
+		border: 1px solid #facc15;
+		border-radius: var(--radius-md);
+		margin-top: var(--spacing-md);
+	}
+
+	.notice-content {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--spacing-md);
 	}
 
-	.detail-label {
-		font-weight: 600;
-		color: #6b7280;
+	.notice-icon {
+		font-size: 1.5rem;
 	}
 
-	.detail-status {
-		padding: 2px 6px;
-		border-radius: 4px;
-		font-size: 0.7rem;
-		font-weight: 600;
-		background: #f3f4f6;
-		color: #6b7280;
+	.notice-text h4 {
+		margin: 0;
+		color: #854d0e;
 	}
 
-	.detail-status.success {
-		background: #dcfce7;
-		color: #166534;
-	}
-
-	.detail-status.loading {
-		background: #fef3c7;
-		color: #92400e;
-		animation: pulse 1.5s ease-in-out infinite;
-	}
-
-	.retry-button {
-		background: #ef4444;
-		color: white;
-		border: none;
-		padding: 4px 8px;
-		border-radius: 4px;
-		font-size: 0.7rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s ease;
-	}
-
-	.retry-button:hover {
-		background: #dc2626;
+	.notice-text p {
+		margin: 0;
+		font-size: 0.875rem;
+		color: #a16207;
 	}
 
 	.loading-spinner {
-		width: 16px;
-		height: 16px;
-		border: 2px solid #e5e7eb;
-		border-top: 2px solid #3b82f6;
+		width: 24px;
+		height: 24px;
+		border: 3px solid var(--border-light);
+		border-top: 3px solid var(--primary-gradient);
 		border-radius: 50%;
 		animation: spin 1s linear infinite;
 	}
@@ -3236,7 +1818,28 @@
 			opacity: 1;
 		}
 		50% {
-			opacity: 0.5;
+			opacity: 0.4;
+		}
+	}
+
+	.retry-button {
+		margin-left: auto;
+		background: var(--text-primary);
+		color: white;
+		border: none;
+		padding: 4px 12px;
+		border-radius: 4px;
+		font-size: 0.75rem;
+		cursor: pointer;
+	}
+
+	/* Responsive */
+	@media (max-width: 768px) {
+		.skeleton-metrics {
+			grid-template-columns: 1fr;
+		}
+		.status-progress {
+			display: none;
 		}
 	}
 </style>

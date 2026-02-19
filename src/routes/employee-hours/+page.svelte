@@ -155,21 +155,21 @@
 		const targetShipmentsPerHour = 18;
 		const currentAssociateHours = associateHours();
 
-		if (
-			estimatedPackagesShipped === 0 ||
-			currentAssociateHours === 0 ||
-			currentShipmentsPerHour >= targetShipmentsPerHour
-		) {
-			return { reduction: 0, show: false };
+		if (estimatedPackagesShipped === 0 || currentAssociateHours === 0) {
+			return { reduction: 0, show: false, optimalHours: 0 };
 		}
 
-		// Calculate optimal hours needed for target rate
 		const optimalHours = estimatedPackagesShipped / targetShipmentsPerHour;
 		const hoursToReduce = currentAssociateHours - optimalHours;
 
+		if (currentShipmentsPerHour >= targetShipmentsPerHour) {
+			return { reduction: 0, show: false, optimalHours };
+		}
+
 		return {
 			reduction: Math.max(0, hoursToReduce),
-			show: hoursToReduce > 0
+			show: hoursToReduce > 0,
+			optimalHours
 		};
 	});
 
@@ -453,14 +453,42 @@
 
 				{#if estimatedPackagesShipped > 0 && associateHours() > 0}
 					<div class="summary-divider"></div>
-					<div class="metric-display productivity">
-						<span class="metric-value">{shipmentsPerHour().toFixed(1)}</span>
-						<span class="metric-label">Shipments/Hour</span>
+					<div
+						class="metric-display productivity"
+						title="Target is 18 shipments per hour. Green starts at 18."
+					>
+						<div class="metric-top">
+							<span class="metric-value">{shipmentsPerHour().toFixed(1)}</span>
+							<span class="metric-label">Shipments/Hour</span>
+						</div>
+
+						<!-- Progress Tracker -->
+						<div
+							class="productivity-track"
+							title="Current: {shipmentsPerHour().toFixed(1)} / Target: 18.0"
+						>
+							<div
+								class="productivity-bar"
+								style="
+									width: {Math.min((shipmentsPerHour() / 18) * 100, 100)}%; 
+									background-color: {shipmentsPerHour() >= 18
+									? '#10b981'
+									: shipmentsPerHour() >= 15
+										? '#fbbf24'
+										: '#ef4444'}
+								"
+							></div>
+						</div>
 					</div>
 				{/if}
 
 				{#if hourReductionRecommendation().show}
-					<div class="metric-display recommendation">
+					<div
+						class="metric-display recommendation"
+						title="To hit the target of 18/hr, total associate hours should be {hourReductionRecommendation().optimalHours.toFixed(
+							1
+						)} hrs."
+					>
 						<span class="metric-value">{hourReductionRecommendation().reduction.toFixed(1)}</span>
 						<span class="metric-label">Reduce Hours By</span>
 					</div>
@@ -882,6 +910,29 @@
 	.metric-display.productivity {
 		background: #ecfdf5;
 		border: 1px solid #a7f3d0;
+	}
+
+	.metric-top {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.productivity-track {
+		height: 6px;
+		background: #d1fae5;
+		border-radius: 3px;
+		margin-top: 4px;
+		width: 100%;
+		overflow: hidden;
+	}
+
+	.productivity-bar {
+		height: 100%;
+		border-radius: 3px;
+		transition:
+			width 0.5s ease-out,
+			background-color 0.3s ease;
 	}
 
 	.metric-display.productivity .metric-value {
