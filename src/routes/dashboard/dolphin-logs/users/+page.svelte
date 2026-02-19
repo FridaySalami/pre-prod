@@ -195,7 +195,7 @@
 					</head>
 					<body>
 						<div class="badge">
-							<div class="logo">Dolphin Scanner System</div>
+							<div class="logo">Dolphin Scan to Pack</div>
 							<div class="name">${generatedUser.firstName} ${generatedUser.lastName}</div>
 							<img src="${generatedQrCodeUrl}" />
 							<div>
@@ -490,82 +490,110 @@
 
 <!-- QR Code Modal Dialog -->
 <Dialog.Root bind:open={isQrModalOpen}>
-	<Dialog.Content class="sm:max-w-md rounded-2xl overflow-hidden border-none shadow-2xl p-0">
+	<Dialog.Content
+		class="p-0! border-none shadow-2xl bg-white overflow-hidden w-[95vw] max-w-[850px]! sm:max-w-[850px]! gap-0!"
+	>
 		{#if generatedUser && generatedQrCodeUrl}
-			<div
-				class="bg-linear-to-b from-blue-600 to-indigo-700 p-8 text-center text-white relative overflow-hidden"
-			>
-				<!-- Background decoration -->
-				<div class="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-					<QrCode class="w-full h-full scale-[1.5] -translate-x-1/2 -translate-y-1/2" />
-				</div>
-
-				<div class="relative z-10 flex flex-col items-center">
-					<div class="bg-white/20 p-2 rounded-full mb-4 ring-2 ring-white/30 backdrop-blur-sm">
-						<UserCheck class="h-8 w-8 text-white" />
+			<div class="flex flex-col md:flex-row md:items-stretch h-full">
+				<!-- Left Branding/Info Side -->
+				<div
+					class="w-full md:w-[40%] bg-linear-to-br from-blue-700 to-indigo-800 p-8 md:p-10 text-white flex flex-col justify-between relative overflow-hidden shrink-0"
+				>
+					<div class="relative z-10">
+						<div
+							class="bg-white/10 p-2 rounded-xl mb-4 w-fit ring-1 ring-white/20 backdrop-blur-md"
+						>
+							<UserCheck class="h-6 w-6 text-blue-100" />
+						</div>
+						<Dialog.Title class="text-2xl font-black text-white leading-tight mb-2">
+							Operator Badge
+						</Dialog.Title>
+						<p class="text-blue-100/60 text-xs font-medium tracking-wide">
+							Ready for immediate scanning.
+						</p>
 					</div>
-					<Dialog.Title class="text-2xl font-black text-white mb-1">Badge Generated</Dialog.Title>
-					<p class="text-blue-100 text-sm font-medium tracking-wide">
-						Ready for scanning and login
-					</p>
-				</div>
-			</div>
 
-			<div class="p-8 space-y-8 bg-white">
-				<div class="flex justify-center group">
+					<div class="relative z-10 mt-6 space-y-5">
+						<div
+							class="bg-white/10 rounded-xl p-4 border border-white/5 backdrop-blur-md shadow-inner"
+						>
+							<span
+								class="text-[8px] font-black text-blue-200 uppercase tracking-widest block mb-1 opacity-70"
+								>Current Operator</span
+							>
+							<div class="text-xl font-bold text-white leading-tight truncate">
+								{generatedUser.firstName}
+								{generatedUser.lastName}
+							</div>
+							<div class="mt-3 flex items-center gap-2">
+								<span
+									class="text-[8px] font-mono text-white/30 uppercase font-bold tracking-tighter"
+									>UID:</span
+								>
+								<span class="text-[10px] font-mono font-bold text-blue-300 truncate"
+									>DOLPHIN|{generatedUser.firstName}_{generatedUser.lastName}</span
+								>
+							</div>
+						</div>
+
+						<div class="flex flex-col gap-2 pt-2">
+							<Button
+								onclick={printQrCode}
+								class="w-full bg-white text-blue-700 hover:bg-blue-50 font-black h-10 rounded-lg shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-sm"
+							>
+								<Printer class="h-4 w-4" />
+								Print Badge
+							</Button>
+							<Button
+								variant="ghost"
+								onclick={() => (isQrModalOpen = false)}
+								class="w-full text-white hover:text-white font-bold h-10 rounded-lg hover:bg-white/10 transition-all border border-white/10 text-sm"
+							>
+								Close Window
+							</Button>
+						</div>
+					</div>
+
+					<!-- Decorative QR -->
+					<div class="absolute -bottom-10 -left-10 opacity-10 pointer-events-none">
+						<QrCode class="w-48 h-48" />
+					</div>
+				</div>
+
+				<!-- Right QR Code Side -->
+				<div
+					class="w-full md:w-[60%] p-8 md:p-10 bg-white flex flex-col items-center justify-center relative min-h-[380px]"
+				>
 					<div
-						class="relative bg-white p-5 border-4 border-gray-100 rounded-3xl shadow-xl transition-all duration-500 group-hover:scale-[1.02] group-hover:shadow-blue-200"
+						class="relative bg-white p-5 border-4 border-gray-50 rounded-[2.5rem] shadow-xl transition-all duration-500 hover:scale-[1.02] hover:shadow-blue-200/50 group"
 					>
 						<img
 							src={generatedQrCodeUrl}
 							alt="Login QR Code"
-							class="h-56 w-56 rounded-lg pointer-events-none"
+							class="h-48 w-48 rounded-xl pointer-events-none"
 						/>
+						<div class="mt-4 text-center">
+							<span
+								class="bg-blue-600 text-white px-5 py-1.5 rounded-full text-[12px] font-black shadow-lg tracking-[0.2em] whitespace-nowrap group-hover:bg-indigo-600 transition-colors"
+							>
+								SCAN CREDENTIALS
+							</span>
+						</div>
+					</div>
+
+					<div class="mt-8 text-center">
+						<p class="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
+							System Verification Status
+						</p>
 						<div
-							class="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-full text-[12px] font-black shadow-lg tracking-widest whitespace-nowrap"
+							class="inline-flex items-center gap-2 px-3 py-1 bg-green-50 border border-green-100 rounded-full"
 						>
-							SCAN THIS CODE
-						</div>
-					</div>
-				</div>
-
-				<div class="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-					<div class="flex items-center justify-between mb-2">
-						<span class="text-[10px] font-black text-gray-400 uppercase tracking-widest"
-							>Operator Name</span
-						>
-						<div class="flex items-center gap-1">
 							<div class="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse"></div>
-							<span class="text-[9px] font-bold text-green-600 uppercase">ACTIVE CREDENTIALS</span>
+							<span class="text-[10px] font-black text-green-700 tracking-wider uppercase"
+								>Active Credentials</span
+							>
 						</div>
 					</div>
-					<div class="text-xl font-black text-gray-900">
-						{generatedUser.firstName}
-						{generatedUser.lastName}
-					</div>
-					<div class="mt-2 flex items-center gap-2">
-						<span class="text-[10px] font-mono text-gray-400">UID:</span>
-						<span class="text-[10px] font-mono font-bold text-blue-600"
-							>DOLPHIN|{generatedUser.firstName}_{generatedUser.lastName}</span
-						>
-					</div>
-				</div>
-
-				<div class="flex flex-col sm:flex-row gap-3">
-					<Button
-						onclick={printQrCode}
-						class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-					>
-						<Printer class="h-5 w-5" />
-						Print Badge
-					</Button>
-					<Button
-						variant="outline"
-						onclick={() => (isQrModalOpen = false)}
-						class="flex-1 border-gray-200 text-gray-600 font-bold h-12 rounded-xl hover:bg-gray-50 transition-all active:scale-95"
-					>
-						Done
-					</Button>
 				</div>
 			</div>
 		{/if}
