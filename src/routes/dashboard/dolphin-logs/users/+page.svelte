@@ -174,23 +174,23 @@
 							}
 							.badge {
 								border: 2px solid #e2e8f0;
-								padding: 40px;
-								border-radius: 24px;
+								padding: 30px;
+								border-radius: 20px;
 								text-align: center;
 								box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-								width: 350px;
+								width: 280px;
 							}
 							.logo {
-								font-size: 14px;
+								font-size: 11px;
 								font-weight: 900;
 								color: #2563eb;
 								letter-spacing: 0.1em;
-								margin-bottom: 20px;
+								margin-bottom: 15px;
 								text-transform: uppercase;
 							}
-							img { width: 250px; height: 250px; margin: 20px 0; }
-							.name { font-size: 28px; font-weight: 800; margin-bottom: 8px; color: #111827; }
-							.code { font-family: monospace; font-size: 14px; color: #6b7280; font-weight: 600; padding: 6px 12px; background: #f3f4f6; border-radius: 8px; display: inline-block; }
+							img { width: 200px; height: 200px; margin: 12px 0; }
+							.name { font-size: 24px; font-weight: 800; margin-bottom: 6px; color: #111827; }
+							.code { font-family: monospace; font-size: 13px; color: #6b7280; font-weight: 600; padding: 5px 10px; background: #f3f4f6; border-radius: 8px; display: inline-block; }
 						</style>
 					</head>
 					<body>
