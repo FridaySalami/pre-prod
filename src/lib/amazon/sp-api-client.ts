@@ -152,9 +152,6 @@ export class SPAPIClient {
       }
     });
 
-    console.log(`Debug STS Region: '${this.config.awsRegion}' (length: ${this.config.awsRegion?.length})`);
-
-
     const command = new AssumeRoleCommand({
       RoleArn: roleArn,
       RoleSessionName: `spapi-${Date.now()}`,

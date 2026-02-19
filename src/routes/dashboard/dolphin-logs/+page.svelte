@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
-	import { slide } from 'svelte/transition';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { slide, fade } from 'svelte/transition';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		ChevronDown,
 		ChevronRight,
@@ -13,7 +14,11 @@
 		Check,
 		Maximize2,
 		Minimize2,
-		Users
+		Users,
+		RefreshCw,
+		Info,
+		ExternalLink,
+		Clock
 	} from 'lucide-svelte';
 
 	export let data;
@@ -22,9 +27,65 @@
 	$: ({ logs, totalCount, page: currentPage, pageSize, error, query } = data);
 	$: totalPages = Math.ceil((totalCount || 0) / (pageSize || 50));
 
+	// Stats for a quick overview
+	$: stats = (() => {
+		if (!allGroups.length) return null;
+		const total = allGroups.length;
+		const completed = allGroups.filter((g) => g.isProcessed).length;
+		const errors = allGroups.filter((g) => g.errorCount > 0).length;
+		const avgDuration =
+			allGroups.filter((g) => g.totalDuration > 0).reduce((acc, g) => acc + g.totalDuration, 0) /
+			(allGroups.filter((g) => g.totalDuration > 0).length || 1);
+
+		return {
+			total,
+			completed,
+			errors,
+			avgDuration: Math.round(avgDuration)
+		};
+	})();
+
 	// Search handling
 	let searchQuery = '';
 	let searchTimeout: NodeJS.Timeout;
+
+	// Auto-refresh state
+	let isRefreshing = false;
+	let autoRefresh = false;
+	let refreshInterval: any;
+	let lastRefreshed = new Date();
+
+	function toggleAutoRefresh() {
+		autoRefresh = !autoRefresh;
+		if (autoRefresh) {
+			startAutoRefresh();
+		} else {
+			stopAutoRefresh();
+		}
+	}
+
+	function startAutoRefresh() {
+		if (refreshInterval) clearInterval(refreshInterval);
+		refreshInterval = setInterval(async () => {
+			isRefreshing = true;
+			await invalidateAll();
+			lastRefreshed = new Date();
+			isRefreshing = false;
+		}, 30000); // 30 seconds
+	}
+
+	function stopAutoRefresh() {
+		if (refreshInterval) clearInterval(refreshInterval);
+		refreshInterval = null;
+	}
+
+	onMount(() => {
+		return () => stopAutoRefresh();
+	});
+
+	onDestroy(() => {
+		stopAutoRefresh();
+	});
 
 	// Sync searchQuery with URL query param on mount and navigation
 	$: {
@@ -67,6 +128,7 @@
 	// State for grouping
 	let groupByOrder = true;
 	let expandedOrders: Record<string, boolean> = {};
+	let expandedLogDetails: Record<string, boolean> = {};
 
 	// Filter state
 	let filterStatus: 'all' | 'errors' | 'warnings' | 'incomplete' = 'all';
@@ -76,8 +138,8 @@
 
 	$: filteredGroups = allGroups.filter((group) => {
 		if (filterStatus === 'all') return true;
-		if (filterStatus === 'errors') return group.hasErrors;
-		if (filterStatus === 'warnings') return group.hasWarnings;
+		if (filterStatus === 'errors') return group.errorCount > 0;
+		if (filterStatus === 'warnings') return group.warningCount > 0;
 		if (filterStatus === 'incomplete') return !group.isProcessed && group.orderId !== 'No Order ID';
 		return true;
 	});
@@ -106,12 +168,37 @@
 				return time > max ? time : max;
 			}, 0);
 
-			// Find any errors in the group
-			const hasErrors = groupLogs.some((l) => l.level === 'ERROR' || l.level === 'CRITICAL');
-			const hasWarnings = groupLogs.some((l) => l.level === 'WARN');
+			const startTime = groupLogs.reduce((min, log) => {
+				const time = new Date(log.created_at).getTime();
+				return time < min ? time : min;
+			}, Infinity);
+
+			// Count levels
+			const errorCount = groupLogs.filter(
+				(l) => l.level === 'ERROR' || l.level === 'CRITICAL'
+			).length;
+			const warningCount = groupLogs.filter((l) => l.level === 'WARN').length;
+			const hasErrors = errorCount > 0;
+			const hasWarnings = warningCount > 0;
 
 			// Check if completed (has ORDER_PROCESSED)
-			const isProcessed = groupLogs.some((l) => l.event_type === 'ORDER_PROCESSED');
+			const processedLog = groupLogs.find((l) => l.event_type === 'ORDER_PROCESSED');
+			const isProcessed = !!processedLog;
+
+			let itemCount = 0;
+			if (processedLog) {
+				try {
+					const details =
+						typeof processedLog.details === 'string'
+							? JSON.parse(processedLog.details)
+							: processedLog.details;
+					if (details.items && Array.isArray(details.items)) {
+						itemCount = details.items.length;
+					}
+				} catch (e) {
+					// ignore
+				}
+			}
 
 			// Calculate total duration
 			const totalDuration = groupLogs.reduce((sum, log) => sum + (log.duration_seconds || 0), 0);
@@ -122,10 +209,14 @@
 					(a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
 				),
 				latestTime,
+				startTime,
 				hasErrors,
 				hasWarnings,
+				errorCount,
+				warningCount,
 				isProcessed,
 				totalDuration,
+				itemCount,
 				user: groupLogs.find((l) => l.user_id)?.user_id || 'Unknown'
 			};
 		});
@@ -135,14 +226,33 @@
 
 		// Add "No Order ID" group if exists
 		if (noOrderLogs.length > 0) {
+			const errorCount = noOrderLogs.filter(
+				(l) => l.level === 'ERROR' || l.level === 'CRITICAL'
+			).length;
+			const warningCount = noOrderLogs.filter((l) => l.level === 'WARN').length;
+			const latestTime = noOrderLogs.reduce((max, log) => {
+				const time = new Date(log.created_at).getTime();
+				return time > max ? time : max;
+			}, 0);
+			const startTime = noOrderLogs.reduce((min, log) => {
+				const time = new Date(log.created_at).getTime();
+				return time < min ? time : min;
+			}, Infinity);
+
 			result.push({
 				orderId: 'No Order ID',
-				logs: noOrderLogs,
-				latestTime: 0,
-				hasErrors: noOrderLogs.some((l) => l.level === 'ERROR' || l.level === 'CRITICAL'),
-				hasWarnings: noOrderLogs.some((l) => l.level === 'WARN'),
+				logs: noOrderLogs.sort(
+					(a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+				),
+				latestTime,
+				startTime,
+				hasErrors: errorCount > 0,
+				hasWarnings: warningCount > 0,
+				errorCount,
+				warningCount,
 				isProcessed: true, // System logs don't need processing
 				totalDuration: noOrderLogs.reduce((sum, log) => sum + (log.duration_seconds || 0), 0),
+				itemCount: 0,
 				user: '-'
 			});
 		}
@@ -153,6 +263,10 @@
 		}
 
 		return result;
+	}
+
+	function toggleLogDetails(logId: string) {
+		expandedLogDetails[logId] = !expandedLogDetails[logId];
 	}
 
 	function expandAll() {
@@ -331,6 +445,25 @@
 		</div>
 
 		<div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full md:w-auto">
+			<!-- Auto-refresh and Status -->
+			<div
+				class="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+			>
+				<button
+					on:click={toggleAutoRefresh}
+					class={`flex items-center space-x-2 text-sm font-medium transition-colors ${autoRefresh ? 'text-blue-600' : 'text-gray-500'}`}
+				>
+					<RefreshCw
+						class={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''} ${autoRefresh ? 'text-blue-500' : ''}`}
+					/>
+					<span>Auto-refresh {autoRefresh ? 'ON' : 'OFF'}</span>
+				</button>
+				<div class="h-4 w-px bg-gray-200 mx-2"></div>
+				<div class="text-[10px] text-gray-400 font-mono">
+					{lastRefreshed.toLocaleTimeString()}
+				</div>
+			</div>
+
 			<!-- Search Input -->
 			<div class="relative w-full sm:w-64">
 				<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -360,21 +493,68 @@
 						class={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${groupByOrder ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
 						on:click={() => (groupByOrder = true)}
 					>
-						Group by Order
+						Grouped
 					</button>
 					<button
 						class={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${!groupByOrder ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
 						on:click={() => (groupByOrder = false)}
 					>
-						Flat List
+						Flat
 					</button>
-				</div>
-				<div class="text-sm text-gray-500 border-l pl-4 hidden sm:block shrink-0">
-					Total Records: <span class="font-medium text-gray-900">{totalCount}</span>
 				</div>
 			</div>
 		</div>
 	</div>
+
+	{#if stats}
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8" transition:fade>
+			<div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
+				<span class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1"
+					>Total Orders</span
+				>
+				<div class="flex items-baseline space-x-2">
+					<span class="text-2xl font-bold text-gray-900">{stats.total}</span>
+					<span class="text-xs text-gray-500">In current view</span>
+				</div>
+			</div>
+
+			<div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
+				<span class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1"
+					>Completion Rate</span
+				>
+				<div class="flex items-baseline space-x-2">
+					<span class="text-2xl font-bold text-green-600"
+						>{Math.round((stats.completed / (stats.total || 1)) * 100)}%</span
+					>
+					<span class="text-xs text-gray-500">{stats.completed}/{stats.total}</span>
+				</div>
+			</div>
+
+			<div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
+				<span class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1"
+					>Error Frequency</span
+				>
+				<div class="flex items-baseline space-x-2">
+					<span class="text-2xl font-bold {stats.errors > 0 ? 'text-red-600' : 'text-gray-400'}"
+						>{Math.round((stats.errors / (stats.total || 1)) * 100)}%</span
+					>
+					<span class="text-xs text-gray-500"
+						>{stats.errors} order{stats.errors === 1 ? '' : 's'} with errors</span
+					>
+				</div>
+			</div>
+
+			<div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
+				<span class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1"
+					>Avg Process Time</span
+				>
+				<div class="flex items-baseline space-x-2">
+					<span class="text-2xl font-bold text-blue-600">{formatDuration(stats.avgDuration)}</span>
+					<span class="text-xs text-gray-500">Per order</span>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
@@ -476,30 +656,52 @@
 									</button>
 								{/if}
 
-								{#if group.hasErrors}
-									<span
-										class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
-									>
-										Has Errors
-									</span>
-								{:else if group.hasWarnings}
-									<span
-										class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"
-									>
-										Has Warnings
-									</span>
-								{/if}
-								{#if !group.isProcessed && group.orderId !== 'No Order ID'}
-									<span
-										class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
-									>
-										Incomplete
-									</span>
-								{/if}
+								<div class="flex items-center space-x-2">
+									{#if group.errorCount > 0}
+										<span
+											class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200"
+										>
+											<AlertCircle class="h-3 w-3 mr-1" />
+											{group.errorCount}
+											{group.errorCount === 1 ? 'Error' : 'Errors'}
+										</span>
+									{/if}
+
+									{#if group.warningCount > 0}
+										<span
+											class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200"
+										>
+											<AlertCircle class="h-3 w-3 mr-1" />
+											{group.warningCount}
+											{group.warningCount === 1 ? 'Warning' : 'Warnings'}
+										</span>
+									{/if}
+
+									{#if !group.isProcessed && group.orderId !== 'No Order ID'}
+										<span
+											class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 border border-orange-200"
+										>
+											<Clock class="h-3 w-3 mr-1" />
+											Incomplete
+										</span>
+									{:else if group.isProcessed && group.orderId !== 'No Order ID'}
+										<span
+											class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200"
+										>
+											<Check class="h-3 w-3 mr-1" />
+											Processed
+										</span>
+									{/if}
+								</div>
 							</div>
 						</div>
 
 						<div class="flex items-center space-x-6 text-sm text-gray-500">
+							{#if group.itemCount > 0}
+								<div>
+									Items: <span class="font-bold text-gray-900">{group.itemCount}</span>
+								</div>
+							{/if}
 							<div>
 								User: <span class="font-medium">{formatUser(group.user)}</span>
 							</div>
@@ -513,8 +715,10 @@
 							<div>
 								Logs: <span class="font-medium">{group.logs.length}</span>
 							</div>
-							<div>
-								Latest: {formatDate(new Date(group.latestTime).toISOString())}
+							<div class="hidden lg:block whitespace-nowrap overflow-hidden">
+								Processing: {formatTimeOnly(new Date(group.startTime).toISOString())} - {formatTimeOnly(
+									new Date(group.latestTime).toISOString()
+								)}
 							</div>
 						</div>
 					</div>
@@ -553,19 +757,30 @@
 									</thead>
 									<tbody class="bg-white divide-y divide-gray-200">
 										{#each group.logs as log}
-											<tr class="hover:bg-gray-50">
-												<td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+											<tr class="hover:bg-gray-50 group">
+												<td class="px-6 py-3 whitespace-nowrap text-xs text-gray-500 font-mono">
 													{formatTimeOnly(log.created_at)}
 												</td>
 												<td class="px-6 py-3 whitespace-nowrap">
 													<span
-														class={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full border ${getLevelClass(log.level)}`}
+														class={`px-2 inline-flex text-[10px] leading-4 font-semibold rounded-full border ${getLevelClass(log.level)}`}
 													>
 														{log.level}
 													</span>
 												</td>
 												<td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-													{log.event_type}
+													<div class="flex items-center">
+														{log.event_type}
+														{#if log.details}
+															<button
+																on:click={() => toggleLogDetails(log.id)}
+																class="ml-2 text-gray-300 hover:text-blue-500 transition-colors"
+																title="Toggle details"
+															>
+																<Info class="h-3 w-3" />
+															</button>
+														{/if}
+													</div>
 												</td>
 												<td class="px-6 py-3 whitespace-nowrap text-sm">
 													<span class={getDurationClass(log.duration_seconds)}>
@@ -578,12 +793,14 @@
 													{getDisplaySku(log)}
 												</td>
 												<td
-													class="px-6 py-3 text-sm text-gray-500 max-w-lg truncate"
-													title={formatDetails(log.details)}
+													class="px-6 py-3 text-xs text-gray-500 max-w-lg cursor-pointer hover:text-blue-600 transition-colors"
+													on:click={() => toggleLogDetails(log.id)}
 												>
-													<span class="truncate block">
+													<div
+														class={`font-mono transition-all duration-200 ${expandedLogDetails[log.id] ? 'whitespace-pre overflow-x-auto bg-gray-50 p-2 rounded border border-gray-200 shadow-inner max-h-96' : 'truncate'}`}
+													>
 														{formatDetails(log.details)}
-													</span>
+													</div>
 												</td>
 											</tr>
 										{/each}
@@ -700,10 +917,12 @@
 										{log.user_id || '-'}
 									</td>
 									<td
-										class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate"
-										title={formatDetails(log.details)}
+										class="px-6 py-4 text-xs text-gray-500 max-w-xs cursor-pointer hover:text-blue-600 transition-colors"
+										on:click={() => toggleLogDetails(log.id)}
 									>
-										<div class="truncate">
+										<div
+											class={`font-mono transition-all duration-200 ${expandedLogDetails[log.id] ? 'whitespace-pre overflow-x-auto bg-gray-50 p-2 rounded border border-gray-200 shadow-inner max-h-96' : 'truncate'}`}
+										>
 											{formatDetails(log.details)}
 										</div>
 									</td>
