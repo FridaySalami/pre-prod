@@ -20,7 +20,16 @@
 		subMonths
 	} from 'date-fns';
 	import { supabase } from '$lib/supabaseClient';
-	import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-svelte';
+	import {
+		ChevronLeft,
+		ChevronRight,
+		RefreshCw,
+		Package,
+		PoundSterling,
+		Truck,
+		Wind,
+		CloudRain
+	} from 'lucide-svelte';
 	import { getHoursByRoleForDate } from '$lib/employeeHoursService';
 	import {
 		Card,
@@ -1548,15 +1557,43 @@
 			<!-- Simplified Weather Content -->
 			{#if weatherData && !isLoading.weather}
 				<div
-					class="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-200"
+					class="flex items-center gap-6 bg-slate-50 px-5 py-3 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md"
 				>
-					<img
-						src={weatherData.current.condition.icon}
-						alt={weatherData.current.condition.text}
-						class="w-10 h-10"
-					/>
-					<div class="text-xl font-bold text-slate-700">
-						{Math.round(weatherData.current.temp_c)}°C
+					<div class="flex items-center gap-3 pr-4 border-r border-slate-200">
+						<img
+							src={weatherData.current.condition.icon}
+							alt={weatherData.current.condition.text}
+							class="w-12 h-12 drop-shadow-sm"
+						/>
+						<div class="flex flex-col">
+							<div class="text-2xl font-bold text-slate-800 tracking-tight leading-none">
+								{Math.round(weatherData.current.temp_c)}°C
+							</div>
+							<div class="text-[11px] text-slate-500 font-medium uppercase tracking-wider mt-1">
+								{weatherData.current.condition.text}
+							</div>
+						</div>
+					</div>
+
+					<div class="flex gap-4">
+						<div class="flex flex-col items-center gap-1.5" title="Wind Speed">
+							<div class="p-1.5 bg-slate-200/50 rounded-lg text-slate-600">
+								<Wind class="w-4 h-4" />
+							</div>
+							<div class="text-xs font-bold text-slate-700">
+								{Math.round(weatherData.current.wind_mph)}
+								<span class="text-[10px] text-slate-400 font-normal ml-0.5">mph</span>
+							</div>
+						</div>
+
+						<div class="flex flex-col items-center gap-1.5" title="Chance of Rain">
+							<div class="p-1.5 bg-blue-100/50 rounded-lg text-blue-600">
+								<CloudRain class="w-4 h-4" />
+							</div>
+							<div class="text-xs font-bold text-slate-700">
+								{weatherData.forecast?.forecastday[0]?.day?.daily_chance_of_rain || 0}%
+							</div>
+						</div>
 					</div>
 				</div>
 			{/if}
@@ -1580,9 +1617,14 @@
 							<!-- B2C Amazon Fulfillment (1.x series) -->
 							<div class="lg:pr-8">
 								<div class="flex items-center justify-between mb-4">
-									<h3 class="text-sm font-semibold text-blue-800 uppercase tracking-wide">
-										Fulfillment
-									</h3>
+									<div class="flex items-center gap-2">
+										<div class="p-1.5 bg-blue-50 rounded-md">
+											<Package class="w-4 h-4 text-blue-700" />
+										</div>
+										<h3 class="text-sm font-semibold text-blue-800 uppercase tracking-wide">
+											Fulfillment
+										</h3>
+									</div>
 									<Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-5">
 										{format(addDays(today, -1), 'do MMM')}
 									</Badge>
@@ -1590,7 +1632,7 @@
 								<div class="grid grid-cols-4 gap-4">
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Packed
 										</div>
@@ -1601,7 +1643,7 @@
 
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Hours
 										</div>
@@ -1614,7 +1656,7 @@
 
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Efficiency
 										</div>
@@ -1628,7 +1670,7 @@
 									{#if metrics.laborUtilization > 0}
 										<div>
 											<div
-												class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 											>
 												Util %
 											</div>
@@ -1644,13 +1686,18 @@
 
 							<!-- B2C Amazon Financials (2.0 series) -->
 							<div class="pt-6 lg:pt-0 lg:px-8">
-								<h3 class="text-sm font-semibold text-green-800 mb-4 uppercase tracking-wide">
-									Financials
-								</h3>
+								<div class="flex items-center gap-2 mb-4">
+									<div class="p-1.5 bg-green-50 rounded-md">
+										<PoundSterling class="w-4 h-4 text-green-700" />
+									</div>
+									<h3 class="text-sm font-semibold text-green-800 uppercase tracking-wide">
+										Financials
+									</h3>
+								</div>
 								<div class="grid grid-cols-3 gap-4">
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Total Sales
 										</div>
@@ -1664,7 +1711,7 @@
 
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Amazon
 										</div>
@@ -1678,7 +1725,7 @@
 
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Other
 										</div>
@@ -1694,13 +1741,18 @@
 
 							<!-- Orders (2.1 series) -->
 							<div class="pt-6 lg:pt-0 lg:pl-8">
-								<h3 class="text-sm font-semibold text-orange-800 mb-4 uppercase tracking-wide">
-									Orders
-								</h3>
+								<div class="flex items-center gap-2 mb-4">
+									<div class="p-1.5 bg-orange-50 rounded-md">
+										<Truck class="w-4 h-4 text-orange-700" />
+									</div>
+									<h3 class="text-sm font-semibold text-orange-800 uppercase tracking-wide">
+										Orders
+									</h3>
+								</div>
 								<div class="grid grid-cols-4 gap-4">
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Total
 										</div>
@@ -1711,7 +1763,7 @@
 
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Amazon
 										</div>
@@ -1722,7 +1774,7 @@
 
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											eBay
 										</div>
@@ -1733,7 +1785,7 @@
 
 									<div>
 										<div
-											class="text-[11px] text-slate-500 mb-0.5 font-medium uppercase tracking-wider"
+											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 										>
 											Shopify
 										</div>
