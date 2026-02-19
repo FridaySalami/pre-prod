@@ -8,6 +8,8 @@ const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, PRIVATE_SUPABASE_SERVICE
 export const load: PageServerLoad = async ({ url }) => {
   const page = parseInt(url.searchParams.get('page') || '1', 10);
   const query = url.searchParams.get('q') || '';
+  const startDate = url.searchParams.get('startDate') || '';
+  const endDate = url.searchParams.get('endDate') || '';
   const pageSize = 50;
 
   let supabaseQuery = supabaseAdmin
@@ -17,6 +19,16 @@ export const load: PageServerLoad = async ({ url }) => {
   if (query) {
     // Search in both order_id and sku columns
     supabaseQuery = supabaseQuery.or(`order_id.ilike.%${query}%,sku.ilike.%${query}%`);
+  }
+
+  if (startDate) {
+    supabaseQuery = supabaseQuery.gte('created_at', startDate);
+  }
+
+  if (endDate) {
+    // If it's a date only, we might want to include the whole day
+    const end = endDate.includes('T') ? endDate : `${endDate}T23:59:59.999Z`;
+    supabaseQuery = supabaseQuery.lte('created_at', end);
   }
 
   const { data: logs, error, count } = await supabaseQuery
@@ -39,6 +51,8 @@ export const load: PageServerLoad = async ({ url }) => {
     totalCount: count || 0,
     page,
     pageSize,
-    query
+    query,
+    startDate,
+    endDate
   };
 };

@@ -18,24 +18,71 @@
 		RefreshCw,
 		Info,
 		ExternalLink,
-		Clock
+		Clock,
+		Calendar,
+		Filter
 	} from 'lucide-svelte';
 
 	export let data;
 
 	// Reactive statement to update local variables when data prop changes
-	$: ({ logs, totalCount, page: currentPage, pageSize, error, query } = data);
+	$: ({ logs, totalCount, page: currentPage, pageSize, error, query, startDate, endDate } = data);
 	$: totalPages = Math.ceil((totalCount || 0) / (pageSize || 50));
 
-	// Stats for a quick overview
+	// Date range state
+	let localStartDate = '';
+	let localEndDate = '';
+
+	$: {
+		if (startDate !== undefined) localStartDate = startDate;
+		if (endDate !== undefined) localEndDate = endDate;
+	}
+
+	function handleDateChange() {
+		const url = new URL($page.url);
+		url.searchParams.set('page', '1');
+		if (localStartDate) url.searchParams.set('startDate', localStartDate);
+		else url.searchParams.delete('startDate');
+
+		if (localEndDate) url.searchParams.set('endDate', localEndDate);
+		else url.searchParams.delete('endDate');
+
+		goto(url, { keepFocus: true, noScroll: true });
+	}
+
+	function setTimeframe(type: 'today' | 'week' | 'all') {
+		const url = new URL($page.url);
+		url.searchParams.set('page', '1');
+
+		const now = new Date();
+
+		if (type === 'today') {
+			const today = now.toISOString().split('T')[0];
+			url.searchParams.set('startDate', today);
+			url.searchParams.delete('endDate');
+		} else if (type === 'week') {
+			const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+			url.searchParams.set('startDate', lastWeek.toISOString().split('T')[0]);
+			url.searchParams.delete('endDate');
+		} else {
+			url.searchParams.delete('startDate');
+			url.searchParams.delete('endDate');
+		}
+
+		goto(url, { keepFocus: true, noScroll: true });
+	}
+
+	// Stats for a quick overview (Excluding system logs)
 	$: stats = (() => {
-		if (!allGroups.length) return null;
-		const total = allGroups.length;
-		const completed = allGroups.filter((g) => g.isProcessed).length;
-		const errors = allGroups.filter((g) => g.errorCount > 0).length;
+		const orderGroups = allGroups.filter((g) => g.orderId !== 'No Order ID');
+		if (!orderGroups.length) return null;
+
+		const total = orderGroups.length;
+		const completed = orderGroups.filter((g) => g.isProcessed).length;
+		const errors = orderGroups.filter((g) => g.errorCount > 0).length;
 		const avgDuration =
-			allGroups.filter((g) => g.totalDuration > 0).reduce((acc, g) => acc + g.totalDuration, 0) /
-			(allGroups.filter((g) => g.totalDuration > 0).length || 1);
+			orderGroups.filter((g) => g.totalDuration > 0).reduce((acc, g) => acc + g.totalDuration, 0) /
+			(orderGroups.filter((g) => g.totalDuration > 0).length || 1);
 
 		return {
 			total,
@@ -502,6 +549,64 @@
 						Flat
 					</button>
 				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Timeframe Navigation & Date Picker -->
+	<div
+		class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row items-center justify-between gap-4"
+	>
+		<div class="flex items-center bg-gray-100 p-1 rounded-lg shrink-0 w-full md:w-auto">
+			<button
+				class={`flex-1 md:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all ${!localStartDate && !localEndDate ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
+				on:click={() => setTimeframe('all')}
+			>
+				All Time
+			</button>
+			<button
+				class={`flex-1 md:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all ${localStartDate === new Date().toISOString().split('T')[0] && !localEndDate ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
+				on:click={() => setTimeframe('today')}
+			>
+				Today
+			</button>
+			<button
+				class={`flex-1 md:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all ${localStartDate && !localEndDate && localStartDate !== new Date().toISOString().split('T')[0] ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
+				on:click={() => setTimeframe('week')}
+			>
+				Last 7 Days
+			</button>
+		</div>
+
+		<div class="flex items-center gap-3 w-full md:w-auto">
+			<div class="flex items-center space-x-2 text-sm text-gray-500">
+				<Calendar class="h-4 w-4" />
+				<span class="hidden lg:inline">Custom Range:</span>
+			</div>
+
+			<div class="flex items-center gap-2 flex-1 md:flex-none">
+				<input
+					type="date"
+					bind:value={localStartDate}
+					on:change={handleDateChange}
+					class="block w-full px-3 py-1.5 text-sm border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 transition-colors"
+				/>
+				<span class="text-gray-400">to</span>
+				<input
+					type="date"
+					bind:value={localEndDate}
+					on:change={handleDateChange}
+					class="block w-full px-3 py-1.5 text-sm border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 transition-colors"
+				/>
+				{#if localStartDate || localEndDate}
+					<button
+						class="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+						title="Clear Date Filter"
+						on:click={() => setTimeframe('all')}
+					>
+						<X class="h-4 w-4" />
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
