@@ -29,7 +29,7 @@ function calculateOrderCost(order: any): number {
 }
 
 export async function generateDailyReportHtml(orders: any[], date: Date) {
-  const validOrders = orders.filter(o => o.order_status !== 'Pending');
+  const validOrders = orders.filter(o => o.order_status !== 'Pending' && o.order_status !== 'Canceled');
   const dateStr = date.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   // Sort logic
@@ -37,7 +37,7 @@ export async function generateDailyReportHtml(orders: any[], date: Date) {
     const getProfit = (o: any) => {
       const revenue = parseFloat(o.order_total) || 0;
       const cost = calculateOrderCost(o);
-      return (o.order_status === 'Canceled' ? 0 : revenue) - cost;
+      return revenue - cost;
     };
     return getProfit(b) - getProfit(a);
   });
@@ -49,7 +49,6 @@ export async function generateDailyReportHtml(orders: any[], date: Date) {
   const skuMap: Record<string, any> = {};
 
   validOrders.forEach(o => {
-    if (o.order_status === 'Canceled') return;
     o.amazon_order_items?.forEach((i: any) => {
       if (!i.seller_sku) return;
       if (!skuMap[i.seller_sku]) skuMap[i.seller_sku] = { sku: i.seller_sku, title: i.title, profit: 0 };

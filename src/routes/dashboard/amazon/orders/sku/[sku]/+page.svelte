@@ -160,9 +160,11 @@
 
 	function enrichOrders(orders: any[], targetSku: string): EnrichedOrder[] {
 		return orders.map((order: any) => {
+			const isCanceled = order.order_status === 'Canceled';
+
 			// 1. Order Level Calculations
-			const orderRevenue = parseFloat(order.order_total) || 0;
-			const orderCost = calculateOrderCost(order);
+			const orderRevenue = isCanceled ? 0 : parseFloat(order.order_total) || 0;
+			const orderCost = isCanceled ? 0 : calculateOrderCost(order);
 			const orderProfit = orderRevenue - orderCost;
 
 			const shippingDisplay = getShippingCostDisplay(order);
@@ -220,7 +222,9 @@
 	}
 
 	$: enrichedOrders = enrichOrders(
-		(data.orders || []).filter((o) => o.order_status !== 'Pending'),
+		(data.orders || []).filter(
+			(o) => o.order_status !== 'Pending' && o.order_status !== 'Canceled'
+		),
 		data.sku
 	);
 

@@ -18,6 +18,7 @@
 	import { goto } from '$app/navigation';
 	import { page, navigating } from '$app/stores';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
+	import UpdateShippingCostModal from '$lib/components/UpdateShippingCostModal.svelte';
 	import DebugModal from '$lib/components/DebugModal.svelte';
 	import { syncStore } from '$lib/stores/syncStore';
 
@@ -91,8 +92,9 @@
 
 		totalCost = enrichedItems.reduce((sum: number, i: any) => sum + i._calculated.totalCost, 0);
 
-		const orderRevenue = parseFloat(order.order_total) || 0;
-		const startProfit = (order.order_status === 'Canceled' ? 0 : orderRevenue) - totalCost;
+		const isCanceled = order.order_status === 'Canceled';
+		const orderRevenue = isCanceled ? 0 : parseFloat(order.order_total) || 0;
+		const startProfit = isCanceled ? 0 : orderRevenue - totalCost;
 
 		// Logic derived from getShippingCostDisplay
 		let shippingDisplay;
@@ -140,6 +142,11 @@
 
 	// Modal state
 	let showUpdateCostModal = false;
+	let showUpdateShippingModal = false;
+	let selectedOrderId = '';
+	let currentShippingCost: number | null = null;
+	let selectedOrderCurrency = 'GBP';
+
 	let selectedSku = '';
 	let selectedTitle = '';
 	let selectedAsin = '';
@@ -149,6 +156,13 @@
 	let showDebugModal = false;
 	let debugLogs: string[] = [];
 	let debugTitle = '';
+
+	function openUpdateShippingModal(orderId: string, currentCost: number | null, currency: string) {
+		selectedOrderId = orderId;
+		currentShippingCost = currentCost;
+		selectedOrderCurrency = currency || 'GBP';
+		showUpdateShippingModal = true;
+	}
 
 	function openUpdateCostModal(
 		sku: string,
@@ -368,7 +382,9 @@
 		}, 0);
 	}
 
-	$: filteredOrders = (orders || []).filter((o) => o.order_status !== 'Pending');
+	$: filteredOrders = (orders || []).filter(
+		(o) => o.order_status !== 'Pending' && o.order_status !== 'Canceled'
+	);
 
 	// SKU Analysis
 	interface SkuStats {
@@ -1860,17 +1876,45 @@
 										{/if}
 									</td>
 									<td class="p-4 align-middle">
-										{#if shippingDisplay.amount > 0}
-											<div class="flex flex-col">
-												<span class="font-medium {shippingDisplay.class}">
-													{formatCurrency(shippingDisplay.amount, order.currency_code)}
-												</span>
-												<span class="text-[10px] {shippingDisplay.class}">
-													{shippingDisplay.type}
-												</span>
+										{#if shippingDisplay.amount > 0 || order.shipping_cost !== null}
+											<div class="flex items-center gap-2 group">
+												<div class="flex flex-col">
+													<span class="font-medium {shippingDisplay.class}">
+														{formatCurrency(shippingDisplay.amount, order.currency_code)}
+													</span>
+													<span class="text-[10px] {shippingDisplay.class}">
+														{shippingDisplay.type}
+													</span>
+												</div>
+												<button
+													class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded transition-all text-muted-foreground hover:text-foreground"
+													onclick={() =>
+														openUpdateShippingModal(
+															order.amazon_order_id,
+															order.shipping_cost,
+															order.currency_code
+														)}
+													title="Edit Shipping Cost"
+												>
+													<Pencil class="h-3 w-3" />
+												</button>
 											</div>
 										{:else}
-											<span class="text-muted-foreground">-</span>
+											<div class="flex items-center gap-2 group">
+												<span class="text-muted-foreground">-</span>
+												<button
+													class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded transition-all text-muted-foreground hover:text-foreground"
+													onclick={() =>
+														openUpdateShippingModal(
+															order.amazon_order_id,
+															order.shipping_cost,
+															order.currency_code
+														)}
+													title="Add Shipping Cost"
+												>
+													<Pencil class="h-3 w-3" />
+												</button>
+											</div>
 										{/if}
 									</td>
 									<td class="p-4 align-middle">
@@ -2025,6 +2069,17 @@
 	shippingDetails={selectedShippingDetails}
 	on:success={() => {
 		// Refresh the page to show updated costs
+		window.location.reload();
+	}}
+/>
+
+<UpdateShippingCostModal
+	bind:open={showUpdateShippingModal}
+	orderId={selectedOrderId}
+	{currentShippingCost}
+	currencyCode={selectedOrderCurrency}
+	on:success={() => {
+		// Refresh the page to show updated shipping costs
 		window.location.reload();
 	}}
 />
