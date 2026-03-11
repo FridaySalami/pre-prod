@@ -85,7 +85,7 @@
 </script>
 
 <!-- Persistent Pricing Basket Sidebar -->
-<aside class="w-72 bg-white border-l border-gray-200 flex flex-col h-full flex-shrink-0">
+<aside class="w-72 bg-white border-l border-gray-200 flex flex-col h-full shrink-0">
 	<!-- Header -->
 	<div class="p-3 border-b border-gray-200 bg-blue-50">
 		<div class="flex items-center justify-between mb-2">

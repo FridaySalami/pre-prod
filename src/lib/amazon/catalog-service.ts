@@ -11,7 +11,6 @@
  */
 
 import { SPAPIClient } from './sp-api-client';
-import { extractKeywords, formatKeywords, type ExtractedKeywords } from "$lib/utils/keyword-extractor';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { env } from '$env/dynamic/private';
@@ -49,7 +48,7 @@ export interface CatalogProduct {
   itemClassification?: string; // BASE_PRODUCT, VARIATION_PARENT, etc.
   variationTheme?: string;
   parentAsin?: string;
-  keywords?: ExtractedKeywords; // Extracted keywords
+  keywords?: Record<string, string[]>; // Extracted keywords
 }
 
 export class CatalogService {
@@ -170,11 +169,9 @@ export class CatalogService {
       productDimensions.weight = dimensions.item.weight;
     }
 
-    // Extract keywords from title and bullet points
     const title = summary.itemName || attributes.item_name?.[0]?.value || data.asin;
     const brand = summary.brand || attributes.brand?.[0]?.value;
     const category = summary.browseClassification?.displayName;
-    const keywords = extractKeywords(title, bulletPoints, category, brand);
 
     return {
       asin: data.asin,
@@ -193,7 +190,7 @@ export class CatalogService {
       itemClassification: summary.itemClassification,
       variationTheme: summary.variationTheme,
       parentAsin: summary.parentAsin,
-      keywords // Extracted keywords
+      keywords: undefined
     };
   }
 
@@ -289,7 +286,7 @@ export class CatalogService {
         bulletPoints: data.bullet_points as string[] | undefined,
         dimensions: data.dimensions as CatalogDimensions | undefined,
         attributes: data.attributes as Record<string, any> | undefined,
-        keywords: data.keywords as ExtractedKeywords | undefined,
+        keywords: data.keywords as Record<string, string[]> | undefined,
         // Optional fields that might not be in cache
         manufacturer: (data.attributes as any)?.manufacturer?.[0]?.value,
         categoryId: undefined,

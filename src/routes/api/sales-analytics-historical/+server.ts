@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { db } from '../../../lib/supabaseServer.js';
+import { db } from '$lib/supabase/supabaseServer';
 import type { RequestHandler } from '@sveltejs/kit';
 
 interface HistoricalSalesData {

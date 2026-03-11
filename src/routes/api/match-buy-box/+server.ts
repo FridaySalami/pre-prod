@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createClient } from '@supabase/supabase-js';
 import AmazonFeedsAPI from '$lib/services/amazon-feeds-api.js';
-import { amazonFeedsRateLimiter } from '$lib/utils/rate-limiter.ts';
+import { amazonFeedsRateLimiter } from '$lib/utils/rate-limiter';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { env } from '$env/dynamic/private';
 
