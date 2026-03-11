@@ -74,11 +74,15 @@ export async function load({ params }) {
   const orderIds = Array.from(new Set(orderItems?.map(item => item.amazon_order_id) || []));
 
   if (orderIds.length > 0) {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
     // Fetch orders details
     const { data: skuOrders, error: ordersError } = await db
       .from('amazon_orders')
       .select('*, amazon_order_items(*)')
       .in('amazon_order_id', orderIds)
+      .gte('purchase_date', thirtyDaysAgo.toISOString())
       .order('purchase_date', { ascending: false });
 
     if (ordersError) {

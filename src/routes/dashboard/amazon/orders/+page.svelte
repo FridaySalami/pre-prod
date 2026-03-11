@@ -1036,19 +1036,6 @@
 
 <svelte:window onclick={handleWindowClick} />
 
-{#if $navigating || isLoadingOrders}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
-	>
-		<div class="flex flex-col items-center gap-2">
-			<div
-				class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
-			></div>
-			<p class="text-sm font-medium text-muted-foreground">Loading orders...</p>
-		</div>
-	</div>
-{/if}
-
 <div class="flex flex-col gap-6 p-6">
 	<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
 		<div class="flex">
