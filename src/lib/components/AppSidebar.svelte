@@ -177,11 +177,17 @@
 			title: 'Dolphin Logs',
 			url: '/dashboard/dolphin-logs',
 			icon: 'receipt_long',
-			requiredRole: 'user',
+			requiredRole: 'user'
 		},
 		{
 			type: 'section',
 			title: 'Core Operations'
+		},
+		{
+			title: 'Packing Supplies',
+			url: '/dashboard/tools/packing-supplies',
+			icon: 'inventory_2',
+			requiredRole: 'user'
 		},
 		{
 			title: 'Holiday Calendar',
@@ -384,6 +390,7 @@
 								<Sidebar.MenuButton
 									isActive={currentPath === item.url ||
 										(item.url !== '/landing' &&
+											item.url !== '/dashboard' &&
 											currentPath.startsWith(item.url) &&
 											!item.children?.some((c) => currentPath === c.url))}
 									class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground py-2.5 pl-4"
