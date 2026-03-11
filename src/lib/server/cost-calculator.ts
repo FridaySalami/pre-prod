@@ -8,6 +8,58 @@ export class CostCalculator {
     this.initializeLookupTables();
   }
 
+  // --- Phase 3 addition: Dynamic WAC Prices ---
+  async initializeDynamicPrices() {
+    try {
+      // Get all supplies and their historical invoices
+      const { data: supplies } = await db
+        .from('packing_supplies')
+        .select(`
+          id, 
+          code,
+          alt_codes,
+          packing_invoice_lines (
+            quantity,
+            unit_price
+          )
+        `);
+
+      if (supplies && supplies.length > 0) {
+        supplies.forEach(supply => {
+          let totalQty = 0;
+          let totalCost = 0;
+
+          // Calculate WAC for this supply
+          if (supply.packing_invoice_lines) {
+            supply.packing_invoice_lines.forEach((line: any) => {
+              if (line.quantity > 0) {
+                totalQty += line.quantity;
+                totalCost += line.quantity * Number(line.unit_price || 0);
+              }
+            });
+          }
+
+          if (totalQty > 0) {
+            const wacPrice = totalCost / totalQty;
+            
+            // Override the hardcoded map with the dynamic WAC
+            if (supply.code) {
+              this.boxSizeCosts.set(supply.code, wacPrice);
+            }
+            if (supply.alt_codes) {
+              supply.alt_codes.forEach((altCode: string) => {
+                this.boxSizeCosts.set(altCode, wacPrice);
+              });
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error('[CostCalculator] Failed to override with WAC prices:', error);
+    }
+  }
+  // --------------------------------------------
+
   private initializeLookupTables() {
     // Box size cost lookup
     this.boxSizeCosts = new Map([

@@ -133,6 +133,7 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
   }
 
   const calculator = new CostCalculator();
+  await calculator.initializeDynamicPrices();
 
   // Enrich orders with cost data
   const enrichedOrders = orders.map((order) => {
@@ -205,6 +206,166 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
       amazon_order_items: enrichedItems
     };
   });
+
+  // --- Phase 1: Order Enrichment & Packaging Assignment ---
+  try {
+    const { data: packingSupplies, error: suppliesError } = await db
+      .from('packing_supplies')
+      .select('id, code, alt_codes');
+
+    if (suppliesError) {
+      console.error('Error fetching packing supplies:', suppliesError);
+    }
+
+    // Fetch existing assignments to implement the Recalculation / Reassignment Rule
+    const orderIdsList = enrichedOrders.map(o => o.amazon_order_id);
+    let existingMap = new Map();
+
+    if (orderIdsList.length > 0) {
+      const { data: existingAssignments } = await db
+        .from('amazon_order_packaging')
+        .select('amazon_order_id, box_code, is_inventory_applied')
+        .in('amazon_order_id', orderIdsList);
+
+      if (existingAssignments) {
+        existingMap = new Map(existingAssignments.map(a => [a.amazon_order_id, a]));
+      }
+    }
+
+    const packagingAssignments: any[] = [];
+
+    for (const order of enrichedOrders) {
+      // 1. Determine order-level box
+      let boxCode = '0x0x0';
+      let boxCost = 0;
+      let materialCost = 0;
+      let fragileCost = 0;
+      let skuForWarning = 'unknown';
+
+      // For V1: Pick first valid box for the order
+      for (const item of order.amazon_order_items || []) {
+        if (item.costs) {
+          if (boxCode === '0x0x0' && item.costs.box && item.costs.box !== '0x0x0') {
+            boxCode = item.costs.box;
+            skuForWarning = item.seller_sku || 'unknown';
+          }
+          // Aggregate costs
+          boxCost += item.costs.boxCost || 0;
+          materialCost += item.costs.materialCost || 0;
+          fragileCost += item.costs.fragileCharge || 0;
+        }
+      }
+
+      const totalPackagingCost = boxCost + materialCost + fragileCost;
+
+      // 2. Resolve supply ID
+      let supplyId = null;
+      if (packingSupplies) {
+        for (const supply of packingSupplies) {
+          if (supply.code === boxCode || (supply.alt_codes && supply.alt_codes.includes(boxCode))) {
+            supplyId = supply.id;
+            break;
+          }
+        }
+      }
+
+      // 3. Recalculation / Reassignment Rule Check
+      const existing = existingMap.get(order.amazon_order_id);
+
+      if (existing) {
+        if (existing.box_code === boxCode) {
+          // box_code unchanged, simply update costs/timestamps
+          packagingAssignments.push({
+            amazon_order_id: order.amazon_order_id,
+            box_supply_id: supplyId,
+            box_code: boxCode,
+            box_cost: boxCost,
+            material_cost: materialCost,
+            fragile_cost: fragileCost,
+            total_packaging_cost: totalPackagingCost,
+            updated_at: new Date().toISOString()
+          });
+        } else {
+          // box_code changed
+          if (existing.is_inventory_applied) {
+            // Rule: do not silently switch stock usage in V1.
+            console.warn(`[OrderEnrichment] Reassignment Blocked: Inventory already applied for order ${order.amazon_order_id}. Was ${existing.box_code}, now ${boxCode}. Requires manual review.`);
+          } else {
+            // Rule: changes before inventory is applied, update the row
+            packagingAssignments.push({
+              amazon_order_id: order.amazon_order_id,
+              box_supply_id: supplyId,
+              box_code: boxCode,
+              box_cost: boxCost,
+              material_cost: materialCost,
+              fragile_cost: fragileCost,
+              total_packaging_cost: totalPackagingCost,
+              updated_at: new Date().toISOString()
+            });
+          }
+        }
+      } else {
+        // New assignment
+        if (!supplyId && boxCode !== '0x0x0') {
+          console.warn(`[OrderEnrichment] Missing Mapping: amazon_order_id=${order.amazon_order_id}, box_code=${boxCode}, sku=${skuForWarning}`);
+        }
+
+        packagingAssignments.push({
+          amazon_order_id: order.amazon_order_id,
+          box_supply_id: supplyId,
+          box_code: boxCode,
+          box_cost: boxCost,
+          material_cost: materialCost,
+          fragile_cost: fragileCost,
+          total_packaging_cost: totalPackagingCost
+        });
+      }
+    }
+
+    if (packagingAssignments.length > 0) {
+      // Upsert assignments safely
+      const { error: upsertError } = await db
+        .from('amazon_order_packaging')
+        .upsert(packagingAssignments, {
+          onConflict: 'amazon_order_id'
+        });
+      if (upsertError) {
+        console.error('Error upserting packaging assignments:', upsertError);
+      } else {
+        // --- Phase 2: Atomic Inventory Deduction ---
+        // Now that the assignments are saved, we check order statuses and fire the RPC.
+        // We only deduct if the order represents a committed shipment: 'Unshipped' or 'Shipped'.
+        for (const assignment of packagingAssignments) {
+          if (!assignment.box_supply_id) continue; // Skip unmapped boxes
+
+          const order = enrichedOrders.find(o => o.amazon_order_id === assignment.amazon_order_id);
+          const status = order?.order_status?.toLowerCase();
+
+          if (status === 'unshipped' || status === 'shipped') {
+            const { data: rpcResult, error: rpcError } = await db.rpc('apply_order_packaging_usage', {
+              p_amazon_order_id: assignment.amazon_order_id,
+              p_supply_id: assignment.box_supply_id,
+              p_quantity: 1
+            });
+
+            if (rpcError) {
+              console.error(`[OrderEnrichment] RPC Error for ${assignment.amazon_order_id}:`, rpcError);
+            } else if (rpcResult === 'applied' || rpcResult === 'applied_negative_stock') {
+              console.log(`[OrderEnrichment] Successfully deducted stock for ${assignment.amazon_order_id}. Result: ${rpcResult}`);
+            } else if (rpcResult === 'already_applied') {
+              // Expected idempotency behavior for repeated fetches, silently ignore
+            } else {
+              console.warn(`[OrderEnrichment] Unexpected RPC status for ${assignment.amazon_order_id}: ${rpcResult}`);
+            }
+          }
+        }
+        // ------------------------------------------
+      }
+    }
+  } catch (error) {
+    console.error('Failed processing packaging logic:', error);
+  }
+  // --------------------------------------------------------
 
   return enrichedOrders ?? [];
 }
