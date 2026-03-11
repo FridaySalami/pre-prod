@@ -1,5 +1,5 @@
 
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 import { CostCalculator } from '$lib/server/cost-calculator';
 
 interface AmazonOrderItem {

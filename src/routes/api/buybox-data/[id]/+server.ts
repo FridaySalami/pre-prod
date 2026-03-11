@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 
 /**
  * GET /api/buybox-data/[id]

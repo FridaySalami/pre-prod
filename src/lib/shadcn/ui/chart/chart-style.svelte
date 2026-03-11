@@ -1,5 +1,5 @@
 <script>
-	import { THEMES } from "./chart-utils.js";
+	import { THEMES } from "./chart-utils";
 
 	let { id, config } = $props();
 

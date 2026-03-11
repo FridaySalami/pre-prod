@@ -12,7 +12,7 @@
 		RefreshCw,
 		Search
 	} from 'lucide-svelte';
-	import { showToast } from '$lib/toastStore';
+	import { showToast } from '$lib/stores/toastStore';
 	import { goto } from '$app/navigation';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import DebugModal from '$lib/components/DebugModal.svelte';

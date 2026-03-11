@@ -68,7 +68,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
     try {
       steps.push("7. Testing metric review import...");
-      const { uploadDailyMetricReview, transformMetricsForReview } = await import('$lib/dailyMetricReviewService');
+      const { uploadDailyMetricReview, transformMetricsForReview } = await import('$lib/services/dailyMetricReviewService');
       steps.push("7. Metric review service import successful");
     } catch (err) {
       steps.push(`7. Metric review import failed: ${err}`);

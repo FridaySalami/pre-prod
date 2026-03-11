@@ -2,8 +2,8 @@
  * Quick test suite to verify immediate significance analysis fixes
  */
 
-import { EnhancedSignificanceAnalyzer } from '../services/enhancedSignificanceAnalyzer';
-import { SignificanceAnalyzer } from '../services/significanceAnalyzer';
+import { EnhancedSignificanceAnalyzer } from "$lib/services/enhancedSignificanceAnalyzer";
+import { SignificanceAnalyzer } from "$lib/services/significanceAnalyzer";
 
 describe('Immediate Significance Analysis Fixes', () => {
 
@@ -92,7 +92,7 @@ describe('Immediate Significance Analysis Fixes', () => {
   describe('Type Safety', () => {
     test('HistoricalDataResponse type includes proper significanceDetails', () => {
       // This is a compile-time test - if the types are wrong, this won't compile
-      const mockResponse: import('../types/historicalData').HistoricalDataResponse = {
+      const mockResponse: import("$lib/types/historicalData').HistoricalDataResponse = {
         metric: 'total_sales',
         weekday: 'monday',
         data: [],
@@ -122,7 +122,7 @@ describe('Immediate Significance Analysis Fixes', () => {
 
     test('WeeklyDataResponse type includes proper significanceDetails', () => {
       // This is a compile-time test - if the types are wrong, this won't compile
-      const mockResponse: import('../types/historicalData').WeeklyDataResponse = {
+      const mockResponse: import("$lib/types/historicalData').WeeklyDataResponse = {
         metric: 'total_sales',
         data: [],
         trend: {

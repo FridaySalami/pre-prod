@@ -152,7 +152,7 @@ export const POST = async ({ request, locals }: RequestEvent) => {
 
     // Log to database for audit trail
     try {
-      const { supabaseAdmin } = await import('$lib/supabaseAdmin');
+      const { supabaseAdmin } = await import('$lib/supabase/supabaseAdmin');
 
       await supabaseAdmin
         .from('batch_price_updates')

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { userSession } from '$lib/sessionStore';
+	import { userSession } from '$lib/stores/sessionStore';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/shadcn/components';
 
 	// Authentication check

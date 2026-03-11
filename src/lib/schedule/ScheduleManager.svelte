@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { supabase } from '$lib/supabaseClient';
+  import { supabase } from '$lib/supabase/supabaseClient';
   import { slide } from 'svelte/transition';
   import { writable } from 'svelte/store';
   

@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { showToast } from '$lib/toastStore';
+import { showToast } from '$lib/stores/toastStore';
 
 interface SyncState {
   syncing: boolean;

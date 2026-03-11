@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { supabase } from '$lib/supabaseClient';
+  import { supabase } from '$lib/supabase/supabaseClient';
   import type { User } from '@supabase/supabase-js';
   
   // Fix the type of user to be null | User

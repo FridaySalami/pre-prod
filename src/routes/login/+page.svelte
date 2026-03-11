@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { supabase } from '$lib/supabaseClient';
-	import { userSession } from '$lib/sessionStore';
+	import { supabase } from '$lib/supabase/supabaseClient';
+	import { userSession } from '$lib/stores/sessionStore';
 	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
 

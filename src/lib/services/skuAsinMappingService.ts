@@ -3,7 +3,7 @@
  * Handles CSV uploads and bulk import of SKU-ASIN mapping data
  */
 
-import { supabaseAdmin } from '../supabaseAdmin';
+import { supabaseAdmin } from "$lib/supabase/supabaseAdmin";
 import fs from 'fs';
 import path from 'path';
 

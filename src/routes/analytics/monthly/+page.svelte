@@ -2,7 +2,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { userSession } from '$lib/sessionStore';
+	import { userSession } from '$lib/stores/sessionStore';
 	import { page } from '$app/stores';
 	import type { Session } from '@supabase/supabase-js';
 	import {
@@ -20,7 +20,7 @@
 		Skeleton
 	} from '$lib/shadcn/components';
 	import MonthlyChart from '$lib/shadcn/components/ui/MonthlyChart.svelte';
-	import MetricsDashboardChart from '$lib/MetricsDashboardChart.svelte';
+	import MetricsDashboardChart from '$lib/components/MetricsDashboardChart.svelte';
 	import HistoricalLineChart from '$lib/components/HistoricalLineChart.svelte';
 	import WeeklyLineChart from '$lib/components/WeeklyLineChart.svelte';
 	import { HistoricalDataService } from '$lib/services/historicalDataService';

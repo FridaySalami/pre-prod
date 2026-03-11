@@ -1,6 +1,6 @@
 <!-- TableBody.svelte -->
 <script lang="ts">
-	import { cn } from '../../utils/index.js';
+	import { cn } from "$lib/shadcn/utils/index.js";
 
 	let className: string = '';
 	export { className as class };

@@ -13,7 +13,7 @@
 		ChevronDown,
 		X
 	} from 'lucide-svelte';
-	import { showToast } from '$lib/toastStore';
+	import { showToast } from '$lib/stores/toastStore';
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page, navigating } from '$app/stores';

@@ -1,6 +1,6 @@
 <!-- ChartStyle.svelte -->
 <script lang="ts">
-	import { THEMES, type ChartConfig } from './chart-utils.js';
+	import { THEMES, type ChartConfig } from './chart-utils';
 
 	interface Props {
 		id: string;

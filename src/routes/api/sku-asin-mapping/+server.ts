@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { skuAsinImportService } from '$lib/services/skuAsinImportService';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 
 export async function GET({ url }: { url: URL }) {
   try {

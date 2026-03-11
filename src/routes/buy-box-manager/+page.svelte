@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
-	import { supabase } from '$lib/supabaseClient';
+	import { supabase } from '$lib/supabase/supabaseClient';
 
 	// Import Basket Components (UI Framework Only - Not Connected)
 	import BasketSidebar from '$lib/components/BasketSidebar.svelte';

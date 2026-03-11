@@ -1,6 +1,6 @@
 <script>
 	import { cn } from "$lib/shadcn/utils/index.js";
-	import { getPayloadConfigFromPayload, useChart } from "./chart-utils.js";
+	import { getPayloadConfigFromPayload, useChart } from "./chart-utils";
 	import { getTooltipContext, Tooltip as TooltipPrimitive } from "layerchart";
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	function defaultFormatter(value, _payload) {

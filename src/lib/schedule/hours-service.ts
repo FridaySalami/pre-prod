@@ -1,5 +1,5 @@
 // hours-service.ts
-import { supabase } from '../supabaseClient';
+import { supabase } from "$lib/supabase/supabaseClient";
 
 /**
  * Get scheduled hours for a date range

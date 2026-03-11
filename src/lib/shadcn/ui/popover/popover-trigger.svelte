@@ -1,5 +1,5 @@
 <script>
-	import { cn } from '$lib/utils.js';
+	import { cn } from '$lib/shadcn/utils';
 	import { Popover as PopoverPrimitive } from 'bits-ui';
 
 	let { ref = $bindable(null), class: className = undefined, ...restProps } = $props();

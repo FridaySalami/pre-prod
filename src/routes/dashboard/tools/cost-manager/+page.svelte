@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Input } from '$lib/shadcn/ui/input';
 	import { Button } from '$lib/shadcn/ui/button';
-	import { showToast } from '$lib/toastStore';
+	import { showToast } from '$lib/stores/toastStore';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Search, Loader2, Save, Copy, Filter } from 'lucide-svelte';

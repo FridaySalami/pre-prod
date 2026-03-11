@@ -1,4 +1,4 @@
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 
 export async function load({ url }) {
   const search = url.searchParams.get('q') || '';

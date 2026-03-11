@@ -3,7 +3,7 @@
 
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { supabase } from '$lib/supabaseClient';
+  import { supabase } from '$lib/supabase/supabaseClient';
   
   export let employee: {
     id: string;

@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { supabase } from '$lib/supabaseClient';
+import { supabase } from '$lib/supabase/supabaseClient';
 import { browser } from '$app/environment';
 
 export interface BasketItem {

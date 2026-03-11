@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 
 /**
  * Get Buy Box jobs 

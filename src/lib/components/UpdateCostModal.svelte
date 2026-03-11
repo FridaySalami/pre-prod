@@ -4,7 +4,7 @@
 	import { Label } from '$lib/shadcn/ui/label';
 	// Replaced Shadcn Dialog with custom implementation to fix width issues
 	import { fade, scale } from 'svelte/transition';
-	import { showToast } from '$lib/toastStore';
+	import { showToast } from '$lib/stores/toastStore';
 	import { createEventDispatcher } from 'svelte';
 	import { Copy, Check, X } from 'lucide-svelte';
 

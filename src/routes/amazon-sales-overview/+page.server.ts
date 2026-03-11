@@ -1,7 +1,7 @@
 // Amazon Sales Overview - Daily totals across all products
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 
 export interface DailySalesData {
   date: string;

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { userSession } from '$lib/sessionStore';
-	import OrdersList from '$lib/OrdersList.svelte';
-	import DuplicatedDailyProducts from '$lib/DuplicatedDailyProducts.svelte';
+	import { userSession } from '$lib/stores/sessionStore';
+	import OrdersList from '$lib/components/OrdersList.svelte';
+	import DuplicatedDailyProducts from '$lib/components/DuplicatedDailyProducts.svelte';
 	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
 
 	// Authentication check

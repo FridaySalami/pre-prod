@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-	import { supabase } from '$lib/supabaseClient';
+	import { supabase } from '$lib/supabase/supabaseClient';
 	import { writable } from 'svelte/store';
 
 	// Type definitions

@@ -1,5 +1,5 @@
 // src/lib/services/linnworksCompositionService.ts
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 
 export const linnworksCompositionService = {
   /**

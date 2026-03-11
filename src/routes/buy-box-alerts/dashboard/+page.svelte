@@ -1,7 +1,7 @@
 <!-- Alert Dashboard Page -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/supabaseClient';
+	import { supabase } from '$lib/supabase/supabaseClient';
 	import { userEmail } from '$lib/stores/pricingBasketStore';
 	import { get } from 'svelte/store';
 

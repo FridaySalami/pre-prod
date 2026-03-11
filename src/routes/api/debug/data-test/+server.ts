@@ -1,6 +1,6 @@
 // Debug endpoint to test data fetching
 import { json } from '@sveltejs/kit';
-import { supabase } from '$lib/supabaseClient';
+import { supabase } from '$lib/supabase/supabaseClient';
 import { HistoricalDataService } from '$lib/services/historicalDataService';
 
 export async function GET() {

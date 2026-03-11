@@ -1,6 +1,6 @@
 // src/routes/api/linnworks-composition/summary/+server.ts
 import { json } from '@sveltejs/kit';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 import { linnworksCompositionService } from '$lib/services/linnworksCompositionService';
 
 export async function POST() {

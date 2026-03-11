@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import InviteRegistration from '$lib/InviteRegistration.svelte';
+    import InviteRegistration from '$lib/components/InviteRegistration.svelte';
   
     // Extract the token from the URL
     let token: string | null = null;

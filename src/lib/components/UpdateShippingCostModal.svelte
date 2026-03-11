@@ -3,7 +3,7 @@
 	import { Input } from '$lib/shadcn/ui/input';
 	import { Label } from '$lib/shadcn/ui/label';
 	import { fade, scale } from 'svelte/transition';
-	import { showToast } from '$lib/toastStore';
+	import { showToast } from '$lib/stores/toastStore';
 	import { createEventDispatcher } from 'svelte';
 	import { X, Truck, Save } from 'lucide-svelte';
 

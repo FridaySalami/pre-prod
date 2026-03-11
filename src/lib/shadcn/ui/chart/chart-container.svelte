@@ -1,7 +1,7 @@
 <script>
 	import { cn } from "$lib/shadcn/utils/index.js";
 	import ChartStyle from "./chart-style.svelte";
-	import { setChartContext } from "./chart-utils.js";
+	import { setChartContext } from "./chart-utils";
 
 	const uid = $props.id();
 

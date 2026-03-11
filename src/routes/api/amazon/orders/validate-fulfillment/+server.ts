@@ -1,6 +1,6 @@
 
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 import { fetchOrdersData } from '$lib/server/data-fetchers';
 import { generateDailyReportHtml } from '$lib/server/email-templates';
 import { sendEmail } from '$lib/server/email';

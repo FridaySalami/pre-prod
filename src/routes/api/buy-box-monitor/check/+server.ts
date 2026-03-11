@@ -1,8 +1,8 @@
 
 import { json } from '@sveltejs/kit';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
-import { checkBuyBoxStatus } from '$lib/buyBoxChecker';
-import { loadEnvVariables } from '$lib/loadEnv';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
+import { checkBuyBoxStatus } from '$lib/services/buyBoxChecker';
+import { loadEnvVariables } from '$lib/utils/loadEnv';
 import type { TransformedBuyBoxData, OfferDetails } from '$lib/types/buybox';
 import path from 'path';
 import fs from 'fs';

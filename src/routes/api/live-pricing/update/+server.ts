@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 import { env } from '$env/dynamic/private';
 
 /**

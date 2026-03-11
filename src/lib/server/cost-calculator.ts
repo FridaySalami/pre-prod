@@ -1,4 +1,4 @@
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 
 export class CostCalculator {
   private boxSizeCosts!: Map<string, number>;

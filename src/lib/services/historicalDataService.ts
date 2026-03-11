@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+import { supabase } from "$lib/supabase/supabaseClient";
 import type {
   HistoricalDataRequest,
   HistoricalDataResponse,
@@ -6,7 +6,7 @@ import type {
   WeeklyDataRequest,
   WeeklyDataResponse,
   WeeklyMetricPoint
-} from '../types/historicalData';
+} from "$lib/types/historicalData";
 import { SignificanceAnalyzer } from './significanceAnalyzer';
 import { SmartPredictionService } from './smartPredictionService';
 import { SeasonalTrendService } from './seasonalTrendService';

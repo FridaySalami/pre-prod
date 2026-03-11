@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AdminPageHeader from '$lib/components/AdminPageHeader.svelte';
 	import UploadModal from '$lib/components/UploadModal.svelte';
-	import { showToast } from '$lib/toastStore';
+	import { showToast } from '$lib/stores/toastStore';
 
 	let showImportModal = false;
 	let importLoading = false;

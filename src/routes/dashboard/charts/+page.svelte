@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import ShadcnChart from '$lib/ShadcnChart.svelte';
-	import DailyMetricChart from '$lib/DailyMetricChart.svelte';
-	import DailyMetricAreaChart from '$lib/DailyMetricAreaChart.svelte';
-	import MetricsDashboardChart from '$lib/MetricsDashboardChart.svelte';
+	import ShadcnChart from '$lib/components/ShadcnChart.svelte';
+	import DailyMetricChart from '$lib/components/DailyMetricChart.svelte';
+	import DailyMetricAreaChart from '$lib/components/DailyMetricAreaChart.svelte';
+	import MetricsDashboardChart from '$lib/components/MetricsDashboardChart.svelte';
 	import { Button } from '$lib/shadcn/components';
 	import {
 		fetchDailyMetricData,
@@ -11,7 +11,7 @@
 		calculateMetricSummary,
 		formatCurrency,
 		type DailyMetricReviewData
-	} from '$lib/chartDataService';
+	} from '$lib/services/chartDataService';
 
 	let data: DailyMetricReviewData[] = [];
 	let loading = true;

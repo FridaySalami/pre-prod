@@ -1,6 +1,6 @@
 <script>
 	import { buttonVariants } from "$lib/shadcn/ui/button/index.js";
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/shadcn/utils";
 	import { Calendar as CalendarPrimitive } from "bits-ui";
 
 	let {

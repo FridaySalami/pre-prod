@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 import * as XLSX from 'xlsx';
 import { chromium } from 'playwright';
 import fs from 'fs';

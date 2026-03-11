@@ -53,7 +53,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Test the upload service import
     try {
-      const { uploadDailyMetricReview } = await import('$lib/dailyMetricReviewService');
+      const { uploadDailyMetricReview } = await import('$lib/services/dailyMetricReviewService');
       steps.push("7. Upload service import successful");
 
       // Don't actually upload, just test the import

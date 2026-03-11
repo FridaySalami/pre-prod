@@ -2,10 +2,10 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { userSession } from '$lib/sessionStore';
-	import { showToast } from '$lib/toastStore';
-	import ShipmentChart from '$lib/ShipmentChart.svelte';
-	import ErrorBoundary from '$lib/ErrorBoundary.svelte';
+	import { userSession } from '$lib/stores/sessionStore';
+	import { showToast } from '$lib/stores/toastStore';
+	import ShipmentChart from '$lib/components/ShipmentChart.svelte';
+	import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
 
 	// Start with session as undefined (unknown)
 	let session: any = undefined;
@@ -672,7 +672,7 @@
 			console.log('📊 Fetching employee hours and scheduled hours data...');
 
 			// Import the required services dynamically
-			const { getHoursDateRange } = await import('$lib/dailyHoursService');
+			const { getHoursDateRange } = await import('$lib/services/dailyHoursService');
 			const { getScheduledHoursForDateRange } = await import('$lib/schedule/hours-service');
 
 			// Fetch employee and scheduled hours with individual error handling
@@ -824,7 +824,7 @@
 
 			// Also preload employee hours for that week
 			try {
-				const { getHoursDateRange } = await import('$lib/dailyHoursService');
+				const { getHoursDateRange } = await import('$lib/services/dailyHoursService');
 				const employeeHoursPromise = getHoursDateRange(twoWeeksAgoMondayStr, twoWeeksAgoSundayStr)
 					.then((data) => {
 						console.log('✅ Previous week employee hours preloaded');

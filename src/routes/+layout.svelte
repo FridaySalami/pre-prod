@@ -2,17 +2,17 @@
 	import '../global.css';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { userSession } from '$lib/sessionStore';
+	import { userSession } from '$lib/stores/sessionStore';
 	import { browser } from '$app/environment';
-	import { supabase } from '$lib/supabaseClient';
+	import { supabase } from '$lib/supabase/supabaseClient';
 	import type { Session } from '@supabase/supabase-js';
-	import { toastStore } from '$lib/toastStore';
+	import { toastStore } from '$lib/stores/toastStore';
 	import { fade } from 'svelte/transition';
 	import { page } from '$app/stores';
-	import CommandMenu from '$lib/CommandMenu.svelte';
+	import CommandMenu from '$lib/components/CommandMenu.svelte';
 	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
-	import AppSidebar from '$lib/AppSidebar.svelte';
-	import { checkRouteAccess } from '$lib/routeGuard';
+	import AppSidebar from '$lib/components/AppSidebar.svelte';
+	import { checkRouteAccess } from '$lib/services/routeGuard';
 	import type { Snippet } from 'svelte';
 	import { syncStore } from '$lib/stores/syncStore';
 

@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { env } from '$env/dynamic/private';
 import { getScheduledHoursForDateRange } from '$lib/schedule/hours-service';
-import { uploadDailyMetricReview, transformMetricsForReview } from '$lib/dailyMetricReviewService';
+import { uploadDailyMetricReview, transformMetricsForReview } from '$lib/services/dailyMetricReviewService';
 
 const { PRIVATE_SUPABASE_SERVICE_KEY } = env;
 

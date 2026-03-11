@@ -11,7 +11,7 @@
  */
 
 import { SPAPIClient } from './sp-api-client';
-import { extractKeywords, formatKeywords, type ExtractedKeywords } from '../utils/keyword-extractor';
+import { extractKeywords, formatKeywords, type ExtractedKeywords } from "$lib/utils/keyword-extractor';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { env } from '$env/dynamic/private';

@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 import { CostCalculator } from '$lib/server/cost-calculator';
 
 export async function GET({ url }) {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatNumber } from '$lib/utils';
+	import { formatNumber } from '$lib/utils/utils';
 
 	interface SourceData {
 		count: number;

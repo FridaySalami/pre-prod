@@ -1,7 +1,7 @@
 // API endpoint to fetch daily sales data for a specific ASIN
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 
 export const GET: RequestHandler = async ({ params }) => {
   const { asin } = params;

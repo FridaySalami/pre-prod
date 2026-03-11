@@ -1,6 +1,6 @@
 // routes/api/scheduled-hours/+server.ts
 import { json } from '@sveltejs/kit';
-import { supabase } from '$lib/supabaseClient';
+import { supabase } from '$lib/supabase/supabaseClient';
 
 export async function GET({ url }) {
   const startDate = url.searchParams.get('startDate');

@@ -3,7 +3,7 @@
  * Optimized for bulk imports of large CSV files using Supabase
  */
 
-import { supabaseAdmin } from '../supabaseAdmin';
+import { supabaseAdmin } from "$lib/supabase/supabaseAdmin";
 import fs from 'fs';
 import path from 'path';
 

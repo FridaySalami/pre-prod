@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+import { supabase } from "$lib/supabase/supabaseClient";
 import { updateScheduledHoursForDate } from './hours-service';
 
 /**

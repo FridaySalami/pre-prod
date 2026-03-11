@@ -1,6 +1,6 @@
 <!-- ChartTooltip.svelte -->
 <script lang="ts">
-	import { cn } from '../../utils/index.js';
+	import { cn } from "$lib/shadcn/utils/index.js";
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	interface Props extends HTMLAttributes<HTMLDivElement> {

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
-import { loadEnvVariables } from '$lib/loadEnv';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
+import { loadEnvVariables } from '$lib/utils/loadEnv';
 
 // Load environment variables for development
 loadEnvVariables();
@@ -108,7 +108,7 @@ export async function POST({ request }) {
         console.log(`Attempting to scrape product title from Amazon for ASIN: ${competitiveAsin}`);
 
         // Import the scraper
-        const { scrapeAmazonTitle } = await import('$lib/amazonScraper');
+        const { scrapeAmazonTitle } = await import('$lib/services/amazonScraper');
 
         const scrapedTitle = await scrapeAmazonTitle(competitiveAsin);
 

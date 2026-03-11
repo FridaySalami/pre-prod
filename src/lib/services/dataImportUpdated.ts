@@ -3,7 +3,7 @@
  * Updated for new Prisma schema
  */
 
-import prisma from '../prisma';
+import prisma from "$lib/database/prisma";
 import fs from 'fs';
 import path from 'path';
 

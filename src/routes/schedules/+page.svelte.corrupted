@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { userSession } from '$lib/sessionStore';
-	import { supabase } from '$lib/supabaseClient';
+	import { userSession } from '$lib/stores/sessionStore';
+	import { supabase } from '$lib/supabase/supabaseClient';
 	import ScheduleManager from '$lib/schedule/ScheduleManager.svelte';
 	import EmployeeLeaveModal from '$lib/schedule/EmployeeLeaveModal.svelte';
 	import BulkLeaveModal from '$lib/schedule/BulkLeaveModal.svelte';
-	import ErrorBoundary from '$lib/ErrorBoundary.svelte';
-	import { toastStore, showToast } from '$lib/toastStore';
+	import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
+	import { toastStore, showToast } from '$lib/stores/toastStore';
 	import { updateScheduledHoursForDate } from '$lib/schedule/hours-service';
 	import { updateScheduledHoursBatch } from '$lib/schedule/batchUpdateService';
 	import { populateCalendar as populateCalendarExternal } from '$lib/schedule/PopulateCalendar.svelte';

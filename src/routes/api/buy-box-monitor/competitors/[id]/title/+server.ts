@@ -2,7 +2,7 @@
 // /api/buy-box-monitor/competitors/[id]/title
 
 import { json } from '@sveltejs/kit';
-import { supabaseAdmin } from '$lib/supabaseAdmin';
+import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 
 export async function PATCH({ params, request }) {
   try {

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { callLinnworksApi } from '$lib/server/linnworksClient.server';
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 
 export async function POST({ request }) {
   try {

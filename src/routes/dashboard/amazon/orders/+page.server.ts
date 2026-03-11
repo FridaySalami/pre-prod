@@ -1,4 +1,4 @@
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 import { fetchOrdersData } from '$lib/server/data-fetchers';
 
 export async function load({ url }) {

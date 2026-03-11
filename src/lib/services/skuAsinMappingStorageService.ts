@@ -3,7 +3,7 @@
  * Uses Supabase Storage for file uploads and metadata tracking
  */
 
-import { supabaseAdmin } from '../supabaseAdmin';
+import { supabaseAdmin } from "$lib/supabase/supabaseAdmin";
 import fs from 'fs';
 import path from 'path';
 

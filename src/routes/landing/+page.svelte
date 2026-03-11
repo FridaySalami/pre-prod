@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { userSession } from '$lib/sessionStore';
+	import { userSession } from '$lib/stores/sessionStore';
 	import {
 		format,
 		addDays,
@@ -19,7 +19,7 @@
 		addMonths,
 		subMonths
 	} from 'date-fns';
-	import { supabase } from '$lib/supabaseClient';
+	import { supabase } from '$lib/supabase/supabaseClient';
 	import {
 		ChevronLeft,
 		ChevronRight,
@@ -30,7 +30,7 @@
 		Wind,
 		CloudRain
 	} from 'lucide-svelte';
-	import { getHoursByRoleForDate } from '$lib/employeeHoursService';
+	import { getHoursByRoleForDate } from '$lib/services/employeeHoursService';
 	import {
 		Card,
 		CardHeader,

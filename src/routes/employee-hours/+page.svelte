@@ -3,15 +3,15 @@
 	import { goto } from '$app/navigation';
 	import { tweened } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
-	import { userSession } from '$lib/sessionStore';
+	import { userSession } from '$lib/stores/sessionStore';
 	import type { Session } from '@supabase/supabase-js';
-	import { getEmployees, type Employee } from '$lib/employeeHoursService';
+	import { getEmployees, type Employee } from '$lib/services/employeeHoursService';
 	import {
 		saveDailyHours,
 		getDailyHours,
 		checkHoursExist,
 		type DailyEmployeeHour
-	} from '$lib/dailyHoursService';
+	} from '$lib/services/dailyHoursService';
 	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
 
 	// Authentication check

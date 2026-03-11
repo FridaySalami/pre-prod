@@ -9,7 +9,7 @@ Add this component to your buy-box-manager page to allow users to:
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/supabaseClient';
+	import { supabase } from '$lib/supabase/supabaseClient';
 
 	export let asin: string;
 	export let sku: string;

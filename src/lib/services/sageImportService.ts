@@ -2,7 +2,7 @@
  * Sage report import service for handling CSV uploads and data processing
  */
 
-import { db } from '../supabaseServer.js';
+import { db } from "$lib/supabase/supabaseServer";
 
 export interface SageReportItem {
   stockCode: string;

@@ -1,6 +1,6 @@
 // Optimized data fetching strategy for scheduling system
 import { writable, derived } from 'svelte/store';
-import { supabase } from '$lib/supabaseClient';
+import { supabase } from '$lib/supabase/supabaseClient';
 
 interface CacheEntry<T> {
   data: T;

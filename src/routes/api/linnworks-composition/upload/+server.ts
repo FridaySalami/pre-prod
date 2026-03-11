@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 
 // Helper function to find column index with flexible naming
 function findColumnIndex(headers: string[], possibleNames: string[]): number {

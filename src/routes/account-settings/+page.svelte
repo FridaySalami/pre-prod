@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { supabase } from '$lib/supabaseClient';
-  import { showToast } from '$lib/toastStore';
+  import { supabase } from '$lib/supabase/supabaseClient';
+  import { showToast } from '$lib/stores/toastStore';
   
   // Profile data with default placeholders
   let userData = {

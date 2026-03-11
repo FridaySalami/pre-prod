@@ -1,5 +1,5 @@
 import { SPAPIClient } from '$lib/amazon/sp-api-client';
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 

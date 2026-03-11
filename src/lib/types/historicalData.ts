@@ -1,6 +1,6 @@
 // Historical data types for enhanced analytics
-import type { SignificanceResult } from '../services/significanceAnalyzer';
-import type { SmartPrediction } from '../services/smartPredictionService';
+import type { SignificanceResult } from "$lib/services/significanceAnalyzer';
+import type { SmartPrediction } from "$lib/services/smartPredictionService';
 
 export interface HistoricalMetricPoint {
   date: string;

@@ -1,6 +1,6 @@
 <!-- Badge.svelte -->
 <script lang="ts">
-	import { cn } from '../../utils/index.js';
+	import { cn } from "$lib/shadcn/utils/index.js";
 	import { tv, type VariantProps } from 'tailwind-variants';
 
 	const badgeVariants = tv({

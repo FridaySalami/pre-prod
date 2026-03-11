@@ -1,6 +1,6 @@
 import { RateLimiters } from '$lib/amazon/rate-limiter';
 import { SPAPIClient } from '$lib/amazon/sp-api-client';
-import { db } from '$lib/supabaseServer';
+import { db } from '$lib/supabase/supabaseServer';
 import { env } from '$env/dynamic/private';
 
 interface AmazonOrder {

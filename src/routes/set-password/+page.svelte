@@ -2,9 +2,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { supabase } from '$lib/supabaseClient';
-  import { showToast } from '$lib/toastStore';
-  import { userSession } from '$lib/sessionStore';
+  import { supabase } from '$lib/supabase/supabaseClient';
+  import { showToast } from '$lib/stores/toastStore';
+  import { userSession } from '$lib/stores/sessionStore';
   
   let newPassword = '';
   let confirmPassword = '';
