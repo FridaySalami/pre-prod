@@ -47,9 +47,35 @@ export async function load() {
     console.error('Error fetching history:', historyError);
   }
 
+  // --- Phase 3: Fetch 30-day usage from the ledger ---
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const { data: usageLedger, error: usageError } = await db
+    .from('packing_inventory_ledger')
+    .select('supply_id, change_amount')
+    .eq('movement_type', 'amazon_order_usage')
+    .gte('created_at', thirtyDaysAgo.toISOString());
+
+  if (usageError) {
+    console.error('Error fetching 30-day usage ledger:', usageError);
+  }
+
+  // Aggregate usage into a map: { supply_id: total_consumed_past_30_days }
+  const usageStats: Record<string, number> = {};
+  if (usageLedger) {
+    usageLedger.forEach(row => {
+      // change_amount will be negative for usage, so we make it positive to represent "consumed count"
+      const consumed = Math.abs(row.change_amount || 0);
+      usageStats[row.supply_id] = (usageStats[row.supply_id] || 0) + consumed;
+    });
+  }
+  // -----------------------------------------------------
+
   return {
     suppliers: suppliers || [],
     supplies: supplies || [],
-    history: history || []
+    history: history || [],
+    usageStats // Pass the new stats dictionary down to the page
   };
 }

@@ -444,7 +444,7 @@
 	}
 </script>
 
-<div class="flex flex-col gap-6 p-6 max-w-4xl mx-auto w-full">
+<div class="flex flex-col gap-6 p-6 max-w-7xl mx-auto w-full">
 	<div>
 		<h1 class="text-3xl font-bold tracking-tight">Packing Supplies</h1>
 		<p class="text-muted-foreground mt-2">
@@ -898,6 +898,8 @@
 							<th class="px-4 py-3 font-semibold">Type</th>
 							<th class="px-4 py-3 font-semibold text-right">Avg Unit Cost</th>
 							<th class="px-4 py-3 font-semibold text-right">Current Stock</th>
+							<th class="px-4 py-3 font-semibold text-right">30d Usage</th>
+							<th class="px-4 py-3 font-semibold text-right">Weeks Left</th>
 							<th class="px-4 py-3 font-semibold text-right">Total Est Value</th>
 							<th class="px-4 py-3 font-semibold text-right">Actions</th>
 						</tr>
@@ -915,12 +917,26 @@
 									</span>
 								</td>
 								<td class="px-4 py-3 text-right">£{getEstimatedUnitCost(supply).toFixed(4)}</td>
-								<td class="px-4 py-3 text-right font-bold">{supply.current_stock || 0}</td>
+								<td class="px-4 py-3 text-right font-bold"
+									>{Math.max(0, supply.current_stock || 0)}</td
+								>
+								<td class="px-4 py-3 text-right font-bold">
+									{data.usageStats[supply.id] || 0}
+								</td>
+								<td class="px-4 py-3 text-right font-bold text-muted-foreground">
+									{#if data.usageStats[supply.id] > 0}
+										{(
+											Math.max(0, supply.current_stock || 0) /
+											(data.usageStats[supply.id] / 4.33)
+										).toFixed(1)} wks
+									{:else}
+										-
+									{/if}
+								</td>
 								<td class="px-4 py-3 text-right font-bold text-foreground">
-									£{((supply.current_stock || 0) * getEstimatedUnitCost(supply)).toLocaleString(
-										'en-GB',
-										{ minimumFractionDigits: 2, maximumFractionDigits: 2 }
-									)}
+									£{(
+										Math.max(0, supply.current_stock || 0) * getEstimatedUnitCost(supply)
+									).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 								</td>
 								<td class="px-4 py-3 text-right">
 									<div class="flex justify-end gap-2">

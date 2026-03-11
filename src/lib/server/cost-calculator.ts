@@ -41,7 +41,7 @@ export class CostCalculator {
 
           if (totalQty > 0) {
             const wacPrice = totalCost / totalQty;
-            
+
             // Override the hardcoded map with the dynamic WAC
             if (supply.code) {
               this.boxSizeCosts.set(supply.code, wacPrice);
