@@ -1,10 +1,18 @@
 <script lang="ts">
+	import { invalidateAll, goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { Button } from '$lib/shadcn/ui/button';
 	import { Plus, Package, FileText, ClipboardList } from 'lucide-svelte';
 
 	export let data;
 
-	let activeTab = 'log'; // 'log', 'inventory', 'history'
+	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history'
+
+	function setTab(tab: string) {
+		const url = new URL($page.url);
+		url.searchParams.set('tab', tab);
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 
 	// These will become our dynamic form fields
 	let selectedSupplier = '';
@@ -42,6 +50,17 @@
 	let editLineQty: number = 0;
 	let editLineTotal: number = 0;
 	let isSavingLineEdit = false;
+
+	// Stock Adjustment State
+	let showAdjustModal = false;
+	let adjustSupplyId = '';
+	let adjustSupplyName = '';
+	let adjustCurrentStock = 0;
+	let adjustNewStock = 0;
+	let adjustReason = 'stock take correction';
+	let isSavingAdjustment = false;
+
+	$: adjustChangeAmount = adjustNewStock - adjustCurrentStock;
 
 	// Auto-fill SKU/Code based on name when adding a new supply
 	$: if (!editSupplyId && editSupplyName && !hasManuallyEditedCode) {
@@ -96,7 +115,7 @@
 			if (!res.ok) throw new Error('Failed to save supply');
 
 			showSupplyForm = false;
-			window.location.reload();
+			await invalidateAll();
 		} catch (e) {
 			console.error('Error saving supply', e);
 			alert('Failed to save supply');
@@ -119,10 +138,54 @@
 				method: 'DELETE'
 			});
 			if (!res.ok) throw new Error('Failed to delete supply');
-			window.location.reload();
+			await invalidateAll();
 		} catch (e) {
 			console.error(e);
 			alert('Error deleting supply');
+		}
+	}
+
+	function openAdjustStock(supply: any) {
+		adjustSupplyId = supply.id;
+		adjustSupplyName = supply.name;
+		adjustCurrentStock = supply.current_stock || 0;
+		adjustNewStock = supply.current_stock || 0;
+		adjustReason = 'stock take correction';
+		showAdjustModal = true;
+	}
+
+	async function saveAdjustment() {
+		if (!adjustReason) {
+			alert('Please provide a reason for the adjustment.');
+			return;
+		}
+		if (adjustChangeAmount === 0) {
+			alert('No change in stock detected.');
+			return;
+		}
+
+		isSavingAdjustment = true;
+		try {
+			const res = await fetch('/api/tools/packing-supplies/adjust', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					supply_id: adjustSupplyId,
+					new_stock: adjustNewStock,
+					change_amount: adjustChangeAmount,
+					reason: adjustReason
+				})
+			});
+
+			if (!res.ok) throw new Error('Failed to adjust stock');
+
+			showAdjustModal = false;
+			await invalidateAll();
+		} catch (e) {
+			console.error('Error adjusting stock', e);
+			alert('Failed to adjust stock');
+		} finally {
+			isSavingAdjustment = false;
 		}
 	}
 
@@ -151,7 +214,7 @@
 			if (!res.ok) throw new Error('Failed to update invoice');
 
 			showInvoiceEditModal = false;
-			window.location.reload();
+			await invalidateAll();
 		} catch (e) {
 			console.error('Error updating invoice', e);
 			alert('Failed to update invoice');
@@ -174,7 +237,7 @@
 				method: 'DELETE'
 			});
 			if (!res.ok) throw new Error('Failed to delete invoice');
-			window.location.reload();
+			await invalidateAll();
 		} catch (e) {
 			console.error(e);
 			alert('Error deleting invoice');
@@ -220,7 +283,7 @@
 			if (!res.ok) throw new Error('Failed to update line item');
 
 			cancelEditLine();
-			window.location.reload();
+			await invalidateAll();
 		} catch (e) {
 			console.error('Error updating line item', e);
 			alert('Failed to update line item');
@@ -286,9 +349,29 @@
 	$: invoiceTotal = Number((invoiceTotalRaw + invoiceVAT).toFixed(2));
 
 	function getEstimatedUnitCost(supply: any) {
+		// 1. Prefer Weighted Average Cost (WAC) from actual invoice history
+		if (data.history && data.history.length > 0) {
+			let totalQty = 0;
+			let totalCost = 0;
+
+			data.history.forEach((invoice: any) => {
+				const lines = invoice.packing_invoice_lines || [];
+				lines.forEach((line: any) => {
+					if (line.supply_id === supply.id && line.quantity > 0) {
+						totalQty += line.quantity;
+						totalCost += line.quantity * Number(line.unit_price || 0);
+					}
+				});
+			});
+
+			if (totalQty > 0) {
+				return totalCost / totalQty; // Returns accurate Weighted Average Cost
+			}
+		}
+
+		// 2. Fallback: Average of configured default supplier prices
 		const prices = supply.packing_supplier_prices || [];
 		if (prices.length === 0) return 0;
-		// Calculate the average price if we have multiple suppliers for the same item
 		const sum = prices.reduce((acc: number, p: any) => acc + Number(p.default_price || 0), 0);
 		return sum / prices.length;
 	}
@@ -350,8 +433,8 @@
 			invoiceNumber = '';
 			notes = '';
 			alert('Invoice saved successfully!');
-			// Force a hard refresh of the page to get the loaded data to refresh easily
-			window.location.reload();
+			// Refresh data while preserving state
+			await invalidateAll();
 		} catch (e) {
 			console.error(e);
 			alert('Error saving invoice');
@@ -376,7 +459,7 @@
 			'log'
 				? 'bg-primary/10 text-primary'
 				: 'text-muted-foreground hover:bg-muted'}"
-			onclick={() => (activeTab = 'log')}
+			onclick={() => setTab('log')}
 		>
 			<Plus class="h-4 w-4" /> Log Arrival / Invoice
 		</button>
@@ -385,7 +468,7 @@
 			'inventory'
 				? 'bg-primary/10 text-primary'
 				: 'text-muted-foreground hover:bg-muted'}"
-			onclick={() => (activeTab = 'inventory')}
+			onclick={() => setTab('inventory')}
 		>
 			<Package class="h-4 w-4" /> Current Inventory
 		</button>
@@ -394,7 +477,7 @@
 			'history'
 				? 'bg-primary/10 text-primary'
 				: 'text-muted-foreground hover:bg-muted'}"
-			onclick={() => (activeTab = 'history')}
+			onclick={() => setTab('history')}
 		>
 			<ClipboardList class="h-4 w-4" /> Order History
 		</button>
@@ -737,6 +820,75 @@
 				</div>
 			{/if}
 
+			{#if showAdjustModal}
+				<div
+					class="bg-card border rounded-lg shadow-sm p-4 mb-6 relative border-l-4 border-l-primary"
+				>
+					<h3 class="font-medium mb-4">
+						Adjust Stock: <span class="font-bold">{adjustSupplyName}</span>
+					</h3>
+					<div class="grid grid-cols-1 sm:grid-cols-6 gap-4 items-end">
+						<div class="space-y-1 sm:col-span-1">
+							<span class="text-xs font-medium text-muted-foreground block">Current</span>
+							<div class="p-2 text-sm bg-muted rounded border border-transparent font-medium">
+								{adjustCurrentStock}
+							</div>
+						</div>
+						<div class="space-y-1 sm:col-span-1">
+							<label class="text-xs font-medium" for="aNew">New Stock Count</label>
+							<input
+								id="aNew"
+								type="number"
+								min="0"
+								class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+								bind:value={adjustNewStock}
+							/>
+						</div>
+						<div class="space-y-1 sm:col-span-1">
+							<span class="text-xs font-medium text-muted-foreground block">Adjustment</span>
+							<div
+								class="p-2 text-sm font-bold {adjustChangeAmount > 0
+									? 'text-green-600'
+									: adjustChangeAmount < 0
+										? 'text-red-600'
+										: 'text-muted-foreground'}"
+							>
+								{adjustChangeAmount > 0 ? '+' : ''}{adjustChangeAmount}
+							</div>
+						</div>
+						<div class="space-y-1 sm:col-span-2">
+							<label class="text-xs font-medium" for="aReason">Reason</label>
+							<input
+								id="aReason"
+								type="text"
+								class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+								bind:value={adjustReason}
+								placeholder="e.g. stock take, damaged"
+							/>
+						</div>
+						<div class="flex flex-col gap-2 sm:col-span-1">
+							<Button
+								size="sm"
+								class="w-full"
+								onclick={saveAdjustment}
+								disabled={isSavingAdjustment || adjustChangeAmount === 0}
+							>
+								{isSavingAdjustment ? 'Saving...' : 'Save'}
+							</Button>
+							<Button
+								size="sm"
+								variant="outline"
+								class="w-full"
+								onclick={() => (showAdjustModal = false)}
+								disabled={isSavingAdjustment}
+							>
+								Cancel
+							</Button>
+						</div>
+					</div>
+				</div>
+			{/if}
+
 			<div class="bg-card border rounded-lg shadow-sm overflow-hidden">
 				<table class="w-full text-sm text-left">
 					<thead class="bg-muted">
@@ -776,7 +928,10 @@
 											class="text-primary hover:underline font-medium text-xs"
 											onclick={() => openEditSupply(supply)}>Edit</button
 										>
-										<button class="text-primary hover:underline font-medium text-xs">Adjust</button>
+										<button
+											class="text-primary hover:underline font-medium text-xs"
+											onclick={() => openAdjustStock(supply)}>Adjust</button
+										>
 										<button
 											class="text-red-500 hover:underline font-medium text-xs"
 											onclick={() => deleteSupply(supply.id)}>Delete</button
