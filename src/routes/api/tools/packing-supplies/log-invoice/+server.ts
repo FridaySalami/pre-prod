@@ -96,6 +96,17 @@ export async function POST({ request }) {
         // Reset baseline to 0 before applying the new invoice quantity
         currentStock = 0;
       }
-      return json({ error: error.message }, { status: 500 });
+
+      const newStock = currentStock + item.quantity;
+      await db
+        .from('packing_supplies')
+        .update({ current_stock: newStock, updated_at: new Date().toISOString() })
+        .eq('id', item.supply_id);
     }
+
+    return json({ success: true, invoice });
+  } catch (error: any) {
+    console.error('Invoice error:', error);
+    return json({ error: error.message }, { status: 500 });
   }
+}
