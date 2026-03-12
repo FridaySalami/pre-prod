@@ -913,75 +913,6 @@
 				</div>
 			{/if}
 
-			{#if showAdjustModal}
-				<div
-					class="bg-card border rounded-lg shadow-sm p-4 mb-6 relative border-l-4 border-l-primary"
-				>
-					<h3 class="font-medium mb-4">
-						Adjust Stock: <span class="font-bold">{adjustSupplyName}</span>
-					</h3>
-					<div class="grid grid-cols-1 sm:grid-cols-6 gap-4 items-end">
-						<div class="space-y-1 sm:col-span-1">
-							<span class="text-xs font-medium text-muted-foreground block">Current</span>
-							<div class="p-2 text-sm bg-muted rounded border border-transparent font-medium">
-								{adjustCurrentStock}
-							</div>
-						</div>
-						<div class="space-y-1 sm:col-span-1">
-							<label class="text-xs font-medium" for="aNew">New Stock Count</label>
-							<input
-								id="aNew"
-								type="number"
-								min="0"
-								class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-								bind:value={adjustNewStock}
-							/>
-						</div>
-						<div class="space-y-1 sm:col-span-1">
-							<span class="text-xs font-medium text-muted-foreground block">Adjustment</span>
-							<div
-								class="p-2 text-sm font-bold {adjustChangeAmount > 0
-									? 'text-green-600'
-									: adjustChangeAmount < 0
-										? 'text-red-600'
-										: 'text-muted-foreground'}"
-							>
-								{adjustChangeAmount > 0 ? '+' : ''}{adjustChangeAmount}
-							</div>
-						</div>
-						<div class="space-y-1 sm:col-span-2">
-							<label class="text-xs font-medium" for="aReason">Reason</label>
-							<input
-								id="aReason"
-								type="text"
-								class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-								bind:value={adjustReason}
-								placeholder="e.g. stock take, damaged"
-							/>
-						</div>
-						<div class="flex flex-col gap-2 sm:col-span-1">
-							<Button
-								size="sm"
-								class="w-full"
-								onclick={saveAdjustment}
-								disabled={isSavingAdjustment || adjustChangeAmount === 0}
-							>
-								{isSavingAdjustment ? 'Saving...' : 'Save'}
-							</Button>
-							<Button
-								size="sm"
-								variant="outline"
-								class="w-full"
-								onclick={() => (showAdjustModal = false)}
-								disabled={isSavingAdjustment}
-							>
-								Cancel
-							</Button>
-						</div>
-					</div>
-				</div>
-			{/if}
-
 			<div class="bg-card border rounded-lg shadow-sm overflow-hidden">
 				<table class="w-full text-sm text-left">
 					<thead class="bg-muted">
@@ -991,7 +922,9 @@
 							<th class="px-4 py-3 font-semibold">Type</th>
 							<th class="px-4 py-3 font-semibold text-right">Avg Unit Cost</th>
 							<th class="px-4 py-3 font-semibold text-right">Current Stock</th>
-							<th class="px-4 py-3 font-semibold text-right">30d Usage</th>
+							<th class="px-4 py-3 font-semibold text-right"
+								>{data.usageDays === 30 ? '30d Usage' : `${data.usageDays}d Usage`}</th
+							>
 							<th class="px-4 py-3 font-semibold text-right">Weeks Left</th>
 							<th class="px-4 py-3 font-semibold text-right">Total Est Value</th>
 							<th class="px-4 py-3 font-semibold text-right">Actions</th>
@@ -999,7 +932,11 @@
 					</thead>
 					<tbody class="divide-y">
 						{#each data.supplies as supply}
-							<tr class="hover:bg-muted/50">
+							<tr
+								class="hover:bg-muted/50 {showAdjustModal && adjustSupplyId === supply.id
+									? 'bg-muted/30 border-l-4 border-l-primary'
+									: ''}"
+							>
 								<td class="px-4 py-3 font-medium">
 									{#if ['box', 'envelope', 'bag'].includes(supply.type)}
 										<button
@@ -1035,7 +972,7 @@
 									{#if data.usageStats[supply.id] > 0}
 										{(
 											Math.max(0, supply.current_stock || 0) /
-											(data.usageStats[supply.id] / 4.33)
+											(data.usageStats[supply.id] / (data.usageDays / 7))
 										).toFixed(1)} wks
 									{:else}
 										-
@@ -1063,6 +1000,75 @@
 									</div>
 								</td>
 							</tr>
+							{#if showAdjustModal && adjustSupplyId === supply.id}
+								<tr class="bg-muted/20 border-l-4 border-l-primary">
+									<td colspan="9" class="p-4">
+										<div class="grid grid-cols-1 sm:grid-cols-6 gap-4 items-end">
+											<div class="space-y-1 sm:col-span-1">
+												<span class="text-xs font-medium text-muted-foreground block">Current</span>
+												<div
+													class="p-2 text-sm bg-muted rounded border border-transparent font-medium"
+												>
+													{adjustCurrentStock}
+												</div>
+											</div>
+											<div class="space-y-1 sm:col-span-1">
+												<label class="text-xs font-medium" for="aNew">New Stock Count</label>
+												<input
+													id="aNew"
+													type="number"
+													min="0"
+													class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+													bind:value={adjustNewStock}
+												/>
+											</div>
+											<div class="space-y-1 sm:col-span-1">
+												<span class="text-xs font-medium text-muted-foreground block"
+													>Adjustment</span
+												>
+												<div
+													class="p-2 text-sm font-bold {adjustChangeAmount > 0
+														? 'text-green-600'
+														: adjustChangeAmount < 0
+															? 'text-red-600'
+															: 'text-muted-foreground'}"
+												>
+													{adjustChangeAmount > 0 ? '+' : ''}{adjustChangeAmount}
+												</div>
+											</div>
+											<div class="space-y-1 sm:col-span-2">
+												<label class="text-xs font-medium" for="aReason">Reason</label>
+												<input
+													id="aReason"
+													type="text"
+													class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+													bind:value={adjustReason}
+													placeholder="e.g. stock take, damaged"
+												/>
+											</div>
+											<div class="flex flex-col gap-2 sm:col-span-1">
+												<Button
+													size="sm"
+													class="w-full"
+													onclick={saveAdjustment}
+													disabled={isSavingAdjustment || adjustChangeAmount === 0}
+												>
+													{isSavingAdjustment ? 'Saving...' : 'Save'}
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													class="w-full"
+													onclick={() => (showAdjustModal = false)}
+													disabled={isSavingAdjustment}
+												>
+													Cancel
+												</Button>
+											</div>
+										</div>
+									</td>
+								</tr>
+							{/if}
 						{/each}
 						{#if data.supplies.length === 0}
 							<tr
@@ -1294,6 +1300,7 @@
 									<th class="px-4 py-3 font-semibold">Order ID</th>
 									<th class="px-4 py-3 font-semibold">SKU / ASIN</th>
 									<th class="px-4 py-3 font-semibold">Product Title</th>
+									<th class="px-4 py-3 font-semibold">Reason</th>
 									<th class="px-4 py-3 font-semibold text-right">Actions</th>
 								</tr>
 							</thead>
@@ -1308,6 +1315,27 @@
 													<div class="text-muted-foreground">{item.asin}</div>
 												</td>
 												<td class="px-4 py-3 text-xs line-clamp-2 my-2">{item.title}</td>
+												<td class="px-4 py-3">
+													{#if item.costs?.boxReason}
+														<span
+															class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800"
+														>
+															{item.costs.boxReason}
+														</span>
+													{:else if !item.costs}
+														<span
+															class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800"
+														>
+															SKU Not in Inventory
+														</span>
+													{:else}
+														<span
+															class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+														>
+															Unmapped Code: {order.box_code}
+														</span>
+													{/if}
+												</td>
 												<td class="px-4 py-3 text-right whitespace-nowrap">
 													<div class="flex items-center gap-2 justify-end">
 														<select

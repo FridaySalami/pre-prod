@@ -201,7 +201,12 @@ export class CostCalculator {
         shipping = 'Nationwide Prime';
       }
 
-      const box = `${String(product.width ?? '')}x${String(product.height ?? '')}x${String(product.depth ?? '')}`;
+      let box = `${String(product.width ?? '')}x${String(product.height ?? '')}x${String(product.depth ?? '')}`;
+
+      // Handle cases where dims are 0 or null
+      if (box === 'xx' || box === '0x0x0' || box === 'nullxnullxnull' || !product.width || !product.height || !product.depth) {
+        box = '0x0x0';
+      }
 
       // Determine shipping type for display
       const shippingType = shipping === 'Nationwide Prime' ? 'Prime' :
@@ -212,6 +217,7 @@ export class CostCalculator {
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
       const materialCost = 0.35;
+      const boxReason = (box === '0x0x0') ? 'Missing Dimensions' : '';
 
       let fragileCharge = 0.00;
       if (options.customFragileCharge !== undefined) {
@@ -275,6 +281,7 @@ export class CostCalculator {
         shipping,
         shippingType,
         box,
+        boxReason,
         vatCode,
         itemName: skuMapping?.item_name || null
       };
