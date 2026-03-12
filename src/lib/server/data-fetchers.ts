@@ -337,7 +337,10 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
           // Now that the assignments are saved, we check order statuses and fire the RPC.
           // We only deduct if the order represents a committed shipment: 'Unshipped' or 'Shipped'.
           for (const assignment of packagingAssignments) {
-            if (!assignment.box_supply_id) continue; // Skip unmapped boxes
+            // Skip deduction if the box_code is 0x0x0 (No Box Required)
+            if (assignment.box_code === '0x0x0') continue;
+
+            if (!assignment.box_supply_id) continue; // Skip unmapped boxes (insurance)
 
             const order = enrichedOrders.find(o => o.amazon_order_id === assignment.amazon_order_id);
             const status = order?.order_status?.toLowerCase();

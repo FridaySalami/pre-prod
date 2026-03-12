@@ -53,7 +53,7 @@
 	let searching = false;
 
 	$: boxSizeCosts = supplies.reduce((map, s) => {
-		if (s.type === 'box') {
+		if (['box', 'envelope', 'bag'].includes(s.type)) {
 			const price = s.packing_supplier_prices?.[0]?.default_price || 0;
 			map.set(s.code, price);
 		}
@@ -61,17 +61,29 @@
 	}, new Map());
 
 	$: allBoxOptions = supplies
-		.filter((s) => s.type === 'box' && s.code.includes('x') && !s.code.includes('0x0x0'))
+		.filter((s) => ['box', 'envelope', 'bag'].includes(s.type))
 		.map((s) => s.code)
 		.sort();
 
 	// If no supplies passed, fallback gracefully or just use empty arrays
-	$: commonOptions = allBoxOptions;
+	// Ensure 0x0x0 is always available as a choice
+	$: availableOptions = allBoxOptions.includes('0x0x0')
+		? allBoxOptions
+		: ['0x0x0', ...allBoxOptions];
+
+	$: commonOptions = availableOptions;
 	$: otherOptions = [];
 
 	function handleBoxPresetChange(e: Event) {
 		const val = (e.target as HTMLSelectElement).value;
 		if (val && val !== 'custom') {
+			if (val === '0x0x0') {
+				box_cost = '0.00';
+				width = '0';
+				height = '0';
+				depth = '0';
+				return;
+			}
 			const cost = boxSizeCosts.get(val);
 			if (cost !== undefined) {
 				box_cost = Number(cost).toFixed(2);
@@ -447,7 +459,9 @@
 										<option value="custom">Custom Size</option>
 										<optgroup label="Common Sizes">
 											{#each commonOptions as option}
-												<option value={option}>{option}</option>
+												<option value={option}>
+													{option === '0x0x0' ? 'None / Own Packaging' : option}
+												</option>
 											{/each}
 										</optgroup>
 										<optgroup label="All Sizes">

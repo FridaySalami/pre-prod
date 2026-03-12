@@ -77,6 +77,7 @@ export async function load() {
     .from('amazon_order_packaging')
     .select('amazon_order_id, box_code, calculated_at')
     .is('box_supply_id', null)
+    .neq('box_code', '0x0x0')
     .order('calculated_at', { ascending: false })
     .limit(50);
 
