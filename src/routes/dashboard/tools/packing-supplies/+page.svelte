@@ -2,8 +2,17 @@
 	import { invalidateAll, goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Button } from '$lib/shadcn/ui/button';
-	import { Plus, Package, FileText, ClipboardList, AlertCircle, Maximize } from 'lucide-svelte';
+	import {
+		Plus,
+		Package,
+		FileText,
+		ClipboardList,
+		AlertCircle,
+		Maximize,
+		Search
+	} from 'lucide-svelte';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
+	import BoxSKUListModal from '$lib/components/BoxSKUListModal.svelte';
 
 	export let data;
 
@@ -51,6 +60,20 @@
 	let editLineQty: number = 0;
 	let editLineTotal: number = 0;
 	let isSavingLineEdit = false;
+
+	// Reassignment Modal State
+	let showReassignModal = false;
+	let reassignBoxCode = '';
+
+	function openReassignModal(boxCode: string) {
+		reassignBoxCode = boxCode;
+		showReassignModal = true;
+	}
+
+	function handleReassignSuccess() {
+		// Invalidate is overkill but ensures everything is fresh if they reassign everything
+		invalidateAll();
+	}
 
 	// Stock Adjustment State
 	let showAdjustModal = false;
@@ -942,7 +965,22 @@
 					<tbody class="divide-y">
 						{#each data.supplies as supply}
 							<tr class="hover:bg-muted/50">
-								<td class="px-4 py-3 font-medium">{supply.name}</td>
+								<td class="px-4 py-3 font-medium">
+									{#if ['box', 'envelope', 'bag'].includes(supply.type)}
+										<button
+											class="text-primary hover:underline font-bold flex items-center gap-1 group"
+											onclick={() => openReassignModal(supply.code)}
+											title="View and reassign items using this size"
+										>
+											{supply.name}
+											<Search
+												class="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity"
+											/>
+										</button>
+									{:else}
+										{supply.name}
+									{/if}
+								</td>
 								<td class="px-4 py-3 text-muted-foreground">{supply.code}</td>
 								<td class="px-4 py-3">
 									<span
@@ -1270,4 +1308,11 @@
 	title={currentTitle}
 	supplies={data.supplies || []}
 	on:success={handleModalSuccess}
+/>
+
+<BoxSKUListModal
+	bind:open={showReassignModal}
+	boxCode={reassignBoxCode}
+	supplies={data.supplies || []}
+	onSuccess={handleReassignSuccess}
 />

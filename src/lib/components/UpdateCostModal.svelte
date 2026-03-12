@@ -60,18 +60,18 @@
 		return map;
 	}, new Map());
 
-	$: allBoxOptions = supplies
+	$: boxOptions = supplies
 		.filter((s) => ['box', 'envelope', 'bag'].includes(s.type))
-		.map((s) => s.code)
-		.sort();
+		.map((s) => ({ code: s.code, name: s.name }))
+		.sort((a, b) => a.name.localeCompare(b.name));
 
 	// If no supplies passed, fallback gracefully or just use empty arrays
 	// Ensure 0x0x0 is always available as a choice
-	$: availableOptions = allBoxOptions.includes('0x0x0')
-		? allBoxOptions
-		: ['0x0x0', ...allBoxOptions];
+	$: if (!boxOptions.find((o) => o.code === '0x0x0')) {
+		boxOptions = [{ code: '0x0x0', name: 'None / Own Box' }, ...boxOptions];
+	}
 
-	$: commonOptions = availableOptions;
+	$: commonOptions = boxOptions;
 	$: otherOptions = [];
 
 	function handleBoxPresetChange(e: Event) {
@@ -457,16 +457,16 @@
 										value={`${width}x${height}x${depth}`}
 									>
 										<option value="custom">Custom Size</option>
-										<optgroup label="Common Sizes">
+										<optgroup label="Available Sizes">
 											{#each commonOptions as option}
-												<option value={option}>
-													{option === '0x0x0' ? 'None / Own Packaging' : option}
+												<option value={option.code}>
+													{option.name}
 												</option>
 											{/each}
 										</optgroup>
-										<optgroup label="All Sizes">
+										<optgroup label="Other Options">
 											{#each otherOptions as option}
-												<option value={option}>{option}</option>
+												<option value={option.code}>{option.name}</option>
 											{/each}
 										</optgroup>
 									</select>
