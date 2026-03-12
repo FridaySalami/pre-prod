@@ -35,6 +35,44 @@
 	let lineTotals: Record<string, number | null> = {};
 	let isSubmitting = false;
 
+	// Optimization: Store prices in a reactive object to avoid repeated lookups
+	let unitPrices: Record<string, number> = {};
+	$: if (selectedSupplier && data.supplies) {
+		const newPrices: Record<string, number> = {};
+		data.supplies.forEach((s: any) => {
+			// Search the nested array (from packing_supplier_prices table) for a matching supplier_id
+			const priceEntry = (s.packing_supplier_prices || []).find(
+				(p: any) => p.supplier_id === selectedSupplier
+			);
+			newPrices[s.id] = priceEntry ? Number(priceEntry.default_price) : 0;
+		});
+		unitPrices = newPrices;
+	}
+
+	function handleQuantityChange(supplyId: string) {
+		const price = unitPrices[supplyId] || 0;
+		const qty = quantities[supplyId];
+
+		if (qty && qty > 0) {
+			lineTotals[supplyId] = Number((qty * price).toFixed(2));
+		} else {
+			lineTotals[supplyId] = null;
+		}
+
+		// Trigger Svelte reactivity for objects
+		lineTotals = { ...lineTotals };
+	}
+
+	function handleSupplierChange(supplierId: string) {
+		selectedSupplier = supplierId;
+		// Wait for unitPrices to update then refresh totals
+		setTimeout(() => {
+			Object.keys(quantities).forEach((id) => {
+				if (quantities[id]) handleQuantityChange(id);
+			});
+		}, 0);
+	}
+
 	// Catalog Management State
 	let showSupplyForm = false;
 	let isSavingSupply = false;
@@ -376,46 +414,6 @@
 		}
 	}
 
-	// Automatically update standard prices when supplier changes or quantity changes
-	function handleQuantityChange(supplyId: string) {
-		if (!selectedSupplier) return;
-		const supply = data.supplies.find((s: any) => s.id === supplyId);
-		if (!supply) return;
-
-		const supplierPrice = supply.packing_supplier_prices?.find(
-			(p: any) => p.supplier_id === selectedSupplier
-		);
-		const unitPrice = supplierPrice ? Number(supplierPrice.default_price) : 0;
-
-		// Only auto-fill the line total if it's currently empty/null or if we are changing back to 0
-		if (quantities[supplyId]) {
-			// Check if the current user input is undefined, null, empty string, or exactly 0
-			// (Be careful not to overwrite if they just typed £45.00)
-			const currentVal = lineTotals[supplyId] as any;
-			if (
-				currentVal === undefined ||
-				currentVal === null ||
-				currentVal === 0 ||
-				currentVal === ''
-			) {
-				lineTotals[supplyId] = Number((quantities[supplyId]! * unitPrice).toFixed(2));
-			}
-		} else {
-			lineTotals[supplyId] = null;
-		}
-	}
-
-	function handleSupplierChange(supplierId: string) {
-		selectedSupplier = supplierId;
-		// Reset line totals so new default prices are grabbed
-		data.supplies.forEach((supply: any) => {
-			if (quantities[supply.id]) {
-				lineTotals[supply.id] = null;
-				handleQuantityChange(supply.id);
-			}
-		});
-	}
-
 	// Group supplies by type
 	$: groupedSupplies = {
 		box: data.supplies.filter((s) => s.type === 'box'),
@@ -591,7 +589,7 @@
 									type="button"
 									class="px-6 py-2 border rounded-md text-sm font-semibold transition-colors {selectedSupplier ===
 									supplier.id
-										? 'bg-primary text-primary-foreground border-primary focus:ring-2 focus:ring-primary focus:ring-offset-2'
+										? 'bg-primary text-primary-foreground border-primary'
 										: 'bg-background text-foreground hover:bg-muted'}"
 									onclick={() => handleSupplierChange(supplier.id)}
 								>
@@ -858,9 +856,9 @@
 				</Button>
 			</div>
 
-			{#if showSupplyForm}
+			{#if showSupplyForm && !editSupplyId}
 				<div class="bg-card border rounded-lg shadow-sm p-4 mb-6 relative">
-					<h3 class="font-medium mb-4">{editSupplyId ? 'Edit Supply' : 'Add New Supply'}</h3>
+					<h3 class="font-medium mb-4">Add New Supply</h3>
 					<div class="grid grid-cols-1 sm:grid-cols-5 gap-4 items-end">
 						<div class="space-y-1 sm:col-span-1">
 							<label class="text-xs font-medium" for="sName">Name</label>
@@ -933,7 +931,8 @@
 					<tbody class="divide-y">
 						{#each data.supplies as supply}
 							<tr
-								class="hover:bg-muted/50 {showAdjustModal && adjustSupplyId === supply.id
+								class="hover:bg-muted/50 {(showAdjustModal && adjustSupplyId === supply.id) ||
+								(showSupplyForm && editSupplyId === supply.id)
 									? 'bg-muted/30 border-l-4 border-l-primary'
 									: ''}"
 							>
@@ -1061,6 +1060,63 @@
 													class="w-full"
 													onclick={() => (showAdjustModal = false)}
 													disabled={isSavingAdjustment}
+												>
+													Cancel
+												</Button>
+											</div>
+										</div>
+									</td>
+								</tr>
+							{/if}
+							{#if showSupplyForm && editSupplyId === supply.id}
+								<tr class="bg-muted/20 border-l-4 border-l-primary">
+									<td colspan="9" class="p-4">
+										<div class="grid grid-cols-1 sm:grid-cols-5 gap-4 items-end">
+											<div class="space-y-1 sm:col-span-1">
+												<label class="text-xs font-medium" for="sName">Name</label>
+												<input
+													id="sName"
+													type="text"
+													class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+													bind:value={editSupplyName}
+													oninput={handleNameInput}
+													placeholder="e.g. 10x10x10"
+												/>
+											</div>
+											<div class="space-y-1 sm:col-span-1">
+												<label class="text-xs font-medium" for="sCode">Code/SKU</label>
+												<input
+													id="sCode"
+													type="text"
+													class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+													bind:value={editSupplyCode}
+													oninput={handleCodeInput}
+													placeholder="e.g. 10.25x10.25x10.25"
+												/>
+											</div>
+											<div class="space-y-1 sm:col-span-1">
+												<label class="text-xs font-medium" for="sType">Type</label>
+												<select
+													id="sType"
+													class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+													bind:value={editSupplyType}
+												>
+													<option value="box">Box</option>
+													<option value="tape">Tape</option>
+													<option value="wrap">Wrap</option>
+													<option value="bag">Bag</option>
+													<option value="envelope">Envelope</option>
+												</select>
+											</div>
+											<div class="flex gap-2 sm:col-span-2">
+												<Button class="flex-1" onclick={saveSupply} disabled={isSavingSupply}>
+													{isSavingSupply ? 'Saving...' : 'Save'}
+												</Button>
+												<Button
+													variant="outline"
+													class="flex-1"
+													onclick={() => (showSupplyForm = false)}
+													disabled={isSavingSupply}
 												>
 													Cancel
 												</Button>
