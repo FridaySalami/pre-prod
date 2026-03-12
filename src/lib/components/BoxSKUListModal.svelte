@@ -8,7 +8,7 @@
 	export let open = false;
 	export let boxCode = '';
 	export let supplies: any[] = [];
-	export let onSuccess: () => void;
+	export let onSuccess: (sku?: string) => void;
 
 	let loading = true;
 	let processing = false;
@@ -60,7 +60,7 @@
 				showToast(`Reassigned ${sku} to ${newBoxCode}`, 'success');
 				// Remove from local list
 				items = items.filter((i) => i.sku !== sku);
-				onSuccess();
+				onSuccess(sku);
 			} else {
 				showToast('Failed to reassign SKU', 'error');
 			}

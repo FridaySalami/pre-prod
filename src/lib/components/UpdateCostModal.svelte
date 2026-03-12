@@ -60,6 +60,7 @@
 		return map;
 	}, new Map());
 
+	let boxOptions: { code: string; name: string }[] = [];
 	$: boxOptions = supplies
 		.filter((s) => ['box', 'envelope', 'bag'].includes(s.type))
 		.map((s) => ({ code: s.code, name: s.name }))
@@ -72,7 +73,7 @@
 	}
 
 	$: commonOptions = boxOptions;
-	$: otherOptions = [];
+	$: otherOptions = [] as { code: string; name: string }[];
 
 	function handleBoxPresetChange(e: Event) {
 		const val = (e.target as HTMLSelectElement).value;

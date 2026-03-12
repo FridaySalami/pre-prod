@@ -70,9 +70,44 @@
 		showReassignModal = true;
 	}
 
-	function handleReassignSuccess() {
+	function handleReassignSuccess(sku: string | undefined) {
+		if (sku) {
+			mappedActiveSkus = [...mappedActiveSkus, sku];
+		}
 		// Invalidate is overkill but ensures everything is fresh if they reassign everything
 		invalidateAll();
+	}
+
+	async function quickAssignBox(sku: string, newBoxCode: string) {
+		if (!newBoxCode) return;
+
+		try {
+			const res = await fetch('/api/tools/packing-supplies/reassign', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ sku, newBoxCode })
+			});
+
+			if (res.ok) {
+				mappedActiveSkus = [...mappedActiveSkus, sku];
+				// Trigger a re-fetch of orders in background if needed,
+				// but for UI mapping tracking is enough
+			} else {
+				alert('Failed to assign box size');
+			}
+		} catch (e) {
+			console.error(e);
+			alert('An error occurred during assignment');
+		}
+	}
+
+	$: boxOptions = (data?.supplies || [])
+		.filter((s: any) => ['box', 'envelope', 'bag'].includes(s.type))
+		.map((s: any) => ({ code: s.code, name: s.name }))
+		.sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+	$: if (!boxOptions.find((o: any) => o.code === '0x0x0')) {
+		boxOptions = [{ code: '0x0x0', name: 'None / Own Box' }, ...boxOptions];
 	}
 
 	// Stock Adjustment State
@@ -1274,13 +1309,26 @@
 												</td>
 												<td class="px-4 py-3 text-xs line-clamp-2 my-2">{item.title}</td>
 												<td class="px-4 py-3 text-right whitespace-nowrap">
-													<Button
-														variant="outline"
-														size="sm"
-														onclick={() => openCostModal(item.seller_sku, item.asin, item.title)}
-													>
-														Assign Dimensions
-													</Button>
+													<div class="flex items-center gap-2 justify-end">
+														<select
+															class="h-8 rounded-md border border-input bg-background px-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-[180px]"
+															onchange={(e) =>
+																quickAssignBox(item.seller_sku, e.currentTarget.value)}
+														>
+															<option value="">Select Box...</option>
+															{#each boxOptions as option}
+																<option value={option.code}>{option.name}</option>
+															{/each}
+														</select>
+														<Button
+															variant="ghost"
+															size="sm"
+															onclick={() => openCostModal(item.seller_sku, item.asin, item.title)}
+															title="Advanced Settings"
+														>
+															<Maximize class="h-4 w-4" />
+														</Button>
+													</div>
 												</td>
 											</tr>
 										{/if}
