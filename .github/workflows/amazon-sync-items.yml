@@ -35,3 +35,9 @@ jobs:
           AMAZON_SELLER_ID: ${{ secrets.AMAZON_SELLER_ID }}
           AMAZON_ROLE_ARN: ${{ secrets.AMAZON_ROLE_ARN }}
         run: npx tsx scripts/sync-items-standalone.ts
+
+      - name: Process Order Packaging Ledger
+        env:
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          PRIVATE_SUPABASE_SERVICE_KEY: ${{ secrets.PRIVATE_SUPABASE_SERVICE_KEY }}
+        run: npx tsx scripts/process-packaging-ledger.ts
