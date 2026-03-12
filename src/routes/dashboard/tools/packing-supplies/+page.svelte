@@ -1268,5 +1268,6 @@
 	sku={currentSku}
 	asin={currentAsin}
 	title={currentTitle}
+	supplies={data.supplies || []}
 	on:success={handleModalSuccess}
 />

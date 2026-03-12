@@ -13,6 +13,7 @@
 	export let title = '';
 	export let asin = '';
 	export let shippingDetails = '';
+	export let supplies: any[] = [];
 
 	let loading = false;
 	let width = '10';
@@ -51,67 +52,29 @@
 	let suggestions: any[] = [];
 	let searching = false;
 
-	const boxSizeCosts = new Map([
-		['5.25x5.25x5.25', 0.15],
-		['6.25x6.25x6.25', 0.16],
-		['9.25x6.25x6.25', 0.2],
-		['9.25x9.25x9.25', 0.28],
-		['0x0x0', 0.0],
-		['12.25x9.25x3.25', 0.22],
-		['14.75x11.25x14.75', 1.96],
-		['12.25x9.25x6.25', 0.26],
-		['14.25x4.25x4.25', 0.73],
-		['14.25x12.25x8.25', 1.67],
-		['14.25x10.5x12.25', 0.72],
-		['16.25x10.25x10.75', 0.73],
-		['16.25x11.25x7.25', 0.56],
-		['18.25x12.25x7.25', 0.46],
-		['18.25x12.25x12.25', 0.95],
-		['18.25x18.25x18.25', 1.85],
-		['Bubble Wrap', 9.33],
-		['Fragile Tape', 0.67],
-		['Pallet Wrap', 4.65],
-		['10.25x8.25x6.25', 0.24],
-		['14.25x11.25x9.25', 0.43],
-		['15.75x11.75x7.75', 0.7],
-		['10.25x7.25x2.25', 0.17],
-		['11.25x14.25x3.25', 0.24],
-		['14.25x10.25x12.25', 0.72],
-		['15.25x10.25x5.25', 1.34],
-		['10.25x10.25x10.25', 0.0],
-		['15.25x15.25x15.25', 0.0],
-		['Maggi Box', 1.52],
-		['20.25x15.25x6.25', 1.52],
-		['Poly Bag', 0.04]
-	]);
+	$: boxSizeCosts = supplies.reduce((map, s) => {
+		if (s.type === 'box') {
+			const price = s.packing_supplier_prices?.[0]?.default_price || 0;
+			map.set(s.code, price);
+		}
+		return map;
+	}, new Map());
 
-	const commonBoxSizes = new Set([
-		'6.25x6.25x6.25',
-		'9.25x6.25x6.25',
-		'9.25x9.25x9.25',
-		'12.25x9.25x6.25',
-		'14.25x4.25x4.25',
-		'14.25x10.5x12.25',
-		'16.25x11.25x7.25',
-		'18.25x12.25x7.25',
-		'18.25x12.25x12.25',
-		'18.25x18.25x18.25',
-		'10.25x8.25x6.25'
-	]);
-
-	$: allBoxOptions = Array.from(boxSizeCosts.keys())
-		.filter((k) => k.includes('x') && !k.includes('0x0x0'))
+	$: allBoxOptions = supplies
+		.filter((s) => s.type === 'box' && s.code.includes('x') && !s.code.includes('0x0x0'))
+		.map((s) => s.code)
 		.sort();
 
-	$: commonOptions = allBoxOptions.filter((o) => commonBoxSizes.has(o));
-	$: otherOptions = allBoxOptions.filter((o) => !commonBoxSizes.has(o));
+	// If no supplies passed, fallback gracefully or just use empty arrays
+	$: commonOptions = allBoxOptions;
+	$: otherOptions = [];
 
 	function handleBoxPresetChange(e: Event) {
 		const val = (e.target as HTMLSelectElement).value;
 		if (val && val !== 'custom') {
 			const cost = boxSizeCosts.get(val);
 			if (cost !== undefined) {
-				box_cost = cost.toFixed(2);
+				box_cost = Number(cost).toFixed(2);
 			}
 
 			const [w, h, d] = val.split('x');

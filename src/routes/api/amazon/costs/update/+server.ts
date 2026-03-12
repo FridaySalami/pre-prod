@@ -101,6 +101,29 @@ export async function POST({ request }) {
       return json({ success: false, error: 'Failed to update composition: ' + compError.message }, { status: 500 });
     }
 
+    // 4. Clean up any unmapped packing records for orders containing this SKU
+    // Find recent order IDs for this SKU to clear out unmapped errors
+    const { data: orderItems } = await db
+      .from('amazon_order_items')
+      .select('amazon_order_id')
+      .eq('seller_sku', sku)
+      .limit(1000);
+
+    if (orderItems && orderItems.length > 0) {
+      const orderIds = [...new Set(orderItems.map(item => item.amazon_order_id))];
+
+      // Delete the null mappings so they disappear from the UI and can be recalculated
+      const { error: deleteError } = await db
+        .from('amazon_order_packaging')
+        .delete()
+        .is('box_supply_id', null)
+        .in('amazon_order_id', orderIds);
+
+      if (deleteError) {
+        console.warn('Could not clean up unmapped packaging records:', deleteError);
+      }
+    }
+
     return json({ success: true, message: 'Cost data updated successfully' });
   } catch (e) {
     console.error('Error in update cost API:', e);
