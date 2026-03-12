@@ -72,10 +72,34 @@ export async function load() {
   }
   // -----------------------------------------------------
 
+  // --- Phase 4: Fetch unmapped orders for review ---
+  const { data: unmapped } = await db
+    .from('amazon_order_packaging')
+    .select('amazon_order_id, box_code, calculated_at')
+    .is('box_supply_id', null)
+    .order('calculated_at', { ascending: false })
+    .limit(50);
+
+  let unmappedOrders: any[] = [];
+  if (unmapped && unmapped.length > 0) {
+    const orderIds = unmapped.map(u => u.amazon_order_id);
+    const { data: items } = await db
+      .from('amazon_order_items')
+      .select('amazon_order_id, seller_sku, asin, title')
+      .in('amazon_order_id', orderIds);
+
+    unmappedOrders = unmapped.map(u => ({
+      ...u,
+      items: items?.filter((i: any) => i.amazon_order_id === u.amazon_order_id) || []
+    }));
+  }
+  // -----------------------------------------------------
+
   return {
     suppliers: suppliers || [],
     supplies: supplies || [],
     history: history || [],
-    usageStats // Pass the new stats dictionary down to the page
+    usageStats, // Pass the new stats dictionary down to the page
+    unmappedOrders
   };
 }

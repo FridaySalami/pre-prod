@@ -71,10 +71,7 @@
 	let initiallyUnmappedCount = 0;
 	let mappedActiveSkus: string[] = [];
 
-	$: activeUnmappedOrdersCount =
-		data?.unmappedOrders
-			?.flatMap((o) => o.items)
-			.filter((i) => !mappedActiveSkus.includes(i.seller_sku)).length || 0;
+	$: activeUnmappedOrdersCount = data?.unmappedOrders?.flatMap(o => o.items).filter(i => !mappedActiveSkus.includes(i.seller_sku)).length || 0;
 
 	function openCostModal(sku: string, asin: string, title: string) {
 		currentSku = sku;
@@ -1227,25 +1224,23 @@
 							<tbody class="divide-y relative bg-card">
 								{#each data.unmappedOrders as order}
 									{#each order.items as item}
-										{#if !mappedActiveSkus.includes(item.seller_sku)}
-											<tr class="hover:bg-muted/30">
-												<td class="px-4 py-3 font-mono">{order.amazon_order_id}</td>
-												<td class="px-4 py-3 font-mono text-xs">
-													<div class="font-semibold text-primary">{item.seller_sku}</div>
-													<div class="text-muted-foreground">{item.asin}</div>
-												</td>
-												<td class="px-4 py-3 text-xs line-clamp-2 my-2">{item.title}</td>
-												<td class="px-4 py-3 text-right whitespace-nowrap">
-													<Button
-														variant="outline"
-														size="sm"
-														onclick={() => openCostModal(item.seller_sku, item.asin, item.title)}
-													>
-														Assign Dimensions
-													</Button>
-												</td>
-											</tr>
-										{/if}
+										<tr class="hover:bg-muted/30">
+											<td class="px-4 py-3 font-mono">{order.amazon_order_id}</td>
+											<td class="px-4 py-3 font-mono text-xs">
+												<div class="font-semibold text-primary">{item.seller_sku}</div>
+												<div class="text-muted-foreground">{item.asin}</div>
+											</td>
+											<td class="px-4 py-3 text-xs line-clamp-2 my-2">{item.title}</td>
+											<td class="px-4 py-3 text-right whitespace-nowrap">
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => openCostModal(item.seller_sku, item.asin, item.title)}
+												>
+													Assign Dimensions
+												</Button>
+											</td>
+										</tr>
 									{/each}
 								{/each}
 							</tbody>
@@ -1268,5 +1263,4 @@
 	sku={currentSku}
 	asin={currentAsin}
 	title={currentTitle}
-	on:success={handleModalSuccess}
 />

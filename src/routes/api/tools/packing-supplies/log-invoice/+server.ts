@@ -78,17 +78,24 @@ export async function POST({ request }) {
         .eq('id', item.supply_id)
         .single();
 
-      const currentStock = supplyData?.current_stock || 0;
+      let currentStock = supplyData?.current_stock || 0;
 
-      await db.from('packing_supplies')
-        .update({ current_stock: currentStock + Number(item.quantity) })
-        .eq('id', item.supply_id);
+      // If the system generated negative debt (boxes shipped before invoice was logged),
+      // we clear the negative balance so the physical intake is the true baseline.
+      if (currentStock < 0) {
+        const negativeDebt = Math.abs(currentStock);
+
+        // Insert a correction ledger entry to keep the math balanced
+        await db.from('packing_inventory_ledger').insert({
+          supply_id: item.supply_id,
+          change_amount: negativeDebt,
+          reason: 'CORRECTION',
+          reference_id: `clear_debt_${invoiceId}`
+        });
+
+        // Reset baseline to 0 before applying the new invoice quantity
+        currentStock = 0;
+      }
+      return json({ error: error.message }, { status: 500 });
     }
-
-    return json({ success: true, invoice });
-
-  } catch (error: any) {
-    console.error('Failed to log invoice:', error);
-    return json({ error: error.message }, { status: 500 });
   }
-}

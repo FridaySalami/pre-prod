@@ -1,0 +1,6 @@
+@@ -1107,4 +1109,5 @@
+ 	bind:open={showCostModal}
+ 	sku={currentSku}
+ 	asin={currentAsin}
+ 	title={currentTitle}
++onsuccess={handleModalSuccess}
