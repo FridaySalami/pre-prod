@@ -46,12 +46,17 @@ export async function DELETE({ url }) {
     const id = url.searchParams.get('id');
     if (!id) return json({ error: 'Missing supply ID' }, { status: 400 });
 
-    const { error } = await db.from('packing_supplies').delete().eq('id', id);
+    // Option A: Archiving instead of permanent deletion to preserve historical data/FKs
+    const { error } = await db
+      .from('packing_supplies')
+      .update({ is_active: false })
+      .eq('id', id);
+
     if (error) throw error;
 
     return json({ success: true });
   } catch (error: any) {
-    console.error('Delete supply error:', error);
+    console.error('Archive supply error:', error);
     return json({ error: error.message }, { status: 500 });
   }
 }

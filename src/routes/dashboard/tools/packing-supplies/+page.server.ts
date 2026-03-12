@@ -11,7 +11,7 @@ export async function load() {
     console.error('Error fetching suppliers:', suppliersError);
   }
 
-  // Fetch supplies with their default prices
+  // Fetch supplies with their default prices - Only Active Ones
   const { data: supplies, error: suppliesError } = await db
     .from('packing_supplies')
     .select(`
@@ -21,6 +21,7 @@ export async function load() {
 				default_price
 			)
 		`)
+    .eq('is_active', true)
     .order('name');
 
   if (suppliesError) {

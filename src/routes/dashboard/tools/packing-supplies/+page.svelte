@@ -153,7 +153,7 @@
 	async function deleteSupply(id: string) {
 		if (
 			!confirm(
-				'Are you sure you want to delete this supply item? This will permanently remove it from the catalog.'
+				'Are you sure you want to archive this supply item? It will be hidden from current views but preserved in historical records.'
 			)
 		) {
 			return;
@@ -163,11 +163,11 @@
 			const res = await fetch(`/api/tools/packing-supplies/catalog?id=${id}`, {
 				method: 'DELETE'
 			});
-			if (!res.ok) throw new Error('Failed to delete supply');
+			if (!res.ok) throw new Error('Failed to archive supply');
 			await invalidateAll();
 		} catch (e) {
 			console.error(e);
-			alert('Error deleting supply');
+			alert('Error archiving supply');
 		}
 	}
 
