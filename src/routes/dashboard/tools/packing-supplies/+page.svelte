@@ -18,7 +18,7 @@
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import BoxSKUListModal from '$lib/components/BoxSKUListModal.svelte';
 
-	export let data;
+	export let data: any = { supplies: [] };
 
 	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history', 'unmapped', 'sku-search'
 
@@ -222,8 +222,10 @@
 
 	$: activeUnmappedOrdersCount =
 		data?.unmappedOrders
-			?.flatMap((o) => o.items)
-			.filter((i) => i.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(i.seller_sku)).length || 0;
+			?.flatMap((o: any) => o.items)
+			.filter(
+				(i: any) => i.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(i.seller_sku)
+			).length || 0;
 
 	function openCostModal(sku: string, asin: string, title: string) {
 		currentSku = sku;
@@ -674,6 +676,86 @@
 	// Summary values for Pareto/Stats
 	$: runningUsageSum = 0;
 	$: sortedByUsage = [...data.supplies].sort((a, b) => getUsage30d(b.id) - getUsage30d(a.id));
+
+	// NEW: Operational calculation helpers
+	const TARGET_COVERAGE_DAYS = 30;
+
+	function getReorderQty(supply: any) {
+		const dailyBurn = getUsage30d(supply.id) / 30;
+		if (dailyBurn <= 0) return 0;
+		const needed = dailyBurn * TARGET_COVERAGE_DAYS;
+		const stock = Math.max(0, supply.current_stock || 0);
+		return Math.max(0, Math.ceil(needed - stock));
+	}
+
+	function getRunOutDate(supply: any) {
+		const dailyBurn = getUsage30d(supply.id) / 30;
+		if (dailyBurn <= 0) return null;
+		const daysLeft = (supply.current_stock || 0) / dailyBurn;
+		const date = new Date();
+		date.setDate(date.getDate() + Math.round(daysLeft));
+		return date;
+	}
+
+	function getConfidence(supplyId: string) {
+		const days = data.daysOfData || 0;
+		if (days >= 14) return { label: 'High', color: 'text-emerald-600' };
+		if (days >= 4) return { label: 'Med', color: 'text-amber-600' };
+		return { label: 'Low', color: 'text-red-500' };
+	}
+
+	function getUsageTrend(supplyId: string) {
+		const current = data.usageStats3d?.[supplyId] || 0;
+		const previous = data.usageStatsPrev3d?.[supplyId] || 0;
+
+		// 10% threshold to avoid noise
+		const threshold = 0.1;
+
+		if (current > previous * (1 + threshold) && current > 0)
+			return { icon: '▲', color: 'text-red-500', label: 'Rising' };
+		if (current < previous * (1 - threshold) && previous > 0)
+			return { icon: '▼', color: 'text-emerald-500', label: 'Falling' };
+		return { icon: '', color: 'text-muted-foreground', label: 'Stable' };
+	}
+
+	function getReorderCost(supply: any) {
+		const qty = getReorderQty(supply);
+		const cost = getEstimatedUnitCost(supply);
+		return qty * cost;
+	}
+
+	// Dynamic Quick Filters
+	let filterMode: 'all' | 'critical' | 'high-spend' | 'high-usage' | 'reorder' = 'all';
+
+	$: filteredSupplies = sortedSupplies.filter((s) => {
+		if (filterMode === 'all') return true;
+		const dailyBurn = getUsage30d(s.id) / 30;
+		const daysLeft = dailyBurn > 0 ? (s.current_stock || 0) / dailyBurn : 999;
+		const spend = getUsage30d(s.id) * getEstimatedUnitCost(s);
+		const usage = getUsage30d(s.id);
+		const reorderQty = getReorderQty(s);
+
+		if (filterMode === 'critical') return daysLeft < 7;
+		if (filterMode === 'high-spend') return spend > totalProjectedSpend30d * 0.1; // Top 10% spenders
+		if (filterMode === 'high-usage') return usage > totalBoxesUsed30d * 0.1;
+		if (filterMode === 'reorder') return reorderQty > 0;
+
+		return true;
+	});
+
+	// Top Risk Items Calculation
+	$: topRiskItems = sortedSupplies
+		.map((s) => {
+			const dailyBurn = getUsage30d(s.id) / 30;
+			const daysLeft = dailyBurn > 0 ? (s.current_stock || 0) / dailyBurn : 999;
+			const reorderQty = getReorderQty(s);
+			return { ...s, daysLeft, reorderQty };
+		})
+		.filter((s) => s.daysLeft < 14)
+		.sort((a, b) => a.daysLeft - b.daysLeft)
+		.slice(0, 3);
+
+	$: totalReorderCost = data.supplies.reduce((acc: number, s: any) => acc + getReorderCost(s), 0);
 </script>
 
 <div class="flex flex-col gap-6 p-6 max-w-[1600px] mx-auto w-full">
@@ -1000,20 +1082,35 @@
 		{:else if activeTab === 'inventory'}
 			<!-- KPI Summary Panel -->
 			<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-				<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
-					<div class="flex items-center gap-2 text-muted-foreground mb-1">
-						<TrendingDown class="h-4 w-4 text-red-500" />
-						<span class="text-xs font-semibold uppercase tracking-wider">Urgent Restock</span>
+				<!-- Top Risk Items (New Highlight) -->
+				<div
+					class="bg-card border-2 border-red-500 rounded-xl p-4 shadow-sm flex flex-col justify-between overflow-hidden relative"
+				>
+					<div class="flex items-center gap-2 text-red-600 mb-2 relative z-10">
+						<AlertCircle class="h-4 w-4" />
+						<span class="text-xs font-black uppercase tracking-wider">Top Risk Items</span>
 					</div>
-					<div class="flex items-baseline gap-2">
-						<span class="text-2xl font-bold text-red-600">
-							{sortedSupplies.filter((s) => {
-								const usage = getUsage30d(s.id);
-								const daily = usage / 30;
-								return daily > 0 && (s.current_stock || 0) / daily < 7;
-							}).length}
-						</span>
-						<span class="text-xs text-muted-foreground">items &lt; 7 days</span>
+					<div class="flex flex-col gap-1 relative z-10 h-full justify-center">
+						{#each topRiskItems as item}
+							<div class="flex justify-between items-center text-xs group">
+								<span class="font-bold truncate max-w-[120px]">{item.name}</span>
+								<div class="flex gap-2">
+									<span class="text-red-700 font-black">
+										{Math.round(item.daysLeft)}d
+									</span>
+									<span class="text-slate-500 font-bold border-l pl-2 text-[10px]">
+										+{getReorderQty(item)}
+									</span>
+								</div>
+							</div>
+						{:else}
+							<span class="text-xs text-muted-foreground italic">No critical risk items.</span>
+						{/each}
+					</div>
+					<div
+						class="absolute -right-4 -bottom-4 text-red-100/50 scale-[2.5] opacity-50 select-none pointer-events-none"
+					>
+						<TrendingDown class="h-24 w-24" />
 					</div>
 				</div>
 
@@ -1022,31 +1119,50 @@
 						<PackageSearch class="h-4 w-4 text-blue-500" />
 						<span class="text-xs font-semibold uppercase tracking-wider">Stock Valuation</span>
 					</div>
-					<div class="flex items-baseline gap-2">
-						<span class="text-2xl font-bold"
-							>£{totalInventoryValue.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</span
-						>
-						<span class="text-xs text-muted-foreground text-emerald-600 font-medium">SOH</span>
+					<div class="flex flex-col">
+						<div class="flex items-baseline gap-2">
+							<span class="text-2xl font-bold"
+								>£{totalInventoryValue.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</span
+							>
+						</div>
+						<div class="mt-1 flex items-center gap-2">
+							<span
+								class="text-[10px] text-muted-foreground px-1.5 py-0.5 bg-muted rounded font-medium"
+								>PKR Cost: £{(totalProjectedSpend30d / (totalBoxesUsed30d || 1)).toFixed(2)} /order</span
+							>
+						</div>
 					</div>
 				</div>
 
 				<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
 					<div class="flex items-center gap-2 text-muted-foreground mb-1">
 						<Activity class="h-4 w-4 text-purple-500" />
-						<span class="text-xs font-semibold uppercase tracking-wider">Monthly Run-Rate</span>
-					</div>
-					<div class="flex items-baseline gap-2">
-						<span class="text-2xl font-bold"
-							>£{totalProjectedSpend30d.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</span
+						<span class="text-xs font-semibold uppercase tracking-wider"
+							>Reorder Spend (Next 30d)</span
 						>
-						<span class="text-xs text-muted-foreground">forecasted spend</span>
+					</div>
+					<div class="flex flex-col">
+						<div class="flex items-baseline gap-2">
+							<span class="text-2xl font-bold"
+								>£{totalReorderCost.toLocaleString('en-GB', {
+									maximumFractionDigits: 0
+								})}</span
+							>
+							<span class="text-xs text-muted-foreground italic">Forecast</span>
+						</div>
+						<div class="mt-1 flex items-center gap-1.5">
+							<span class="text-[10px] uppercase font-bold text-muted-foreground">Confidence:</span>
+							<span class="text-[10px] font-bold {getConfidence('').color}"
+								>{getConfidence('').label}</span
+							>
+						</div>
 					</div>
 				</div>
 
 				<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
 					<div class="flex items-center gap-2 text-muted-foreground mb-1">
 						<PieChart class="h-4 w-4 text-amber-500" />
-						<span class="text-xs font-semibold uppercase tracking-wider">Pareto 80/20</span>
+						<span class="text-xs font-semibold uppercase tracking-wider">Packaging Efficiency</span>
 					</div>
 					<div class="flex items-baseline gap-2">
 						<span class="text-2xl font-bold">
@@ -1065,17 +1181,58 @@
 								return cumSum / totalProjectedSpend30d <= 0.8;
 							}).length}
 						</span>
-						<span class="text-xs text-muted-foreground">SKUs drive 80% spend</span>
+						<span class="text-xs text-muted-foreground">Key Drivers (Pareto A)</span>
 					</div>
 				</div>
 			</div>
 
-			<div class="flex justify-between items-center mb-4">
-				<div>
-					<h2 class="text-xl font-semibold">Warehouse Operations & Inventory</h2>
-					<p class="text-sm text-muted-foreground mt-1">
-						Real-time burn rates based on max(2d, 7d) order velocity averages.
-					</p>
+			<div class="flex justify-between items-center mb-6">
+				<div class="flex gap-2">
+					<button
+						class="px-3 py-1.5 rounded-md text-xs font-bold transition-all border {filterMode ===
+						'all'
+							? 'bg-primary text-primary-foreground border-primary shadow-sm'
+							: 'bg-background text-muted-foreground hover:bg-muted border-input'}"
+						onclick={() => (filterMode = 'all')}
+					>
+						All Supplies ({data.supplies.length})
+					</button>
+					<button
+						class="px-3 py-1.5 rounded-md text-xs font-bold transition-all border {filterMode ===
+						'critical'
+							? 'bg-red-600 text-white border-red-600 shadow-sm animate-pulse'
+							: 'bg-background text-red-600 hover:bg-red-50 border-red-200'}"
+						onclick={() => (filterMode = 'critical')}
+					>
+						Critical &lt; 7d
+					</button>
+					<button
+						class="px-3 py-1.5 rounded-md text-xs font-bold transition-all border {filterMode ===
+						'reorder'
+							? 'bg-red-100 text-red-800 border-red-200'
+							: 'bg-background text-red-800 hover:bg-red-50 border-input'}"
+						onclick={() => (filterMode = 'reorder')}
+					>
+						Reorder Needed
+					</button>
+					<button
+						class="px-3 py-1.5 rounded-md text-xs font-bold transition-all border {filterMode ===
+						'high-spend'
+							? 'bg-amber-100 text-amber-800 border-amber-200'
+							: 'bg-background text-amber-800 hover:bg-amber-50 border-input'}"
+						onclick={() => (filterMode = 'high-spend')}
+					>
+						High Spend
+					</button>
+					<button
+						class="px-3 py-1.5 rounded-md text-xs font-bold transition-all border {filterMode ===
+						'high-usage'
+							? 'bg-blue-100 text-blue-800 border-blue-200'
+							: 'bg-background text-blue-800 hover:bg-blue-50 border-input'}"
+						onclick={() => (filterMode = 'high-usage')}
+					>
+						High Usage
+					</button>
 				</div>
 				<Button size="sm" onclick={openAddSupply}>
 					<Plus class="h-4 w-4 mr-2" /> Add Supply
@@ -1138,8 +1295,8 @@
 			{/if}
 
 			<div class="bg-card border rounded-lg shadow-sm overflow-hidden">
-				<table class="w-full text-sm text-left">
-					<thead class="bg-muted">
+				<table class="w-full text-sm text-left border-collapse">
+					<thead class="bg-muted sticky top-0 z-20 shadow-sm">
 						<tr>
 							<th
 								class="px-4 py-3 font-semibold cursor-pointer hover:bg-muted-foreground/10 select-none"
@@ -1208,18 +1365,20 @@
 									{/if}
 								</div>
 							</th>
-							<th class="px-4 py-3 font-semibold text-right">Daily Burn</th>
+							<th class="px-4 py-3 font-semibold text-right">Burn Rate</th>
 							<th
 								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
 								onclick={() => toggleSort('weeksRemaining')}
 							>
-								<div class="flex items-center justify-end gap-1">
+								<div class="flex items-center justify-end gap-1 text-red-600">
 									Days Left
 									{#if sortColumn === 'weeksRemaining'}
 										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
 									{/if}
 								</div>
 							</th>
+							<th class="px-4 py-3 font-semibold text-right">Run Out</th>
+							<th class="px-4 py-3 font-semibold text-right text-primary">Reorder Qty</th>
 							<th
 								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
 								onclick={() => toggleSort('totalValue')}
@@ -1231,19 +1390,22 @@
 									{/if}
 								</div>
 							</th>
-							<th class="px-4 py-3 font-semibold text-right whitespace-nowrap">Impact %</th>
+							<th class="px-4 py-3 font-semibold text-right">Impact %</th>
 							<th class="px-4 py-3 font-semibold text-right whitespace-nowrap min-w-[210px]"
 								>Actions</th
 							>
 						</tr>
 					</thead>
 					<tbody class="divide-y">
-						{#each sortedSupplies as supply}
+						{#each filteredSupplies as supply}
 							{@const unitCost = getEstimatedUnitCost(supply)}
 							{@const usage30d = getUsage30d(supply.id)}
 							{@const dailyBurn = usage30d / 30}
 							{@const currentStock = Math.max(0, supply.current_stock || 0)}
 							{@const daysLeft = dailyBurn > 0 ? currentStock / dailyBurn : 999}
+							{@const trend = getUsageTrend(supply.id)}
+							{@const runOutDate = getRunOutDate(supply)}
+							{@const reorderQty = getReorderQty(supply)}
 
 							{@const projectedSpend30d = usage30d * unitCost}
 							{@const impactPercent =
@@ -1262,23 +1424,28 @@
 								class="hover:bg-muted/50 {(showAdjustModal && adjustSupplyId === supply.id) ||
 								(showSupplyForm && editSupplyId === supply.id)
 									? 'bg-muted/30 border-l-4 border-l-primary'
-									: ''}"
+									: ''} {daysLeft < 7 ? 'bg-red-50/50' : ''}"
 							>
 								<td class="px-4 py-3 font-medium">
-									{#if ['box', 'envelope', 'bag'].includes(supply.type)}
-										<button
-											class="text-primary hover:underline font-bold flex items-center gap-1 group w-fit"
-											onclick={() => openReassignModal(supply.code)}
-											title="View and reassign items using this size"
-										>
-											{supply.name}
-											<Search
-												class="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity"
-											/>
-										</button>
-									{:else}
-										<span class="font-bold">{supply.name}</span>
-									{/if}
+									<div class="flex items-center gap-2">
+										{#if daysLeft < 7}
+											<AlertCircle class="h-3.5 w-3.5 text-red-600 animate-pulse" />
+										{/if}
+										{#if ['box', 'envelope', 'bag'].includes(supply.type)}
+											<button
+												class="text-primary hover:underline font-bold flex items-center gap-1 group w-fit"
+												onclick={() => openReassignModal(supply.code)}
+												title="View and reassign items using this size"
+											>
+												{supply.name}
+												<Search
+													class="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity"
+												/>
+											</button>
+										{:else}
+											<span class="font-bold">{supply.name}</span>
+										{/if}
+									</div>
 								</td>
 								<td class="px-4 py-3 text-muted-foreground whitespace-nowrap">{supply.code}</td>
 								<td class="px-4 py-3">
@@ -1292,50 +1459,88 @@
 								<td class="px-4 py-3 text-right font-bold">{currentStock}</td>
 								<td
 									class="px-4 py-3 text-right font-bold italic text-muted-foreground whitespace-nowrap"
-									>{getActualUsage(supply.id)} units</td
 								>
+									<div class="flex flex-col items-end">
+										<span>{getActualUsage(supply.id)} units</span>
+										<span class="text-[9px] not-italic font-normal">in {data.daysOfData}d</span>
+									</div>
+								</td>
 								<td class="px-4 py-3 text-right font-bold italic text-muted-foreground"
 									>£{projectedSpend30d.toFixed(2)}</td
 								>
 								<td class="px-4 py-3 text-right text-muted-foreground whitespace-nowrap">
-									{dailyBurn.toFixed(1)} /day
+									<div class="flex flex-col items-end">
+										<div class="flex items-center gap-1">
+											<span class="font-bold text-foreground">{dailyBurn.toFixed(1)}/day</span>
+											<span class="{trend.color} text-[10px]" title={trend.label}>{trend.icon}</span
+											>
+										</div>
+										<span class="text-[9px] {getConfidence(supply.id).color} font-bold"
+											>{getConfidence(supply.id).label} confidence</span
+										>
+									</div>
 								</td>
-								<td class="px-4 py-3 text-right font-bold min-w-[120px]">
+								<td class="px-4 py-3 text-right font-bold min-w-[100px]">
 									<span
 										class="px-2 py-1 rounded-md text-[11px] font-black inline-block w-full text-center {daysLeft <
 										7
 											? 'bg-red-600 text-white animate-pulse'
-											: daysLeft < 21
+											: daysLeft < 14
 												? 'bg-orange-100 text-orange-700'
-												: daysLeft < 45
+												: daysLeft <= 30
 													? 'bg-yellow-100 text-yellow-800'
 													: 'bg-emerald-100 text-emerald-700'}"
 									>
 										{dailyBurn > 0 ? Math.round(daysLeft) + ' days' : '∞'}
 									</span>
 								</td>
+								<td class="px-4 py-3 text-right font-medium whitespace-nowrap">
+									{#if runOutDate}
+										<span class={daysLeft < 7 ? 'text-red-600 font-bold' : 'text-muted-foreground'}>
+											{runOutDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+										</span>
+									{:else}
+										<span class="text-muted-foreground">--</span>
+									{/if}
+								</td>
+								<td class="px-4 py-3 text-right">
+									{#if reorderQty > 0}
+										<div class="flex flex-col items-end">
+											<span class="font-black text-primary text-base">+{reorderQty}</span>
+											<span class="text-[9px] font-bold text-muted-foreground uppercase"
+												>Cost: £{getReorderCost(supply).toFixed(0)}</span
+											>
+										</div>
+									{:else}
+										<span class="text-emerald-600 font-bold text-xs uppercase tracking-tighter"
+											>Sufficient</span
+										>
+									{/if}
+								</td>
 								<td class="px-4 py-3 text-right font-mono text-xs">
 									£{(currentStock * unitCost).toFixed(2)}
 								</td>
 								<td class="px-4 py-3 text-right">
 									<div class="flex flex-col items-end gap-1">
-										<div class="flex items-center gap-1">
+										<div class="flex items-center gap-2">
 											{#if cumUsagePercent <= 80}
 												<span class="bg-amber-100 text-amber-700 text-[9px] font-black px-1 rounded"
 													>A</span
 												>
 											{/if}
-											<span class="text-[10px] font-medium">{impactPercent.toFixed(1)}%</span>
+											<div class="flex flex-col items-end">
+												<span class="text-[10px] font-bold">{impactPercent.toFixed(1)}%</span>
+												<span class="text-[9px] text-muted-foreground"
+													>Cum: {cumUsagePercent.toFixed(0)}%</span
+												>
+											</div>
+											<div class="w-16 h-1.5 bg-muted rounded-full overflow-hidden self-center">
+												<div
+													class="h-full {cumUsagePercent <= 80 ? 'bg-amber-500' : 'bg-primary'}"
+													style="width: {impactPercent}%"
+												></div>
+											</div>
 										</div>
-										<div class="w-12 h-1 bg-muted rounded-full overflow-hidden">
-											<div
-												class="h-full {cumUsagePercent <= 80 ? 'bg-amber-500' : 'bg-primary'}"
-												style="width: {impactPercent}%"
-											></div>
-										</div>
-										<span class="text-[9px] text-muted-foreground"
-											>Cum: {cumUsagePercent.toFixed(0)}%</span
-										>
 									</div>
 								</td>
 								<td class="px-4 py-3 text-right">
@@ -1357,7 +1562,7 @@
 							</tr>
 							{#if showAdjustModal && adjustSupplyId === supply.id}
 								<tr class="bg-muted/20 border-l-4 border-l-primary">
-									<td colspan="11" class="p-4">
+									<td colspan="13" class="p-4">
 										<div class="grid grid-cols-1 sm:grid-cols-6 gap-4 items-end">
 											<div class="space-y-1 sm:col-span-1">
 												<span class="text-xs font-medium text-muted-foreground block">Current</span>

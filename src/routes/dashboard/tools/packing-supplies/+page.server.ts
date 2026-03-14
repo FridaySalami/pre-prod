@@ -54,6 +54,10 @@ export async function load() {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sixDaysAgo = new Date();
+  sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
+  const threeDaysAgo = new Date();
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
   const twoDaysAgo = new Date();
   twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
@@ -71,12 +75,16 @@ export async function load() {
   const usageStats30d: Record<string, number> = {};
   const usageStats7d: Record<string, number> = {};
   const usageStats2d: Record<string, number> = {};
+  const usageStats3d: Record<string, number> = {};
+  const usageStatsPrev3d: Record<string, number> = {};
   
   // Track how many days of data we actually have in the ledger (max 30)
   let earliestDate = new Date();
 
   if (usageLedger && usageLedger.length > 0) {
     const twoDaysTime = twoDaysAgo.getTime();
+    const threeDaysTime = threeDaysAgo.getTime();
+    const sixDaysTime = sixDaysAgo.getTime();
     const sevenDaysTime = sevenDaysAgo.getTime();
 
     usageLedger.forEach((row) => {
@@ -97,6 +105,13 @@ export async function load() {
       // Add to 2d stats if within range
       if (createdAt >= twoDaysTime) {
         usageStats2d[row.supply_id] = (usageStats2d[row.supply_id] || 0) + consumed;
+      }
+
+      // 3d Trend analysis: Current 3 days (0-3) vs Previous 3 days (3-6)
+      if (createdAt >= threeDaysTime) {
+        usageStats3d[row.supply_id] = (usageStats3d[row.supply_id] || 0) + consumed;
+      } else if (createdAt >= sixDaysTime) {
+        usageStatsPrev3d[row.supply_id] = (usageStatsPrev3d[row.supply_id] || 0) + consumed;
       }
     });
   }
@@ -177,6 +192,8 @@ export async function load() {
     usageStats30d,
     usageStats7d,
     usageStats2d,
+    usageStats3d,
+    usageStatsPrev3d,
     daysOfData,
     unmappedOrders
   };
