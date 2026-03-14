@@ -43,6 +43,11 @@ const ROUTE_PROTECTION = {
     '/api/daily-report', // Public for Make.com integration
     '/api/product-lookup', // Public for internal product lookups
     '/api/product-lookup/test', // Public for testing
+    '/api/debug-linnworks', // Temporary public for debugging
+    '/api/debug-linnworks-v2', // Temporary public for debugging
+    '/api/debug-linnworks-v3', // Temporary public for debugging
+    '/api/debug-ext-props', // Added for debugging extended property types
+    '/api/tools/packing-supplies/search', // Temporary public for debugging
     '/api/cron/daily-sales-report', // Daily cron job endpoint with Bearer token auth
     '/api/cron/backfill-sales-report', // One-time backfill endpoint with Bearer token auth
     '/api/cron/sync-holidays', // Sync holidays from MyHRToolkit

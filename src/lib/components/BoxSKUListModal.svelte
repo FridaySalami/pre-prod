@@ -78,7 +78,7 @@
 
 {#if open}
 	<button
-		class="fixed inset-0 z-[60] bg-black/80 border-none cursor-default w-full h-full block"
+		class="fixed inset-0 z-60 bg-black/80 border-none cursor-default w-full h-full block"
 		transition:fade={{ duration: 150 }}
 		onclick={close}
 		tabindex="-1"
@@ -86,7 +86,7 @@
 	></button>
 
 	<div
-		class="fixed left-[50%] top-[50%] z-[70] flex w-full max-w-[800px] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 border bg-background p-6 shadow-xl duration-200 sm:rounded-lg max-h-[85vh]"
+		class="fixed left-[50%] top-[50%] z-70 flex w-full max-w-[800px] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 border bg-background p-6 shadow-xl duration-200 sm:rounded-lg max-h-[85vh]"
 		transition:scale={{ duration: 150, start: 0.95 }}
 		role="dialog"
 		aria-modal="true"

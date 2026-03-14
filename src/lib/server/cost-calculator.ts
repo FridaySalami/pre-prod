@@ -1,4 +1,4 @@
-import { db } from '$lib/supabase/supabaseServer';
+import { db } from './db-script-safe';
 
 export class CostCalculator {
   private boxSizeCosts!: Map<string, number>;
@@ -201,11 +201,22 @@ export class CostCalculator {
         shipping = 'Nationwide Prime';
       }
 
-      let box = `${String(product.width ?? '')}x${String(product.height ?? '')}x${String(product.depth ?? '')}`;
+      // --- PACKING SUPPLIES OVERRIDE LOGIC ---
+      // 1. Check if we have a manual override in sku_asin_mapping
+      let box = skuMapping?.box_code || '';
+      let boxReason = '';
 
-      // Handle cases where dims are 0 or null
-      if (box === 'xx' || box === '0x0x0' || box === 'nullxnullxnull' || !product.width || !product.height || !product.depth) {
-        box = '0x0x0';
+      if (!box) {
+        // 2. Fallback to dimensions-based calculation
+        box = `${String(product.width ?? '')}x${String(product.height ?? '')}x${String(product.depth ?? '')}`;
+
+        // Handle cases where dims are 0 or null
+        if (box === 'xx' || box === '0x0x0' || box === 'nullxnullxnull' || !product.width || !product.height || !product.depth) {
+          box = '0x0x0';
+          boxReason = 'Missing Dimensions';
+        }
+      } else {
+        boxReason = 'Manual Override';
       }
 
       // Determine shipping type for display
@@ -217,7 +228,6 @@ export class CostCalculator {
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
       const materialCost = 0.35;
-      const boxReason = (box === '0x0x0') ? 'Missing Dimensions' : '';
 
       let fragileCharge = 0.00;
       if (options.customFragileCharge !== undefined) {

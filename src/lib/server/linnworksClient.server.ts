@@ -87,14 +87,23 @@ export async function callLinnworksApi<T>(endpoint: string, method: 'GET' | 'POS
 
   const options: RequestInit = { method, headers };
 
-  // Add body if provided
+  // Always use HTTPS for API calls
+  let url = `${auth.server}/api/${endpoint}`;
+
+  // Add body for POST, or query params for GET
   if (body) {
-    headers['Content-Type'] = 'application/json';
-    options.body = JSON.stringify(body);
+    if (method === 'POST') {
+      headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    } else {
+      const searchParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(body)) {
+        searchParams.append(key, String(value));
+      }
+      url += `?${searchParams.toString()}`;
+    }
   }
 
-  // Always use HTTPS for API calls
-  const url = `${auth.server}/api/${endpoint}`;
   console.log(`Making API call to ${url} with method ${method}`);
 
   let response = await fetch(url, options);
@@ -243,3 +252,131 @@ export async function getOpenOrdersData(pageNumber: number, pageSize: number): P
     };
   }
 }
+
+/**
+ * Get extended properties for a list of items by their StockItemIds
+ */
+export async function getExtendedProperties(stockItemIds: string[]) {
+  if (!stockItemIds || stockItemIds.length === 0) return [];
+  try {
+    // API: Inventory/GetStockItemExtendedProperties
+    // Requires an array of stockItemIds
+    return await callLinnworksApi<any[]>('Inventory/GetStockItemExtendedProperties', 'POST', {
+      stockItemIds
+    });
+  } catch (error) {
+    console.error('Error getting extended properties:', error);
+    return [];
+  }
+}
+
+/**
+ * Get stock items by SKU to get their StockItemIds and dimensions
+ */
+/**
+ * Get stock items by SKU to get their StockItemIds and dimensions
+ */
+export async function getStockItemsBySku(skus: string[]) {
+  if (!skus || skus.length === 0) return [];
+  try {
+    // Use Promise.all to search in parallel for all requested SKUs
+    const results = await Promise.all(
+      skus.map(async (sku) => {
+        const item = await searchStockItemBySku(sku);
+        if (item) {
+          // Map search fields to the format expected by the caller
+          // Keep both SKU and ItemNumber for clarity as requested
+          return {
+            ...item,
+            LinnworksSKU: item.SKU,
+            ItemNumber: item.ItemNumber,
+            StockItemId: item.StockItemId,
+            Width: item.Width,
+            Height: item.Height,
+            Depth: item.Depth
+          };
+        }
+        return null;
+      })
+    );
+
+    const validResults = results.filter(item => item !== null);
+    console.log(`Successfully fetched ${validResults.length} items from Linnworks out of ${skus.length} requested`);
+    return validResults;
+  } catch (error) {
+    console.error('Error in getStockItemsBySku:', error);
+    return [];
+  }
+}
+
+/**
+ * Get item by SKU using the generic stock item search
+ */
+export async function searchStockItemBySku(sku: string) {
+  try {
+    const response = await callLinnworksApi<any>('Stock/GetStockItems', 'POST', {
+      SearchTerm: sku,
+      EntriesPerPage: 10,
+      PageNumber: 1,
+      IncludeImages: false,
+      DataRequirements: ["Inventory"] 
+    });
+
+    console.log(`[RAW FEEDS] Search response for ${sku}:`, JSON.stringify(response, null, 2));
+
+    const items = response?.Data || [];
+
+    const norm = (s: string | undefined | null) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const targetSku = norm(sku);
+
+    const exactMatch = items.find((i: any) =>
+      norm(i.ItemNumber) === targetSku || norm(i.SKU) === targetSku
+    );
+
+    if (exactMatch) {
+      // Step 2: Use Stock/GetStockItemsFull to get detailed item data including dimensions
+      try {
+        const fullDetails = await callLinnworksApi<any>('Stock/GetStockItemsFull', 'POST', {
+          stockItemIds: [exactMatch.StockItemId],
+          dataRequirements: ["Inventory", "StockLevels", "ExtendedProperties"]
+        });
+        
+        console.log(`[TWO-STEP DEBUG] GetStockItemsFull (POST) for SKU ${sku}:`, JSON.stringify(fullDetails, null, 2));
+
+        if (fullDetails && Array.isArray(fullDetails) && fullDetails.length > 0) {
+          const target = fullDetails[0];
+
+          // Robust mapping for dimensions which can be in several places depending on the API version/requirements
+          const width = Number(target.Inventory?.Width || target.Item?.Width || target.Width || target.DimWidth || 0);
+          const height = Number(target.Inventory?.Height || target.Item?.Height || target.Height || target.DimHeight || 0);
+          const depth = Number(target.Inventory?.Depth || target.Item?.Depth || target.Depth || target.DimDepth || 0);
+
+          return {
+            ...exactMatch,
+            Width: width,
+            Height: height,
+            Depth: depth,
+            PackageGroupName: target.Inventory?.PackageGroupName || target.Item?.PackageGroupName || exactMatch.PackageGroupName || exactMatch.DefaultPackageGroup,
+            ExtendedProperties: target.ExtendedProperties || target.Item?.ExtendedProperties || []
+          };
+        }
+      } catch (err) {
+        console.error(`Error fetching full details for SKU ${sku}:`, err.message);
+      }
+
+      return {
+        ...exactMatch,
+        Width: Number(exactMatch.Width || exactMatch.DimWidth || 0),
+        Height: Number(exactMatch.Height || exactMatch.DimHeight || 0),
+        Depth: Number(exactMatch.Depth || exactMatch.DimDepth || 0),
+        PackageGroupName: exactMatch.PackageGroupName || exactMatch.DefaultPackageGroup
+      };
+    }
+
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+

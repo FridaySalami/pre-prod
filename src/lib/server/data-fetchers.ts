@@ -1,6 +1,10 @@
 
-import { db } from '$lib/supabase/supabaseServer';
-import { CostCalculator } from '$lib/server/cost-calculator';
+import { db } from './db-script-safe';
+import { CostCalculator } from './cost-calculator';
+import { createClient } from '@supabase/supabase-js';
+
+// The CostCalculator still uses the normal db which might have $lib issues
+// but data-fetchers now uses db-script-safe.
 
 interface AmazonOrderItem {
   seller_sku?: string;

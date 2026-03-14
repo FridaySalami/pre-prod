@@ -16,12 +16,56 @@
 
 	export let data;
 
-	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history', 'unmapped'
+	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history', 'unmapped', 'sku-search'
 
 	function setTab(tab: string) {
 		const url = new URL($page.url);
 		url.searchParams.set('tab', tab);
 		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
+
+	// SKU Search State
+	let skuSearchQuery = '';
+	let skuSearchResults: any[] = [];
+	let isSearchingSkus = false;
+
+	async function searchSkus() {
+		if (skuSearchQuery.length < 2) {
+			skuSearchResults = [];
+			return;
+		}
+
+		isSearchingSkus = true;
+		try {
+			const res = await fetch(
+				`/api/tools/packing-supplies/search?q=${encodeURIComponent(skuSearchQuery)}`
+			);
+			const data = await res.json();
+			skuSearchResults = data.results || [];
+		} catch (e) {
+			console.error('Search error:', e);
+		} finally {
+			isSearchingSkus = false;
+		}
+	}
+
+	$: if (skuSearchQuery === '') {
+		skuSearchResults = [];
+	}
+
+	// Local mapping tracking for search tab so it updates instantly
+	let searchMappingUpdates: Record<string, string> = {};
+
+	async function handleSearchQuickAssign(sku: string, newBoxCode: string) {
+		await quickAssignBox(sku, newBoxCode);
+		searchMappingUpdates[sku] = newBoxCode;
+		searchMappingUpdates = { ...searchMappingUpdates };
+	}
+
+	async function handleQuickAssign(sku: string, newBoxCode: string) {
+		await quickAssignBox(sku, newBoxCode);
+		// Local update for unmapped table is handled by the mappedActiveSkus array in quickAssignBox
+		// but we add this for clarity/consistency
 	}
 
 	// These will become our dynamic form fields
@@ -416,14 +460,14 @@
 
 	// Group supplies by type
 	$: groupedSupplies = {
-		box: data.supplies.filter((s) => s.type === 'box'),
-		tape: data.supplies.filter((s) => s.type === 'tape'),
-		wrap: data.supplies.filter((s) => s.type === 'wrap'),
-		bag: data.supplies.filter((s) => s.type === 'bag'),
-		envelope: data.supplies.filter((s) => s.type === 'envelope')
+		box: data.supplies.filter((s: any) => s.type === 'box'),
+		tape: data.supplies.filter((s: any) => s.type === 'tape'),
+		wrap: data.supplies.filter((s: any) => s.type === 'wrap'),
+		bag: data.supplies.filter((s: any) => s.type === 'bag'),
+		envelope: data.supplies.filter((s: any) => s.type === 'envelope')
 	};
 
-	$: invoiceTotalRaw = data.supplies.reduce((acc, supply) => {
+	$: invoiceTotalRaw = data.supplies.reduce((acc: number, supply: any) => {
 		return acc + (Number(lineTotals[supply.id]) || 0);
 	}, 0);
 
@@ -571,6 +615,15 @@
 			onclick={() => setTab('unmapped')}
 		>
 			<AlertCircle class="h-4 w-4" /> Unmapped ({activeUnmappedOrdersCount})
+		</button>
+		<button
+			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
+			'sku-search'
+				? 'bg-primary/10 text-primary'
+				: 'text-muted-foreground hover:bg-muted'}"
+			onclick={() => setTab('sku-search')}
+		>
+			<Search class="h-4 w-4" /> SKU Search
 		</button>
 	</div>
 
@@ -1396,8 +1449,9 @@
 													<div class="flex items-center gap-2 justify-end">
 														<select
 															class="h-8 rounded-md border border-input bg-background px-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-[180px]"
+															value={item.costs?.packaging?.code || ''}
 															onchange={(e) =>
-																quickAssignBox(item.seller_sku, e.currentTarget.value)}
+																handleQuickAssign(item.seller_sku, e.currentTarget.value)}
 														>
 															<option value="">Select Box...</option>
 															{#each boxOptions as option}
@@ -1426,6 +1480,192 @@
 						class="text-center p-12 text-muted-foreground bg-muted/20 border border-dashed rounded-xl"
 					>
 						No unmapped orders found. All packaging logic is completely mapped!
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if activeTab === 'sku-search'}
+			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
+				<div class="flex flex-col gap-4 mb-6">
+					<div>
+						<h2 class="text-xl font-semibold">SKU / Product Search</h2>
+						<p class="text-sm text-muted-foreground">
+							Quickly search for any SKU or Product to manually override its box size mapping.
+						</p>
+					</div>
+
+					<div class="flex gap-2 max-w-xl">
+						<div class="relative flex-1">
+							<Search
+								class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+							/>
+							<input
+								type="text"
+								placeholder="Search by SKU, ASIN or Product Name..."
+								class="w-full pl-10 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+								bind:value={skuSearchQuery}
+								onkeyup={(e) => e.key === 'Enter' && searchSkus()}
+							/>
+						</div>
+						<Button onclick={searchSkus} disabled={isSearchingSkus}>
+							{isSearchingSkus ? 'Searching...' : 'Search'}
+						</Button>
+					</div>
+				</div>
+
+				{#if skuSearchResults.length > 0}
+					<div class="overflow-x-auto rounded-lg border">
+						<table class="w-full text-sm">
+							<thead class="bg-muted/50 border-b">
+								<tr>
+									<th class="px-4 py-3 text-left font-medium">Product</th>
+									<th class="px-4 py-3 text-left font-medium">SKU / ASIN</th>
+									<th class="px-4 py-3 text-left font-medium">Current Status</th>
+									<th class="px-4 py-3 text-left font-medium w-64">Update Mapping</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y text-xs">
+								{#each skuSearchResults as result}
+									<tr class="hover:bg-muted/30 transition-colors">
+										<td class="px-4 py-4">
+											<div class="font-medium line-clamp-2">{result.name}</div>
+											<div class="mt-1 flex flex-wrap gap-1">
+												{#if result.linnworks?.props?.length > 0}
+													{#each result.linnworks.props || [] as prop}
+														{@const isBoxProp =
+															prop.name.toLowerCase().includes('box') ||
+															prop.name.toLowerCase().includes('pack')}
+														<span
+															class="text-[9px] {isBoxProp
+																? result.box_code === prop.value
+																	? 'bg-green-100 text-green-800 border-green-300 font-bold'
+																	: 'bg-amber-100 text-amber-800 border-amber-300 font-bold'
+																: 'bg-muted text-muted-foreground border-border'} px-1 border rounded"
+															title="Property Type: {prop.type}"
+														>
+															{prop.name}: {prop.value}
+															{#if isBoxProp && result.box_code === prop.value}
+																<span class="ml-1">✓</span>
+															{/if}
+														</span>
+													{/each}
+												{:else if result.linnworks}
+													<div class="text-[9px] text-muted-foreground italic">
+														No extended properties found for this SKU in Linnworks.
+													</div>
+												{/if}
+											</div>
+										</td>
+										<td class="px-4 py-4 text-center">
+											<div class="text-foreground font-semibold">{result.sku}</div>
+											<div class="text-muted-foreground">{result.asin}</div>
+											{#if result.linnworks?.mismatch}
+												<div
+													class="mt-1 text-[9px] text-red-600 font-bold bg-red-50 px-1 rounded border border-red-200 inline-block"
+													title="Local: {result.inventory_dims || '0x0x0'} vs Linnworks: {result
+														.linnworks?.dims?.w}x{result.linnworks?.dims?.h}x{result.linnworks?.dims
+														?.d}"
+												>
+													DIM MISMATCH
+												</div>
+											{:else if result.linnworks?.dims}
+												<div
+													class="mt-1 text-[9px] text-green-600 font-medium bg-green-50 px-1 rounded border border-green-200 inline-block"
+												>
+													DIMS SYNCED
+												</div>
+											{/if}
+										</td>
+										<td class="px-4 py-4">
+											{#if searchMappingUpdates[result.sku] || result.box_code}
+												<div class="flex flex-col gap-1">
+													<div class="flex items-center gap-2">
+														<span
+															class="inline-flex items-center rounded-full {result.supply_match
+																? 'bg-blue-100 text-blue-800 border-blue-300'
+																: 'bg-amber-50 text-amber-700 border-amber-200'} px-2.5 py-0.5 text-[11px] font-bold border-2 shadow-sm"
+														>
+															{searchMappingUpdates[result.sku] || result.box_code}
+														</span>
+														{#if !result.supply_match && (searchMappingUpdates[result.sku] || result.box_code)}
+															<span
+																class="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 animate-pulse font-bold"
+																title="The box code specified doesn't exist in your catalog!"
+															>
+																CATALOG ERROR
+															</span>
+														{/if}
+													</div>
+
+													{#if result.supply_match}
+														<div class="flex items-center gap-1.5">
+															<span
+																class="text-[10px] px-1 rounded {result.supply_match.stock <= 5
+																	? 'bg-red-500 text-white font-bold'
+																	: result.supply_match.stock <= 20
+																		? 'bg-orange-400 text-white'
+																		: 'text-muted-foreground bg-muted'} "
+															>
+																Stock: {result.supply_match.stock}
+															</span>
+															<span class="text-[9px] text-muted-foreground"
+																>{result.supply_match.name}</span
+															>
+														</div>
+													{/if}
+
+													{#if result.linnworks?.dims}
+														<span class="text-[9px] text-muted-foreground font-mono">
+															LW: {result.linnworks.dims.w}x{result.linnworks.dims.h}x{result
+																.linnworks.dims.d}
+														</span>
+													{/if}
+												</div>
+											{:else}
+												<span class="text-muted-foreground italic text-xs">Not Mapped</span>
+											{/if}
+										</td>
+										<td class="px-4 py-4">
+											<div class="flex items-center gap-2">
+												<select
+													class="w-full h-8 border rounded-md px-2 text-[11px] focus:ring-1 focus:ring-primary outline-none"
+													value={searchMappingUpdates[result.sku] || result.box_code}
+													onchange={(e) =>
+														handleSearchQuickAssign(result.sku, e.currentTarget.value)}
+												>
+													<option value="">Select Box...</option>
+													{#each boxOptions as box}
+														<option value={box.code}>{box.name} ({box.code})</option>
+													{/each}
+												</select>
+												<Button
+													variant="ghost"
+													size="sm"
+													class="h-8 w-8 p-0"
+													onclick={() => openCostModal(result.sku, result.asin, result.name)}
+													title="Advanced Settings"
+												>
+													<Maximize class="h-3.5 w-3.5" />
+												</Button>
+											</div>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{:else if skuSearchQuery.length >= 2 && !isSearchingSkus}
+					<div
+						class="text-center p-12 text-muted-foreground bg-muted/20 border border-dashed rounded-xl"
+					>
+						No matching products or SKUs found.
+					</div>
+				{:else if !isSearchingSkus}
+					<div
+						class="text-center p-12 text-muted-foreground bg-muted/20 border border-dashed rounded-xl"
+					>
+						Type at least 2 characters to search for a product.
 					</div>
 				{/if}
 			</div>
