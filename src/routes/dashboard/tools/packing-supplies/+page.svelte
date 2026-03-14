@@ -13,7 +13,8 @@
 		TrendingDown,
 		PackageSearch,
 		Activity,
-		PieChart
+		PieChart,
+		Package2
 	} from 'lucide-svelte';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import BoxSKUListModal from '$lib/components/BoxSKUListModal.svelte';
@@ -21,6 +22,8 @@
 	export let data: any = { supplies: [] };
 
 	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history', 'unmapped', 'sku-search'
+
+	let showInvoiceSummaryPreview = false;
 
 	function setTab(tab: string) {
 		const url = new URL($page.url);
@@ -101,7 +104,7 @@
 		const price = unitPrices[supplyId] || 0;
 		const qty = quantities[supplyId];
 
-		if (qty && qty > 0) {
+		if (qty !== null && qty !== undefined && qty > 0) {
 			lineTotals[supplyId] = Number((qty * price).toFixed(2));
 		} else {
 			lineTotals[supplyId] = null;
@@ -111,8 +114,34 @@
 		lineTotals = { ...lineTotals };
 	}
 
+	function handleTotalManualChange(supplyId: string) {
+		// Just trigger reactivity
+		lineTotals = { ...lineTotals };
+	}
+
 	function handleSupplierChange(supplierId: string) {
 		selectedSupplier = supplierId;
+
+		// Auto-prefix invoice number based on supplier
+		const supplier = data.suppliers.find((s: any) => s.id === supplierId);
+		if (supplier) {
+			const name = supplier.name.toLowerCase();
+			const ukPrefix = 'S';
+			const kitePrefix = 'SW';
+
+			// If current value is empty, or if it matches one of the known prefixes, update it
+			if (!invoiceNumber || invoiceNumber === ukPrefix || invoiceNumber === kitePrefix) {
+				if (name.includes('uk packaging')) {
+					invoiceNumber = ukPrefix;
+				} else if (name.includes('kite packaging')) {
+					invoiceNumber = kitePrefix;
+				} else if (invoiceNumber === ukPrefix || invoiceNumber === kitePrefix) {
+					// Clear the prefix if we switched to a supplier that doesn't use these
+					invoiceNumber = '';
+				}
+			}
+		}
+
 		// Wait for unitPrices to update then refresh totals
 		setTimeout(() => {
 			Object.keys(quantities).forEach((id) => {
@@ -724,6 +753,23 @@
 		return qty * cost;
 	}
 
+	function getLastPaidPrice(supplyId: string) {
+		if (!data.history || data.history.length === 0) return null;
+
+		// Sort history by date descending (already likely sorted, but to be sure)
+		const sortedHistory = [...data.history].sort(
+			(a, b) => new Date(b.invoice_date).getTime() - new Date(a.invoice_date).getTime()
+		);
+
+		for (const invoice of sortedHistory) {
+			const line = (invoice.packing_invoice_lines || []).find(
+				(l: any) => l.supply_id === supplyId && (l.quantity || 0) > 0
+			);
+			if (line) return Number(line.unit_price || 0);
+		}
+		return null;
+	}
+
 	// Dynamic Quick Filters
 	let filterMode: 'all' | 'critical' | 'high-spend' | 'high-usage' | 'reorder' = 'all';
 
@@ -754,6 +800,108 @@
 		.filter((s) => s.daysLeft < 14)
 		.sort((a, b) => a.daysLeft - b.daysLeft)
 		.slice(0, 3);
+
+	// Invoice History Stats & Filters
+	let historySearch = '';
+	let historySupplierFilter = 'all';
+	let historyDateRange = '90'; // 30, 90, 365, all
+
+	$: filteredHistory = (data.history || []).filter((inv: any) => {
+		// Supplier Filter
+		if (historySupplierFilter !== 'all' && inv.supplier_id !== historySupplierFilter) return false;
+
+		// Search Filter
+		if (historySearch) {
+			const search = historySearch.toLowerCase();
+			const supplierName = (inv.packing_suppliers?.name || '').toLowerCase();
+			const invNum = (inv.invoice_number || '').toLowerCase();
+			const hasItem = (inv.packing_invoice_lines || []).some((l: any) =>
+				(l.packing_supplies?.name || '').toLowerCase().includes(search)
+			);
+			if (!supplierName.includes(search) && !invNum.includes(search) && !hasItem) return false;
+		}
+
+		// Date Filter
+		if (historyDateRange !== 'all') {
+			const days = parseInt(historyDateRange);
+			const cutoff = new Date();
+			cutoff.setDate(cutoff.getDate() - days);
+			if (new Date(inv.invoice_date) < cutoff) return false;
+		}
+
+		return true;
+	});
+
+	$: historySpend30d = (data.history || [])
+		.filter((inv: any) => {
+			const cutoff = new Date();
+			cutoff.setDate(cutoff.getDate() - 30);
+			return new Date(inv.invoice_date) >= cutoff;
+		})
+		.reduce((acc: number, inv: any) => acc + (Number(inv.total_cost_raw) || 0), 0);
+
+	$: historySpendPrev30d = (data.history || [])
+		.filter((inv: any) => {
+			const now = new Date();
+			const start = new Date();
+			start.setDate(now.getDate() - 60);
+			const end = new Date();
+			end.setDate(now.getDate() - 30);
+			const date = new Date(inv.invoice_date);
+			return date >= start && date < end;
+		})
+		.reduce((acc: number, inv: any) => acc + (Number(inv.total_cost_raw) || 0), 0);
+
+	function getPriceComparison(supplyId: string, currentPrice: number, currentDate: string) {
+		const history = data.history || [];
+		// Find the most recent invoice BEFORE this one that contains this supply
+		const prevInvoice = history
+			.filter((inv: any) => new Date(inv.invoice_date) < new Date(currentDate))
+			.sort(
+				(a: any, b: any) => new Date(b.invoice_date).getTime() - new Date(a.invoice_date).getTime()
+			)
+			.find((inv: any) =>
+				(inv.packing_invoice_lines || []).some(
+					(l: any) => l.supply_id === supplyId && (l.quantity || 0) > 0
+				)
+			);
+
+		if (!prevInvoice) return null;
+
+		const prevLine = prevInvoice.packing_invoice_lines.find((l: any) => l.supply_id === supplyId);
+		const prevPrice = Number(prevLine.unit_price || 0);
+
+		if (prevPrice === 0) return null;
+
+		const diff = currentPrice - prevPrice;
+		const percent = (diff / prevPrice) * 100;
+
+		return { diff, percent, prevPrice };
+	}
+
+	function getBundleInfo(supply: any, qty: number) {
+		if (!supply) return null;
+		const name = supply.name.toLowerCase();
+		if (name.includes('9x6x6')) return Math.ceil(qty / 120) + ' bundles';
+		if (name.includes('6x6x6')) return Math.ceil(qty / 150) + ' bundles';
+		if (name.includes('12x9x6')) return Math.ceil(qty / 75) + ' bundles';
+		if (supply.type === 'tape') return Math.ceil(qty / 6) + ' packs';
+		return null;
+	}
+
+	function getStockAfter(supplyId: string, invoiceDate: string) {
+		// This is a simplified calculation: Current Stock - (Total Usage since Invoice)
+		// It's not 100% accurate without a full audit log but gives a good "Warehouse Impact" feel
+		const supply = data.supplies.find((s: any) => s.id === supplyId);
+		if (!supply) return 0;
+
+		const daysSince =
+			(new Date().getTime() - new Date(invoiceDate).getTime()) / (1000 * 60 * 60 * 24);
+		const dailyBurn = getUsage30d(supplyId) / 30;
+		const usageSince = Math.max(0, daysSince * dailyBurn);
+
+		return Math.round((supply.current_stock || 0) + usageSince);
+	}
 
 	$: totalReorderCost = data.supplies.reduce((acc: number, s: any) => acc + getReorderCost(s), 0);
 </script>
@@ -818,8 +966,40 @@
 	<!-- Tab Panels -->
 	<div class="mt-4">
 		{#if activeTab === 'log'}
-			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
-				<h2 class="text-xl font-semibold mb-4">Log New Invoice</h2>
+			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full relative">
+				<div
+					class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 sticky top-0 z-30 bg-card/95 backdrop-blur-sm pb-4 border-b -mx-6 px-6"
+				>
+					<div>
+						<h2 class="text-xl font-semibold">Log New Invoice</h2>
+						{#if !selectedSupplier}
+							<p class="text-xs text-red-500 font-medium">Please select a supplier to begin</p>
+						{:else if invoiceTotalRaw === 0}
+							<p class="text-xs text-amber-600 font-medium">Add quantities to items below</p>
+						{/if}
+					</div>
+
+					<div class="flex items-center gap-4 bg-muted/30 px-4 py-2 rounded-lg border">
+						<div class="flex flex-col items-end border-r pr-4">
+							<span class="text-[10px] uppercase font-bold text-muted-foreground">Ex. VAT</span>
+							<span class="text-lg font-bold">£{invoiceTotalRaw.toFixed(2)}</span>
+						</div>
+						<div class="flex flex-col items-end">
+							<span class="text-[10px] uppercase font-bold text-muted-foreground"
+								>Total (Inc. VAT)</span
+							>
+							<span class="text-xl font-black text-primary">£{invoiceTotal.toFixed(2)}</span>
+						</div>
+						<Button
+							size="sm"
+							class="ml-2 shadow-sm"
+							onclick={submitInvoice}
+							disabled={isSubmitting || !selectedSupplier || invoiceTotal === 0}
+						>
+							{isSubmitting ? 'Saving...' : 'Save Invoice'}
+						</Button>
+					</div>
+				</div>
 
 				<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
 					<div class="space-y-2 md:col-span-3">
@@ -873,8 +1053,19 @@
 										</div>
 										<div class="divide-y">
 											{#each typeSupplies as supply (supply.id)}
+												{@const current = unitPrices[supply.id] || 0}
+												{@const last = getLastPaidPrice(supply.id)}
+												{@const isEdited =
+													quantities[supply.id] &&
+													lineTotals[supply.id] !== null &&
+													Math.abs(
+														Number(lineTotals[supply.id]) -
+															(quantities[supply.id] || 0) * (unitPrices[supply.id] || 0)
+													) > 0.01}
 												<div
-													class="p-2 flex items-center justify-between hover:bg-muted/30 transition-colors gap-2"
+													class="p-2 flex items-center justify-between {quantities[supply.id]
+														? 'bg-primary/5'
+														: 'opacity-60'} hover:bg-muted/30 transition-colors gap-2"
 												>
 													<div class="min-w-0 flex-1">
 														<p class="font-medium text-sm truncate" title={supply.name}>
@@ -889,6 +1080,35 @@
 													</div>
 
 													<div class="flex items-center gap-2 md:gap-4 shrink-0">
+														<!-- Price Display (Procurement Tool improvement) -->
+														<div class="flex flex-col items-center min-w-[80px]">
+															<span class="text-[10px] font-semibold text-muted-foreground mb-0.5"
+																>Unit Spend</span
+															>
+															<div class="flex flex-col items-center leading-none mt-0.5">
+																<div class="text-[11px] font-bold text-muted-foreground">
+																	{selectedSupplier ? '£' + current.toFixed(2) : '--'}
+																</div>
+																{#if selectedSupplier && last !== null}
+																	<div class="flex items-center gap-1 mt-0.5">
+																		<span class="text-[8px] text-muted-foreground shrink-0"
+																			>Last: £{last.toFixed(2)}</span
+																		>
+																		{#if Math.abs(current - last) > 0.005}
+																			{@const diff = ((current - last) / last) * 100}
+																			<span
+																				class="text-[8px] font-black {diff > 0
+																					? 'text-red-500'
+																					: 'text-emerald-500'}"
+																			>
+																				{diff > 0 ? '↑' : '↓'}{Math.abs(diff).toFixed(1)}%
+																			</span>
+																		{/if}
+																	</div>
+																{/if}
+															</div>
+														</div>
+
 														<!-- Quantity Input -->
 														<div class="flex flex-col items-center">
 															<span class="text-[10px] font-semibold text-muted-foreground mb-0.5"
@@ -913,8 +1133,11 @@
 																type="number"
 																step="0.01"
 																min="0"
-																class="w-16 h-7 border rounded text-xs text-center focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+																class="w-16 h-7 border rounded text-xs text-center focus:border-primary focus:ring-1 focus:ring-primary outline-none {isEdited
+																	? 'bg-amber-50 border-amber-300 text-amber-900 font-bold'
+																	: ''}"
 																bind:value={lineTotals[supply.id]}
+																oninput={() => handleTotalManualChange(supply.id)}
 																onblur={() => {
 																	// If they tab out and left it blank, recalculate the default
 																	const currentVal = lineTotals[supply.id] as any;
@@ -935,11 +1158,13 @@
 																>Cost / Unit</span
 															>
 															<div class="text-xs font-semibold h-7 flex items-center">
-																£{quantities[supply.id] && Number(lineTotals[supply.id]) > 0
+																£{quantities[supply.id] &&
+																quantities[supply.id]! > 0 &&
+																Number(lineTotals[supply.id]) > 0
 																	? (
 																			Number(lineTotals[supply.id]) / quantities[supply.id]!
 																		).toFixed(2)
-																	: '0.00'}
+																	: (unitPrices[supply.id] || 0).toFixed(2)}
 															</div>
 														</div>
 													</div>
@@ -962,8 +1187,19 @@
 										</div>
 										<div class="divide-y">
 											{#each typeSupplies as supply (supply.id)}
+												{@const current = unitPrices[supply.id] || 0}
+												{@const last = getLastPaidPrice(supply.id)}
+												{@const isEdited =
+													quantities[supply.id] &&
+													lineTotals[supply.id] !== null &&
+													Math.abs(
+														Number(lineTotals[supply.id]) -
+															(quantities[supply.id] || 0) * (unitPrices[supply.id] || 0)
+													) > 0.01}
 												<div
-													class="p-2 flex items-center justify-between hover:bg-muted/30 transition-colors gap-2"
+													class="p-2 flex items-center justify-between {quantities[supply.id]
+														? 'bg-primary/5'
+														: 'opacity-60'} hover:bg-muted/30 transition-colors gap-2"
 												>
 													<div class="min-w-0 flex-1">
 														<p class="font-medium text-sm truncate" title={supply.name}>
@@ -978,6 +1214,35 @@
 													</div>
 
 													<div class="flex items-center gap-2 md:gap-4 shrink-0">
+														<!-- Price Display (Procurement Tool improvement) -->
+														<div class="flex flex-col items-center min-w-[80px]">
+															<span class="text-[10px] font-semibold text-muted-foreground mb-0.5"
+																>Unit Spend</span
+															>
+															<div class="flex flex-col items-center leading-none mt-0.5">
+																<div class="text-[11px] font-bold text-muted-foreground">
+																	{selectedSupplier ? '£' + current.toFixed(2) : '--'}
+																</div>
+																{#if selectedSupplier && last !== null}
+																	<div class="flex items-center gap-1 mt-0.5">
+																		<span class="text-[8px] text-muted-foreground shrink-0"
+																			>Last: £{last.toFixed(2)}</span
+																		>
+																		{#if Math.abs(current - last) > 0.005}
+																			{@const diff = ((current - last) / last) * 100}
+																			<span
+																				class="text-[8px] font-black {diff > 0
+																					? 'text-red-500'
+																					: 'text-emerald-500'}"
+																			>
+																				{diff > 0 ? '↑' : '↓'}{Math.abs(diff).toFixed(1)}%
+																			</span>
+																		{/if}
+																	</div>
+																{/if}
+															</div>
+														</div>
+
 														<!-- Quantity Input -->
 														<div class="flex flex-col items-center">
 															<span class="text-[10px] font-semibold text-muted-foreground mb-0.5"
@@ -1002,8 +1267,11 @@
 																type="number"
 																step="0.01"
 																min="0"
-																class="w-16 h-7 border rounded text-xs text-center focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+																class="w-16 h-7 border rounded text-xs text-center focus:border-primary focus:ring-1 focus:ring-primary outline-none {isEdited
+																	? 'bg-amber-50 border-amber-300 text-amber-900 font-bold'
+																	: ''}"
 																bind:value={lineTotals[supply.id]}
+																oninput={() => handleTotalManualChange(supply.id)}
 																onblur={() => {
 																	// If they tab out and left it blank, recalculate the default
 																	const currentVal = lineTotals[supply.id] as any;
@@ -1024,11 +1292,13 @@
 																>Cost / Unit</span
 															>
 															<div class="text-xs font-semibold h-7 flex items-center">
-																£{quantities[supply.id] && Number(lineTotals[supply.id]) > 0
+																£{quantities[supply.id] &&
+																quantities[supply.id]! > 0 &&
+																Number(lineTotals[supply.id]) > 0
 																	? (
 																			Number(lineTotals[supply.id]) / quantities[supply.id]!
 																		).toFixed(2)
-																	: '0.00'}
+																	: (unitPrices[supply.id] || 0).toFixed(2)}
 															</div>
 														</div>
 													</div>
@@ -1077,6 +1347,48 @@
 							</Button>
 						</div>
 					</div>
+
+					<!-- Compact Summary Preview -->
+					{#if invoiceTotalRaw > 0}
+						<div class="mt-6 border rounded-xl overflow-hidden bg-muted/20">
+							<button
+								class="w-full px-4 py-2 flex items-center justify-between text-sm font-bold bg-muted/40 hover:bg-muted/60 transition-colors"
+								onclick={() => (showInvoiceSummaryPreview = !showInvoiceSummaryPreview)}
+							>
+								<div class="flex items-center gap-2">
+									<ClipboardList class="h-4 w-4 text-primary" />
+									<span>Invoice Summary Preview</span>
+									<span class="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px]"
+										>{Object.values(quantities).filter((q) => q && q > 0).length} Items</span
+									>
+								</div>
+								<span>{showInvoiceSummaryPreview ? 'Hide' : 'Show'}</span>
+							</button>
+
+							{#if showInvoiceSummaryPreview}
+								<div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+									{#each data.supplies as supply}
+										{#if quantities[supply.id] && quantities[supply.id]! > 0}
+											<div
+												class="flex items-center justify-between p-2 bg-background rounded-lg border text-xs"
+											>
+												<div class="min-w-0 pr-2">
+													<p class="font-bold truncate">{supply.name}</p>
+													<p class="text-[10px] text-muted-foreground">
+														£{(Number(lineTotals[supply.id]) / quantities[supply.id]!).toFixed(2)} ea
+													</p>
+												</div>
+												<div class="text-right whitespace-nowrap">
+													<p class="font-black text-primary">×{quantities[supply.id]}</p>
+													<p class="font-bold">£{Number(lineTotals[supply.id]).toFixed(2)}</p>
+												</div>
+											</div>
+										{/if}
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			</div>
 		{:else if activeTab === 'inventory'}
@@ -1698,304 +2010,288 @@
 				</table>
 			</div>
 		{:else if activeTab === 'history'}
-			<div class="flex justify-between items-center mb-4">
-				<h2 class="text-xl font-semibold">Recent Order History</h2>
-			</div>
-
-			<div class="bg-card border rounded-lg shadow-sm overflow-hidden">
-				{#if showInvoiceEditModal}
-					<div class="border-b p-4 relative bg-muted/30">
-						<h3 class="font-medium mb-4">Edit Invoice Details</h3>
-						<div class="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-							<div class="space-y-1 sm:col-span-1">
-								<label class="text-xs font-medium" for="invNum">Invoice Number</label>
-								<input
-									id="invNum"
-									type="text"
-									class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-									bind:value={editInvoiceNumber}
-								/>
-							</div>
-							<div class="space-y-1 sm:col-span-1">
-								<label class="text-xs font-medium" for="invDate">Date</label>
-								<input
-									id="invDate"
-									type="date"
-									class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-									bind:value={editInvoiceDate}
-								/>
-							</div>
-							<div class="space-y-1 sm:col-span-1">
-								<label class="text-xs font-medium" for="invNotes">Notes</label>
-								<input
-									id="invNotes"
-									type="text"
-									class="w-full border rounded p-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-									bind:value={editInvoiceNotes}
-								/>
-							</div>
-							<div class="flex gap-2 sm:col-span-1">
-								<Button
-									size="sm"
-									class="w-full"
-									onclick={saveInvoiceEdit}
-									disabled={isSavingInvoiceEdit}
-									>{isSavingInvoiceEdit ? 'Saving...' : 'Save'}</Button
-								>
-								<Button
-									variant="outline"
-									size="sm"
-									class="w-full"
-									onclick={() => (showInvoiceEditModal = false)}
-									disabled={isSavingInvoiceEdit}>Cancel</Button
-								>
-							</div>
+			<div class="flex flex-col gap-6">
+				<!-- History Stats -->
+				<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+					<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
+						<div class="flex items-center gap-2 text-muted-foreground mb-1">
+							<Activity class="h-4 w-4 text-purple-500" />
+							<span class="text-xs font-semibold uppercase tracking-wider">Spend (Last 30d)</span>
+						</div>
+						<div class="flex items-baseline gap-2">
+							<span class="text-2xl font-bold">£{historySpend30d.toLocaleString()}</span>
+							{#if historySpendPrev30d > 0}
+								{@const diff =
+									((historySpend30d - historySpendPrev30d) / historySpendPrev30d) * 100}
+								<span class="text-xs font-bold {diff > 0 ? 'text-red-600' : 'text-emerald-600'}">
+									{diff > 0 ? '▲' : '▼'}
+									{Math.abs(diff).toFixed(0)}%
+								</span>
+							{/if}
 						</div>
 					</div>
-				{/if}
-
-				{#if data.history && data.history.length > 0}
-					<div class="divide-y">
-						{#each data.history as invoice}
-							<div class="p-4 hover:bg-muted/30 transition-colors group">
-								<div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-3">
-									<div class="flex-1">
-										<div class="flex flex-col sm:flex-row justify-between sm:items-center w-full">
-											<div>
-												<div class="flex items-center gap-3">
-													<h4 class="font-semibold text-base">
-														{invoice.packing_suppliers?.name || 'Unknown Supplier'}
-													</h4>
-													<div
-														class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
-													>
-														<button
-															class="text-xs text-primary hover:underline font-medium"
-															onclick={() => openEditInvoice(invoice)}
-														>
-															Edit Header
-														</button>
-														<button
-															class="text-xs text-red-500 hover:underline font-medium"
-															onclick={() => deleteInvoice(invoice.id)}
-														>
-															Delete
-														</button>
-													</div>
-												</div>
-												<p class="text-xs text-muted-foreground">
-													Invoice #{invoice.invoice_number || 'N/A'} • {new Date(
-														invoice.invoice_date
-													).toLocaleDateString()}
-												</p>
-											</div>
-											<div class="text-left sm:text-right mt-2 sm:mt-0">
-												<div class="font-bold text-lg">£{(invoice.total_cost || 0).toFixed(2)}</div>
-												{#if invoice.total_vat}
-													<div class="text-[10px] text-muted-foreground">
-														Incl. £{invoice.total_vat.toFixed(2)} VAT
-													</div>
-												{/if}
-											</div>
-										</div>
-									</div>
-								</div>
-
-								{#if invoice.notes}
-									<p class="text-xs text-muted-foreground mb-3 italic">Notes: {invoice.notes}</p>
-								{/if}
-
-								<div class="bg-muted/50 rounded-md p-2 mt-4">
-									<table class="w-full text-xs text-left">
-										<thead class="text-muted-foreground border-b">
-											<tr>
-												<th class="pb-1 font-medium">Item</th>
-												<th class="pb-1 font-medium text-right">Qty</th>
-												<th class="pb-1 font-medium text-right">Unit Price</th>
-												<th class="pb-1 font-medium text-right">Line Total</th>
-												<th class="pb-1 font-medium text-right w-10"></th>
-											</tr>
-										</thead>
-										<tbody class="divide-y divide-border/50">
-											{#each invoice.packing_invoice_lines as line}
-												{#if editingLineInvoiceId === invoice.id && editingLineSupplyId !== null && editingLineSupplyId === line.supply_id}
-													<tr>
-														<td class="py-1.5 font-medium"
-															>{line.packing_supplies?.name || 'Unknown Item'}</td
-														>
-														<td class="py-1.5 text-right w-20">
-															<input
-																type="number"
-																min="0"
-																class="w-full border rounded text-xs p-1 text-right focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-																bind:value={editLineQty}
-															/>
-														</td>
-														<td class="py-1.5 text-right">
-															<span
-																>£{editLineQty > 0
-																	? (editLineTotal / editLineQty).toFixed(4)
-																	: '0.0000'}</span
-															>
-														</td>
-														<td class="py-1.5 text-right font-semibold w-24">
-															<input
-																type="number"
-																step="0.01"
-																min="0"
-																class="w-full border rounded text-xs p-1 text-right focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-																bind:value={editLineTotal}
-															/>
-														</td>
-														<td class="py-1.5 pl-3 text-right">
-															<div class="flex items-center justify-end gap-2">
-																<button
-																	class="text-xs text-primary font-medium hover:underline"
-																	onclick={saveLineEdit}
-																	disabled={isSavingLineEdit}>Save</button
-																>
-																<button
-																	class="text-xs text-muted-foreground hover:underline"
-																	onclick={cancelEditLine}
-																	disabled={isSavingLineEdit}>Cancel</button
-																>
-															</div>
-														</td>
-													</tr>
-												{:else}
-													<tr class="relative hover:bg-muted/50 transition-colors">
-														<td class="py-1 font-medium"
-															>{line.packing_supplies?.name || 'Unknown Item'}</td
-														>
-														<td class="py-1 text-right">{line.quantity}</td>
-														<td class="py-1 text-right"
-															>£{Number(line.unit_price || 0).toFixed(4)}</td
-														>
-														<td class="py-1 text-right font-semibold"
-															>£{(line.quantity * (line.unit_price || 0)).toFixed(2)}</td
-														>
-														<td class="py-1 pl-2 text-right">
-															<button
-																class="text-[10px] text-muted-foreground hover:text-primary transition-colors hover:underline"
-																onclick={() => openEditLine(invoice.id, line)}
-															>
-																Edit
-															</button>
-														</td>
-													</tr>
-												{/if}
-											{/each}
-										</tbody>
-									</table>
-								</div>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<div class="p-8 text-center text-muted-foreground">No invoice history found.</div>
-				{/if}
-			</div>
-		{/if}
-
-		{#if activeTab === 'unmapped'}
-			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
-				<div class="flex justify-between items-center mb-6">
-					<div>
-						<h2 class="text-xl font-semibold">Missing Box Mappings</h2>
-						<p class="text-sm text-muted-foreground">
-							Orders created recently that failed packaging deduction because their SKUs are missing
-							dimensions.
-						</p>
+					<!-- Placeholder for other history stats -->
+					<div
+						class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between opacity-50"
+					>
+						<div class="flex items-center gap-2 text-muted-foreground mb-1">
+							<ClipboardList class="h-4 w-4" />
+							<span class="text-xs font-semibold uppercase tracking-wider">Total Invoices</span>
+						</div>
+						<span class="text-2xl font-bold">{(data.history || []).length}</span>
 					</div>
 				</div>
 
-				{#if data.unmappedOrders && data.unmappedOrders.length > 0}
-					<div class="overflow-x-auto border rounded-xl">
-						<table class="w-full text-sm text-left">
-							<thead class="bg-muted text-muted-foreground">
-								<tr>
-									<th class="px-4 py-3 font-semibold">Order ID</th>
-									<th class="px-4 py-3 font-semibold">SKU / ASIN</th>
-									<th class="px-4 py-3 font-semibold">Product Title</th>
-									<th class="px-4 py-3 font-semibold">Reason</th>
-									<th class="px-4 py-3 font-semibold text-right">Actions</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y relative bg-card">
-								{#each data.unmappedOrders as order}
-									{#each order.items as item}
-										{#if item.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(item.seller_sku)}
-											<tr class="hover:bg-muted/30">
-												<td class="px-4 py-3 font-mono">{order.amazon_order_id}</td>
-												<td class="px-4 py-3 font-mono text-xs">
-													<div class="font-semibold text-primary">{item.seller_sku}</div>
-													<div class="text-muted-foreground">{item.asin}</div>
-												</td>
-												<td class="px-4 py-3 text-xs line-clamp-2 my-2">{item.title}</td>
-												<td class="px-4 py-3">
-													{#if item.costs?.boxReason === 'Mapped'}
-														<span
-															class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800"
-														>
-															Mapped
-														</span>
-													{:else if item.costs?.boxReason}
-														<span
-															class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800"
-														>
-															{item.costs.boxReason}
-														</span>
-													{:else if !item.costs}
-														<span
-															class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800"
-														>
-															SKU Not in Inventory
-														</span>
-													{:else}
-														<span
-															class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800"
-														>
-															Unmapped Code: {order.box_code}
-														</span>
-													{/if}
-												</td>
-												<td class="px-4 py-3 text-right whitespace-nowrap">
-													<div class="flex items-center gap-2 justify-end">
-														<select
-															class="h-8 rounded-md border border-input bg-background px-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-[180px]"
-															value={item.costs?.packaging?.code || ''}
-															onchange={(e) =>
-																handleQuickAssign(item.seller_sku, e.currentTarget.value)}
-														>
-															<option value="">Select Box...</option>
-															{#each boxOptions as option}
-																<option value={option.code}>{option.name}</option>
-															{/each}
-														</select>
-														<Button
-															variant="ghost"
-															size="sm"
-															onclick={() => openCostModal(item.seller_sku, item.asin, item.title)}
-															title="Advanced Settings"
-														>
-															<Maximize class="h-4 w-4" />
-														</Button>
-													</div>
-												</td>
-											</tr>
-										{/if}
-									{/each}
+				<!-- Filters -->
+				<div class="flex flex-wrap items-center gap-4 bg-muted/30 p-4 rounded-xl border">
+					<div class="flex-1 min-w-[200px] relative">
+						<Search
+							class="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+						/>
+						<input
+							type="text"
+							placeholder="Search invoices, items, or suppliers..."
+							class="w-full pl-9 pr-4 py-2 bg-background border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+							bind:value={historySearch}
+						/>
+					</div>
+
+					<div class="flex items-center gap-4 shrink-0">
+						<div class="flex flex-col">
+							<label
+								for="history-supplier-filter"
+								class="text-[10px] uppercase font-bold text-muted-foreground mb-1">Supplier</label
+							>
+							<select
+								id="history-supplier-filter"
+								class="bg-background border rounded-lg px-3 py-2 text-sm outline-none"
+								bind:value={historySupplierFilter}
+							>
+								<option value="all">All Suppliers</option>
+								{#each data.suppliers as s}
+									<option value={s.id}>{s.name}</option>
 								{/each}
-							</tbody>
-						</table>
+							</select>
+						</div>
+
+						<div class="flex flex-col">
+							<label
+								for="history-timeframe-filter"
+								class="text-[10px] uppercase font-bold text-muted-foreground mb-1">Timeframe</label
+							>
+							<select
+								id="history-timeframe-filter"
+								class="bg-background border rounded-lg px-3 py-2 text-sm outline-none"
+								bind:value={historyDateRange}
+							>
+								<option value="30">Last 30 Days</option>
+								<option value="90">Last 90 Days</option>
+								<option value="365">Last 1 Year</option>
+								<option value="all">All Time</option>
+							</select>
+						</div>
 					</div>
-				{:else}
-					<div
-						class="text-center p-12 text-muted-foreground bg-muted/20 border border-dashed rounded-xl"
-					>
-						No unmapped orders found. All packaging logic is completely mapped!
-					</div>
-				{/if}
+				</div>
+
+				<!-- History Feed -->
+				<div class="bg-card border rounded-xl shadow-sm overflow-hidden">
+					{#if filteredHistory.length === 0}
+						<div class="p-12 text-center text-muted-foreground">
+							<p class="font-bold">No history matching these filters</p>
+							<button
+								class="text-primary hover:underline mt-2 text-sm"
+								onclick={() => {
+									historySearch = '';
+									historySupplierFilter = 'all';
+									historyDateRange = '90';
+								}}>Clear all filters</button
+							>
+						</div>
+					{:else}
+						<div class="divide-y divide-muted/60">
+							{#each filteredHistory as invoice}
+								<div class="p-6 hover:bg-muted/10 transition-colors group">
+									<div class="flex items-center justify-between mb-4">
+										<div class="flex items-center gap-4">
+											<div>
+												<h4 class="font-black text-lg tracking-tight">
+													{invoice.packing_suppliers?.name || 'Unknown'}
+												</h4>
+												<p class="text-xs text-muted-foreground">
+													{new Date(invoice.invoice_date).toLocaleDateString('en-GB', {
+														day: 'numeric',
+														month: 'short',
+														year: 'numeric'
+													})} • {invoice.invoice_number || 'No Inv #'}
+												</p>
+											</div>
+											<div class="flex gap-1">
+												<button
+													class="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded font-bold hover:bg-primary/20"
+													onclick={() => openEditInvoice(invoice)}
+												>
+													EDIT
+												</button>
+												<button
+													class="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold hover:bg-red-200"
+													onclick={() => deleteInvoice(invoice.id)}
+												>
+													DEL
+												</button>
+											</div>
+										</div>
+										<div class="text-right">
+											<p class="text-xl font-black text-primary tracking-tighter">
+												£{Number(invoice.total_cost || 0).toFixed(2)}
+											</p>
+											<p class="text-[10px] text-muted-foreground uppercase font-bold">
+												Incl. £{Number(invoice.total_vat || 0).toFixed(2)} VAT
+											</p>
+										</div>
+									</div>
+
+									<div class="bg-muted/30 rounded-lg overflow-hidden border">
+										<table class="w-full text-xs text-left">
+											<thead class="bg-muted/50 text-muted-foreground border-b italic">
+												<tr>
+													<th class="px-3 py-2 font-bold uppercase tracking-wider">Supplies Item</th
+													>
+													<th class="px-3 py-2 font-bold uppercase tracking-wider text-right"
+														>Qty</th
+													>
+													<th class="px-3 py-2 font-bold uppercase tracking-wider text-right"
+														>Unit Price</th
+													>
+													<th class="px-3 py-2 font-bold uppercase tracking-wider text-right"
+														>Total</th
+													>
+													<th class="px-3 py-2 w-16"></th>
+												</tr>
+											</thead>
+											<tbody class="divide-y divide-border/40">
+												{#each invoice.packing_invoice_lines || [] as line}
+													{#if editingLineInvoiceId === invoice.id && editingLineSupplyId === line.supply_id}
+														<tr class="bg-primary/5">
+															<td class="px-3 py-2 font-bold text-primary">
+																{line.packing_supplies?.name || 'Unknown Item'}
+															</td>
+															<td class="px-3 py-2 text-right">
+																<input
+																	type="number"
+																	min="0"
+																	class="w-20 border rounded px-2 py-1 text-right focus:ring-1 focus:ring-primary outline-none"
+																	bind:value={editLineQty}
+																/>
+															</td>
+															<td class="px-3 py-2 text-right text-muted-foreground">
+																£{editLineQty > 0
+																	? (editLineTotal / editLineQty).toFixed(4)
+																	: '0.0000'}
+															</td>
+															<td class="px-3 py-2 text-right">
+																<input
+																	type="number"
+																	step="0.01"
+																	min="0"
+																	class="w-24 border rounded px-2 py-1 text-right focus:ring-1 focus:ring-primary outline-none font-bold"
+																	bind:value={editLineTotal}
+																/>
+															</td>
+															<td class="px-3 py-2 text-right">
+																<div class="flex items-center gap-2 justify-end">
+																	<button
+																		class="text-primary font-bold hover:underline"
+																		onclick={saveLineEdit}
+																		disabled={isSavingLineEdit}>Save</button
+																	>
+																	<button
+																		class="text-muted-foreground hover:underline"
+																		onclick={cancelEditLine}
+																		disabled={isSavingLineEdit}>Cancel</button
+																	>
+																</div>
+															</td>
+														</tr>
+													{:else}
+														<tr class="hover:bg-muted/40 transition-colors">
+															<td class="px-3 py-2">
+																<div class="flex flex-col">
+																	<div class="flex items-center gap-2">
+																		<span class="font-bold">
+																			{line.packing_supplies?.name || 'Unknown Item'}
+																		</span>
+																		{#if getPriceComparison(line.supply_id, line.unit_price, invoice.invoice_date)}
+																			{@const priceInfo = getPriceComparison(
+																				line.supply_id,
+																				line.unit_price,
+																				invoice.invoice_date
+																			)}
+																			{#if priceInfo}
+																				<span
+																					class="px-1.5 py-0.5 rounded text-[10px] font-black {priceInfo.diff >
+																					0.001
+																						? 'bg-red-100 text-red-700'
+																						: priceInfo.diff < -0.001
+																							? 'bg-emerald-100 text-emerald-700'
+																							: 'bg-muted text-muted-foreground'}"
+																				>
+																					{#if priceInfo.diff > 0.001}
+																						▲ £{priceInfo.diff.toFixed(2)} ({priceInfo.percent.toFixed(
+																							0
+																						)}%)
+																					{:else if priceInfo.diff < -0.001}
+																						▼ £{Math.abs(priceInfo.diff).toFixed(2)} ({Math.abs(
+																							priceInfo.percent
+																						).toFixed(0)}%)
+																					{:else}
+																						STABLE
+																					{/if}
+																				</span>
+																			{/if}
+																		{/if}
+																	</div>
+																	<div class="flex items-center gap-2">
+																		<span class="text-[10px] text-muted-foreground font-mono">
+																			{line.packing_supplies?.code || ''}
+																		</span>
+																		{#if getBundleInfo(line.packing_supplies, line.quantity)}
+																			<span
+																				class="text-[10px] font-bold text-muted-foreground italic"
+																			>
+																				({getBundleInfo(line.packing_supplies, line.quantity)})
+																			</span>
+																		{/if}
+																	</div>
+																</div>
+															</td>
+															<td class="px-3 py-2 text-right font-black text-primary tabular-nums"
+																>×{line.quantity}</td
+															>
+															<td class="px-3 py-2 text-right tabular-nums text-muted-foreground"
+																>£{Number(line.unit_price || 0).toFixed(4)}</td
+															>
+															<td class="px-3 py-2 text-right font-bold tabular-nums"
+																>£{(line.quantity * Number(line.unit_price || 0)).toFixed(2)}</td
+															>
+															<td class="px-3 py-2 text-right">
+																<button
+																	class="text-[10px] text-muted-foreground hover:text-primary transition-colors font-bold uppercase"
+																	onclick={() => openEditLine(invoice.id, line)}
+																>
+																	Edit
+																</button>
+															</td>
+														</tr>
+													{/if}
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
 		{/if}
 
