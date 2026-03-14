@@ -29,7 +29,7 @@ export async function GET({ url }) {
     console.log('Searching Linnworks for SKUs:', trimmedSkus);
 
     const [mappings, lwItems, supplies] = await Promise.all([
-      db.from('sku_asin_mapping').select('seller_sku, asin, box_code').in('seller_sku', skus),
+      db.from('sku_asin_mapping').select('seller_sku, asin, item_note').in('seller_sku', skus),
       getStockItemsBySku(trimmedSkus),
       db.from('packing_supplies').select('id, code, name, current_stock')
     ]);
@@ -88,7 +88,7 @@ export async function GET({ url }) {
 
         // Logical box: Manual box code OR calculated from dimensions
         const calculatedBox = `${item.width ?? ''}x${item.height ?? ''}x${item.depth ?? ''}`.replace(/^xx$/, '0x0x0');
-        const effectiveBox = m?.box_code || (calculatedBox !== 'xx' && calculatedBox !== 'nullxnullxnull' ? calculatedBox : '');
+        const effectiveBox = m?.item_note || (calculatedBox !== 'xx' && calculatedBox !== 'nullxnullxnull' ? calculatedBox : '');
 
         // Find Extended Property for Box Size with robust fuzzy matching
         const boxSizeKeywords = [

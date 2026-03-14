@@ -163,7 +163,7 @@ export class CostCalculator {
       // Fetch SKU-ASIN mapping for shipping lookup and item name
       const { data: skuMapping, error: skuError } = await db
         .from('sku_asin_mapping')
-        .select('merchant_shipping_group, item_name')
+        .select('merchant_shipping_group, item_name, item_note')
         .eq('seller_sku', sku)
         .single();
 
@@ -203,7 +203,8 @@ export class CostCalculator {
 
       // --- PACKING SUPPLIES OVERRIDE LOGIC ---
       // 1. Check if we have a manual override in sku_asin_mapping
-      let box = skuMapping?.box_code || '';
+      // We check box_code (legacy) or item_note (new override storage)
+      let box = skuMapping?.box_code || skuMapping?.item_note || '';
       let boxReason = '';
 
       if (!box) {
@@ -216,7 +217,8 @@ export class CostCalculator {
           boxReason = 'Missing Dimensions';
         }
       } else {
-        boxReason = 'Manual Override';
+        // If it came from item_note, it's a confirmed manual override
+        boxReason = skuMapping?.item_note ? 'Mapped' : 'Manual Override';
       }
 
       // Determine shipping type for display

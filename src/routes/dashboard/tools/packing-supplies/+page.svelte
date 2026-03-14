@@ -9,7 +9,11 @@
 		ClipboardList,
 		AlertCircle,
 		Maximize,
-		Search
+		Search,
+		TrendingDown,
+		PackageSearch,
+		Activity,
+		PieChart
 	} from 'lucide-svelte';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import BoxSKUListModal from '$lib/components/BoxSKUListModal.svelte';
@@ -163,6 +167,8 @@
 	async function quickAssignBox(sku: string, newBoxCode: string) {
 		if (!newBoxCode) return;
 
+		console.log(`[UI DEBUG] Assigning ${sku} to box ${newBoxCode}...`);
+
 		try {
 			const res = await fetch('/api/tools/packing-supplies/reassign', {
 				method: 'POST',
@@ -170,16 +176,19 @@
 				body: JSON.stringify({ sku, newBoxCode })
 			});
 
+			const responseData = await res.json();
+			console.log(`[UI DEBUG] Server response for ${sku}:`, responseData);
+
 			if (res.ok) {
 				mappedActiveSkus = [...mappedActiveSkus, sku];
-				// Trigger a re-fetch of orders in background if needed,
-				// but for UI mapping tracking is enough
+				console.log(`[UI DEBUG] SKU ${sku} added to mappedActiveSkus list.`);
 			} else {
-				alert('Failed to assign box size');
+				console.error(`[UI DEBUG] Error response mapping ${sku}:`, responseData);
+				alert(`Failed to assign box size: ${responseData.error || 'Server error'}`);
 			}
 		} catch (e) {
-			console.error(e);
-			alert('An error occurred during assignment');
+			console.error(`[UI DEBUG] Fetch exception mapping ${sku}:`, e);
+			alert('An error occurred during assignment. Check console.');
 		}
 	}
 
@@ -214,7 +223,7 @@
 	$: activeUnmappedOrdersCount =
 		data?.unmappedOrders
 			?.flatMap((o) => o.items)
-			.filter((i) => !mappedActiveSkus.includes(i.seller_sku)).length || 0;
+			.filter((i) => i.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(i.seller_sku)).length || 0;
 
 	function openCostModal(sku: string, asin: string, title: string) {
 		currentSku = sku;
@@ -507,6 +516,22 @@
 		return acc + stock * getEstimatedUnitCost(supply);
 	}, 0);
 
+	function getUsage30d(supplyId: string) {
+		const avg2d = (data.usageStats2d?.[supplyId] || 0) / 2;
+		const avg7d = (data.usageStats7d?.[supplyId] || 0) / 7;
+		return Math.max(avg2d, avg7d) * 30;
+	}
+
+	function getActualUsage(supplyId: string) {
+		return data.usageStats30d?.[supplyId] || 0;
+	}
+
+	$: totalProjectedSpend30d = data.supplies.reduce((acc: number, supply: any) => {
+		const usage30d = getUsage30d(supply.id);
+		const unitCost = getEstimatedUnitCost(supply);
+		return acc + usage30d * unitCost;
+	}, 0);
+
 	async function submitInvoice() {
 		if (!selectedSupplier) {
 			alert('Please select a supplier');
@@ -568,9 +593,90 @@
 			isSubmitting = false;
 		}
 	}
+
+	// Ranking/Sorting state for Inventory tab
+	let sortColumn = 'totalProjectedSpend30d'; // Default to highest impact
+	let sortDirection = -1; // -1 for desc, 1 for asc
+
+	function toggleSort(column: string) {
+		if (sortColumn === column) {
+			sortDirection *= -1;
+		} else {
+			sortColumn = column;
+			sortDirection = -1; // Default to desc for new column
+		}
+	}
+
+	$: sortedSupplies = [...data.supplies].sort((a: any, b: any) => {
+		let valA: any;
+		let valB: any;
+
+		const costA = getEstimatedUnitCost(a);
+		const costB = getEstimatedUnitCost(b);
+		const usageA = getUsage30d(a.id);
+		const usageB = getUsage30d(b.id);
+
+		switch (sortColumn) {
+			case 'name':
+				valA = a.name;
+				valB = b.name;
+				break;
+			case 'type':
+				valA = a.type;
+				valB = b.type;
+				break;
+			case 'unitCost':
+				valA = costA;
+				valB = costB;
+				break;
+			case 'stock':
+				valA = a.current_stock || 0;
+				valB = b.current_stock || 0;
+				break;
+			case 'usage30d':
+				valA = usageA;
+				valB = usageB;
+				break;
+			case 'dailyAvg':
+				valA = usageA / 30;
+				valB = usageB / 30;
+				break;
+			case 'totalProjectedSpend30d':
+				valA = usageA * costA;
+				valB = usageB * costB;
+				break;
+			case 'weeksRemaining':
+				valA = usageA > 0 ? (a.current_stock || 0) / (usageA / 30) : 999999;
+				valB = usageB > 0 ? (b.current_stock || 0) / (usageB / 30) : 999999;
+				break;
+			case 'totalValue':
+				valA = (a.current_stock || 0) * costA;
+				valB = (b.current_stock || 0) * costB;
+				break;
+			default:
+				valA = a.name;
+				valB = b.name;
+		}
+
+		if (valA < valB) return -1 * sortDirection;
+		if (valA > valB) return 1 * sortDirection;
+		return 0;
+	});
+
+	// Metrics Calculations
+	$: totalBoxesUsed30d = data.supplies.reduce((acc: number, s: any) => acc + getUsage30d(s.id), 0);
+	$: highestUsageBox = [...data.supplies].sort((a, b) => getUsage30d(b.id) - getUsage30d(a.id))[0];
+	$: highestCostDriver = [...data.supplies].sort(
+		(a, b) =>
+			getUsage30d(b.id) * getEstimatedUnitCost(b) - getUsage30d(a.id) * getEstimatedUnitCost(a)
+	)[0];
+
+	// Summary values for Pareto/Stats
+	$: runningUsageSum = 0;
+	$: sortedByUsage = [...data.supplies].sort((a, b) => getUsage30d(b.id) - getUsage30d(a.id));
 </script>
 
-<div class="flex flex-col gap-6 p-6 max-w-7xl mx-auto w-full">
+<div class="flex flex-col gap-6 p-6 max-w-[1600px] mx-auto w-full">
 	<div>
 		<h1 class="text-3xl font-bold tracking-tight">Packing Supplies</h1>
 		<p class="text-muted-foreground mt-2">
@@ -892,16 +998,83 @@
 				</div>
 			</div>
 		{:else if activeTab === 'inventory'}
+			<!-- KPI Summary Panel -->
+			<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+				<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
+					<div class="flex items-center gap-2 text-muted-foreground mb-1">
+						<TrendingDown class="h-4 w-4 text-red-500" />
+						<span class="text-xs font-semibold uppercase tracking-wider">Urgent Restock</span>
+					</div>
+					<div class="flex items-baseline gap-2">
+						<span class="text-2xl font-bold text-red-600">
+							{sortedSupplies.filter((s) => {
+								const usage = getUsage30d(s.id);
+								const daily = usage / 30;
+								return daily > 0 && (s.current_stock || 0) / daily < 7;
+							}).length}
+						</span>
+						<span class="text-xs text-muted-foreground">items &lt; 7 days</span>
+					</div>
+				</div>
+
+				<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
+					<div class="flex items-center gap-2 text-muted-foreground mb-1">
+						<PackageSearch class="h-4 w-4 text-blue-500" />
+						<span class="text-xs font-semibold uppercase tracking-wider">Stock Valuation</span>
+					</div>
+					<div class="flex items-baseline gap-2">
+						<span class="text-2xl font-bold"
+							>£{totalInventoryValue.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</span
+						>
+						<span class="text-xs text-muted-foreground text-emerald-600 font-medium">SOH</span>
+					</div>
+				</div>
+
+				<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
+					<div class="flex items-center gap-2 text-muted-foreground mb-1">
+						<Activity class="h-4 w-4 text-purple-500" />
+						<span class="text-xs font-semibold uppercase tracking-wider">Monthly Run-Rate</span>
+					</div>
+					<div class="flex items-baseline gap-2">
+						<span class="text-2xl font-bold"
+							>£{totalProjectedSpend30d.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</span
+						>
+						<span class="text-xs text-muted-foreground">forecasted spend</span>
+					</div>
+				</div>
+
+				<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
+					<div class="flex items-center gap-2 text-muted-foreground mb-1">
+						<PieChart class="h-4 w-4 text-amber-500" />
+						<span class="text-xs font-semibold uppercase tracking-wider">Pareto 80/20</span>
+					</div>
+					<div class="flex items-baseline gap-2">
+						<span class="text-2xl font-bold">
+							{sortedSupplies.filter((s) => {
+								const usage = getUsage30d(s.id);
+								const unitCost = getEstimatedUnitCost(s);
+								const spend = usage * unitCost;
+								const idx = sortedByUsage.findIndex((item) => item.id === s.id);
+								if (idx === -1) return false;
+								let cumSum = 0;
+								for (let i = 0; i <= idx; i++) {
+									const usageB = getUsage30d(sortedByUsage[i].id);
+									const costB = getEstimatedUnitCost(sortedByUsage[i]);
+									cumSum += usageB * costB;
+								}
+								return cumSum / totalProjectedSpend30d <= 0.8;
+							}).length}
+						</span>
+						<span class="text-xs text-muted-foreground">SKUs drive 80% spend</span>
+					</div>
+				</div>
+			</div>
+
 			<div class="flex justify-between items-center mb-4">
 				<div>
-					<h2 class="text-xl font-semibold">Current Inventory & Catalog</h2>
+					<h2 class="text-xl font-semibold">Warehouse Operations & Inventory</h2>
 					<p class="text-sm text-muted-foreground mt-1">
-						Estimated Total Stock Value: <span class="font-bold text-foreground"
-							>£{totalInventoryValue.toLocaleString('en-GB', {
-								minimumFractionDigits: 2,
-								maximumFractionDigits: 2
-							})}</span
-						>
+						Real-time burn rates based on max(2d, 7d) order velocity averages.
 					</p>
 				</div>
 				<Button size="sm" onclick={openAddSupply}>
@@ -968,21 +1141,123 @@
 				<table class="w-full text-sm text-left">
 					<thead class="bg-muted">
 						<tr>
-							<th class="px-4 py-3 font-semibold">Supply Name</th>
-							<th class="px-4 py-3 font-semibold">SKU / Code</th>
-							<th class="px-4 py-3 font-semibold">Type</th>
-							<th class="px-4 py-3 font-semibold text-right">Avg Unit Cost</th>
-							<th class="px-4 py-3 font-semibold text-right">Current Stock</th>
-							<th class="px-4 py-3 font-semibold text-right"
-								>{data.usageDays === 30 ? '30d Usage' : `${data.usageDays}d Usage`}</th
+							<th
+								class="px-4 py-3 font-semibold cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('name')}
 							>
-							<th class="px-4 py-3 font-semibold text-right">Weeks Left</th>
-							<th class="px-4 py-3 font-semibold text-right">Total Est Value</th>
-							<th class="px-4 py-3 font-semibold text-right">Actions</th>
+								<div class="flex items-center gap-1">
+									Supply Name
+									{#if sortColumn === 'name'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th class="px-4 py-3 font-semibold">SKU / Code</th>
+							<th
+								class="px-4 py-3 font-semibold cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('type')}
+							>
+								<div class="flex items-center gap-1">
+									Type
+									{#if sortColumn === 'type'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th
+								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('unitCost')}
+							>
+								<div class="flex items-center justify-end gap-1">
+									Avg Unit Cost
+									{#if sortColumn === 'unitCost'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th
+								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('stock')}
+							>
+								<div class="flex items-center justify-end gap-1">
+									Current Stock
+									{#if sortColumn === 'stock'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th
+								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('usage30d')}
+							>
+								<div class="flex items-center justify-end gap-1">
+									Actual Usage ({data.daysOfData}d)
+									{#if sortColumn === 'usage30d'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th
+								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('totalProjectedSpend30d')}
+							>
+								<div class="flex items-center justify-end gap-1">
+									30d Spend (Proj)
+									{#if sortColumn === 'totalProjectedSpend30d'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th class="px-4 py-3 font-semibold text-right">Daily Burn</th>
+							<th
+								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('weeksRemaining')}
+							>
+								<div class="flex items-center justify-end gap-1">
+									Days Left
+									{#if sortColumn === 'weeksRemaining'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th
+								class="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-muted-foreground/10 select-none"
+								onclick={() => toggleSort('totalValue')}
+							>
+								<div class="flex items-center justify-end gap-1">
+									Stock Value
+									{#if sortColumn === 'totalValue'}
+										<span class="text-[10px]">{sortDirection === 1 ? '↑' : '↓'}</span>
+									{/if}
+								</div>
+							</th>
+							<th class="px-4 py-3 font-semibold text-right whitespace-nowrap">Impact %</th>
+							<th class="px-4 py-3 font-semibold text-right whitespace-nowrap min-w-[210px]"
+								>Actions</th
+							>
 						</tr>
 					</thead>
 					<tbody class="divide-y">
-						{#each data.supplies as supply}
+						{#each sortedSupplies as supply}
+							{@const unitCost = getEstimatedUnitCost(supply)}
+							{@const usage30d = getUsage30d(supply.id)}
+							{@const dailyBurn = usage30d / 30}
+							{@const currentStock = Math.max(0, supply.current_stock || 0)}
+							{@const daysLeft = dailyBurn > 0 ? currentStock / dailyBurn : 999}
+
+							{@const projectedSpend30d = usage30d * unitCost}
+							{@const impactPercent =
+								totalProjectedSpend30d > 0 ? (projectedSpend30d / totalProjectedSpend30d) * 100 : 0}
+
+							{@const paretoIdx = sortedByUsage.findIndex((s) => s.id === supply.id)}
+							{@const cumUsageAtThisPoint = sortedByUsage
+								.slice(0, paretoIdx + 1)
+								.reduce((acc, s) => acc + getUsage30d(s.id) * getEstimatedUnitCost(s), 0)}
+							{@const cumUsagePercent =
+								totalProjectedSpend30d > 0
+									? (cumUsageAtThisPoint / totalProjectedSpend30d) * 100
+									: 0}
+
 							<tr
 								class="hover:bg-muted/50 {(showAdjustModal && adjustSupplyId === supply.id) ||
 								(showSupplyForm && editSupplyId === supply.id)
@@ -992,7 +1267,7 @@
 								<td class="px-4 py-3 font-medium">
 									{#if ['box', 'envelope', 'bag'].includes(supply.type)}
 										<button
-											class="text-primary hover:underline font-bold flex items-center gap-1 group"
+											class="text-primary hover:underline font-bold flex items-center gap-1 group w-fit"
 											onclick={() => openReassignModal(supply.code)}
 											title="View and reassign items using this size"
 										>
@@ -1002,51 +1277,79 @@
 											/>
 										</button>
 									{:else}
-										{supply.name}
+										<span class="font-bold">{supply.name}</span>
 									{/if}
 								</td>
-								<td class="px-4 py-3 text-muted-foreground">{supply.code}</td>
+								<td class="px-4 py-3 text-muted-foreground whitespace-nowrap">{supply.code}</td>
 								<td class="px-4 py-3">
 									<span
-										class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold"
+										class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-muted/30"
 									>
 										{supply.type}
 									</span>
 								</td>
-								<td class="px-4 py-3 text-right">£{getEstimatedUnitCost(supply).toFixed(4)}</td>
-								<td class="px-4 py-3 text-right font-bold"
-									>{Math.max(0, supply.current_stock || 0)}</td
+								<td class="px-4 py-3 text-right">£{unitCost.toFixed(4)}</td>
+								<td class="px-4 py-3 text-right font-bold">{currentStock}</td>
+								<td
+									class="px-4 py-3 text-right font-bold italic text-muted-foreground whitespace-nowrap"
+									>{getActualUsage(supply.id)} units</td
 								>
-								<td class="px-4 py-3 text-right font-bold">
-									{data.usageStats[supply.id] || 0}
+								<td class="px-4 py-3 text-right font-bold italic text-muted-foreground"
+									>£{projectedSpend30d.toFixed(2)}</td
+								>
+								<td class="px-4 py-3 text-right text-muted-foreground whitespace-nowrap">
+									{dailyBurn.toFixed(1)} /day
 								</td>
-								<td class="px-4 py-3 text-right font-bold text-muted-foreground">
-									{#if data.usageStats[supply.id] > 0}
-										{(
-											Math.max(0, supply.current_stock || 0) /
-											(data.usageStats[supply.id] / (data.usageDays / 7))
-										).toFixed(1)} wks
-									{:else}
-										-
-									{/if}
+								<td class="px-4 py-3 text-right font-bold min-w-[120px]">
+									<span
+										class="px-2 py-1 rounded-md text-[11px] font-black inline-block w-full text-center {daysLeft <
+										7
+											? 'bg-red-600 text-white animate-pulse'
+											: daysLeft < 21
+												? 'bg-orange-100 text-orange-700'
+												: daysLeft < 45
+													? 'bg-yellow-100 text-yellow-800'
+													: 'bg-emerald-100 text-emerald-700'}"
+									>
+										{dailyBurn > 0 ? Math.round(daysLeft) + ' days' : '∞'}
+									</span>
 								</td>
-								<td class="px-4 py-3 text-right font-bold text-foreground">
-									£{(
-										Math.max(0, supply.current_stock || 0) * getEstimatedUnitCost(supply)
-									).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+								<td class="px-4 py-3 text-right font-mono text-xs">
+									£{(currentStock * unitCost).toFixed(2)}
+								</td>
+								<td class="px-4 py-3 text-right">
+									<div class="flex flex-col items-end gap-1">
+										<div class="flex items-center gap-1">
+											{#if cumUsagePercent <= 80}
+												<span class="bg-amber-100 text-amber-700 text-[9px] font-black px-1 rounded"
+													>A</span
+												>
+											{/if}
+											<span class="text-[10px] font-medium">{impactPercent.toFixed(1)}%</span>
+										</div>
+										<div class="w-12 h-1 bg-muted rounded-full overflow-hidden">
+											<div
+												class="h-full {cumUsagePercent <= 80 ? 'bg-amber-500' : 'bg-primary'}"
+												style="width: {impactPercent}%"
+											></div>
+										</div>
+										<span class="text-[9px] text-muted-foreground"
+											>Cum: {cumUsagePercent.toFixed(0)}%</span
+										>
+									</div>
 								</td>
 								<td class="px-4 py-3 text-right">
 									<div class="flex justify-end gap-2">
 										<button
-											class="text-primary hover:underline font-medium text-xs"
+											class="text-primary hover:underline font-medium text-xs whitespace-nowrap"
 											onclick={() => openEditSupply(supply)}>Edit</button
 										>
 										<button
-											class="text-primary hover:underline font-medium text-xs"
+											class="text-primary hover:underline font-medium text-xs whitespace-nowrap"
 											onclick={() => openAdjustStock(supply)}>Adjust</button
 										>
 										<button
-											class="text-red-500 hover:underline font-medium text-xs"
+											class="text-red-500 hover:underline font-medium text-xs whitespace-nowrap"
 											onclick={() => deleteSupply(supply.id)}>Delete</button
 										>
 									</div>
@@ -1054,7 +1357,7 @@
 							</tr>
 							{#if showAdjustModal && adjustSupplyId === supply.id}
 								<tr class="bg-muted/20 border-l-4 border-l-primary">
-									<td colspan="9" class="p-4">
+									<td colspan="11" class="p-4">
 										<div class="grid grid-cols-1 sm:grid-cols-6 gap-4 items-end">
 											<div class="space-y-1 sm:col-span-1">
 												<span class="text-xs font-medium text-muted-foreground block">Current</span>
@@ -1123,7 +1426,7 @@
 							{/if}
 							{#if showSupplyForm && editSupplyId === supply.id}
 								<tr class="bg-muted/20 border-l-4 border-l-primary">
-									<td colspan="9" class="p-4">
+									<td colspan="11" class="p-4">
 										<div class="grid grid-cols-1 sm:grid-cols-5 gap-4 items-end">
 											<div class="space-y-1 sm:col-span-1">
 												<label class="text-xs font-medium" for="sName">Name</label>
@@ -1181,7 +1484,7 @@
 						{/each}
 						{#if data.supplies.length === 0}
 							<tr
-								><td colspan="5" class="px-4 py-8 text-center text-muted-foreground"
+								><td colspan="11" class="px-4 py-8 text-center text-muted-foreground"
 									>No supplies found in database.</td
 								></tr
 							>
@@ -1416,7 +1719,7 @@
 							<tbody class="divide-y relative bg-card">
 								{#each data.unmappedOrders as order}
 									{#each order.items as item}
-										{#if !mappedActiveSkus.includes(item.seller_sku)}
+										{#if item.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(item.seller_sku)}
 											<tr class="hover:bg-muted/30">
 												<td class="px-4 py-3 font-mono">{order.amazon_order_id}</td>
 												<td class="px-4 py-3 font-mono text-xs">
@@ -1425,7 +1728,13 @@
 												</td>
 												<td class="px-4 py-3 text-xs line-clamp-2 my-2">{item.title}</td>
 												<td class="px-4 py-3">
-													{#if item.costs?.boxReason}
+													{#if item.costs?.boxReason === 'Mapped'}
+														<span
+															class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800"
+														>
+															Mapped
+														</span>
+													{:else if item.costs?.boxReason}
 														<span
 															class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800"
 														>

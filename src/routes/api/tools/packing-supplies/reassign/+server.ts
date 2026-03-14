@@ -35,12 +35,14 @@ export async function GET({ url }) {
 export async function POST({ request }) {
   try {
     const { sku, newBoxCode } = await request.json();
+    console.log(`[Reassign DEBUG] Request received for SKU: ${sku}, newBoxCode: ${newBoxCode}`);
     if (!sku || !newBoxCode) return json({ error: 'Missing fields' }, { status: 400 });
 
     const [w, h, d] = newBoxCode.split('x').map(n => parseFloat(n));
+    console.log(`[Reassign DEBUG] Parsed dimensions: W:${w}, H:${h}, D:${d}`);
 
-    // Update the inventory dimensions for this SKU
-    const { error } = await db
+    // 1. Update the inventory dimensions for this SKU
+    const { data: invUpdate, error: invError } = await db
       .from('inventory')
       .update({
         width: w,
@@ -48,11 +50,39 @@ export async function POST({ request }) {
         depth: d,
         updated_at: new Date().toISOString()
       })
-      .eq('sku', sku);
+      .eq('sku', sku)
+      .select();
 
-    if (error) throw error;
+    if (invError) {
+      console.error(`[Reassign DEBUG] Inventory update error for SKU ${sku}:`, invError);
+      throw invError;
+    }
+    console.log(`[Reassign DEBUG] Inventory update successful for SKU ${sku}. Rows updated:`, invUpdate?.length || 0);
 
-    return json({ success: true });
+    // 2. We use 'item_note' to store the persistent box_code override
+    // since the schema cache shows 'box_code' is missing from the table.
+    const { data: mapUpdate, error: mapError } = await db
+      .from('sku_asin_mapping')
+      .update({
+        item_note: newBoxCode,
+        updated_at: new Date().toISOString()
+      })
+      .eq('seller_sku', sku)
+      .select();
+
+    if (mapError) {
+      console.warn(`[Reassign DEBUG] Could not update sku_asin_mapping for ${sku}, but inventory updated. Error:`, mapError);
+    } else {
+      console.log(`[Reassign DEBUG] sku_asin_mapping (item_note) update successful for SKU ${sku}. Rows updated:`, mapUpdate?.length || 0);
+    }
+
+    return json({ 
+      success: true, 
+      details: { 
+        inventoryUpdated: !!invUpdate?.length, 
+        mappingUpdated: !!mapUpdate?.length 
+      } 
+    });
   } catch (error: any) {
     console.error('Reassign box error:', error);
     return json({ error: error.message }, { status: 500 });

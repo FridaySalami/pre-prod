@@ -49,9 +49,13 @@ export async function load() {
     console.error('Error fetching history:', historyError);
   }
 
-  // --- Phase 3: Fetch 30-day usage from the ledger ---
+  // --- Phase 3: Fetch multi-window usage from the ledger ---
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const twoDaysAgo = new Date();
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
   const { data: usageLedger, error: usageError } = await db
     .from('packing_inventory_ledger')
@@ -60,35 +64,50 @@ export async function load() {
     .gte('created_at', thirtyDaysAgo.toISOString());
 
   if (usageError) {
-    console.error('Error fetching 30-day usage ledger:', usageError);
+    console.error('Error fetching usage ledger:', usageError);
   }
 
-  // Determine how many days of data we actually have
-  let usageDays = 30;
+  // Aggregate usage into maps for 2d, 7d, and 30d
+  const usageStats30d: Record<string, number> = {};
+  const usageStats7d: Record<string, number> = {};
+  const usageStats2d: Record<string, number> = {};
+  
+  // Track how many days of data we actually have in the ledger (max 30)
+  let earliestDate = new Date();
+
   if (usageLedger && usageLedger.length > 0) {
-    const dates = usageLedger.map((r) => new Date(r.created_at).getTime());
-    const minDate = Math.min(...dates);
-    const now = new Date().getTime();
-    const diffDays = Math.ceil((now - minDate) / (1000 * 60 * 60 * 24));
-    // Use at least 1 day to avoid division by zero, max 30 as per query
-    usageDays = Math.max(1, Math.min(30, diffDays));
-  }
+    const twoDaysTime = twoDaysAgo.getTime();
+    const sevenDaysTime = sevenDaysAgo.getTime();
 
-  // Aggregate usage into a map: { supply_id: total_consumed_past_X_days }
-  const usageStats: Record<string, number> = {};
-  if (usageLedger) {
     usageLedger.forEach((row) => {
-      // change_amount will be negative for usage, so we make it positive to represent "consumed count"
       const consumed = Math.abs(row.change_amount || 0);
-      usageStats[row.supply_id] = (usageStats[row.supply_id] || 0) + consumed;
+      const createdAtDate = new Date(row.created_at);
+      const createdAt = createdAtDate.getTime();
+      
+      if (createdAtDate < earliestDate) earliestDate = createdAtDate;
+
+      // Add to 30d stats
+      usageStats30d[row.supply_id] = (usageStats30d[row.supply_id] || 0) + consumed;
+      
+      // Add to 7d stats if within range
+      if (createdAt >= sevenDaysTime) {
+        usageStats7d[row.supply_id] = (usageStats7d[row.supply_id] || 0) + consumed;
+      }
+      
+      // Add to 2d stats if within range
+      if (createdAt >= twoDaysTime) {
+        usageStats2d[row.supply_id] = (usageStats2d[row.supply_id] || 0) + consumed;
+      }
     });
   }
+
+  const daysOfData = Math.max(1, Math.ceil((new Date().getTime() - earliestDate.getTime()) / (1000 * 60 * 60 * 24)));
   // -----------------------------------------------------
 
   // --- Phase 4: Fetch unmapped orders for review ---
   const { data: unmapped } = await db
     .from('amazon_order_packaging')
-    .select('amazon_order_id, box_code, calculated_at')
+    .select('amazon_order_id, box_code, box_supply_id, calculated_at')
     .is('box_supply_id', null)
     .neq('box_code', '0x0x0')
     .order('calculated_at', { ascending: false })
@@ -155,8 +174,10 @@ export async function load() {
     suppliers: suppliers || [],
     supplies: supplies || [],
     history: history || [],
-    usageStats, // Pass the new stats dictionary down to the page
-    usageDays, // How many days of data we actually have
+    usageStats30d,
+    usageStats7d,
+    usageStats2d,
+    daysOfData,
     unmappedOrders
   };
 }
