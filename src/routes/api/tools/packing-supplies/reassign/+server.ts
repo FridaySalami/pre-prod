@@ -61,10 +61,18 @@ export async function POST({ request }) {
 
     // 2. We use 'item_note' to store the persistent box_code override
     // since the schema cache shows 'box_code' is missing from the table.
+    // ALSO update box_supply_id if we can find it
+    const { data: supplyRes } = await db
+      .from('packing_supplies')
+      .select('id')
+      .eq('code', newBoxCode)
+      .single();
+
     const { data: mapUpdate, error: mapError } = await db
       .from('sku_asin_mapping')
       .update({
         item_note: newBoxCode,
+        box_supply_id: supplyRes?.id || null,
         updated_at: new Date().toISOString()
       })
       .eq('seller_sku', sku)
@@ -76,23 +84,21 @@ export async function POST({ request }) {
       console.log(`[Reassign DEBUG] sku_asin_mapping (item_note) update successful for SKU ${sku}. Rows updated:`, mapUpdate?.length || 0);
     }
 
-    // 3. Update any orders that are currently marked as "Manual Required" (0x0x0)
-    // that contain this SKU, so the Review tab updates immediately.
-    const { data: ordersToUpdate } = await db
+    // 3. Update any orders that contain this SKU
+    const { data: orderItems } = await db
       .from('amazon_order_items')
       .select('amazon_order_id')
       .eq('seller_sku', sku);
 
-    if (ordersToUpdate && ordersToUpdate.length > 0) {
-      const orderIds = Array.from(new Set(ordersToUpdate.map((o: any) => o.amazon_order_id)));
+    if (orderItems && orderItems.length > 0) {
+      const orderIds = Array.from(new Set(orderItems.map((o: any) => o.amazon_order_id)));
 
       // Update those orders in amazon_order_packaging
-      // We update ALL orders for this SKU if they don't have a specific supply assigned yet,
-      // or if they are currently marked as "Manual Required" (0x0x0).
       const { error: packagingError } = await db
         .from('amazon_order_packaging')
         .update({
           box_code: newBoxCode,
+          box_supply_id: supplyRes?.id || null,
           calculated_at: new Date().toISOString()
         })
         .in('amazon_order_id', orderIds);

@@ -19,9 +19,12 @@
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import BoxSKUListModal from '$lib/components/BoxSKUListModal.svelte';
 
-	export let data: any = { supplies: [] };
+	export let data: any = { supplies: [], suppliers: [], history: [] };
 
-	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history', 'unmapped', 'sku-search', 'review'
+	// SKU Management Redirect - handled via window.open now
+	// let activeTab = $page.url.searchParams.get('tab') || 'log';
+
+	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history'
 
 	function handleDateChange(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -39,34 +42,8 @@
 		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
-	// SKU Search State
-	let skuSearchQuery = '';
-	let skuSearchResults: any[] = [];
-	let isSearchingSkus = false;
-
-	async function searchSkus() {
-		if (skuSearchQuery.length < 2) {
-			skuSearchResults = [];
-			return;
-		}
-
-		isSearchingSkus = true;
-		try {
-			const res = await fetch(
-				`/api/tools/packing-supplies/search?q=${encodeURIComponent(skuSearchQuery)}`
-			);
-			const data = await res.json();
-			skuSearchResults = data.results || [];
-		} catch (e) {
-			console.error('Search error:', e);
-		} finally {
-			isSearchingSkus = false;
-		}
-	}
-
-	$: if (skuSearchQuery === '') {
-		skuSearchResults = [];
-	}
+	// Local mapping tracking
+	let mappedActiveSkus: string[] = [];
 
 	// Local mapping tracking for search tab so it updates instantly
 	let searchMappingUpdates: Record<string, string> = {};
@@ -277,17 +254,8 @@
 	let currentAsin = '';
 	let currentTitle = '';
 	let initiallyUnmappedCount = 0;
-	let mappedActiveSkus: string[] = [];
 
-	$: activeUnmappedOrdersCount =
-		data?.unmappedOrders
-			?.flatMap((o: any) => o.items)
-			.filter(
-				(i: any) =>
-					i.costs?.boxCode !== '0x0x0' &&
-					i.costs?.boxReason !== 'Mapped' &&
-					!mappedActiveSkus.includes(i.seller_sku)
-			).length || 0;
+	$: activeUnmappedOrdersCount = 0;
 
 	function openCostModal(sku: string, asin: string, title: string) {
 		currentSku = sku;
@@ -940,11 +908,19 @@
 </script>
 
 <div class="flex flex-col gap-6 p-6 max-w-[1600px] mx-auto w-full">
-	<div>
-		<h1 class="text-3xl font-bold tracking-tight">Packing Supplies</h1>
-		<p class="text-muted-foreground mt-2">
-			Manage box inventory, track costs, and log incoming supplier invoices.
-		</p>
+	<div class="flex justify-between items-center">
+		<div>
+			<h1 class="text-3xl font-bold tracking-tight">Packing Supplies</h1>
+			<p class="text-muted-foreground mt-2">
+				Manage box inventory, track costs, and log incoming supplier invoices.
+			</p>
+		</div>
+		<Button
+			variant="outline"
+			onclick={() => goto('/dashboard/tools/packing-supplies/sku-management')}
+		>
+			<Search class="h-4 w-4 mr-2" /> SKU Management
+		</Button>
 	</div>
 
 	<!-- Navigation Tabs -->
@@ -956,7 +932,7 @@
 				: 'text-muted-foreground hover:bg-muted'}"
 			onclick={() => setTab('log')}
 		>
-			<Plus class="h-4 w-4" /> Log Arrival / Invoice
+			<Plus class="h-4 w-4" /> Log Arrival
 		</button>
 		<button
 			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
@@ -965,7 +941,7 @@
 				: 'text-muted-foreground hover:bg-muted'}"
 			onclick={() => setTab('inventory')}
 		>
-			<Package class="h-4 w-4" /> Current Inventory
+			<Package class="h-4 w-4" /> Inventory
 		</button>
 		<button
 			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
@@ -974,34 +950,7 @@
 				: 'text-muted-foreground hover:bg-muted'}"
 			onclick={() => setTab('history')}
 		>
-			<ClipboardList class="h-4 w-4" /> Order History
-		</button>
-		<button
-			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
-			'unmapped'
-				? 'bg-primary/10 text-primary'
-				: 'text-muted-foreground hover:bg-muted'}"
-			onclick={() => setTab('unmapped')}
-		>
-			<AlertCircle class="h-4 w-4" /> Unmapped ({activeUnmappedOrdersCount})
-		</button>
-		<button
-			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
-			'sku-search'
-				? 'bg-primary/10 text-primary'
-				: 'text-muted-foreground hover:bg-muted'}"
-			onclick={() => setTab('sku-search')}
-		>
-			<Search class="h-4 w-4" /> SKU Search
-		</button>
-		<button
-			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
-			'review'
-				? 'bg-primary/10 text-primary'
-				: 'text-muted-foreground hover:bg-muted'}"
-			onclick={() => setTab('review')}
-		>
-			<PackageSearch class="h-4 w-4" /> Review
+			<FileText class="h-4 w-4" /> History
 		</button>
 	</div>
 
@@ -2333,483 +2282,6 @@
 							{/each}
 						</div>
 					{/if}
-				</div>
-			</div>
-		{/if}
-
-		{#if activeTab === 'unmapped'}
-			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
-				<div class="mb-6">
-					<h2 class="text-xl font-semibold">Unmapped Orders Review</h2>
-					<p class="text-sm text-muted-foreground">
-						Orders where the packaging could not be automatically determined. Assign a box size to
-						the SKUs below to resolve.
-					</p>
-				</div>
-
-				<div class="overflow-x-auto rounded-lg border">
-					<table class="w-full text-sm">
-						<thead class="bg-muted/50 border-b">
-							<tr>
-								<th class="px-4 py-3 text-left font-medium">Order Details</th>
-								<th class="px-4 py-3 text-left font-medium">Items to Map</th>
-								<th class="px-4 py-3 text-right font-medium">Action</th>
-							</tr>
-						</thead>
-						<tbody class="divide-y">
-							{#each data.unmappedOrders as order}
-								{@const activeItems = order.items.filter(
-									(i: any) =>
-										i.costs?.boxCode !== '0x0x0' &&
-										i.costs?.boxReason !== 'Mapped' &&
-										!mappedActiveSkus.includes(i.seller_sku)
-								)}
-								{#if activeItems.length > 0}
-									<tr class="hover:bg-muted/30 transition-colors">
-										<td class="px-4 py-4">
-											<div class="font-bold flex items-center gap-2">
-												{order.amazon_order_id}
-												{#if order.is_prime}<span
-														class="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-black"
-														>PRIME</span
-													>{/if}
-											</div>
-											<div class="text-[10px] text-muted-foreground mt-1">
-												Box Code: <code class="bg-muted px-1 rounded">{order.box_code}</code>
-											</div>
-											<div class="text-[10px] text-muted-foreground">
-												Calculated: {new Date(order.calculated_at).toLocaleString()}
-											</div>
-										</td>
-										<td class="px-4 py-4">
-											<div class="flex flex-col gap-3">
-												{#each activeItems as item}
-													<div
-														class="flex items-start justify-between gap-4 border-l-2 border-amber-300 pl-3"
-													>
-														<div class="min-w-0">
-															<p class="font-medium line-clamp-1 text-xs">{item.title}</p>
-															<p class="text-[10px] text-muted-foreground font-mono">
-																{item.seller_sku} | {item.asin}
-															</p>
-															<p class="text-[10px] text-red-600 font-bold mt-0.5">
-																Reason: {item.costs?.boxReason || 'Unknown Mapping Error'}
-															</p>
-														</div>
-														<div class="flex flex-col gap-2 shrink-0">
-															<select
-																class="h-7 border rounded text-[10px] px-1 focus:ring-1 focus:ring-primary outline-none"
-																onchange={(e) =>
-																	handleQuickAssign(item.seller_sku, e.currentTarget.value)}
-															>
-																<option value="">Quick Assign...</option>
-																{#each boxOptions as box}
-																	<option value={box.code}>{box.name}</option>
-																{/each}
-															</select>
-															<button
-																class="text-[10px] text-primary hover:underline font-bold text-right"
-																onclick={() =>
-																	openCostModal(item.seller_sku, item.asin, item.title)}
-															>
-																Advanced Mapping
-															</button>
-														</div>
-													</div>
-												{/each}
-											</div>
-										</td>
-										<td class="px-4 py-4 text-right">
-											<Button
-												variant="outline"
-												size="sm"
-												onclick={() => openReassignModal(order.box_code)}
-											>
-												<Search class="h-3.5 w-3.5 mr-2" />
-												Analyze Size
-											</Button>
-										</td>
-									</tr>
-								{/if}
-							{:else}
-								<tr>
-									<td colspan="3" class="px-4 py-12 text-center text-muted-foreground italic">
-										All orders are currently mapped correctly.
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			</div>
-		{/if}
-
-		{#if activeTab === 'sku-search'}
-			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
-				<div class="flex flex-col gap-4 mb-6">
-					<div>
-						<h2 class="text-xl font-semibold">SKU / Product Search</h2>
-						<p class="text-sm text-muted-foreground">
-							Quickly search for any SKU or Product to manually override its box size mapping.
-						</p>
-					</div>
-
-					<div class="flex gap-2 max-w-xl">
-						<div class="relative flex-1">
-							<Search
-								class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
-							/>
-							<input
-								type="text"
-								placeholder="Search by SKU, ASIN or Product Name..."
-								class="w-full pl-10 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-								bind:value={skuSearchQuery}
-								onkeyup={(e) => e.key === 'Enter' && searchSkus()}
-							/>
-						</div>
-						<Button onclick={searchSkus} disabled={isSearchingSkus}>
-							{isSearchingSkus ? 'Searching...' : 'Search'}
-						</Button>
-					</div>
-				</div>
-
-				{#if skuSearchResults.length > 0}
-					<div class="overflow-x-auto rounded-lg border">
-						<table class="w-full text-sm">
-							<thead class="bg-muted/50 border-b">
-								<tr>
-									<th class="px-4 py-3 text-left font-medium">Product</th>
-									<th class="px-4 py-3 text-left font-medium">SKU / ASIN</th>
-									<th class="px-4 py-3 text-left font-medium">Current Status</th>
-									<th class="px-4 py-3 text-left font-medium w-64">Update Mapping</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y text-xs">
-								{#each skuSearchResults as result}
-									<tr class="hover:bg-muted/30 transition-colors">
-										<td class="px-4 py-4">
-											<div class="font-medium line-clamp-2">{result.name}</div>
-											<div class="mt-1 flex flex-wrap gap-1">
-												{#if result.linnworks?.props?.length > 0}
-													{#each result.linnworks.props || [] as prop}
-														{@const isBoxProp =
-															prop.name.toLowerCase().includes('box') ||
-															prop.name.toLowerCase().includes('pack')}
-														<span
-															class="text-[9px] {isBoxProp
-																? result.box_code === prop.value
-																	? 'bg-green-100 text-green-800 border-green-300 font-bold'
-																	: 'bg-amber-100 text-amber-800 border-amber-300 font-bold'
-																: 'bg-muted text-muted-foreground border-border'} px-1 border rounded"
-															title="Property Type: {prop.type}"
-														>
-															{prop.name}: {prop.value}
-															{#if isBoxProp && result.box_code === prop.value}
-																<span class="ml-1">✓</span>
-															{/if}
-														</span>
-													{/each}
-												{:else if result.linnworks}
-													<div class="text-[9px] text-muted-foreground italic">
-														No extended properties found for this SKU in Linnworks.
-													</div>
-												{/if}
-											</div>
-										</td>
-										<td class="px-4 py-4 text-center">
-											<div class="text-foreground font-semibold">{result.sku}</div>
-											<div class="text-muted-foreground">{result.asin}</div>
-											{#if result.linnworks?.mismatch}
-												<div
-													class="mt-1 text-[9px] text-red-600 font-bold bg-red-50 px-1 rounded border border-red-200 inline-block"
-													title="Local: {result.inventory_dims || '0x0x0'} vs Linnworks: {result
-														.linnworks?.dims?.w}x{result.linnworks?.dims?.h}x{result.linnworks?.dims
-														?.d}"
-												>
-													DIM MISMATCH
-												</div>
-											{:else if result.linnworks?.dims}
-												<div
-													class="mt-1 text-[9px] text-green-600 font-medium bg-green-50 px-1 rounded border border-green-200 inline-block"
-												>
-													DIMS SYNCED
-												</div>
-											{/if}
-										</td>
-										<td class="px-4 py-4">
-											{#if searchMappingUpdates[result.sku] || result.box_code}
-												<div class="flex flex-col gap-1">
-													<div class="flex items-center gap-2">
-														<span
-															class="inline-flex items-center rounded-full {result.supply_match
-																? 'bg-blue-100 text-blue-800 border-blue-300'
-																: 'bg-amber-50 text-amber-700 border-amber-200'} px-2.5 py-0.5 text-[11px] font-bold border-2 shadow-sm"
-														>
-															{searchMappingUpdates[result.sku] || result.box_code}
-														</span>
-														{#if !result.supply_match && (searchMappingUpdates[result.sku] || result.box_code)}
-															<span
-																class="text-[9px] bg-red-100 text-red-700 px-1 rounded border border-red-200 animate-pulse font-bold"
-																title="The box code specified doesn't exist in your catalog!"
-															>
-																CATALOG ERROR
-															</span>
-														{/if}
-													</div>
-
-													{#if result.supply_match}
-														<div class="flex items-center gap-1.5">
-															<span
-																class="text-[10px] px-1 rounded {result.supply_match.stock <= 5
-																	? 'bg-red-500 text-white font-bold'
-																	: result.supply_match.stock <= 20
-																		? 'bg-orange-400 text-white'
-																		: 'text-muted-foreground bg-muted'} "
-															>
-																Stock: {result.supply_match.stock}
-															</span>
-															<span class="text-[9px] text-muted-foreground"
-																>{result.supply_match.name}</span
-															>
-														</div>
-													{/if}
-
-													{#if result.linnworks?.dims}
-														<span class="text-[9px] text-muted-foreground font-mono">
-															LW: {result.linnworks.dims.w}x{result.linnworks.dims.h}x{result
-																.linnworks.dims.d}
-														</span>
-													{/if}
-												</div>
-											{:else}
-												<span class="text-muted-foreground italic text-xs">Not Mapped</span>
-											{/if}
-										</td>
-										<td class="px-4 py-4">
-											<div class="flex items-center gap-2">
-												<select
-													class="w-full h-8 border rounded-md px-2 text-[11px] focus:ring-1 focus:ring-primary outline-none"
-													value={searchMappingUpdates[result.sku] || result.box_code}
-													onchange={(e) =>
-														handleSearchQuickAssign(result.sku, e.currentTarget.value)}
-												>
-													<option value="">Select Box...</option>
-													{#each boxOptions as box}
-														<option value={box.code}>{box.name} ({box.code})</option>
-													{/each}
-												</select>
-												<Button
-													variant="ghost"
-													size="sm"
-													class="h-8 w-8 p-0"
-													onclick={() => openCostModal(result.sku, result.asin, result.name)}
-													title="Advanced Settings"
-												>
-													<Maximize class="h-3.5 w-3.5" />
-												</Button>
-											</div>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{:else if skuSearchQuery.length >= 2 && !isSearchingSkus}
-					<div
-						class="text-center p-12 text-muted-foreground bg-muted/20 border border-dashed rounded-xl"
-					>
-						No matching products or SKUs found.
-					</div>
-				{:else if !isSearchingSkus}
-					<div
-						class="text-center p-12 text-muted-foreground bg-muted/20 border border-dashed rounded-xl"
-					>
-						Type at least 2 characters to search for a product.
-					</div>
-				{/if}
-			</div>
-		{/if}
-
-		{#if activeTab === 'review'}
-			<div
-				class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full overflow-hidden"
-			>
-				<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-					<div>
-						<h2 class="text-xl font-semibold flex items-center gap-2">
-							<PackageSearch class="h-5 w-5 text-primary" />
-							Daily Dispatch Review
-						</h2>
-						<p class="text-sm text-muted-foreground mt-1">
-							Review historical box allocations and costs for a specific date.
-						</p>
-					</div>
-
-					<div class="flex items-center gap-3 bg-muted/30 p-2 rounded-lg border">
-						<span class="text-sm font-medium px-2">Select Date:</span>
-						<input
-							type="date"
-							class="bg-background border rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-							value={data.selectedDate}
-							onchange={handleDateChange}
-						/>
-					</div>
-				</div>
-
-				<div class="overflow-x-auto -mx-6">
-					<table class="w-full text-left border-collapse min-w-[1000px]">
-						<thead>
-							<tr class="bg-muted/50 text-muted-foreground text-[11px] uppercase tracking-wider">
-								<th class="px-6 py-3 font-bold border-b">Order Info</th>
-								<th class="px-6 py-3 font-bold border-b">Items & Analysis</th>
-								<th class="px-6 py-3 font-bold border-b text-center">Allocated Box</th>
-							</tr>
-						</thead>
-						<tbody class="divide-y text-xs">
-							{#each data.reviewOrders || [] as order}
-								<tr
-									class="hover:bg-muted/20 transition-all border-l-4 {order.box_code === '0x0x0'
-										? 'border-l-red-500 bg-red-50/10'
-										: order.box_supply_id
-											? 'border-l-green-500'
-											: 'border-l-amber-500'}"
-								>
-									<td class="px-6 py-4 align-top">
-										<div class="font-bold text-sm text-foreground">{order.amazon_order_id}</div>
-										<div class="text-muted-foreground font-mono text-[10px] mt-1">
-											{new Date(order.purchase_date).toLocaleString()}
-										</div>
-										{#if order.is_prime}
-											<div class="mt-2">
-												<span
-													class="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-bold border border-blue-200"
-												>
-													PRIME
-												</span>
-											</div>
-										{/if}
-									</td>
-									<td class="px-6 py-4 align-top">
-										<div class="space-y-4">
-											{#each order.items || [] as item}
-												<div
-													class="flex flex-col gap-1.5 p-3 bg-white/50 rounded border border-border/50"
-												>
-													<div class="flex justify-between items-start gap-4">
-														<div class="flex-1">
-															<div class="font-bold text-xs text-foreground line-clamp-1">
-																{item.title}
-															</div>
-															<div class="flex items-center gap-2 mt-1">
-																<span class="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono"
-																	>{item.seller_sku}</span
-																>
-																<span class="text-[10px] text-muted-foreground"
-																	>Qty: <span class="font-bold text-foreground"
-																		>{item.quantity_ordered}</span
-																	></span
-																>
-															</div>
-														</div>
-														<div class="flex flex-col items-end">
-															<span class="text-[10px] font-bold text-primary"
-																>£{item.item_price_amount || '0.00'}</span
-															>
-														</div>
-													</div>
-
-													{#if item.costs}
-														<div class="mt-2 text-[10px] w-fit">
-															<div
-																class="px-3 py-1.5 rounded border flex flex-col items-center justify-center transition-all shadow-sm min-w-[140px]"
-																class:bg-green-100={order.box_code && order.box_code !== '0x0x0'}
-																class:border-green-200={order.box_code &&
-																	order.box_code !== '0x0x0'}
-																class:bg-blue-100={order.box_code === '0x0x0'}
-																class:border-blue-200={order.box_code === '0x0x0'}
-															>
-																<div
-																	class="font-black uppercase tracking-tighter text-[8px]"
-																	class:text-green-800={order.box_code &&
-																		order.box_code !== '0x0x0'}
-																	class:text-blue-800={order.box_code === '0x0x0'}
-																>
-																	Assigned Box
-																</div>
-																<div
-																	class="font-black text-[12px] mt-0.5"
-																	class:text-green-900={order.box_code &&
-																		order.box_code !== '0x0x0'}
-																	class:text-blue-900={order.box_code === '0x0x0'}
-																>
-																	{#if order.box_code === '0x0x0'}
-																		Own Box
-																	{:else}
-																		{data.supplies.find((s: any) => s.id === order.box_supply_id)
-																			?.name ||
-																			order.box_code ||
-																			'N/A'}
-																	{/if}
-																</div>
-															</div>
-														</div>
-														<div class="mt-1 text-[8px] text-gray-400 italic">
-															Reason: {item.costs.reason || 'Standard algorithm'}
-														</div>
-													{:else}
-														<div
-															class="mt-2 text-[10px] text-amber-600 italic bg-amber-50 p-1.5 rounded border border-amber-100"
-														>
-															No cost analysis available for this SKU.
-														</div>
-													{/if}
-												</div>
-											{/each}
-										</div>
-									</td>
-									<td class="px-6 py-4 align-top text-center">
-										<div class="inline-flex flex-col items-center gap-1">
-											{#if order.box_code}
-												<span class="text-[8px] text-muted-foreground font-mono">UPDATE SIZE</span>
-											{:else}
-												<span
-													class="bg-amber-100 text-amber-800 px-3 py-1 rounded-full font-bold text-[10px] border border-amber-200"
-												>
-													UNALLOCATED
-												</span>
-											{/if}
-											<select
-												class="mt-1 text-[10px] bg-white border border-border rounded px-1 py-0.5 focus:ring-1 focus:ring-primary/20 outline-none transition-all w-24"
-												onchange={(e: Event) => {
-													const target = e.target as HTMLSelectElement;
-													if (target.value && order.items?.[0]?.seller_sku) {
-														quickAssignBox(order.items[0].seller_sku, target.value);
-													}
-												}}
-											>
-												<option value="">Update...</option>
-												{#each boxOptions as box}
-													<option value={box.code}>{box.name}</option>
-												{/each}
-											</select>
-										</div>
-									</td>
-								</tr>
-							{:else}
-								<tr>
-									<td
-										colspan="3"
-										class="px-6 py-20 text-center text-muted-foreground italic bg-muted/10"
-									>
-										<div class="flex flex-col items-center gap-2">
-											<PackageSearch class="h-10 w-10 text-muted-foreground/30" />
-											<p>No orders found for the selected date.</p>
-										</div>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
 				</div>
 			</div>
 		{/if}
