@@ -6,7 +6,8 @@ export async function load() {
   const { data: suppliers, error: suppliersError } = await db
     .from('packing_suppliers')
     .select('*')
-    .order('name');
+    .order('name')
+    .limit(5000);
 
   if (suppliersError) {
     console.error('Error fetching suppliers:', suppliersError);
@@ -23,7 +24,8 @@ export async function load() {
 			)
 		`)
     .eq('is_active', true)
-    .order('name');
+    .order('name')
+    .limit(5000);
 
   if (suppliesError) {
     console.error('Error fetching supplies:', suppliesError);
@@ -65,7 +67,8 @@ export async function load() {
     .from('packing_inventory_ledger')
     .select('supply_id, change_amount, created_at')
     .eq('movement_type', 'amazon_order_usage')
-    .gte('created_at', thirtyDaysAgo.toISOString());
+    .gte('created_at', thirtyDaysAgo.toISOString())
+    .limit(10000); // Increase limit to ensure all usage is captured
 
   if (usageError) {
     console.error('Error fetching usage ledger:', usageError);

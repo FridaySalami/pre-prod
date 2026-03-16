@@ -29,9 +29,9 @@ export async function GET({ url }) {
     console.log('Searching Linnworks for SKUs:', trimmedSkus);
 
     const [mappings, lwItems, supplies] = await Promise.all([
-      db.from('sku_asin_mapping').select('seller_sku, asin, item_note').in('seller_sku', skus),
+      db.from('sku_asin_mapping').select('seller_sku, asin, item_note').in('seller_sku', skus).limit(5000),
       getStockItemsBySku(trimmedSkus),
-      db.from('packing_supplies').select('id, code, name, current_stock')
+      db.from('packing_supplies').select('id, code, name, current_stock').limit(5000)
     ]);
 
     const mappingMap = new Map(mappings.data?.map(m => [m.seller_sku, m]));

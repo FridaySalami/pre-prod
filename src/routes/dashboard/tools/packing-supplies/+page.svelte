@@ -1081,7 +1081,7 @@
 
 													<div class="flex items-center gap-2 md:gap-4 shrink-0">
 														<!-- Price Display (Procurement Tool improvement) -->
-														<div class="flex flex-col items-center min-w-[80px]">
+														<div class="flex flex-col items-center min-w-20">
 															<span class="text-[10px] font-semibold text-muted-foreground mb-0.5"
 																>Unit Spend</span
 															>
@@ -1215,7 +1215,7 @@
 
 													<div class="flex items-center gap-2 md:gap-4 shrink-0">
 														<!-- Price Display (Procurement Tool improvement) -->
-														<div class="flex flex-col items-center min-w-[80px]">
+														<div class="flex flex-col items-center min-w-20">
 															<span class="text-[10px] font-semibold text-muted-foreground mb-0.5"
 																>Unit Spend</span
 															>
