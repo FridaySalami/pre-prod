@@ -80,7 +80,7 @@ export async function load() {
   const usageStats2d: Record<string, number> = {};
   const usageStats3d: Record<string, number> = {};
   const usageStatsPrev3d: Record<string, number> = {};
-  
+
   // Track how many days of data we actually have in the ledger (max 30)
   let earliestDate = new Date();
 
@@ -90,21 +90,21 @@ export async function load() {
     const sixDaysTime = sixDaysAgo.getTime();
     const sevenDaysTime = sevenDaysAgo.getTime();
 
-    usageLedger.forEach((row) => {
+    usageLedger.forEach((row: any) => {
       const consumed = Math.abs(row.change_amount || 0);
       const createdAtDate = new Date(row.created_at);
       const createdAt = createdAtDate.getTime();
-      
+
       if (createdAtDate < earliestDate) earliestDate = createdAtDate;
 
       // Add to 30d stats
       usageStats30d[row.supply_id] = (usageStats30d[row.supply_id] || 0) + consumed;
-      
+
       // Add to 7d stats if within range
       if (createdAt >= sevenDaysTime) {
         usageStats7d[row.supply_id] = (usageStats7d[row.supply_id] || 0) + consumed;
       }
-      
+
       // Add to 2d stats if within range
       if (createdAt >= twoDaysTime) {
         usageStats2d[row.supply_id] = (usageStats2d[row.supply_id] || 0) + consumed;
@@ -133,7 +133,7 @@ export async function load() {
 
   let unmappedOrders: any[] = [];
   if (unmapped && unmapped.length > 0) {
-    const orderIds = unmapped.map(u => u.amazon_order_id);
+    const orderIds = unmapped.map((u: any) => u.amazon_order_id);
     const { data: items } = await db
       .from('amazon_order_items')
       .select('amazon_order_id, seller_sku, asin, title, item_price_amount, quantity_ordered, item_tax_amount')
@@ -145,23 +145,23 @@ export async function load() {
       .in('amazon_order_id', orderIds);
 
     // Reuse fetchOrdersData logic in a lightweight way to get reasons
-    const allSkus = Array.from(new Set(items?.map(i => i.seller_sku) || []));
+    const allSkus = Array.from(new Set(items?.map((i: any) => i.seller_sku) || []));
     const [inventoryRes, mappingRes, linnworksRes] = await Promise.all([
       db.from('inventory').select('*').in('sku', allSkus),
       db.from('sku_asin_mapping').select('*').in('seller_sku', allSkus),
       db.from('linnworks_composition_summary').select('*').in('parent_sku', allSkus)
     ]);
 
-    const inventoryMap = new Map(inventoryRes.data?.map(i => [i.sku, i]));
-    const mappingMap = new Map(mappingRes.data?.map(m => [m.seller_sku, m]));
-    const linnworksMap = new Map(linnworksRes.data?.map(l => [l.parent_sku, l]));
+    const inventoryMap = new Map(inventoryRes.data?.map((i: any) => [i.sku, i]));
+    const mappingMap = new Map(mappingRes.data?.map((m: any) => [m.seller_sku, m]));
+    const linnworksMap = new Map(linnworksRes.data?.map((l: any) => [l.parent_sku, l]));
 
     const calculator = new CostCalculator();
     await calculator.initializeDynamicPrices();
 
-    unmappedOrders = unmapped.map(u => {
-      const orderData = orders?.find(o => o.amazon_order_id === u.amazon_order_id);
-      const orderItems = (items?.filter((i: any) => i.amazon_order_id === u.amazon_order_id) || []).map(item => {
+    unmappedOrders = unmapped.map((u: any) => {
+      const orderData = orders?.find((o: any) => o.amazon_order_id === u.amazon_order_id);
+      const orderItems = (items?.filter((i: any) => i.amazon_order_id === u.amazon_order_id) || []).map((item: any) => {
         const itemPrice = item.item_price_amount ? parseFloat(item.item_price_amount) / item.quantity_ordered : 0;
         const itemTax = item.item_tax_amount !== null && item.item_tax_amount !== undefined
           ? parseFloat(item.item_tax_amount) / item.quantity_ordered

@@ -103,7 +103,7 @@ export async function GET({ url }) {
         const boxSizeProp = props.find((p: any) => {
           const name = (p.ProperyName || p.PropertyName || '').trim();
           const lowerName = name.toLowerCase();
-          
+
           if (exactPropNames.some(exact => exact.toLowerCase() === lowerName)) return true;
           return boxSizeKeywords.some(keyword => lowerName.includes(keyword));
         });
@@ -117,10 +117,10 @@ export async function GET({ url }) {
         // 2. Packaging Group Name (if not "Default" and not "0x0x0")
         // 3. Local inventory/mapping code
         const lwPackageGroup = lwItem?.PackageGroupName || lwItem?.DefaultPackageGroup;
-        
+
         // Priority: Ext Prop Value -> Package Group -> Manual Mapping/Effective Box
-        const finalBoxDisplay = (boxSizeProp?.PropertyValue || '').trim() || 
-                                (lwPackageGroup && lwPackageGroup !== 'Default' && lwPackageGroup !== '0x0x0' ? lwPackageGroup : effectiveBox);
+        const finalBoxDisplay = (boxSizeProp?.PropertyValue || '').trim() ||
+          (lwPackageGroup && lwPackageGroup !== 'Default' && lwPackageGroup !== '0x0x0' ? lwPackageGroup : effectiveBox);
 
         const matchedSupply = supplyMap.get(finalBoxDisplay);
 

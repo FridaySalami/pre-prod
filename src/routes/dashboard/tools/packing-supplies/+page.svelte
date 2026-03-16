@@ -2295,6 +2295,111 @@
 			</div>
 		{/if}
 
+		{#if activeTab === 'unmapped'}
+			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
+				<div class="mb-6">
+					<h2 class="text-xl font-semibold">Unmapped Orders Review</h2>
+					<p class="text-sm text-muted-foreground">
+						Orders where the packaging could not be automatically determined. Assign a box size to
+						the SKUs below to resolve.
+					</p>
+				</div>
+
+				<div class="overflow-x-auto rounded-lg border">
+					<table class="w-full text-sm">
+						<thead class="bg-muted/50 border-b">
+							<tr>
+								<th class="px-4 py-3 text-left font-medium">Order Details</th>
+								<th class="px-4 py-3 text-left font-medium">Items to Map</th>
+								<th class="px-4 py-3 text-right font-medium">Action</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y">
+							{#each data.unmappedOrders as order}
+								{@const activeItems = order.items.filter(
+									(i: any) =>
+										i.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(i.seller_sku)
+								)}
+								{#if activeItems.length > 0}
+									<tr class="hover:bg-muted/30 transition-colors">
+										<td class="px-4 py-4">
+											<div class="font-bold flex items-center gap-2">
+												{order.amazon_order_id}
+												{#if order.is_prime}<span
+														class="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-black"
+														>PRIME</span
+													>{/if}
+											</div>
+											<div class="text-[10px] text-muted-foreground mt-1">
+												Box Code: <code class="bg-muted px-1 rounded">{order.box_code}</code>
+											</div>
+											<div class="text-[10px] text-muted-foreground">
+												Calculated: {new Date(order.calculated_at).toLocaleString()}
+											</div>
+										</td>
+										<td class="px-4 py-4">
+											<div class="flex flex-col gap-3">
+												{#each activeItems as item}
+													<div
+														class="flex items-start justify-between gap-4 border-l-2 border-amber-300 pl-3"
+													>
+														<div class="min-w-0">
+															<p class="font-medium line-clamp-1 text-xs">{item.title}</p>
+															<p class="text-[10px] text-muted-foreground font-mono">
+																{item.seller_sku} | {item.asin}
+															</p>
+															<p class="text-[10px] text-red-600 font-bold mt-0.5">
+																Reason: {item.costs?.boxReason || 'Unknown Mapping Error'}
+															</p>
+														</div>
+														<div class="flex flex-col gap-2 shrink-0">
+															<select
+																class="h-7 border rounded text-[10px] px-1 focus:ring-1 focus:ring-primary outline-none"
+																onchange={(e) =>
+																	handleQuickAssign(item.seller_sku, e.currentTarget.value)}
+															>
+																<option value="">Quick Assign...</option>
+																{#each boxOptions as box}
+																	<option value={box.code}>{box.name}</option>
+																{/each}
+															</select>
+															<button
+																class="text-[10px] text-primary hover:underline font-bold text-right"
+																onclick={() =>
+																	openCostModal(item.seller_sku, item.asin, item.title)}
+															>
+																Advanced Mapping
+															</button>
+														</div>
+													</div>
+												{/each}
+											</div>
+										</td>
+										<td class="px-4 py-4 text-right">
+											<Button
+												variant="outline"
+												size="sm"
+												onclick={() => openReassignModal(order.box_code)}
+											>
+												<Search class="h-3.5 w-3.5 mr-2" />
+												Analyze Size
+											</Button>
+										</td>
+									</tr>
+								{/if}
+							{:else}
+								<tr>
+									<td colspan="3" class="px-4 py-12 text-center text-muted-foreground italic">
+										All orders are currently mapped correctly.
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		{/if}
+
 		{#if activeTab === 'sku-search'}
 			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
 				<div class="flex flex-col gap-4 mb-6">
