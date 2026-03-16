@@ -25,7 +25,7 @@ export class CostCalculator {
         `);
 
       if (supplies && supplies.length > 0) {
-        supplies.forEach(supply => {
+        supplies.forEach((supply: any) => {
           let totalQty = 0;
           let totalCost = 0;
 
@@ -229,7 +229,36 @@ export class CostCalculator {
 
       const baseCost = linnworksData?.total_value || 0;
       const boxCost = this.boxSizeCosts.get(box) || 0;
-      const materialCost = 0.35;
+
+      // Calculate Consumable Costs (Amortized per order)
+      // 1 box of "Tape Clear" every 400 orders
+      const clearTapeWAC = this.boxSizeCosts.get('Tape Clear') || 0;
+      const clearTapeCostPerOrder = clearTapeWAC / 400;
+
+      // 1 "Bubble wrap" every 300 orders
+      const bubbleWrapWAC = this.boxSizeCosts.get('Bubble wrap') || 0;
+      const bubbleWrapCostPerOrder = bubbleWrapWAC / 300;
+
+      // 1 box of "Fragile Tape" every 900 orders
+      const fragileTapeWAC = this.boxSizeCosts.get('Fragile Tape') || 0;
+      const fragileTapeCostPerOrder = fragileTapeWAC / 900;
+
+      // 1 box of "Pallet Wrap" every 2000 orders
+      const palletWrapWAC = this.boxSizeCosts.get('Pallet Wrap') || 0;
+      const palletWrapCostPerOrder = palletWrapWAC / 2000;
+
+      // 1 box of "track-paper" every 900 orders
+      const trackPaperWAC = this.boxSizeCosts.get('track-paper') || 0;
+      const trackPaperCostPerOrder = trackPaperWAC / 900;
+
+      // Base material cost (other consumables)
+      const otherMaterialCost = 0.35;
+      const materialCost = otherMaterialCost +
+        clearTapeCostPerOrder +
+        bubbleWrapCostPerOrder +
+        fragileTapeCostPerOrder +
+        palletWrapCostPerOrder +
+        trackPaperCostPerOrder;
 
       let fragileCharge = 0.00;
       if (options.customFragileCharge !== undefined) {
