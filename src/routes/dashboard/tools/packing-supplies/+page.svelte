@@ -21,7 +21,15 @@
 
 	export let data: any = { supplies: [] };
 
-	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history', 'unmapped', 'sku-search'
+	$: activeTab = $page.url.searchParams.get('tab') || 'log'; // 'log', 'inventory', 'history', 'unmapped', 'sku-search', 'review'
+
+	function handleDateChange(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const date = input.value;
+		const url = new URL($page.url);
+		url.searchParams.set('date', date);
+		goto(url.toString());
+	}
 
 	let showInvoiceSummaryPreview = false;
 
@@ -180,6 +188,21 @@
 	let showReassignModal = false;
 	let reassignBoxCode = '';
 
+	// Toast notification state
+	let toastNotifications: {
+		id: string;
+		message: string;
+		type: 'success' | 'error' | 'info' | 'warning';
+	}[] = [];
+
+	function addToast(message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') {
+		const id = Math.random().toString(36).substring(2, 9);
+		toastNotifications = [...toastNotifications, { id, message, type }];
+		setTimeout(() => {
+			toastNotifications = toastNotifications.filter((t) => t.id !== id);
+		}, 3000);
+	}
+
 	function openReassignModal(boxCode: string) {
 		reassignBoxCode = boxCode;
 		showReassignModal = true;
@@ -211,13 +234,20 @@
 			if (res.ok) {
 				mappedActiveSkus = [...mappedActiveSkus, sku];
 				console.log(`[UI DEBUG] SKU ${sku} added to mappedActiveSkus list.`);
+
+				const supplyName =
+					data.supplies.find((s: any) => s.code === newBoxCode)?.name || newBoxCode;
+				addToast(`Assigned ${sku} to ${supplyName}`, 'success');
+
+				// Force refresh the data to update the Review tab view
+				invalidateAll();
 			} else {
 				console.error(`[UI DEBUG] Error response mapping ${sku}:`, responseData);
-				alert(`Failed to assign box size: ${responseData.error || 'Server error'}`);
+				addToast(responseData.error || 'Failed to assign box size', 'error');
 			}
 		} catch (e) {
 			console.error(`[UI DEBUG] Fetch exception mapping ${sku}:`, e);
-			alert('An error occurred during assignment. Check console.');
+			addToast('An error occurred during assignment', 'error');
 		}
 	}
 
@@ -253,7 +283,10 @@
 		data?.unmappedOrders
 			?.flatMap((o: any) => o.items)
 			.filter(
-				(i: any) => i.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(i.seller_sku)
+				(i: any) =>
+					i.costs?.boxCode !== '0x0x0' &&
+					i.costs?.boxReason !== 'Mapped' &&
+					!mappedActiveSkus.includes(i.seller_sku)
 			).length || 0;
 
 	function openCostModal(sku: string, asin: string, title: string) {
@@ -960,6 +993,15 @@
 			onclick={() => setTab('sku-search')}
 		>
 			<Search class="h-4 w-4" /> SKU Search
+		</button>
+		<button
+			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
+			'review'
+				? 'bg-primary/10 text-primary'
+				: 'text-muted-foreground hover:bg-muted'}"
+			onclick={() => setTab('review')}
+		>
+			<PackageSearch class="h-4 w-4" /> Review
 		</button>
 	</div>
 
@@ -2318,7 +2360,9 @@
 							{#each data.unmappedOrders as order}
 								{@const activeItems = order.items.filter(
 									(i: any) =>
-										i.costs?.boxReason !== 'Mapped' && !mappedActiveSkus.includes(i.seller_sku)
+										i.costs?.boxCode !== '0x0x0' &&
+										i.costs?.boxReason !== 'Mapped' &&
+										!mappedActiveSkus.includes(i.seller_sku)
 								)}
 								{#if activeItems.length > 0}
 									<tr class="hover:bg-muted/30 transition-colors">
@@ -2585,6 +2629,190 @@
 				{/if}
 			</div>
 		{/if}
+
+		{#if activeTab === 'review'}
+			<div
+				class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full overflow-hidden"
+			>
+				<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+					<div>
+						<h2 class="text-xl font-semibold flex items-center gap-2">
+							<PackageSearch class="h-5 w-5 text-primary" />
+							Daily Dispatch Review
+						</h2>
+						<p class="text-sm text-muted-foreground mt-1">
+							Review historical box allocations and costs for a specific date.
+						</p>
+					</div>
+
+					<div class="flex items-center gap-3 bg-muted/30 p-2 rounded-lg border">
+						<span class="text-sm font-medium px-2">Select Date:</span>
+						<input
+							type="date"
+							class="bg-background border rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+							value={data.selectedDate}
+							onchange={handleDateChange}
+						/>
+					</div>
+				</div>
+
+				<div class="overflow-x-auto -mx-6">
+					<table class="w-full text-left border-collapse min-w-[1000px]">
+						<thead>
+							<tr class="bg-muted/50 text-muted-foreground text-[11px] uppercase tracking-wider">
+								<th class="px-6 py-3 font-bold border-b">Order Info</th>
+								<th class="px-6 py-3 font-bold border-b">Items & Analysis</th>
+								<th class="px-6 py-3 font-bold border-b text-center">Allocated Box</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y text-xs">
+							{#each data.reviewOrders || [] as order}
+								<tr
+									class="hover:bg-muted/20 transition-all border-l-4 {order.box_code === '0x0x0'
+										? 'border-l-red-500 bg-red-50/10'
+										: order.box_supply_id
+											? 'border-l-green-500'
+											: 'border-l-amber-500'}"
+								>
+									<td class="px-6 py-4 align-top">
+										<div class="font-bold text-sm text-foreground">{order.amazon_order_id}</div>
+										<div class="text-muted-foreground font-mono text-[10px] mt-1">
+											{new Date(order.purchase_date).toLocaleString()}
+										</div>
+										{#if order.is_prime}
+											<div class="mt-2">
+												<span
+													class="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-bold border border-blue-200"
+												>
+													PRIME
+												</span>
+											</div>
+										{/if}
+									</td>
+									<td class="px-6 py-4 align-top">
+										<div class="space-y-4">
+											{#each order.items || [] as item}
+												<div
+													class="flex flex-col gap-1.5 p-3 bg-white/50 rounded border border-border/50"
+												>
+													<div class="flex justify-between items-start gap-4">
+														<div class="flex-1">
+															<div class="font-bold text-xs text-foreground line-clamp-1">
+																{item.title}
+															</div>
+															<div class="flex items-center gap-2 mt-1">
+																<span class="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono"
+																	>{item.seller_sku}</span
+																>
+																<span class="text-[10px] text-muted-foreground"
+																	>Qty: <span class="font-bold text-foreground"
+																		>{item.quantity_ordered}</span
+																	></span
+																>
+															</div>
+														</div>
+														<div class="flex flex-col items-end">
+															<span class="text-[10px] font-bold text-primary"
+																>£{item.item_price_amount || '0.00'}</span
+															>
+														</div>
+													</div>
+
+													{#if item.costs}
+														<div class="mt-2 text-[10px] w-fit">
+															<div
+																class="px-3 py-1.5 rounded border flex flex-col items-center justify-center transition-all shadow-sm min-w-[140px]"
+																class:bg-green-100={order.box_code && order.box_code !== '0x0x0'}
+																class:border-green-200={order.box_code &&
+																	order.box_code !== '0x0x0'}
+																class:bg-blue-100={order.box_code === '0x0x0'}
+																class:border-blue-200={order.box_code === '0x0x0'}
+															>
+																<div
+																	class="font-black uppercase tracking-tighter text-[8px]"
+																	class:text-green-800={order.box_code &&
+																		order.box_code !== '0x0x0'}
+																	class:text-blue-800={order.box_code === '0x0x0'}
+																>
+																	Assigned Box
+																</div>
+																<div
+																	class="font-black text-[12px] mt-0.5"
+																	class:text-green-900={order.box_code &&
+																		order.box_code !== '0x0x0'}
+																	class:text-blue-900={order.box_code === '0x0x0'}
+																>
+																	{#if order.box_code === '0x0x0'}
+																		Own Box
+																	{:else}
+																		{data.supplies.find((s: any) => s.id === order.box_supply_id)
+																			?.name ||
+																			order.box_code ||
+																			'N/A'}
+																	{/if}
+																</div>
+															</div>
+														</div>
+														<div class="mt-1 text-[8px] text-gray-400 italic">
+															Reason: {item.costs.reason || 'Standard algorithm'}
+														</div>
+													{:else}
+														<div
+															class="mt-2 text-[10px] text-amber-600 italic bg-amber-50 p-1.5 rounded border border-amber-100"
+														>
+															No cost analysis available for this SKU.
+														</div>
+													{/if}
+												</div>
+											{/each}
+										</div>
+									</td>
+									<td class="px-6 py-4 align-top text-center">
+										<div class="inline-flex flex-col items-center gap-1">
+											{#if order.box_code}
+												<span class="text-[8px] text-muted-foreground font-mono">UPDATE SIZE</span>
+											{:else}
+												<span
+													class="bg-amber-100 text-amber-800 px-3 py-1 rounded-full font-bold text-[10px] border border-amber-200"
+												>
+													UNALLOCATED
+												</span>
+											{/if}
+											<select
+												class="mt-1 text-[10px] bg-white border border-border rounded px-1 py-0.5 focus:ring-1 focus:ring-primary/20 outline-none transition-all w-24"
+												onchange={(e: Event) => {
+													const target = e.target as HTMLSelectElement;
+													if (target.value && order.items?.[0]?.seller_sku) {
+														quickAssignBox(order.items[0].seller_sku, target.value);
+													}
+												}}
+											>
+												<option value="">Update...</option>
+												{#each boxOptions as box}
+													<option value={box.code}>{box.name}</option>
+												{/each}
+											</select>
+										</div>
+									</td>
+								</tr>
+							{:else}
+								<tr>
+									<td
+										colspan="3"
+										class="px-6 py-20 text-center text-muted-foreground italic bg-muted/10"
+									>
+										<div class="flex flex-col items-center gap-2">
+											<PackageSearch class="h-10 w-10 text-muted-foreground/30" />
+											<p>No orders found for the selected date.</p>
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		{/if}
 	</div>
 </div>
 
@@ -2603,3 +2831,32 @@
 	supplies={data.supplies || []}
 	onSuccess={handleReassignSuccess}
 />
+{#if toastNotifications.length > 0}
+	<div class="fixed top-4 right-4 z-9999 flex flex-col gap-2">
+		{#each toastNotifications as toast (toast.id)}
+			<div
+				class="min-w-[250px] rounded-lg border bg-white p-4 shadow-lg transition-all"
+				class:border-green-500={toast.type === 'success'}
+				class:border-red-500={toast.type === 'error'}
+				class:border-blue-500={toast.type === 'info'}
+			>
+				<div class="flex items-center gap-3">
+					{#if toast.type === 'success'}
+						<div class="rounded-full bg-green-100 p-1 text-green-600">
+							<Plus size={16} />
+						</div>
+					{:else if toast.type === 'error'}
+						<div class="rounded-full bg-red-100 p-1 text-red-600">
+							<AlertCircle size={16} />
+						</div>
+					{:else}
+						<div class="rounded-full bg-blue-100 p-1 text-blue-600">
+							<Package size={16} />
+						</div>
+					{/if}
+					<p class="text-sm font-medium text-gray-900">{toast.message}</p>
+				</div>
+			</div>
+		{/each}
+	</div>
+{/if}
