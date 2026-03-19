@@ -4,11 +4,40 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { exec } from 'child_process';
 import util from 'util';
+import { analyzeSales } from '$lib/server/sales-analyzer';
 
 const execPromise = util.promisify(exec);
 
 export const actions: Actions = {
-    default: async ({ request }) => {
+    analyzeNode: async ({ request }) => {
+        const formData = await request.formData();
+        const oldFile = formData.get('oldReport') as File;
+        const newFile = formData.get('newReport') as File;
+
+        if (!oldFile || !newFile) {
+            return fail(400, { missing: true });
+        }
+
+        try {
+            const oldBuffer = Buffer.from(await oldFile.arrayBuffer());
+            const newBuffer = Buffer.from(await newFile.arrayBuffer());
+
+            const { analysis, excelBuffer } = await analyzeSales(oldBuffer, newBuffer);
+
+            return {
+                success: true,
+                analysis,
+                excelReport: excelBuffer.toString('base64'),
+                ver: 'node'
+            };
+
+        } catch (err) {
+            console.error('Error in Node analysis:', err);
+            return fail(500, { error: 'Internal server error processing files (Node)' });
+        }
+    },
+
+    analyzePython: async ({ request }) => {
         const formData = await request.formData();
         const oldFile = formData.get('oldReport') as File;
         const newFile = formData.get('newReport') as File;
@@ -28,44 +57,44 @@ export const actions: Actions = {
             // Write files to temp dir
             const oldBuffer = Buffer.from(await oldFile.arrayBuffer());
             const newBuffer = Buffer.from(await newFile.arrayBuffer());
-            
+
             await writeFile(oldFilePath, oldBuffer);
             await writeFile(newFilePath, newBuffer);
 
             // Execute Python script
             const scriptPath = join(process.cwd(), 'scripts', 'compare-sales-reports.py');
-            
+
             // Determine python executable
             let pythonPath = 'python3';
             const venvPath = join(process.cwd(), '.venv', 'bin', 'python3');
-            
+
             try {
-                 await access(venvPath);
-                 pythonPath = venvPath;
+                await access(venvPath);
+                pythonPath = venvPath;
             } catch (e) {
-                 // venv python not found, fallback to system python3
+                // venv python not found, fallback to system python3
             }
 
             // Increase max buffer for large outputs (default is 1MB, let's bump to 10MB)
             const { stdout, stderr } = await execPromise(
-                `"${pythonPath}" "${scriptPath}" "${oldFilePath}" "${newFilePath}" --output-excel "${outputExcelPath}"`, 
+                `"${pythonPath}" "${scriptPath}" "${oldFilePath}" "${newFilePath}" --output-excel "${outputExcelPath}"`,
                 { maxBuffer: 10 * 1024 * 1024 }
             );
 
             if (stderr) {
                 console.error('Python script stderr:', stderr);
             }
-            
+
             // Clean up temp output files immediately
-            await unlink(oldFilePath).catch(() => {});
-            await unlink(newFilePath).catch(() => {});
+            await unlink(oldFilePath).catch(() => { });
+            await unlink(newFilePath).catch(() => { });
 
             // Read the generated Excel file if it exists
             let excelBase64 = null;
             try {
                 const excelBuffer = await readFile(outputExcelPath);
                 excelBase64 = excelBuffer.toString('base64');
-                await unlink(outputExcelPath).catch(() => {});
+                await unlink(outputExcelPath).catch(() => { });
             } catch (e) {
                 console.warn('Failed to read excel output:', e);
             }
@@ -83,11 +112,11 @@ export const actions: Actions = {
 
         } catch (err) {
             console.error('Error processing files:', err);
-             // Cleanup if error
-            try { await unlink(oldFilePath).catch(() => {}); } catch {}
-            try { await unlink(newFilePath).catch(() => {}); } catch {}
-            try { await unlink(outputExcelPath).catch(() => {}); } catch {}
-            
+            // Cleanup if error
+            try { await unlink(oldFilePath).catch(() => { }); } catch { }
+            try { await unlink(newFilePath).catch(() => { }); } catch { }
+            try { await unlink(outputExcelPath).catch(() => { }); } catch { }
+
             return fail(500, { error: 'Internal server error processing files' });
         }
     }

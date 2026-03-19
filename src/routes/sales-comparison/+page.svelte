@@ -127,9 +127,19 @@
 				</div>
 			</div>
 
-			<div class="flex justify-end">
+			<div class="flex flex-col sm:flex-row justify-end gap-3">
 				<button
 					type="submit"
+					formaction="?/analyzePython"
+					disabled={loading}
+					class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					Compare (Python / Legacy)
+				</button>
+
+				<button
+					type="submit"
+					formaction="?/analyzeNode"
 					disabled={loading}
 					class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
@@ -156,7 +166,7 @@
 						</svg>
 						Analyzing...
 					{:else}
-						Compare Reports
+						Compare (Node / Production)
 					{/if}
 				</button>
 			</div>
