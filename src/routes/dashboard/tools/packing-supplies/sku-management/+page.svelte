@@ -2,10 +2,24 @@
 	import { invalidateAll, goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Button } from '$lib/shadcn/ui/button';
-	import { Plus, Package, AlertCircle, Maximize, Search, PackageSearch } from 'lucide-svelte';
+	import {
+		Plus,
+		Package,
+		AlertCircle,
+		Maximize,
+		Search,
+		PackageSearch,
+		CalendarClock
+	} from 'lucide-svelte';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 
-	export let data: any = { supplies: [], unmappedOrders: [], reviewOrders: [], selectedDate: '' };
+	export let data: any = {
+		supplies: [],
+		unmappedOrders: [],
+		reviewOrders: [],
+		selectedDate: '',
+		usageData: []
+	};
 
 	$: activeTab = $page.url.searchParams.get('tab') || 'unmapped'; // 'unmapped', 'sku-search', 'review'
 
@@ -171,6 +185,15 @@
 			onclick={() => setTab('review')}
 		>
 			<PackageSearch class="h-4 w-4" /> Daily Review
+		</button>
+		<button
+			class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab ===
+			'usage'
+				? 'bg-primary/10 text-primary'
+				: 'text-muted-foreground hover:bg-muted'}"
+			onclick={() => setTab('usage')}
+		>
+			<CalendarClock class="h-4 w-4" /> 7 Day Usage
 		</button>
 	</div>
 
@@ -416,6 +439,77 @@
 								</tr>
 							{/each}
 						</tbody>
+					</table>
+				</div>
+			</div>
+		{/if}
+
+		{#if activeTab === 'usage'}
+			<div class="bg-card text-card-foreground rounded-xl border shadow-sm p-6 w-full">
+				<div class="mb-6">
+					<h2 class="text-lg font-semibold tracking-tight">Last 7 Days Consumption</h2>
+					<p class="text-sm text-muted-foreground">
+						Showing stock deductions (usage) from packing inventory ledger.
+					</p>
+				</div>
+
+				{#if data.usageByDay && data.usageByDay.length > 0}
+					<div class="mb-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
+						{#each data.usageByDay as day}
+							<div class="bg-muted/30 border rounded-lg p-3 text-center">
+								<div
+									class="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1"
+								>
+									{day.date}
+								</div>
+								<div class="text-2xl font-bold text-primary">{day.total}</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<div class="overflow-x-auto rounded-lg border">
+					<table class="w-full text-sm">
+						<thead class="bg-muted/50 border-b">
+							<tr>
+								<th class="px-4 py-3 text-left font-medium">Supply Name</th>
+								<th class="px-4 py-3 text-left font-medium">Box Size / Code</th>
+								<th class="px-4 py-3 text-right font-medium">Total Qty Used</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y text-xs">
+							{#each data.usageData || [] as entry}
+								<tr class="hover:bg-muted/30 transition-colors">
+									<td class="px-4 py-3 font-medium">
+										{entry.name}
+									</td>
+									<td class="px-4 py-3 text-muted-foreground font-mono">
+										{entry.code}
+									</td>
+									<td class="px-4 py-3 text-right font-bold text-red-600 text-sm">
+										{entry.total}
+									</td>
+								</tr>
+							{:else}
+								<tr>
+									<td colspan="3" class="p-8 text-center text-muted-foreground">
+										No usage data found in the last 7 days.
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+						<tfoot class="bg-muted/50 border-t font-semibold">
+							<tr>
+								<td class="px-4 py-3 text-left">Total</td>
+								<td class="px-4 py-3"></td>
+								<td class="px-4 py-3 text-right">
+									{(data.usageData || []).reduce(
+										(sum: number, item: any) => sum + (item.total || 0),
+										0
+									)}
+								</td>
+							</tr>
+						</tfoot>
 					</table>
 				</div>
 			</div>

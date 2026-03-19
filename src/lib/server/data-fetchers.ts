@@ -108,32 +108,61 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
 
   if (allSkus.size > 0) {
     const skuList = Array.from(allSkus);
+    if(processPackagingOperations) console.log(`[DEBUG] Fetching data for ${skuList.length} SKUs...`);
 
-    // Parallel fetch for all required data
-    const [inventoryRes, mappingRes, linnworksRes] = await Promise.all([
-      db.from('inventory')
-        .select('id, sku, depth, height, width, weight, is_fragile')
-        .in('sku', skuList),
-      db.from('sku_asin_mapping')
-        .select('seller_sku, merchant_shipping_group, item_name')
-        .in('seller_sku', skuList),
-      db.from('linnworks_composition_summary')
-        .select('parent_sku, total_qty, total_value, child_vats')
-        .in('parent_sku', skuList)
-    ]);
+    // Helper to chunk array
+    const chunkArray = (arr: any[], size: number) => {
+      const results = [];
+      for (let i = 0; i < arr.length; i += size) {
+        results.push(arr.slice(i, i + size));
+      }
+      return results;
+    };
 
-    if (inventoryRes.data) {
-      inventoryRes.data.forEach(i => inventoryMap.set(i.sku, i));
+    // Process in chunks of 100 to avoid URL length/header issues
+    const chunks = chunkArray(skuList, 100);
+    
+    // Arrays to collect all results
+    let allInventory: any[] = [];
+    let allMappings: any[] = [];
+    let allLinnworks: any[] = [];
+
+    for (const chunk of chunks) {
+      if(processPackagingOperations) console.log(`[DEBUG] Fetching chunk of ${chunk.length} SKUs...`);
+      
+      const [invRes, mapRes, linnRes] = await Promise.all([
+        db.from('inventory')
+          .select('id, sku, depth, height, width, weight, is_fragile')
+          .in('sku', chunk),
+        db.from('sku_asin_mapping')
+          .select('seller_sku, merchant_shipping_group, item_name, item_note')
+          .in('seller_sku', chunk),
+        db.from('linnworks_composition_summary')
+          .select('parent_sku, total_qty, total_value, child_vats')
+          .in('parent_sku', chunk)
+      ]);
+
+      if (invRes.error && processPackagingOperations) console.error('[DEBUG] Inventory Chunk Error:', invRes.error);
+      if (mapRes.error && processPackagingOperations) console.error('[DEBUG] Mapping Chunk Error:', mapRes.error);
+      if (linnRes.error && processPackagingOperations) console.error('[DEBUG] Linnworks Chunk Error:', linnRes.error);
+
+      if (invRes.data) allInventory.push(...invRes.data);
+      if (mapRes.data) allMappings.push(...mapRes.data);
+      if (linnRes.data) allLinnworks.push(...linnRes.data);
     }
-    if (mappingRes.data) {
-      mappingRes.data.forEach(m => mappingMap.set(m.seller_sku, m));
-    }
-    if (linnworksRes.data) {
-      linnworksRes.data.forEach(l => {
-        linnworksMap.set(l.parent_sku, l);
-        if (l.total_qty) bundleMap.set(l.parent_sku, l.total_qty);
-      });
-    }
+
+    // Populate maps from collected data
+    allInventory.forEach(i => inventoryMap.set(i.sku, i));
+    if(processPackagingOperations) console.log(`[DEBUG] Loaded ${inventoryMap.size} inventory items.`);
+    
+    allMappings.forEach(m => mappingMap.set(m.seller_sku, m));
+    if(processPackagingOperations) console.log(`[DEBUG] Loaded ${mappingMap.size} mappings.`);
+    
+    allLinnworks.forEach(l => {
+      linnworksMap.set(l.parent_sku, l);
+      if (l.total_qty) bundleMap.set(l.parent_sku, l.total_qty);
+    });
+    if(processPackagingOperations) console.log(`[DEBUG] Loaded ${linnworksMap.size} linnworks items.`);
   }
 
   const calculator = new CostCalculator();
@@ -212,7 +241,9 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
   });
 
   // --- Phase 1: Order Enrichment & Packaging Assignment ---
+  
   if (processPackagingOperations) {
+    console.log(`[DEBUG] Processing packaging ops for ${enrichedOrders.length} orders...`);
     try {
       const { data: packingSupplies, error: suppliesError } = await db
         .from('packing_supplies')
@@ -221,6 +252,7 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
       if (suppliesError) {
         console.error('Error fetching packing supplies:', suppliesError);
       }
+      if (packingSupplies) console.log(`[DEBUG] Found ${packingSupplies.length} packing supplies.`);
 
       // Fetch existing assignments to implement the Recalculation / Reassignment Rule
       const orderIdsList = enrichedOrders.map(o => o.amazon_order_id);
@@ -238,8 +270,12 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
       }
 
       const packagingAssignments: any[] = [];
+      let debug_ordersWithCosts = 0;
+      let debug_ordersWithBox = 0;
 
       for (const order of enrichedOrders) {
+        if (order.amazon_order_items?.some((i: any) => i.costs)) debug_ordersWithCosts++;
+
         // 1. Determine order-level box
         let boxCode = '0x0x0';
         let boxCost = 0;
@@ -262,6 +298,7 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
         }
 
         const totalPackagingCost = boxCost + materialCost + fragileCost;
+        if (boxCode !== '0x0x0') debug_ordersWithBox++;
 
         // 2. Resolve supply ID
         let supplyId = null;
@@ -328,6 +365,8 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
       }
 
       if (packagingAssignments.length > 0) {
+        console.log(`[DEBUG] Orders with Costs: ${debug_ordersWithCosts}, Orders with Box: ${debug_ordersWithBox}, Assignments to Upsert: ${packagingAssignments.length}`);
+        console.log(`[DEBUG] Attempting to upsert ${packagingAssignments.length} assignments...`);
         // Upsert assignments safely
         const { error: upsertError } = await db
           .from('amazon_order_packaging')
@@ -335,38 +374,64 @@ export async function fetchOrdersData(startDate: Date, endDate: Date, searchTerm
             onConflict: 'amazon_order_id'
           });
         if (upsertError) {
-          console.error('Error upserting packaging assignments:', upsertError);
+          console.error('[DEBUG] Error upserting packaging assignments:', upsertError);
+          // throw upsertError; To debug properly
         } else {
+          console.log('[DEBUG] Up-sert successful. Starting RPC calls...');
           // --- Phase 2: Atomic Inventory Deduction ---
           // Now that the assignments are saved, we check order statuses and fire the RPC.
           // We only deduct if the order represents a committed shipment: 'Unshipped' or 'Shipped'.
+          
+          let potentialDeductions = 0;
+          let skippedStatus = 0;
+          let skippedNoSupply = 0;
+          let successfulDeductions = 0;
+
+          // Create a map for faster lookups (optimization)
+          const orderMap = new Map(enrichedOrders.map(o => [o.amazon_order_id, o]));
+
           for (const assignment of packagingAssignments) {
             // Skip deduction if the box_code is 0x0x0 (No Box Required)
             if (assignment.box_code === '0x0x0') continue;
 
-            if (!assignment.box_supply_id) continue; // Skip unmapped boxes (insurance)
+            if (!assignment.box_supply_id) {
+                skippedNoSupply++;
+                continue; // Skip unmapped boxes (insurance)
+            }
 
-            const order = enrichedOrders.find(o => o.amazon_order_id === assignment.amazon_order_id);
-            const status = order?.order_status?.toLowerCase();
+            const order = orderMap.get(assignment.amazon_order_id);
+            const rawStatus = order?.order_status;
+            const status = rawStatus?.toLowerCase();
 
             if (status === 'unshipped' || status === 'shipped') {
+              potentialDeductions++;
               const { data: rpcResult, error: rpcError } = await db.rpc('apply_order_packaging_usage', {
                 p_amazon_order_id: assignment.amazon_order_id,
                 p_supply_id: assignment.box_supply_id,
-                p_quantity: 1
+                p_quantity: 1,
+                p_usage_date: order.purchase_date || new Date().toISOString()
               });
 
               if (rpcError) {
                 console.error(`[OrderEnrichment] RPC Error for ${assignment.amazon_order_id}:`, rpcError);
               } else if (rpcResult === 'applied' || rpcResult === 'applied_negative_stock') {
-                console.log(`[OrderEnrichment] Successfully deducted stock for ${assignment.amazon_order_id}. Result: ${rpcResult}`);
+                successfulDeductions++;
+                // console.log(`[OrderEnrichment] Successfully deducted stock for ${assignment.amazon_order_id}. Result: ${rpcResult}`);
               } else if (rpcResult === 'already_applied') {
                 // Expected idempotency behavior for repeated fetches, silently ignore
               } else {
                 console.warn(`[OrderEnrichment] Unexpected RPC status for ${assignment.amazon_order_id}: ${rpcResult}`);
               }
+            } else {
+                skippedStatus++;
+                // Log the first few skipped statuses to debug
+                if (skippedStatus <= 5) {
+                    console.log(`[DEBUG] Skipping deduction for ${assignment.amazon_order_id}. Status: '${rawStatus}'`);
+                }
             }
           }
+          console.log(`[DEBUG] Deduction Summary: Potential: ${potentialDeductions}, NoSupply: ${skippedNoSupply}, SkippedStatus: ${skippedStatus}, Success: ${successfulDeductions}`);
+          // ------------------------------------------
           // ------------------------------------------
         }
       }

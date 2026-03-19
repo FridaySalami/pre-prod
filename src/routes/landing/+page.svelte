@@ -1601,417 +1601,425 @@
 
 		<!-- Full Width Layout -->
 		<div class="space-y-8">
-			<!-- Performance Metrics (Full Width - Compact) -->
-			<Card>
-				<CardContent class="p-6">
-					{#if isLoading.metrics}
-						<div class="space-y-4">
-							<Skeleton class="h-4 w-full" />
-							<Skeleton class="h-4 w-3/4" />
-							<Skeleton class="h-4 w-1/2" />
-						</div>
-					{:else}
-						<div
-							class="grid grid-cols-1 lg:grid-cols-3 gap-8 divide-y lg:divide-y-0 lg:divide-x divide-slate-100"
-						>
-							<!-- B2C Amazon Fulfillment (1.x series) -->
-							<div class="lg:pr-8">
-								<div class="flex items-center justify-between mb-4">
-									<div class="flex items-center gap-2">
-										<div class="p-1.5 bg-blue-50 rounded-md">
-											<Package class="w-4 h-4 text-blue-700" />
+			<div class="space-y-8">
+				<!-- Performance Metrics (Full Width - Compact) -->
+				<Card>
+					<CardContent class="p-6">
+						{#if isLoading.metrics}
+							<div class="space-y-4">
+								<Skeleton class="h-4 w-full" />
+								<Skeleton class="h-4 w-3/4" />
+								<Skeleton class="h-4 w-1/2" />
+							</div>
+						{:else}
+							<div
+								class="grid grid-cols-1 lg:grid-cols-3 gap-8 divide-y lg:divide-y-0 lg:divide-x divide-slate-100"
+							>
+								<!-- B2C Amazon Fulfillment (1.x series) -->
+								<div class="lg:pr-8">
+									<div class="flex items-center justify-between mb-4">
+										<div class="flex items-center gap-2">
+											<div class="p-1.5 bg-blue-50 rounded-md">
+												<Package class="w-4 h-4 text-blue-700" />
+											</div>
+											<h3 class="text-sm font-semibold text-blue-800 uppercase tracking-wide">
+												Fulfillment
+											</h3>
 										</div>
-										<h3 class="text-sm font-semibold text-blue-800 uppercase tracking-wide">
-											Fulfillment
-										</h3>
+										<Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-5">
+											{format(addDays(today, -1), 'do MMM')}
+										</Badge>
 									</div>
-									<Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-5">
-										{format(addDays(today, -1), 'do MMM')}
-									</Badge>
-								</div>
-								<div class="grid grid-cols-4 gap-4">
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Packed
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.shipmentsPacked}
-										</div>
-									</div>
-
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Hours
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.actualHoursWorked.toFixed(1)}<span
-												class="text-xs font-normal text-slate-400 ml-0.5">h</span
-											>
-										</div>
-									</div>
-
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Efficiency
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.laborEfficiency.toFixed(1)}<span
-												class="text-xs font-normal text-slate-400 ml-0.5">/hr</span
-											>
-										</div>
-									</div>
-
-									{#if metrics.laborUtilization > 0}
+									<div class="grid grid-cols-4 gap-4">
 										<div>
 											<div
 												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
 											>
-												Util %
+												Packed
 											</div>
 											<div class="text-lg font-bold text-slate-900">
-												{metrics.laborUtilization.toFixed(0)}<span
-													class="text-xs font-normal text-slate-400 ml-0.5">%</span
+												{metrics.shipmentsPacked}
+											</div>
+										</div>
+
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Hours
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.actualHoursWorked.toFixed(1)}<span
+													class="text-xs font-normal text-slate-400 ml-0.5">h</span
 												>
 											</div>
 										</div>
-									{/if}
-								</div>
-							</div>
 
-							<!-- B2C Amazon Financials (2.0 series) -->
-							<div class="pt-6 lg:pt-0 lg:px-8">
-								<div class="flex items-center gap-2 mb-4">
-									<div class="p-1.5 bg-green-50 rounded-md">
-										<PoundSterling class="w-4 h-4 text-green-700" />
-									</div>
-									<h3 class="text-sm font-semibold text-green-800 uppercase tracking-wide">
-										Financials
-									</h3>
-								</div>
-								<div class="grid grid-cols-3 gap-4">
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Total Sales
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											£{metrics.totalSales.toLocaleString('en-GB', {
-												minimumFractionDigits: 0,
-												maximumFractionDigits: 0
-											})}
-										</div>
-									</div>
-
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Amazon
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											£{metrics.amazonSales.toLocaleString('en-GB', {
-												minimumFractionDigits: 0,
-												maximumFractionDigits: 0
-											})}
-										</div>
-									</div>
-
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Other
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											£{(metrics.ebaySales + metrics.shopifySales).toLocaleString('en-GB', {
-												minimumFractionDigits: 0,
-												maximumFractionDigits: 0
-											})}
-										</div>
-									</div>
-								</div>
-							</div>
-
-							<!-- Orders (2.1 series) -->
-							<div class="pt-6 lg:pt-0 lg:pl-8">
-								<div class="flex items-center gap-2 mb-4">
-									<div class="p-1.5 bg-orange-50 rounded-md">
-										<Truck class="w-4 h-4 text-orange-700" />
-									</div>
-									<h3 class="text-sm font-semibold text-orange-800 uppercase tracking-wide">
-										Orders
-									</h3>
-								</div>
-								<div class="grid grid-cols-4 gap-4">
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Total
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.linnworksTotalOrders}
-										</div>
-									</div>
-
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Amazon
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.linnworksAmazonOrders}
-										</div>
-									</div>
-
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											eBay
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.linnworksEbayOrders}
-										</div>
-									</div>
-
-									<div>
-										<div
-											class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-										>
-											Shopify
-										</div>
-										<div class="text-lg font-bold text-slate-900">
-											{metrics.linnworksShopifyOrders}
-										</div>
-									</div>
-								</div>
-							</div>
-						</div>
-					{/if}
-				</CardContent>
-			</Card>
-
-			<!-- Holiday Calendar Widget (Full Width) -->
-			<Card class="h-[800px]">
-				<CardHeader class="py-3 px-4 border-b">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-6">
-							<CardTitle>Holiday Calendar</CardTitle>
-							<div class="hidden md:flex items-center gap-3">
-								<div class="flex items-center gap-1.5 text-xs text-slate-600">
-									<div class="w-2.5 h-2.5 rounded-[2px] bg-green-50 border border-green-200"></div>
-									<span class="font-medium">Approved</span>
-								</div>
-								<div class="flex items-center gap-1.5 text-xs text-slate-600">
-									<div
-										class="w-2.5 h-2.5 rounded-[2px] bg-yellow-50 border border-yellow-200"
-									></div>
-									<span class="font-medium">Pending</span>
-								</div>
-								<div class="flex items-center gap-1.5 text-xs text-slate-600">
-									<div class="w-2.5 h-2.5 rounded-[2px] bg-red-50 border border-red-200"></div>
-									<span class="font-medium">Rejected</span>
-								</div>
-								<div class="flex items-center gap-1.5 text-xs text-slate-600">
-									<div class="w-2.5 h-2.5 rounded-[2px] bg-gray-50 border border-gray-200"></div>
-									<span class="font-medium">Cancelled</span>
-								</div>
-							</div>
-						</div>
-						<div class="flex items-center gap-1 bg-gray-50 rounded-md p-1 border">
-							<button
-								class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
-								onclick={previousMonth}
-							>
-								<ChevronLeft class="w-4 h-4 text-gray-600" />
-							</button>
-							<button
-								class="px-2 py-0.5 text-xs font-semibold min-w-[90px] text-center"
-								onclick={goToToday}
-							>
-								{format(calendarDate, 'MMMM yyyy')}
-							</button>
-							<button
-								class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
-								onclick={nextMonth}
-							>
-								<ChevronRight class="w-4 h-4 text-gray-600" />
-							</button>
-						</div>
-					</div>
-				</CardHeader>
-				<div class="flex flex-col h-[calc(800px-57px)]">
-					<div class="grid grid-cols-7 border-b bg-gray-50/50">
-						{#each ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as day}
-							<div
-								class="py-2 text-center text-sm font-semibold text-gray-500 uppercase tracking-wider"
-							>
-								{day}
-							</div>
-						{/each}
-					</div>
-					<div class="grid grid-cols-7 auto-rows-fr h-full bg-gray-100 gap-px">
-						{#each calendarDays as day}
-							{@const isCurrentMonth = isSameMonth(day, calendarDate)}
-							{@const isToday = isSameDay(day, new Date())}
-							{@const dayHolidays = getHolidaysForDay(day, holidays)}
-
-							<div
-								class="bg-white p-2 relative h-full flex flex-col {isCurrentMonth
-									? ''
-									: 'bg-gray-50/50 text-gray-300'}"
-							>
-								<div class="flex justify-between items-start mb-1">
-									<span
-										class="text-sm font-medium rounded-full w-7 h-7 flex items-center justify-center {isToday
-											? 'bg-blue-600 text-white'
-											: isCurrentMonth
-												? 'text-gray-700'
-												: 'text-gray-400'}"
-									>
-										{format(day, 'd')}
-									</span>
-								</div>
-								<div class="flex-1 overflow-hidden flex flex-col gap-1">
-									{#each dayHolidays.slice(0, 5) as holiday}
-										{@const nameParts = holiday.employee_name.split(' ')}
-										{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
-										{@const displayName =
-											nameParts.length > 1
-												? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}`
-												: nameParts[0]}
-										<div
-											class="px-1.5 py-1 text-xs rounded border truncate leading-tight {getStatusStyles(
-												holiday.status
-											)}"
-											title="{holiday.employee_name}{isHalfDay ? ' (Half Day)' : ''}"
-										>
-											{displayName}{isHalfDay ? ' (Half Day)' : ''}
-										</div>
-									{/each}
-									{#if dayHolidays.length > 5}
-										<div class="text-xs text-gray-400 pl-1 leading-none">
-											+{dayHolidays.length - 5}
-										</div>
-									{/if}
-								</div>
-							</div>
-						{/each}
-					</div>
-				</div>
-			</Card>
-
-			<!-- Pending Holiday Approvals -->
-			{#if pendingHolidays.length > 0}
-				<Card class="mt-4">
-					<CardHeader>
-						<CardTitle class="text-base font-semibold flex items-center gap-2">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="18"
-								height="18"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								class="text-yellow-600"
-							>
-								<circle cx="12" cy="12" r="10"></circle>
-								<line x1="12" y1="8" x2="12" y2="12"></line>
-								<line x1="12" y1="16" x2="12.01" y2="16"></line>
-							</svg>
-							Pending Holiday Approvals
-							<Badge variant="secondary" class="ml-auto">{pendingHolidays.length}</Badge>
-						</CardTitle>
-					</CardHeader>
-					<CardContent>
-						<div class="space-y-3">
-							{#each pendingHolidays as holiday}
-								{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
-								{@const fromDate = new Date(holiday.from_date)}
-								{@const toDate = new Date(holiday.to_date)}
-								{@const isSameDay = format(fromDate, 'yyyy-MM-dd') === format(toDate, 'yyyy-MM-dd')}
-								{@const conflicts = getConflicts(holiday)}
-								<div
-									class="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
-								>
-									<div class="flex-1 min-w-0">
-										<div class="flex items-baseline gap-2 flex-wrap">
-											<span class="font-semibold text-gray-900">{holiday.employee_name}</span>
-											{#if isHalfDay}
-												<Badge variant="outline" class="text-xs">Half Day</Badge>
-											{/if}
-										</div>
-										<div class="text-sm text-gray-600 mt-1">
-											{#if isSameDay}
-												{format(fromDate, 'EEE, d MMM yyyy')}
-											{:else}
-												{format(fromDate, 'EEE, d MMM yyyy')} → {format(toDate, 'EEE, d MMM yyyy')}
-											{/if}
-											<span class="text-gray-400 mx-2">·</span>
-											<span class="font-medium">{holiday.duration} {holiday.units}</span>
-										</div>
-										{#if holiday.notes}
-											<div class="text-sm text-gray-500 mt-1 italic">"{holiday.notes}"</div>
-										{/if}
-
-										{#if conflicts.length > 0}
-											<div class="mt-2 pt-2 border-t border-yellow-200/60">
-												<span class="text-xs font-medium text-yellow-800 uppercase tracking-wider"
-													>Overlaps with:</span
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Efficiency
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.laborEfficiency.toFixed(1)}<span
+													class="text-xs font-normal text-slate-400 ml-0.5">/hr</span
 												>
-												<div class="flex flex-wrap gap-1 mt-1">
-													{#each conflicts as conflict}
-														{@const isApproved = conflict.status
-															?.toLowerCase()
-															.includes('accepted')}
-														<span
-															class="inline-flex items-center px-1.5 py-0.5 rounded text-xs border {isApproved
-																? 'bg-red-50 text-red-700 border-red-200'
-																: 'bg-orange-50 text-orange-700 border-orange-200'}"
-														>
-															{conflict.employee_name} ({isApproved ? 'Approved' : 'Pending'})
-														</span>
-													{/each}
+											</div>
+										</div>
+
+										{#if metrics.laborUtilization > 0}
+											<div>
+												<div
+													class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+												>
+													Util %
+												</div>
+												<div class="text-lg font-bold text-slate-900">
+													{metrics.laborUtilization.toFixed(0)}<span
+														class="text-xs font-normal text-slate-400 ml-0.5">%</span
+													>
 												</div>
 											</div>
-										{:else}
-											<div class="mt-2 pt-1">
-												<span class="text-xs text-green-600 flex items-center gap-1">
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														width="12"
-														height="12"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="2"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														><polyline points="20 6 9 17 4 12"></polyline></svg
-													>
-													No conflicts found
-												</span>
+										{/if}
+									</div>
+								</div>
+
+								<!-- B2C Amazon Financials (2.0 series) -->
+								<div class="pt-6 lg:pt-0 lg:px-8">
+									<div class="flex items-center gap-2 mb-4">
+										<div class="p-1.5 bg-green-50 rounded-md">
+											<PoundSterling class="w-4 h-4 text-green-700" />
+										</div>
+										<h3 class="text-sm font-semibold text-green-800 uppercase tracking-wide">
+											Financials
+										</h3>
+									</div>
+									<div class="grid grid-cols-3 gap-4">
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Total Sales
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												£{metrics.totalSales.toLocaleString('en-GB', {
+													minimumFractionDigits: 0,
+													maximumFractionDigits: 0
+												})}
+											</div>
+										</div>
+
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Amazon
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												£{metrics.amazonSales.toLocaleString('en-GB', {
+													minimumFractionDigits: 0,
+													maximumFractionDigits: 0
+												})}
+											</div>
+										</div>
+
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Other
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												£{(metrics.ebaySales + metrics.shopifySales).toLocaleString('en-GB', {
+													minimumFractionDigits: 0,
+													maximumFractionDigits: 0
+												})}
+											</div>
+										</div>
+									</div>
+								</div>
+
+								<!-- Orders (2.1 series) -->
+								<div class="pt-6 lg:pt-0 lg:pl-8">
+									<div class="flex items-center gap-2 mb-4">
+										<div class="p-1.5 bg-orange-50 rounded-md">
+											<Truck class="w-4 h-4 text-orange-700" />
+										</div>
+										<h3 class="text-sm font-semibold text-orange-800 uppercase tracking-wide">
+											Orders
+										</h3>
+									</div>
+									<div class="grid grid-cols-4 gap-4">
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Total
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksTotalOrders}
+											</div>
+										</div>
+
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Amazon
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksAmazonOrders}
+											</div>
+										</div>
+
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												eBay
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksEbayOrders}
+											</div>
+										</div>
+
+										<div>
+											<div
+												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
+											>
+												Shopify
+											</div>
+											<div class="text-lg font-bold text-slate-900">
+												{metrics.linnworksShopifyOrders}
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- Holiday Calendar Widget (Full Width) -->
+				<Card class="h-[800px]">
+					<CardHeader class="py-3 px-4 border-b">
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-6">
+								<CardTitle>Holiday Calendar</CardTitle>
+								<div class="hidden md:flex items-center gap-3">
+									<div class="flex items-center gap-1.5 text-xs text-slate-600">
+										<div
+											class="w-2.5 h-2.5 rounded-[2px] bg-green-50 border border-green-200"
+										></div>
+										<span class="font-medium">Approved</span>
+									</div>
+									<div class="flex items-center gap-1.5 text-xs text-slate-600">
+										<div
+											class="w-2.5 h-2.5 rounded-[2px] bg-yellow-50 border border-yellow-200"
+										></div>
+										<span class="font-medium">Pending</span>
+									</div>
+									<div class="flex items-center gap-1.5 text-xs text-slate-600">
+										<div class="w-2.5 h-2.5 rounded-[2px] bg-red-50 border border-red-200"></div>
+										<span class="font-medium">Rejected</span>
+									</div>
+									<div class="flex items-center gap-1.5 text-xs text-slate-600">
+										<div class="w-2.5 h-2.5 rounded-[2px] bg-gray-50 border border-gray-200"></div>
+										<span class="font-medium">Cancelled</span>
+									</div>
+								</div>
+							</div>
+							<div class="flex items-center gap-1 bg-gray-50 rounded-md p-1 border">
+								<button
+									class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
+									onclick={previousMonth}
+								>
+									<ChevronLeft class="w-4 h-4 text-gray-600" />
+								</button>
+								<button
+									class="px-2 py-0.5 text-xs font-semibold min-w-[90px] text-center"
+									onclick={goToToday}
+								>
+									{format(calendarDate, 'MMMM yyyy')}
+								</button>
+								<button
+									class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
+									onclick={nextMonth}
+								>
+									<ChevronRight class="w-4 h-4 text-gray-600" />
+								</button>
+							</div>
+						</div>
+					</CardHeader>
+					<div class="flex flex-col h-[calc(800px-57px)]">
+						<div class="grid grid-cols-7 border-b bg-gray-50/50">
+							{#each ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as day}
+								<div
+									class="py-2 text-center text-sm font-semibold text-gray-500 uppercase tracking-wider"
+								>
+									{day}
+								</div>
+							{/each}
+						</div>
+						<div class="grid grid-cols-7 auto-rows-fr h-full bg-gray-100 gap-px">
+							{#each calendarDays as day}
+								{@const isCurrentMonth = isSameMonth(day, calendarDate)}
+								{@const isToday = isSameDay(day, new Date())}
+								{@const dayHolidays = getHolidaysForDay(day, holidays)}
+
+								<div
+									class="bg-white p-2 relative h-full flex flex-col {isCurrentMonth
+										? ''
+										: 'bg-gray-50/50 text-gray-300'}"
+								>
+									<div class="flex justify-between items-start mb-1">
+										<span
+											class="text-sm font-medium rounded-full w-7 h-7 flex items-center justify-center {isToday
+												? 'bg-blue-600 text-white'
+												: isCurrentMonth
+													? 'text-gray-700'
+													: 'text-gray-400'}"
+										>
+											{format(day, 'd')}
+										</span>
+									</div>
+									<div class="flex-1 overflow-hidden flex flex-col gap-1">
+										{#each dayHolidays.slice(0, 5) as holiday}
+											{@const nameParts = holiday.employee_name.split(' ')}
+											{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
+											{@const displayName =
+												nameParts.length > 1
+													? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}`
+													: nameParts[0]}
+											<div
+												class="px-1.5 py-1 text-xs rounded border truncate leading-tight {getStatusStyles(
+													holiday.status
+												)}"
+												title="{holiday.employee_name}{isHalfDay ? ' (Half Day)' : ''}"
+											>
+												{displayName}{isHalfDay ? ' (Half Day)' : ''}
+											</div>
+										{/each}
+										{#if dayHolidays.length > 5}
+											<div class="text-xs text-gray-400 pl-1 leading-none">
+												+{dayHolidays.length - 5}
 											</div>
 										{/if}
 									</div>
 								</div>
 							{/each}
 						</div>
-					</CardContent>
+					</div>
 				</Card>
-			{/if}
+
+				<!-- Pending Holiday Approvals -->
+				{#if pendingHolidays.length > 0}
+					<Card class="mt-4">
+						<CardHeader>
+							<CardTitle class="text-base font-semibold flex items-center gap-2">
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="18"
+									height="18"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									class="text-yellow-600"
+								>
+									<circle cx="12" cy="12" r="10"></circle>
+									<line x1="12" y1="8" x2="12" y2="12"></line>
+									<line x1="12" y1="16" x2="12.01" y2="16"></line>
+								</svg>
+								Pending Holiday Approvals
+								<Badge variant="secondary" class="ml-auto">{pendingHolidays.length}</Badge>
+							</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<div class="space-y-3">
+								{#each pendingHolidays as holiday}
+									{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
+									{@const fromDate = new Date(holiday.from_date)}
+									{@const toDate = new Date(holiday.to_date)}
+									{@const isSameDay =
+										format(fromDate, 'yyyy-MM-dd') === format(toDate, 'yyyy-MM-dd')}
+									{@const conflicts = getConflicts(holiday)}
+									<div
+										class="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
+									>
+										<div class="flex-1 min-w-0">
+											<div class="flex items-baseline gap-2 flex-wrap">
+												<span class="font-semibold text-gray-900">{holiday.employee_name}</span>
+												{#if isHalfDay}
+													<Badge variant="outline" class="text-xs">Half Day</Badge>
+												{/if}
+											</div>
+											<div class="text-sm text-gray-600 mt-1">
+												{#if isSameDay}
+													{format(fromDate, 'EEE, d MMM yyyy')}
+												{:else}
+													{format(fromDate, 'EEE, d MMM yyyy')} → {format(
+														toDate,
+														'EEE, d MMM yyyy'
+													)}
+												{/if}
+												<span class="text-gray-400 mx-2">·</span>
+												<span class="font-medium">{holiday.duration} {holiday.units}</span>
+											</div>
+											{#if holiday.notes}
+												<div class="text-sm text-gray-500 mt-1 italic">"{holiday.notes}"</div>
+											{/if}
+
+											{#if conflicts.length > 0}
+												<div class="mt-2 pt-2 border-t border-yellow-200/60">
+													<span class="text-xs font-medium text-yellow-800 uppercase tracking-wider"
+														>Overlaps with:</span
+													>
+													<div class="flex flex-wrap gap-1 mt-1">
+														{#each conflicts as conflict}
+															{@const isApproved = conflict.status
+																?.toLowerCase()
+																.includes('accepted')}
+															<span
+																class="inline-flex items-center px-1.5 py-0.5 rounded text-xs border {isApproved
+																	? 'bg-red-50 text-red-700 border-red-200'
+																	: 'bg-orange-50 text-orange-700 border-orange-200'}"
+															>
+																{conflict.employee_name} ({isApproved ? 'Approved' : 'Pending'})
+															</span>
+														{/each}
+													</div>
+												</div>
+											{:else}
+												<div class="mt-2 pt-1">
+													<span class="text-xs text-green-600 flex items-center gap-1">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															width="12"
+															height="12"
+															viewBox="0 0 24 24"
+															fill="none"
+															stroke="currentColor"
+															stroke-width="2"
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															><polyline points="20 6 9 17 4 12"></polyline></svg
+														>
+														No conflicts found
+													</span>
+												</div>
+											{/if}
+										</div>
+									</div>
+								{/each}
+							</div>
+						</CardContent>
+					</Card>
+				{/if}
+			</div>
 		</div>
 	</div>
 

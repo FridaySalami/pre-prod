@@ -208,9 +208,9 @@
 			requiredRole: 'user'
 		},
 		{
-			title: 'Sales Dashboard',
-			url: '/sales-dashboard',
-			icon: 'bar_chart',
+			title: 'Sales Comparison',
+			url: '/sales-comparison',
+			icon: 'trending_up', // Sales comparison often involves trends
 			requiredRole: 'user'
 		},
 		{

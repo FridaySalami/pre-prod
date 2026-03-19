@@ -1,5 +1,5 @@
 import { fetchOrdersData } from '../src/lib/server/data-fetchers';
-import { db } from '../src/lib/supabase/supabaseServer';
+import { db } from '../src/lib/server/db-script-safe';
 
 async function main() {
   const targetOrder = '202-9130326-9171505';
