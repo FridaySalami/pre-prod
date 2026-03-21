@@ -611,6 +611,55 @@
 
 			if (!response.ok) throw new Error('Failed to save invoice');
 
+			// Send notification email
+			const supplierName =
+				data.suppliers.find((s: any) => s.id === selectedSupplier)?.name || 'Unknown Supplier';
+
+			const emailHtml = `
+				<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+					<h2 style="color: #1a56db;">New Packing Supply Invoice</h2>
+					<div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+						<p><strong>Supplier:</strong> ${supplierName}</p>
+						<p><strong>Invoice Number:</strong> ${invoiceNumber}</p>
+						<p><strong>Date:</strong> ${invoiceDate}</p>
+						<p><strong>Total (inc VAT):</strong> £${invoiceTotal.toFixed(2)}</p>
+						${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+					</div>
+					
+					<h3>Items Received</h3>
+					<table style="width: 100%; border-collapse: collapse;">
+						<tr style="background-color: #e5e7eb;">
+							<th style="text-align: left; padding: 8px;">Item</th>
+							<th style="text-align: right; padding: 8px;">Qty</th>
+							<th style="text-align: right; padding: 8px;">Total (ex VAT)</th>
+						</tr>
+						${lineItems
+							.map((item: any) => {
+								const supply = data.supplies.find((s: any) => s.id === item.supply_id);
+								const lineTotal = (item.quantity * item.unit_price).toFixed(2);
+								return `
+								<tr>
+									<td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${supply?.name || 'Unknown'}</td>
+									<td style="padding: 8px; text-align: right; border-bottom: 1px solid #e5e7eb;">${item.quantity}</td>
+									<td style="padding: 8px; text-align: right; border-bottom: 1px solid #e5e7eb;">£${lineTotal}</td>
+								</tr>
+							`;
+							})
+							.join('')}
+					</table>
+				</div>
+			`;
+
+			fetch('/api/send-email', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					to: ['jack.w@parkersfoodservice.co.uk'],
+					subject: `New Invoice Logged - ${supplierName}`,
+					html: emailHtml
+				})
+			}).catch((err) => console.error('Failed to send invoice notification', err));
+
 			// Success! Reset form
 			quantities = {};
 			invoiceNumber = '';

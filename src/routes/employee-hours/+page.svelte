@@ -299,6 +299,12 @@
 				saveStatus = 'success';
 				hasExistingData = true;
 				savedHours = { ...employeeHours }; // Store current state as saved
+
+				// Send email notification (fire and forget)
+				sendEmailNotification().catch((err) =>
+					console.error('Failed to send email notification:', err)
+				);
+
 				setTimeout(() => {
 					saveStatus = '';
 				}, 3000);
@@ -313,6 +319,81 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function sendEmailNotification() {
+		const dateObj = new Date(selectedDate);
+		const formattedDate = dateObj.toLocaleDateString('en-GB', {
+			weekday: 'long',
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		});
+
+		const totalHours = grandTotal();
+		const breakdown = roleBreakdown();
+		const activeEmployees = employeesWithHours().filter((e) => e.hours > 0);
+
+		const emailHtml = `
+			<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+				<h2 style="color: #1a56db;">Employee Hours Saved</h2>
+				<div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+					<p><strong>Date:</strong> ${formattedDate}</p>
+					<p><strong>Total Hours:</strong> ${totalHours}</p>
+					<p><strong>Employees with Hours:</strong> ${activeEmployees.length}</p>
+				</div>
+				
+				<h3>Role Breakdown</h3>
+				<table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+					<tr style="background-color: #e5e7eb;">
+						<th style="text-align: left; padding: 8px;">Role</th>
+						<th style="text-align: center; padding: 8px;">Count</th>
+						<th style="text-align: right; padding: 8px;">Hours</th>
+					</tr>
+					${Object.entries(breakdown)
+						.map(
+							([role, data]) => `
+						<tr>
+							<td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${role}</td>
+							<td style="text-align: center; padding: 8px; border-bottom: 1px solid #e5e7eb;">${data.employees}</td>
+							<td style="padding: 8px; text-align: right; border-bottom: 1px solid #e5e7eb;">${data.totalHours}</td>
+						</tr>
+					`
+						)
+						.join('')}
+				</table>
+
+				<h3>Employee Details</h3>
+				<table style="width: 100%; border-collapse: collapse;">
+					<tr style="background-color: #e5e7eb;">
+						<th style="text-align: left; padding: 8px;">Name</th>
+						<th style="text-align: left; padding: 8px;">Role</th>
+						<th style="text-align: right; padding: 8px;">Hours</th>
+					</tr>
+					${activeEmployees
+						.map(
+							(emp) => `
+						<tr>
+							<td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${emp.name}</td>
+							<td style="padding: 8px; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 0.9em;">${emp.role}</td>
+							<td style="padding: 8px; text-align: right; border-bottom: 1px solid #e5e7eb;">${emp.hours}</td>
+						</tr>
+					`
+						)
+						.join('')}
+				</table>
+			</div>
+		`;
+
+		await fetch('/api/send-email', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				to: ['jack.w@parkersfoodservice.co.uk'],
+				subject: `Employee Hours Saved - ${formattedDate}`,
+				html: emailHtml
+			})
+		});
 	}
 
 	async function onDateChange() {

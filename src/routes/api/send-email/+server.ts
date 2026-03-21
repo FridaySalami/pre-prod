@@ -12,7 +12,7 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   try {
-    const { to, subject, html, text, data } = await request.json();
+    const { to, subject, html, text, data, attachments } = await request.json();
 
     // Basic validation
     if (!to || !subject || (!html && !text)) {
@@ -31,12 +31,32 @@ export const POST: RequestHandler = async ({ request }) => {
       });
     }
 
+    // Process attachments to Buffers if they are provided as base64 strings
+    interface Attachment {
+      filename: string;
+      content: string | Buffer;
+    }
+
+    let processedAttachments: Attachment[] | undefined;
+    if (attachments && Array.isArray(attachments)) {
+      processedAttachments = attachments.map((att: any) => {
+        if (att.content && typeof att.content === 'string') {
+          return {
+            filename: att.filename,
+            content: Buffer.from(att.content, 'base64')
+          };
+        }
+        return att;
+      });
+    }
+
     const { data: emailData, error } = await resend.emails.send({
       from: 'Acme <onboarding@resend.dev>', // Update this with your verified domain
       to,
       subject,
       html: finalHtml,
-      text
+      text,
+      attachments: processedAttachments
     });
 
     if (error) {

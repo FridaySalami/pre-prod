@@ -5,6 +5,7 @@
 
 	export let form: ActionData;
 	let loading = false;
+	let emailLoading = false;
 
 	const handleSubmit: SubmitFunction = () => {
 		loading = true;
@@ -13,6 +14,205 @@
 			loading = false;
 		};
 	};
+
+	async function sendEmail() {
+		if (!form?.analysis) return;
+		emailLoading = true;
+
+		try {
+			const summary = form.analysis.summary;
+			const increases = form.analysis.top_movers?.sales_increases || [];
+			const decreases = form.analysis.top_movers?.sales_decreases || [];
+			const bbGains = form.analysis.top_movers?.buybox_increases || [];
+			const bbDrops = form.analysis.top_movers?.buybox_decreases || [];
+			const bbSalesGain = form.analysis.top_movers?.buybox_sales_gain || [];
+			const bbSalesLost = form.analysis.top_movers?.buybox_sales_impact || [];
+
+			// Helper to create table rows
+			const createRow = (p: any, type: 'increase' | 'decrease' | 'bb' | 'bb-sales') => {
+				let changeValue = '';
+				let changeColor = '';
+				let secondaryInfo = '';
+
+				if (type === 'increase') {
+					changeValue = `+£${p.Sales_Change.toFixed(2)}`;
+					changeColor = '#059669'; // green
+				} else if (type === 'decrease') {
+					changeValue = `£${p.Sales_Change.toFixed(2)}`;
+					changeColor = '#dc2626'; // red
+				} else if (type === 'bb') {
+					const isGain = p.BuyBox_Change > 0;
+					changeValue = `${isGain ? '+' : ''}${p.BuyBox_Change.toFixed(1)}%`;
+					changeColor = isGain ? '#059669' : '#dc2626';
+					secondaryInfo = `<div style="font-size: 11px; color: #9ca3af;">Now ${p.New_BuyBox.toFixed(1)}%</div>`;
+				} else if (type === 'bb-sales') {
+					const isGain = p.Sales_Change > 0;
+					changeValue = `${isGain ? '+' : ''}£${Math.abs(p.Sales_Change).toFixed(0)}`;
+					changeColor = isGain ? '#059669' : '#dc2626';
+					secondaryInfo = `<div style="font-size: 11px; color: ${changeColor};">BB ${p.BuyBox_Change > 0 ? '+' : ''}${p.BuyBox_Change.toFixed(1)}%</div>`;
+				}
+
+				return `
+					<tr>
+						<td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">
+							<div style="font-weight: bold; font-size: 14px;">${p.SKU}</div>
+							<div style="font-size: 12px; color: #6b7280; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.Product_Title}</div>
+						</td>
+						<td style="padding: 10px; text-align: right; border-bottom: 1px solid #e5e7eb; vertical-align: top;">
+							<div style="color: ${changeColor}; font-weight: bold;">${changeValue}</div>
+							${secondaryInfo}
+						</td>
+					</tr>
+				`;
+			};
+
+			// Build HTML email content
+			const html = `
+				<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+					<h1 style="color: #1a56db; text-align: center;">Sales Comparison Report</h1>
+					<p style="text-align: center; color: #666;">Generated on ${new Date().toLocaleDateString()}</p>
+					
+					<!-- Summary Section -->
+					<div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+						<h2 style="margin-top: 0; color: #374151; font-size: 18px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px;">Performance Summary</h2>
+						<table style="width: 100%; border-collapse: collapse;">
+							<tr>
+								<td style="padding: 8px 0;">Previous Total Sales:</td>
+								<td style="text-align: right; font-weight: bold;">£${summary.total_old_sales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+							</tr>
+							<tr>
+								<td style="padding: 8px 0;">Current Total Sales:</td>
+								<td style="text-align: right; font-weight: bold;">£${summary.total_new_sales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+							</tr>
+							<tr style="border-top: 1px solid #d1d5db;">
+								<td style="padding: 8px 0;"><strong>Net Change:</strong></td>
+								<td style="text-align: right; font-weight: bold; color: ${summary.total_change >= 0 ? '#059669' : '#dc2626'};">
+									${summary.total_change >= 0 ? '+' : ''}£${summary.total_change.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+									(${summary.total_change_percent >= 0 ? '+' : ''}${summary.total_change_percent.toFixed(1)}%)
+								</td>
+							</tr>
+						</table>
+					</div>
+
+					<!-- Sales Movers -->
+					<h3 style="color: #374151; background-color: #e5e7eb; padding: 10px; margin-top: 30px; margin-bottom: 0;">Top Sales Movers</h3>
+					<div style="display: flex; gap: 20px;">
+						<div style="flex: 1;">
+							<h4 style="color: #059669; margin-bottom: 5px;">Biggest Increases</h4>
+							<table style="width: 100%; border-collapse: collapse;">
+								${increases
+									.slice(0, 5)
+									.map((p: any) => createRow(p, 'increase'))
+									.join('')}
+							</table>
+						</div>
+					</div>
+					<div style="display: flex; gap: 20px; margin-top: 20px;">
+						<div style="flex: 1;">
+							<h4 style="color: #dc2626; margin-bottom: 5px;">Biggest Drops</h4>
+							<table style="width: 100%; border-collapse: collapse;">
+								${decreases
+									.slice(0, 5)
+									.map((p: any) => createRow(p, 'decrease'))
+									.join('')}
+							</table>
+						</div>
+					</div>
+
+					<!-- Buy Box Impact -->
+					<h3 style="color: #374151; background-color: #e5e7eb; padding: 10px; margin-top: 30px; margin-bottom: 0;">Buy Box Sales Impact</h3>
+					${
+						bbSalesGain.length > 0
+							? `
+						<h4 style="color: #059669; margin-bottom: 5px;">Sales Gained (BB Increase)</h4>
+						<table style="width: 100%; border-collapse: collapse;">
+							${bbSalesGain
+								.slice(0, 5)
+								.map((p: any) => createRow(p, 'bb-sales'))
+								.join('')}
+						</table>
+					`
+							: '<p style="font-style: italic; color: #9ca3af;">No major sales gains from Buy Box increases.</p>'
+					}
+
+					${
+						bbSalesLost.length > 0
+							? `
+						<h4 style="color: #dc2626; margin-bottom: 5px; margin-top: 20px;">Sales Lost (BB Decrease)</h4>
+						<table style="width: 100%; border-collapse: collapse;">
+							${bbSalesLost
+								.slice(0, 5)
+								.map((p: any) => createRow(p, 'bb-sales'))
+								.join('')}
+						</table>
+					`
+							: ''
+					}
+
+					<!-- Top Buy Box Movers -->
+					<h3 style="color: #374151; background-color: #e5e7eb; padding: 10px; margin-top: 30px; margin-bottom: 0;">Buy Box Stability</h3>
+					<table style="width: 100%; border-collapse: collapse;">
+						<tr>
+							<td style="vertical-align: top; width: 50%; padding-right: 10px;">
+								<h4 style="color: #059669; margin-bottom: 5px;">Biggest Gains</h4>
+								<table style="width: 100%; border-collapse: collapse;">
+									${bbGains
+										.slice(0, 3)
+										.map((p: any) => createRow(p, 'bb'))
+										.join('')}
+								</table>
+							</td>
+							<td style="vertical-align: top; width: 50%; padding-left: 10px;">
+								<h4 style="color: #dc2626; margin-bottom: 5px;">Biggest Drops</h4>
+								<table style="width: 100%; border-collapse: collapse;">
+									${bbDrops
+										.slice(0, 3)
+										.map((p: any) => createRow(p, 'bb'))
+										.join('')}
+								</table>
+							</td>
+						</tr>
+					</table>
+
+					<div style="text-align: center; margin-top: 30px; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+						<p>This report was automatically generated by the Sales Comparison Tool.</p>
+					</div>
+				</div>
+			`;
+
+			const attachments = [];
+			if (form.excelReport) {
+				attachments.push({
+					filename: `weekly_sales_analysis_${new Date().toISOString().split('T')[0]}.xlsx`,
+					content: form.excelReport
+				});
+			}
+
+			const response = await fetch('/api/send-email', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					to: ['jack.w@parkersfoodservice.co.uk'], // Default recipient
+					subject: `Sales Comparison Report - ${new Date().toLocaleDateString()}`,
+					html,
+					attachments
+				})
+			});
+
+			const result = await response.json();
+
+			if (response.ok) {
+				alert('Report emailed successfully!');
+			} else {
+				alert(`Failed to send email: ${result.error || 'Unknown error'}`);
+			}
+		} catch (e) {
+			console.error('Error sending email:', e);
+			alert('An error occurred while sending the email.');
+		} finally {
+			emailLoading = false;
+		}
+	}
 
 	function downloadExcel() {
 		if (!form?.excelReport) return;
@@ -201,7 +401,41 @@
 	{/if}
 
 	{#if form?.success && form.analysis}
-		<div class="flex justify-end mb-4">
+		<div class="flex justify-end mb-4 space-x-4">
+			<button
+				on:click={sendEmail}
+				disabled={emailLoading}
+				class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+			>
+				{#if emailLoading}
+					<svg
+						class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+					>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
+						<path
+							class="opacity-75"
+							fill="currentColor"
+							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+						></path>
+					</svg>
+					Sending...
+				{:else}
+					<svg class="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+						/>
+					</svg>
+					Email Report
+				{/if}
+			</button>
+
 			{#if form.excelReport}
 				<button
 					on:click={downloadExcel}
