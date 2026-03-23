@@ -6,6 +6,8 @@
 	export let form: ActionData;
 	let loading = false;
 	let emailLoading = false;
+	let oldReportName = '';
+	let newReportName = '';
 
 	const handleSubmit: SubmitFunction = () => {
 		loading = true;
@@ -14,6 +16,16 @@
 			loading = false;
 		};
 	};
+
+	function handleFileSelect(e: Event, type: 'old' | 'new') {
+		const input = e.target as HTMLInputElement;
+		if (input.files && input.files[0]) {
+			// Remove extension for cleaner default title
+			const name = input.files[0].name.replace(/\.[^/.]+$/, '');
+			if (type === 'old') oldReportName = name;
+			else newReportName = name;
+		}
+	}
 
 	async function sendEmail() {
 		if (!form?.analysis) return;
@@ -70,7 +82,10 @@
 			const html = `
 				<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
 					<h1 style="color: #1a56db; text-align: center;">Sales Comparison Report</h1>
-					<p style="text-align: center; color: #666;">Generated on ${new Date().toLocaleDateString()}</p>
+					<p style="text-align: center; color: #666; margin-bottom: 5px;">
+						<strong>${oldReportName}</strong> vs <strong>${newReportName}</strong>
+					</p>
+					<p style="text-align: center; color: #666; margin-top: 0;">Generated on ${new Date().toLocaleDateString()}</p>
 					
 					<!-- Summary Section -->
 					<div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -193,7 +208,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					to: ['jack.w@parkersfoodservice.co.uk'], // Default recipient
-					subject: `Sales Comparison Report - ${new Date().toLocaleDateString()}`,
+					subject: `Sales Comparison Report: ${oldReportName} vs ${newReportName}`,
 					html,
 					attachments
 				})
@@ -273,6 +288,7 @@
 										accept=".csv"
 										required
 										class="sr-only"
+										on:change={(e) => handleFileSelect(e, 'old')}
 									/>
 								</label>
 								<p class="pl-1">or drag and drop</p>
@@ -317,6 +333,7 @@
 										accept=".csv"
 										required
 										class="sr-only"
+										on:change={(e) => handleFileSelect(e, 'new')}
 									/>
 								</label>
 								<p class="pl-1">or drag and drop</p>
@@ -401,6 +418,36 @@
 	{/if}
 
 	{#if form?.success && form.analysis}
+		<div class="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
+			<h3 class="text-sm font-medium text-blue-900 mb-3">Report Titles (for Email)</h3>
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+				<div>
+					<label for="oldReportTitle" class="block text-xs font-medium text-blue-700 mb-1">
+						Baseline Report Title
+					</label>
+					<input
+						type="text"
+						id="oldReportTitle"
+						bind:value={oldReportName}
+						class="block w-full rounded-md border-blue-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+						placeholder="e.g. Last Week"
+					/>
+				</div>
+				<div>
+					<label for="newReportTitle" class="block text-xs font-medium text-blue-700 mb-1">
+						Current Report Title
+					</label>
+					<input
+						type="text"
+						id="newReportTitle"
+						bind:value={newReportName}
+						class="block w-full rounded-md border-blue-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+						placeholder="e.g. This Week"
+					/>
+				</div>
+			</div>
+		</div>
+
 		<div class="flex justify-end mb-4 space-x-4">
 			<button
 				on:click={sendEmail}
