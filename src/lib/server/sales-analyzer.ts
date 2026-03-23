@@ -87,7 +87,10 @@ function parseNumber(value: any): number {
 export async function analyzeSales(oldBuffer: Buffer, newBuffer: Buffer): Promise<{ analysis: AnalysisResult, excelBuffer: Buffer }> {
   const oldData = readCsv(oldBuffer);
   const newData = readCsv(newBuffer);
+  return analyzeSalesData(oldData, newData);
+}
 
+export async function analyzeSalesData(oldData: any[], newData: any[]): Promise<{ analysis: AnalysisResult, excelBuffer: Buffer }> {
   // Group by SKU
   const oldBySku = aggregateBySku(oldData);
   const newBySku = aggregateBySku(newData);

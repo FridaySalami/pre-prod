@@ -9,8 +9,136 @@
 	let oldReportName = '';
 	let newReportName = '';
 
+	let oldStartDate = '';
+	let oldEndDate = '';
+	let newStartDate = '';
+	let newEndDate = '';
+
+	let mode: 'upload' | 'api' = 'upload';
+
+	function setQuickDate(
+		type: 'last-2-weeks' | 'last-2-days' | 'last-mondays' | 'last-fridays' | 'last-whole-week'
+	) {
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+
+		const fmt = (d: Date) => {
+			const year = d.getFullYear();
+			const month = String(d.getMonth() + 1).padStart(2, '0');
+			const day = String(d.getDate()).padStart(2, '0');
+			return `${year}-${month}-${day}`;
+		};
+
+		if (type === 'last-2-weeks') {
+			// Previous 2 completed weeks (Sun-Sat)
+			const day = today.getDay();
+			const diffToSat = (day + 1) % 7;
+			// If today is Sunday(0), diff=1 (Sat was yesterday) - Correct
+			// If today is Monday(1), diff=2 (Sat was 2 days ago) - Correct
+			// If today is Saturday(6), diff=0? No, last Sat was 7 days ago.
+
+			const currentEnd = new Date(today);
+			currentEnd.setDate(today.getDate() - (diffToSat === 0 ? 7 : diffToSat));
+
+			const currentStart = new Date(currentEnd);
+			currentStart.setDate(currentEnd.getDate() - 6); // Sunday
+
+			const prevEnd = new Date(currentStart);
+			prevEnd.setDate(prevEnd.getDate() - 1);
+
+			const prevStart = new Date(prevEnd);
+			prevStart.setDate(prevEnd.getDate() - 6);
+
+			newStartDate = fmt(currentStart);
+			newEndDate = fmt(currentEnd);
+			oldStartDate = fmt(prevStart);
+			oldEndDate = fmt(prevEnd);
+		} else if (type === 'last-whole-week') {
+			// Previous 2 completed weeks (Mon-Sun)
+			const day = today.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+			// We want last Sunday as end date.
+			// If today is Monday(1), last Sunday was yesterday(1 day ago).
+			// If today is Sunday(0), last Sunday was 7 days ago.
+			let diffToLastSun = day === 0 ? 7 : day;
+
+			const currentEnd = new Date(today);
+			currentEnd.setDate(today.getDate() - diffToLastSun);
+
+			const currentStart = new Date(currentEnd);
+			currentStart.setDate(currentEnd.getDate() - 6); // Monday
+
+			const prevEnd = new Date(currentStart);
+			prevEnd.setDate(prevEnd.getDate() - 1); // Previous Sunday
+
+			const prevStart = new Date(prevEnd);
+			prevStart.setDate(prevEnd.getDate() - 6); // Previous Monday
+
+			newStartDate = fmt(currentStart);
+			newEndDate = fmt(currentEnd);
+			oldStartDate = fmt(prevStart);
+			oldEndDate = fmt(prevEnd);
+		} else if (type === 'last-2-days') {
+			// Yesterday vs Day Before
+			const yesterday = new Date(today);
+			yesterday.setDate(today.getDate() - 1);
+
+			const dayBefore = new Date(today);
+			dayBefore.setDate(today.getDate() - 2);
+
+			newStartDate = fmt(yesterday);
+			newEndDate = fmt(yesterday);
+			oldStartDate = fmt(dayBefore);
+			oldEndDate = fmt(dayBefore);
+		} else if (type === 'last-mondays') {
+			// Compare last completed Monday vs Monday before that
+			const day = today.getDay();
+			let diff = (day - 1 + 7) % 7;
+			// If today is Monday (0 diff), we usually want "Last Monday" (7 days ago) to be safe with data
+			if (diff === 0) diff = 7;
+
+			const lastMon = new Date(today);
+			lastMon.setDate(today.getDate() - diff);
+
+			const prevMon = new Date(lastMon);
+			prevMon.setDate(lastMon.getDate() - 7);
+
+			newStartDate = fmt(lastMon);
+			newEndDate = fmt(lastMon);
+			oldStartDate = fmt(prevMon);
+			oldEndDate = fmt(prevMon);
+		} else if (type === 'last-fridays') {
+			const day = today.getDay();
+			let diff = (day - 5 + 7) % 7;
+			if (diff === 0) diff = 7;
+
+			const lastFri = new Date(today);
+			lastFri.setDate(today.getDate() - diff);
+
+			const prevFri = new Date(lastFri);
+			prevFri.setDate(lastFri.getDate() - 7);
+
+			newStartDate = fmt(lastFri);
+			newEndDate = fmt(lastFri);
+			oldStartDate = fmt(prevFri);
+			oldEndDate = fmt(prevFri);
+		}
+	}
+
 	const handleSubmit: SubmitFunction = () => {
 		loading = true;
+
+		// Set default titles for API mode if not set
+		if (mode === 'api' && !oldReportName) {
+			const start = (document.getElementById('oldStartDate') as HTMLInputElement)?.value;
+			const end = (document.getElementById('oldEndDate') as HTMLInputElement)?.value;
+			if (start && end) oldReportName = `${start} to ${end}`;
+		}
+		if (mode === 'api' && !newReportName) {
+			const start = (document.getElementById('newStartDate') as HTMLInputElement)?.value;
+			const end = (document.getElementById('newEndDate') as HTMLInputElement)?.value;
+			if (start && end) newReportName = `${start} to ${end}`;
+		}
+
 		return async ({ update }) => {
 			await update();
 			loading = false;
@@ -68,7 +196,7 @@
 					<tr>
 						<td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">
 							<div style="font-weight: bold; font-size: 14px;">${p.SKU}</div>
-							<div style="font-size: 12px; color: #6b7280; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.Product_Title}</div>
+							<div style="font-size: 12px; color: #6b7280; max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.Product_Title}</div>
 						</td>
 						<td style="padding: 10px; text-align: right; border-bottom: 1px solid #e5e7eb; vertical-align: top;">
 							<div style="color: ${changeColor}; font-weight: bold;">${changeValue}</div>
@@ -80,7 +208,7 @@
 
 			// Build HTML email content
 			const html = `
-				<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+				<div style="font-family: sans-serif; width: 100%; color: #333;">
 					<h1 style="color: #1a56db; text-align: center;">Sales Comparison Report</h1>
 					<p style="text-align: center; color: #666; margin-bottom: 5px;">
 						<strong>${oldReportName}</strong> vs <strong>${newReportName}</strong>
@@ -251,141 +379,308 @@
 	</div>
 
 	<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+		<div class="border-b border-gray-200 mb-6">
+			<nav class="-mb-px flex space-x-8" aria-label="Tabs">
+				<button
+					on:click={() => (mode = 'upload')}
+					class="{mode === 'upload'
+						? 'border-blue-500 text-blue-600'
+						: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+				>
+					Upload Reports (CSV)
+				</button>
+				<button
+					on:click={() => (mode = 'api')}
+					class="{mode === 'api'
+						? 'border-blue-500 text-blue-600'
+						: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+				>
+					Fetch from Amazon (API)
+				</button>
+			</nav>
+		</div>
+
 		<form method="POST" enctype="multipart/form-data" use:enhance={handleSubmit} class="space-y-6">
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-				<div class="space-y-2">
-					<label for="oldReport" class="block text-sm font-medium text-gray-700">
-						Old Report (Baseline Week)
-					</label>
-					<div
-						class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-400 transition-colors"
-					>
-						<div class="space-y-1 text-center">
-							<svg
-								class="mx-auto h-12 w-12 text-gray-400"
-								stroke="currentColor"
-								fill="none"
-								viewBox="0 0 48 48"
-								aria-hidden="true"
-							>
-								<path
-									d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-							<div class="flex text-sm text-gray-600">
-								<label
-									for="oldReport"
-									class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+			{#if mode === 'upload'}
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+					<div class="space-y-2">
+						<label for="oldReport" class="block text-sm font-medium text-gray-700">
+							Old Report (Baseline Week)
+						</label>
+						<div
+							class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-400 transition-colors"
+						>
+							<div class="space-y-1 text-center">
+								<svg
+									class="mx-auto h-12 w-12 text-gray-400"
+									stroke="currentColor"
+									fill="none"
+									viewBox="0 0 48 48"
+									aria-hidden="true"
 								>
-									<span>Upload a file</span>
-									<input
-										id="oldReport"
-										name="oldReport"
-										type="file"
-										accept=".csv"
-										required
-										class="sr-only"
-										on:change={(e) => handleFileSelect(e, 'old')}
+									<path
+										d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
 									/>
-								</label>
-								<p class="pl-1">or drag and drop</p>
+								</svg>
+								<div class="flex text-sm text-gray-600">
+									<label
+										for="oldReport"
+										class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+									>
+										<span>Upload a file</span>
+										<input
+											id="oldReport"
+											name="oldReport"
+											type="file"
+											accept=".csv"
+											required={mode === 'upload'}
+											class="sr-only"
+											on:change={(e) => handleFileSelect(e, 'old')}
+										/>
+									</label>
+									<p class="pl-1">or drag and drop</p>
+								</div>
+								<p class="text-xs text-gray-500">CSV up to 10MB</p>
 							</div>
-							<p class="text-xs text-gray-500">CSV up to 10MB</p>
 						</div>
 					</div>
+
+					<div class="space-y-2">
+						<label for="newReport" class="block text-sm font-medium text-gray-700">
+							New Report (Current Week)
+						</label>
+						<div
+							class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-400 transition-colors"
+						>
+							<div class="space-y-1 text-center">
+								<svg
+									class="mx-auto h-12 w-12 text-gray-400"
+									stroke="currentColor"
+									fill="none"
+									viewBox="0 0 48 48"
+									aria-hidden="true"
+								>
+									<path
+										d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+								<div class="flex text-sm text-gray-600">
+									<label
+										for="newReport"
+										class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+									>
+										<span>Upload a file</span>
+										<input
+											id="newReport"
+											name="newReport"
+											type="file"
+											accept=".csv"
+											required={mode === 'upload'}
+											class="sr-only"
+											on:change={(e) => handleFileSelect(e, 'new')}
+										/>
+									</label>
+									<p class="pl-1">or drag and drop</p>
+								</div>
+								<p class="text-xs text-gray-500">CSV up to 10MB</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			{:else}
+				<div
+					class="mb-6 flex flex-wrap gap-2 items-center bg-gray-50 p-3 rounded-lg border border-gray-200"
+				>
+					<span class="text-xs font-semibold uppercase tracking-wider text-gray-500 mr-2"
+						>Quick Report Presets:</span
+					>
+					<button
+						type="button"
+						on:click={() => setQuickDate('last-2-weeks')}
+						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+					>
+						Full Weeks (Sun-Sat)
+					</button>
+					<button
+						type="button"
+						on:click={() => setQuickDate('last-whole-week')}
+						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+					>
+						Full Weeks (Mon-Sun)
+					</button>
+					<button
+						type="button"
+						on:click={() => setQuickDate('last-2-days')}
+						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+					>
+						Last 2 Days
+					</button>
+					<button
+						type="button"
+						on:click={() => setQuickDate('last-mondays')}
+						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+					>
+						Compare Mondays
+					</button>
+					<button
+						type="button"
+						on:click={() => setQuickDate('last-fridays')}
+						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+					>
+						Compare Fridays
+					</button>
 				</div>
 
-				<div class="space-y-2">
-					<label for="newReport" class="block text-sm font-medium text-gray-700">
-						New Report (Current Week)
-					</label>
-					<div
-						class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-400 transition-colors"
-					>
-						<div class="space-y-1 text-center">
-							<svg
-								class="mx-auto h-12 w-12 text-gray-400"
-								stroke="currentColor"
-								fill="none"
-								viewBox="0 0 48 48"
-								aria-hidden="true"
-							>
-								<path
-									d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-							<div class="flex text-sm text-gray-600">
-								<label
-									for="newReport"
-									class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+					<div class="space-y-4 p-4 border rounded-md bg-gray-50">
+						<h3 class="text-lg font-medium text-gray-900 border-b pb-2">Baseline Period</h3>
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<label for="oldStartDate" class="block text-sm font-medium text-gray-700"
+									>Start Date</label
 								>
-									<span>Upload a file</span>
-									<input
-										id="newReport"
-										name="newReport"
-										type="file"
-										accept=".csv"
-										required
-										class="sr-only"
-										on:change={(e) => handleFileSelect(e, 'new')}
-									/>
-								</label>
-								<p class="pl-1">or drag and drop</p>
+								<input
+									type="date"
+									id="oldStartDate"
+									name="oldStartDate"
+									bind:value={oldStartDate}
+									required={mode === 'api'}
+									class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+								/>
 							</div>
-							<p class="text-xs text-gray-500">CSV up to 10MB</p>
+							<div>
+								<label for="oldEndDate" class="block text-sm font-medium text-gray-700"
+									>End Date</label
+								>
+								<input
+									type="date"
+									id="oldEndDate"
+									name="oldEndDate"
+									bind:value={oldEndDate}
+									required={mode === 'api'}
+									class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+								/>
+							</div>
+						</div>
+					</div>
+
+					<div class="space-y-4 p-4 border rounded-md bg-gray-50">
+						<h3 class="text-lg font-medium text-gray-900 border-b pb-2">Current Period</h3>
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<label for="newStartDate" class="block text-sm font-medium text-gray-700"
+									>Start Date</label
+								>
+								<input
+									type="date"
+									id="newStartDate"
+									name="newStartDate"
+									bind:value={newStartDate}
+									required={mode === 'api'}
+									class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+								/>
+							</div>
+							<div>
+								<label for="newEndDate" class="block text-sm font-medium text-gray-700"
+									>End Date</label
+								>
+								<input
+									type="date"
+									id="newEndDate"
+									name="newEndDate"
+									bind:value={newEndDate}
+									required={mode === 'api'}
+									class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+								/>
+							</div>
 						</div>
 					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div class="flex flex-col sm:flex-row justify-end gap-3">
-				<button
-					type="submit"
-					formaction="?/analyzePython"
-					disabled={loading}
-					class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					Compare (Python / Legacy)
-				</button>
+				{#if mode === 'upload'}
+					<button
+						type="submit"
+						formaction="?/analyzePython"
+						disabled={loading}
+						class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						Compare (Python / Legacy)
+					</button>
 
-				<button
-					type="submit"
-					formaction="?/analyzeNode"
-					disabled={loading}
-					class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if loading}
-						<svg
-							class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-						>
-							<circle
-								class="opacity-25"
-								cx="12"
-								cy="12"
-								r="10"
-								stroke="currentColor"
-								stroke-width="4"
-							></circle>
-							<path
-								class="opacity-75"
-								fill="currentColor"
-								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-							></path>
-						</svg>
-						Analyzing...
-					{:else}
-						Compare (Node / Production)
-					{/if}
-				</button>
+					<button
+						type="submit"
+						formaction="?/analyzeNode"
+						disabled={loading}
+						class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{#if loading}
+							<svg
+								class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+							>
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
+							</svg>
+							Analyzing...
+						{:else}
+							Compare (Node / Production)
+						{/if}
+					</button>
+				{:else}
+					<button
+						type="submit"
+						formaction="?/analyzeApi"
+						disabled={loading}
+						class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{#if loading}
+							<svg
+								class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+							>
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
+							</svg>
+							Fetching & Analyzing...
+						{:else}
+							Fetch Data & Compare
+						{/if}
+					</button>
+				{/if}
 			</div>
 		</form>
 	</div>
