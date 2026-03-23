@@ -339,3 +339,46 @@ function aggregateBySku(data: any[]): Map<string, any> {
   }
   return map;
 }
+
+export function transformReportToRows(reportData: any, titleMap?: Map<string, string>): any[] {
+    const rows: any[] = [];
+    
+    // The report has salesAndTrafficByAsin which is aggregated by SKU (as requested)
+    const asinData = reportData.salesAndTrafficByAsin || [];
+
+    for (const item of asinData) {
+        const sales = item.salesByAsin || {};
+        const traffic = item.trafficByAsin || {};
+        const childAsin = item.childAsin;
+        const sku = item.sku?.trim(); // Trim for lookup consistency
+        
+        let title = 'Unknown Product';
+        
+        if (sku) {
+            if (titleMap?.has(sku)) {
+                title = titleMap.get(sku)!;
+            } else {
+                title = sku;
+            }
+        } else if (childAsin) {
+            title = childAsin;
+        }
+
+        rows.push({
+            'SKU': sku || 'N/A',
+            'Title': title, 
+            '(Child) ASIN': childAsin,
+            
+            // Metrics
+            'Ordered Product Sales': sales.orderedProductSales?.amount || 0,
+            'Units ordered': sales.unitsOrdered || 0,
+            'Sessions – Total': traffic.sessions || 0,
+            'Page views – Total': traffic.pageViews || 0,
+            // API returns percentages as 0-100 (e.g. 12.5), but analyzer expects 0-1 (e.g. 0.125) for numbers
+            'Unit Session Percentage': (traffic.unitSessionPercentage || 0) / 100,
+            'Featured Offer (Buy Box) percentage': (traffic.buyBoxPercentage || 0) / 100
+        });
+    }
+
+    return rows;
+}

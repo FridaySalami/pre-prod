@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { exec } from 'child_process';
 import util from 'util';
-import { analyzeSales, analyzeSalesData } from '$lib/server/sales-analyzer';
+import { analyzeSales, analyzeSalesData, transformReportToRows } from '$lib/server/sales-analyzer';
 import { SPAPIClient } from '$lib/amazon/sp-api-client';
 import { supabaseAdmin } from '$lib/supabase/supabaseAdmin';
 import zlib from 'zlib';
@@ -90,7 +90,6 @@ async function fetchSalesTrafficReport(client: SPAPIClient, startDate: string, e
     return jsonContent;
 }
 
-// Convert JSON Report to normalized row structure expected by analyzer
 // Helper function to fetch product titles for a list of SKUs from Supabase
 async function fetchProductTitlesFromSupabase(skus: string[]): Promise<Map<string, string>> {
     const titleMap = new Map<string, string>();
@@ -136,58 +135,6 @@ async function fetchProductTitlesFromSupabase(skus: string[]): Promise<Map<strin
 
     return titleMap;
 }
-
-function transformReportToRows(reportData: any, titleMap?: Map<string, string>): any[] {
-    const rows: any[] = [];
-    
-    // The report has salesAndTrafficByAsin which is aggregated by SKU (as requested)
-    // However, the JSON structure splits child/sku/parent.
-    
-    const asinData = reportData.salesAndTrafficByAsin || [];
-
-    for (const item of asinData) {
-        const sales = item.salesByAsin || {};
-        const traffic = item.trafficByAsin || {};
-        const childAsin = item.childAsin;
-        const sku = item.sku?.trim(); // Trim for lookup consistency
-        
-        // Map fields to what analyzer expects
-        // Use the title from the map if available (keyed by SKU)
-        let title = 'Unknown Product';
-        
-        if (sku) {
-            if (titleMap?.has(sku)) {
-                title = titleMap.get(sku)!;
-            } else {
-                title = sku; // Fallback to SKU so it's identifiable
-            }
-        } else if (childAsin) {
-            title = childAsin;
-        }
-
-        // Just in case lookup missed by case or something, try direct ASIN lookup if implemented later
-        // or prioritize title from map
-        
-        rows.push({
-            'SKU': sku || 'N/A',
-            'Title': title, 
-            '(Child) ASIN': childAsin,
-            
-            // Metrics
-            'Ordered Product Sales': sales.orderedProductSales?.amount || 0,
-            'Units ordered': sales.unitsOrdered || 0,
-            'Sessions – Total': traffic.sessions || 0,
-            'Page views – Total': traffic.pageViews || 0,
-            // API returns percentages as 0-100 (e.g. 12.5), but analyzer expects 0-1 (e.g. 0.125) for numbers
-            // because it multiplies by 100 to handle Excel decimal formatting.
-            'Unit Session Percentage': (traffic.unitSessionPercentage || 0) / 100,
-            'Featured Offer (Buy Box) percentage': (traffic.buyBoxPercentage || 0) / 100
-        });
-    }
-
-    return rows;
-}
-
 
 export const actions: Actions = {
     analyzeNode: async ({ request }) => {

@@ -145,6 +145,98 @@
 		};
 	};
 
+	async function handleApiComparison() {
+		loading = true;
+		// @ts-ignore
+		form = { missing: false, success: false }; // Clear previous results
+
+		try {
+			if (!oldStartDate || !oldEndDate || !newStartDate || !newEndDate) {
+				alert('Please select all dates.');
+				loading = false;
+				return;
+			}
+
+			oldReportName = `${oldStartDate} to ${oldEndDate}`;
+			newReportName = `${newStartDate} to ${newEndDate}`;
+
+			console.log('Starting API comparison...');
+
+			// 1. Initiate Reports
+			const [oldRes, newRes] = await Promise.all([
+				fetch('/api/amazon/initiate-report', {
+					method: 'POST',
+					body: JSON.stringify({ startDate: oldStartDate, endDate: oldEndDate })
+				}).then((r) => r.json()),
+				fetch('/api/amazon/initiate-report', {
+					method: 'POST',
+					body: JSON.stringify({ startDate: newStartDate, endDate: newEndDate })
+				}).then((r) => r.json())
+			]);
+
+			if (oldRes.error || newRes.error) {
+				throw new Error(oldRes.error || newRes.error);
+			}
+
+			const oldReportId = oldRes.reportId;
+			const newReportId = newRes.reportId;
+			console.log('Reports started:', oldReportId, newReportId);
+
+			// 2. Poll Status
+			let complete = false;
+			let attempts = 0;
+			// Poll for up to 5 minutes (60 * 5s)
+			while (!complete && attempts < 60) {
+				await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
+				attempts++;
+
+				const [s1, s2] = await Promise.all([
+					fetch(`/api/amazon/report-status?reportId=${oldReportId}`).then((r) => r.json()),
+					fetch(`/api/amazon/report-status?reportId=${newReportId}`).then((r) => r.json())
+				]);
+
+				if (s1.error || s2.error) throw new Error(s1.error || s2.error);
+
+				console.log(`Poll ${attempts}:`, s1.status, s2.status);
+
+				if (s1.status === 'DONE' && s2.status === 'DONE') {
+					complete = true;
+				} else if (
+					['CANCELLED', 'FATAL'].includes(s1.status) ||
+					['CANCELLED', 'FATAL'].includes(s2.status)
+				) {
+					throw new Error('Report cancelled or failed');
+				}
+			}
+
+			if (!complete) throw new Error('Timed out waiting for reports.');
+
+			// 3. Analyze
+			console.log('Analyzing reports...');
+			const analyzeRes = await fetch('/api/amazon/analyze-reports', {
+				method: 'POST',
+				body: JSON.stringify({ oldReportId, newReportId })
+			}).then((r) => r.json());
+
+			if (analyzeRes.success) {
+				// @ts-ignore
+				form = {
+					success: true,
+					analysis: analyzeRes.analysis,
+					excelReport: analyzeRes.excelReport
+				};
+			} else {
+				throw new Error(analyzeRes.error || 'Analysis failed');
+			}
+		} catch (error: any) {
+			console.error(error);
+			// @ts-ignore
+			form = { error: error.message };
+		} finally {
+			loading = false;
+		}
+	}
+
 	function handleFileSelect(e: Event, type: 'old' | 'new') {
 		const input = e.target as HTMLInputElement;
 		if (input.files && input.files[0]) {
@@ -649,8 +741,8 @@
 					</button>
 				{:else}
 					<button
-						type="submit"
-						formaction="?/analyzeApi"
+						type="button"
+						on:click={handleApiComparison}
 						disabled={loading}
 						class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
