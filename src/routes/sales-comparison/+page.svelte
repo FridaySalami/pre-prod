@@ -459,6 +459,80 @@
 		link.click();
 		document.body.removeChild(link);
 	}
+
+	let sortColumn = 'Sales_Change';
+	let sortDirection: 'asc' | 'desc' = 'desc';
+	let selectedStatus: string | null = null;
+
+	const statusOptions = [
+		{
+			value: 'MAJOR_INCREASE',
+			label: 'Major Increase',
+			class: 'bg-green-100 text-green-800 hover:bg-green-200'
+		},
+		{
+			value: 'INCREASE',
+			label: 'Increase',
+			class: 'bg-green-50 text-green-800 hover:bg-green-100'
+		},
+		{
+			value: 'MAJOR_DECREASE',
+			label: 'Major Decrease',
+			class: 'bg-red-100 text-red-800 hover:bg-red-200'
+		},
+		{ value: 'DECREASE', label: 'Decrease', class: 'bg-red-50 text-red-800 hover:bg-red-100' },
+		{
+			value: 'NO_PREV_SALES',
+			label: 'No Prev Sales',
+			class: 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200'
+		},
+		{
+			value: 'NEW_PRODUCT',
+			label: 'New Product',
+			class: 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+		},
+		{
+			value: 'DISCONTINUED',
+			label: 'Dropped to Zero',
+			class: 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+		},
+		{ value: 'STABLE', label: 'Stable', class: 'bg-gray-50 text-gray-800 hover:bg-gray-100' }
+	];
+
+	function sortTable(column: string) {
+		if (sortColumn === column) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortColumn = column;
+			sortDirection = 'desc';
+		}
+	}
+
+	$: sortedProducts = form?.analysis?.products
+		? [...form.analysis.products]
+				.filter((p) => (selectedStatus ? p.Status === selectedStatus : true))
+				.sort((a, b) => {
+					let valA = a[sortColumn];
+					let valB = b[sortColumn];
+
+					if (typeof valA === 'string') valA = valA.toLowerCase();
+					if (typeof valB === 'string') valB = valB.toLowerCase();
+
+					if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+					if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+					return 0;
+				})
+		: [];
+
+	let copiedSku: string | null = null;
+
+	function copySku(sku: string) {
+		navigator.clipboard.writeText(sku);
+		copiedSku = sku;
+		setTimeout(() => {
+			if (copiedSku === sku) copiedSku = null;
+		}, 2000);
+	}
 </script>
 
 <div class="container mx-auto p-6 max-w-7xl">
@@ -1096,12 +1170,37 @@
 				</div>
 			{/if}
 
+			<!-- Filters -->
+			<div class="flex flex-wrap gap-2 mb-4">
+				<button
+					class="px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors border {selectedStatus ===
+					null
+						? 'bg-gray-800 text-white border-gray-800'
+						: 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}"
+					on:click={() => (selectedStatus = null)}
+				>
+					All
+				</button>
+				{#each statusOptions as option}
+					<button
+						class="px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors border {selectedStatus ===
+						option.value
+							? 'ring-2 ring-offset-1 ring-blue-500 ' + option.class
+							: 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}"
+						on:click={() =>
+							(selectedStatus = selectedStatus === option.value ? null : option.value)}
+					>
+						{option.label}
+					</button>
+				{/each}
+			</div>
+
 			<!-- Detailed Table -->
 			<div class="bg-white shadow overflow-hidden rounded-lg">
 				<div class="px-4 py-5 sm:px-6 flex justify-between items-center">
 					<h3 class="text-lg leading-6 font-medium text-gray-900">Product Performance Review</h3>
 					<span class="text-sm text-gray-500"
-						>Showing {form.analysis.summary.product_count} products</span
+						>Showing {sortedProducts.length} of {form.analysis.summary.product_count} products</span
 					>
 				</div>
 				<div class="border-t border-gray-200 overflow-x-auto">
@@ -1110,62 +1209,103 @@
 							<tr>
 								<th
 									scope="col"
-									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('Product_Title')}
 								>
-									Product / SKU
+									Product / SKU {sortColumn === 'Product_Title'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('Old_Sales')}
 								>
-									Old Sales
+									Old Sales {sortColumn === 'Old_Sales'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('New_Sales')}
 								>
-									New Sales
+									New Sales {sortColumn === 'New_Sales'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('Sales_Change')}
 								>
-									Change (£)
+									Change (£) {sortColumn === 'Sales_Change'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('Sales_Change_Percent')}
 								>
-									Change (%)
+									Change (%) {sortColumn === 'Sales_Change_Percent'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('Page_Views_Change')}
 								>
-									Page Views (Old → New)
+									Page Views (Old → New) {sortColumn === 'Page_Views_Change'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('Conversion_Change')}
 								>
-									Conversion (Old → New)
+									Conversion (Old → New) {sortColumn === 'Conversion_Change'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('BuyBox_Change')}
 								>
-									Buy Box (Old → New)
+									Buy Box (Old → New) {sortColumn === 'BuyBox_Change'
+										? sortDirection === 'asc'
+											? '▲'
+											: '▼'
+										: ''}
 								</th>
 								<th
 									scope="col"
-									class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider"
+									class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+									on:click={() => sortTable('Status')}
 								>
-									Status
+									Status {sortColumn === 'Status' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
 								</th>
 							</tr>
 						</thead>
 						<tbody class="bg-white divide-y divide-gray-200">
-							{#each form.analysis.products as product}
+							{#each sortedProducts as product}
 								<tr class="hover:bg-gray-50">
 									<td class="px-6 py-4">
 										<div
@@ -1174,7 +1314,45 @@
 										>
 											{product.Product_Title}
 										</div>
-										<div class="text-sm text-gray-500">{product.SKU}</div>
+										<div class="text-sm text-gray-500 flex items-center gap-2 group">
+											<span>{product.SKU}</span>
+											<button
+												type="button"
+												class="text-gray-300 hover:text-blue-600 focus:outline-none transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+												title="Copy SKU"
+												on:click={() => copySku(product.SKU)}
+											>
+												{#if copiedSku === product.SKU}
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														class="h-4 w-4 text-green-600"
+														viewBox="0 0 20 20"
+														fill="currentColor"
+													>
+														<path
+															fill-rule="evenodd"
+															d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+															clip-rule="evenodd"
+														/>
+													</svg>
+												{:else}
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														class="h-4 w-4"
+														fill="none"
+														viewBox="0 0 24 24"
+														stroke="currentColor"
+													>
+														<path
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															stroke-width="2"
+															d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+														/>
+													</svg>
+												{/if}
+											</button>
+										</div>
 									</td>
 									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
 										£{product.Old_Sales.toFixed(2)}
@@ -1268,7 +1446,9 @@
 										>
 											{product.Status === 'NO_PREV_SALES'
 												? 'NO SALES PREV'
-												: product.Status.replace('_', ' ')}
+												: product.Status === 'DISCONTINUED'
+													? 'DROPPED TO ZERO'
+													: product.Status.replace('_', ' ')}
 										</span>
 									</td>
 								</tr>
