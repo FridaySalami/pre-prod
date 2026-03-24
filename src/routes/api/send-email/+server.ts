@@ -60,6 +60,7 @@ export const POST: RequestHandler = async ({ request }) => {
     });
 
     if (error) {
+      console.error('Error sending email:', error);
       return json({ error }, { status: 500 });
     }
 

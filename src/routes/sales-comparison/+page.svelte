@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
 	export let form: ActionData;
+	export let data: PageData;
 	let loading = false;
 	let emailLoading = false;
 	let oldReportName = '';
@@ -443,11 +444,13 @@
 				});
 			}
 
+			const recipient = data.user?.email || 'jack.w@parkersfoodservice.co.uk';
+
 			const response = await fetch('/api/send-email', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					to: ['jack.w@parkersfoodservice.co.uk'], // Default recipient
+					to: [recipient],
 					subject: `Sales Comparison Report: ${oldReportName} vs ${newReportName}`,
 					html,
 					attachments
@@ -457,9 +460,13 @@
 			const result = await response.json();
 
 			if (response.ok) {
-				alert('Report emailed successfully!');
+				alert(`Report emailed successfully to ${recipient}!`);
 			} else {
-				alert(`Failed to send email: ${result.error || 'Unknown error'}`);
+				const errorMessage =
+					typeof result.error === 'string'
+						? result.error
+						: result.error?.message || JSON.stringify(result.error);
+				alert(`Failed to send email to ${recipient}: ${errorMessage}`);
 			}
 		} catch (e) {
 			console.error('Error sending email:', e);
