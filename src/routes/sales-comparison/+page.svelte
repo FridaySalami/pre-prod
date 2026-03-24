@@ -17,7 +17,13 @@
 	let mode: 'upload' | 'api' = 'upload';
 
 	function setQuickDate(
-		type: 'last-2-weeks' | 'last-2-days' | 'last-mondays' | 'last-fridays' | 'last-whole-week'
+		type:
+			| 'last-2-weeks'
+			| 'last-2-days'
+			| 'last-2-days-offset'
+			| 'last-mondays'
+			| 'last-fridays'
+			| 'last-whole-week'
 	) {
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
@@ -89,6 +95,20 @@
 			newEndDate = fmt(yesterday);
 			oldStartDate = fmt(dayBefore);
 			oldEndDate = fmt(dayBefore);
+
+			alert('Note: Buy Box data is often missing for yesterday in Amazon reports.');
+		} else if (type === 'last-2-days-offset') {
+			// Day Before vs Day Before That (to ensure BB data)
+			const dayBefore = new Date(today);
+			dayBefore.setDate(today.getDate() - 2);
+
+			const dayBeforeThat = new Date(today);
+			dayBeforeThat.setDate(today.getDate() - 3);
+
+			newStartDate = fmt(dayBefore);
+			newEndDate = fmt(dayBefore);
+			oldStartDate = fmt(dayBeforeThat);
+			oldEndDate = fmt(dayBeforeThat);
 		} else if (type === 'last-mondays') {
 			// Compare last completed Monday vs Monday before that
 			const day = today.getDay();
@@ -684,8 +704,17 @@
 						type="button"
 						on:click={() => setQuickDate('last-2-days')}
 						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+						title="Compare Yesterday vs Day Before. Note: Yesterday's Buy Box data may be incomplete."
 					>
-						Last 2 Days
+						Yesterday (No BB)
+					</button>
+					<button
+						type="button"
+						on:click={() => setQuickDate('last-2-days-offset')}
+						class="inline-flex items-center px-3 py-1.5 border border-purple-300 shadow-sm text-xs font-medium rounded text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+						title="Compare Day Before Yesterday vs Day Before That. Ensures Buy Box data is available."
+					>
+						Previous 2 Days (With BB)
 					</button>
 					<button
 						type="button"
