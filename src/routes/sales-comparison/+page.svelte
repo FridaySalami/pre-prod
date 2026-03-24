@@ -268,9 +268,85 @@
 		}
 	}
 
-	async function sendEmail() {
+	let showEmailModal = false;
+	let users: { id: string; email: string; name?: string }[] = [];
+	let selectedUserEmails: string[] = [];
+	let fetchingUsers = false;
+
+	async function fetchUsers() {
+		if (users.length > 0) return;
+		fetchingUsers = true;
+		try {
+			const res = await fetch('/api/users');
+			if (res.ok) {
+				const data = await res.json();
+				// Filter out specific test account and process names
+				users = data.users
+					.filter((u: any) => u.email !== 'jackweston@gmail.com')
+					.map((u: any) => {
+						let displayName = u.name || u.email.split('@')[0];
+						// Capitalize first letter of each word in name
+						displayName = displayName
+							.split(' ')
+							.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+							.join(' ');
+
+						// Also handle dot separated names like jack.w
+						if (displayName.includes('.')) {
+							displayName = displayName
+								.split('.')
+								.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+								.join(' ');
+						}
+
+						return { ...u, name: displayName };
+					});
+			} else {
+				console.error('Failed to fetch users');
+			}
+		} catch (e) {
+			console.error('Error fetching users:', e);
+		} finally {
+			fetchingUsers = false;
+		}
+	}
+
+	function openEmailModal() {
+		fetchUsers();
+		showEmailModal = true;
+		// Default to current user if available and nothing selected
+		if (data.user?.email && selectedUserEmails.length === 0) {
+			selectedUserEmails = [data.user.email];
+		}
+	}
+
+	function toggleUserSelection(email: string) {
+		if (selectedUserEmails.includes(email)) {
+			selectedUserEmails = selectedUserEmails.filter((e) => e !== email);
+		} else {
+			selectedUserEmails = [...selectedUserEmails, email];
+		}
+	}
+
+	async function sendEmailMultiple() {
+		if (selectedUserEmails.length === 0) {
+			alert('Please select at least one recipient.');
+			return;
+		}
+		await sendEmail(selectedUserEmails);
+	}
+
+	async function sendEmail(customRecipients?: string[] | Event) {
 		if (!form?.analysis) return;
 		emailLoading = true;
+
+		// Determine recipients
+		let recipients: string[] = [];
+		if (Array.isArray(customRecipients)) {
+			recipients = customRecipients;
+		} else {
+			recipients = [data.user?.email || 'jack.w@parkersfoodservice.co.uk'];
+		}
 
 		try {
 			const summary = form.analysis.summary;
@@ -444,13 +520,11 @@
 				});
 			}
 
-			const recipient = data.user?.email || 'jack.w@parkersfoodservice.co.uk';
-
 			const response = await fetch('/api/send-email', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					to: [recipient],
+					to: recipients,
 					subject: `Sales Comparison Report: ${oldReportName} vs ${newReportName}`,
 					html,
 					attachments
@@ -460,13 +534,16 @@
 			const result = await response.json();
 
 			if (response.ok) {
-				alert(`Report emailed successfully to ${recipient}!`);
+				const recipientsDisplay =
+					recipients.length > 3 ? `${recipients.length} recipients` : recipients.join(', ');
+				alert(`Report emailed successfully to ${recipientsDisplay}!`);
+				showEmailModal = false;
 			} else {
 				const errorMessage =
 					typeof result.error === 'string'
 						? result.error
 						: result.error?.message || JSON.stringify(result.error);
-				alert(`Failed to send email to ${recipient}: ${errorMessage}`);
+				alert(`Failed to send email: ${errorMessage}`);
 			}
 		} catch (e) {
 			console.error('Error sending email:', e);
@@ -946,6 +1023,22 @@
 		</div>
 
 		<div class="flex justify-end mb-4 space-x-4">
+			<button
+				on:click={openEmailModal}
+				disabled={emailLoading}
+				class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+			>
+				<svg class="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+					/>
+				</svg>
+				Email Multiple
+			</button>
+
 			<button
 				on:click={sendEmail}
 				disabled={emailLoading}
@@ -1496,3 +1589,153 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Email Modal -->
+{#if showEmailModal}
+	<div
+		class="fixed z-50 inset-0 overflow-y-auto"
+		aria-labelledby="modal-title"
+		role="dialog"
+		aria-modal="true"
+	>
+		<div
+			class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"
+		>
+			<div
+				class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+				aria-hidden="true"
+				on:click={() => (showEmailModal = false)}
+			></div>
+
+			<span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true"
+				>&#8203;</span
+			>
+
+			<div
+				class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6 relative z-50"
+			>
+				<div class="sm:flex sm:items-start">
+					<div
+						class="mx-auto shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10"
+					>
+						<svg
+							class="h-6 w-6 text-indigo-600"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+							aria-hidden="true"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+							/>
+						</svg>
+					</div>
+					<div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+						<h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+							Select Recipients
+						</h3>
+
+						{#if !fetchingUsers && users.length > 0}
+							<div class="mt-2 flex justify-end space-x-2 text-xs">
+								<button
+									on:click={() => (selectedUserEmails = users.map((u) => u.email))}
+									class="text-indigo-600 hover:text-indigo-800 font-medium"
+								>
+									Select All
+								</button>
+								<button
+									on:click={() => (selectedUserEmails = [])}
+									class="text-gray-500 hover:text-gray-700 font-medium"
+								>
+									Deselect All
+								</button>
+							</div>
+						{/if}
+
+						<div class="mt-2 text-sm text-gray-500 max-h-60 overflow-y-auto border rounded p-2">
+							{#if fetchingUsers}
+								<div class="flex justify-center p-4">
+									<svg
+										class="animate-spin h-5 w-5 text-indigo-600"
+										xmlns="http://www.w3.org/2000/svg"
+										fill="none"
+										viewBox="0 0 24 24"
+									>
+										<circle
+											class="opacity-25"
+											cx="12"
+											cy="12"
+											r="10"
+											stroke="currentColor"
+											stroke-width="4"
+										></circle>
+										<path
+											class="opacity-75"
+											fill="currentColor"
+											d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+										></path>
+									</svg>
+								</div>
+							{:else}
+								<div class="space-y-2">
+									{#each users as user}
+										<label
+											class="flex items-center space-x-3 cursor-pointer p-1 hover:bg-gray-50 rounded select-none"
+										>
+											<input
+												type="checkbox"
+												checked={selectedUserEmails.includes(user.email)}
+												on:change={() => toggleUserSelection(user.email)}
+												class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+											/>
+											<div class="flex flex-col text-left">
+												<span class="text-gray-900 font-medium">{user.name}</span>
+												<span class="text-gray-500 text-xs">{user.email}</span>
+											</div>
+										</label>
+									{/each}
+									{#if users.length === 0}
+										<div class="text-center p-4">
+											<p class="text-gray-500">No users found.</p>
+											<button
+												on:click={fetchUsers}
+												class="mt-2 text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+											>
+												Retry
+											</button>
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					</div>
+				</div>
+				<div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-2">
+					<button
+						type="button"
+						on:click={sendEmailMultiple}
+						disabled={emailLoading || selectedUserEmails.length === 0}
+						class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:w-auto sm:text-sm disabled:opacity-50"
+					>
+						{#if emailLoading}
+							Sending...
+						{:else}
+							Send Email ({selectedUserEmails.length})
+						{/if}
+					</button>
+					<button
+						type="button"
+						on:click={() => (showEmailModal = false)}
+						class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:w-auto sm:text-sm"
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
