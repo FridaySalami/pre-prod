@@ -6,6 +6,7 @@
 	export let form: ActionData;
 	export let data: PageData;
 	let loading = false;
+	let loadingMessage = '';
 	let emailLoading = false;
 	let oldReportName = '';
 	let newReportName = '';
@@ -168,6 +169,7 @@
 
 	async function handleApiComparison() {
 		loading = true;
+		loadingMessage = 'Getting started...';
 		// @ts-ignore
 		form = { missing: false, success: false }; // Clear previous results
 
@@ -175,6 +177,7 @@
 			if (!oldStartDate || !oldEndDate || !newStartDate || !newEndDate) {
 				alert('Please select all dates.');
 				loading = false;
+				loadingMessage = '';
 				return;
 			}
 
@@ -182,6 +185,7 @@
 			newReportName = `${newStartDate} to ${newEndDate}`;
 
 			console.log('Starting API comparison...');
+			loadingMessage = 'Initiating report requests to Amazon...';
 
 			// 1. Initiate Reports
 			const [oldRes, newRes] = await Promise.all([
@@ -208,6 +212,7 @@
 			let attempts = 0;
 			// Poll for up to 5 minutes (60 * 5s)
 			while (!complete && attempts < 60) {
+				loadingMessage = `Waiting for Amazon to process reports... (Attempt ${attempts + 1}/60)`;
 				await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
 				attempts++;
 
@@ -219,6 +224,7 @@
 				if (s1.error || s2.error) throw new Error(s1.error || s2.error);
 
 				console.log(`Poll ${attempts}:`, s1.status, s2.status);
+				loadingMessage = `Report Status: Baseline=${s1.status}, Current=${s2.status} (Attempt ${attempts}/60)`;
 
 				if (s1.status === 'DONE' && s2.status === 'DONE') {
 					complete = true;
@@ -234,6 +240,7 @@
 
 			// 3. Analyze
 			console.log('Analyzing reports...');
+			loadingMessage = 'Reports complete. Analyzing data...';
 			const analyzeRes = await fetch('/api/amazon/analyze-reports', {
 				method: 'POST',
 				body: JSON.stringify({ oldReportId, newReportId })
@@ -253,8 +260,11 @@
 			console.error(error);
 			// @ts-ignore
 			form = { error: error.message };
+			loadingMessage = ''; // Clear message on error
 		} finally {
 			loading = false;
+			// loadingMessage is kept if successful? No, loading becomes false.
+			if (!form?.success) loadingMessage = '';
 		}
 	}
 
@@ -961,6 +971,12 @@
 					</button>
 				{/if}
 			</div>
+
+			{#if loading && loadingMessage}
+				<div class="flex items-center justify-end">
+					<span class="text-sm text-gray-500 animate-pulse">{loadingMessage}</span>
+				</div>
+			{/if}
 		</form>
 	</div>
 

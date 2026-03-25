@@ -1,0 +1,62 @@
+import { json } from '@sveltejs/kit';
+import { ReportsService } from '$lib/amazon/reports-service';
+
+export async function POST() {
+  try {
+    const reportsService = new ReportsService();
+    console.log('Requesting new B2B Not One Amazon report...');
+
+    const reportId = await reportsService.requestReport({
+      reportType: 'GET_B2B_PRODUCT_OPPORTUNITIES_NOT_YET_ON_AMAZON',
+      marketplaceIds: ['A1F83G8C2ARO7P'] // UK Marketplace
+    });
+
+    return json({ reportId, status: 'IN_QUEUE' });
+  } catch (error) {
+    console.error('Error requesting report:', error);
+    return json({ error: 'Failed to request report' }, { status: 500 });
+  }
+}
+
+export async function GET({ url }) {
+  const reportId = url.searchParams.get('reportId');
+  if (!reportId) {
+    return json({ error: 'Report ID is required' }, { status: 400 });
+  }
+
+  try {
+    const reportsService = new ReportsService();
+
+    // Check report status directly
+    const status = await reportsService.getReportStatus(reportId);
+
+    if (status.status === 'DONE') {
+      if (!status.reportDocumentId) {
+        return json({ error: 'Report is DONE but has no document ID' }, { status: 500 });
+      }
+
+      // It's done, fetch the document info
+      const reportDoc = await reportsService.getReportDocument(status.reportDocumentId);
+
+      // Download and parse data
+      const data = await reportsService.downloadReport(reportDoc.url, reportDoc.compressionAlgorithm);
+
+      let parsedData = data;
+      if (typeof data === 'string') {
+        try {
+          parsedData = JSON.parse(data);
+        } catch (e) {
+          console.error('Failed to parse report JSON', e);
+        }
+      }
+
+      return json({ status: 'DONE', data: parsedData });
+    } else {
+      return json({ status: status.status });
+    }
+
+  } catch (error) {
+    console.error('Error checking report status:', error);
+    return json({ error: 'Failed to check report status' }, { status: 500 });
+  }
+}

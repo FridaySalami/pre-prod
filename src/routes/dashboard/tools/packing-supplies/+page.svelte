@@ -662,8 +662,13 @@
 
 			// Success! Reset form
 			quantities = {};
+			lineTotals = {};
+			selectedSupplier = '';
 			invoiceNumber = '';
 			notes = '';
+			invoiceDate = new Date().toISOString().split('T')[0];
+			showInvoiceSummaryPreview = false;
+
 			alert('Invoice saved successfully!');
 			// Refresh data while preserving state
 			await invalidateAll();
@@ -889,6 +894,14 @@
 			return new Date(inv.invoice_date) >= cutoff;
 		})
 		.reduce((acc: number, inv: any) => acc + (Number(inv.total_cost_raw) || 0), 0);
+
+	$: historySpend30dIncVat = (data.history || [])
+		.filter((inv: any) => {
+			const cutoff = new Date();
+			cutoff.setDate(cutoff.getDate() - 30);
+			return new Date(inv.invoice_date) >= cutoff;
+		})
+		.reduce((acc: number, inv: any) => acc + (Number(inv.total_cost) || 0), 0);
 
 	$: historySpendPrev30d = (data.history || [])
 		.filter((inv: any) => {
@@ -2056,10 +2069,15 @@
 					<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
 						<div class="flex items-center gap-2 text-muted-foreground mb-1">
 							<Activity class="h-4 w-4 text-purple-500" />
-							<span class="text-xs font-semibold uppercase tracking-wider">Spend (Last 30d)</span>
+							<span class="text-xs font-semibold uppercase tracking-wider">Spend (Ex VAT)</span>
 						</div>
 						<div class="flex items-baseline gap-2">
-							<span class="text-2xl font-bold">£{historySpend30d.toLocaleString()}</span>
+							<span class="text-2xl font-bold"
+								>£{historySpend30d.toLocaleString(undefined, {
+									minimumFractionDigits: 2,
+									maximumFractionDigits: 2
+								})}</span
+							>
 							{#if historySpendPrev30d > 0}
 								{@const diff =
 									((historySpend30d - historySpendPrev30d) / historySpendPrev30d) * 100}
@@ -2069,7 +2087,25 @@
 								</span>
 							{/if}
 						</div>
+						<div class="text-[10px] text-muted-foreground mt-1">Last 30 Days</div>
 					</div>
+
+					<div class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between">
+						<div class="flex items-center gap-2 text-muted-foreground mb-1">
+							<Activity class="h-4 w-4 text-purple-500" />
+							<span class="text-xs font-semibold uppercase tracking-wider">Spend (Inc VAT)</span>
+						</div>
+						<div class="flex items-baseline gap-2">
+							<span class="text-2xl font-bold"
+								>£{historySpend30dIncVat.toLocaleString(undefined, {
+									minimumFractionDigits: 2,
+									maximumFractionDigits: 2
+								})}</span
+							>
+						</div>
+						<div class="text-[10px] text-muted-foreground mt-1">Last 30 Days</div>
+					</div>
+
 					<!-- Placeholder for other history stats -->
 					<div
 						class="bg-card border rounded-xl p-4 shadow-sm flex flex-col justify-between opacity-50"

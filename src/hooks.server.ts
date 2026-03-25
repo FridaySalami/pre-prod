@@ -258,7 +258,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     });
 
     // Redirect to login if no session
-    if (!session) {
+    if (!session && !pathname.includes('/api/amazon/sales-and-traffic')) {
       console.log(`🔐 No session found, redirecting to login from: ${pathname}`);
 
       if (pathname.startsWith('/api/')) {
@@ -319,8 +319,10 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
 
     // Make user available to routes
-    event.locals.user = session.user;
-    event.locals.session = session;
+    if (session) {
+      event.locals.user = session.user;
+      event.locals.session = session;
+    }
   }
 
   // Enhanced security for sensitive API endpoints
