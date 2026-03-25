@@ -725,17 +725,19 @@ class AmazonSPAPI {
     const accessToken = await this.getAccessToken();
 
     const method = 'GET';
-    const path = '/orders/v0/orders';
+    const path = '/orders/2026-01-01/orders';
 
     // Set date range (default to last 30 days if no endDate provided)
     const start = startDate instanceof Date ? startDate : new Date(startDate);
     const end = endDate ? (endDate instanceof Date ? endDate : new Date(endDate)) : new Date();
 
     const queryParams = {
-      MarketplaceIds: this.config.marketplace,
-      CreatedAfter: start.toISOString(),
-      CreatedBefore: end.toISOString(),
-      MaxResultsPerPage: Math.min(maxResults, 100) // Amazon limit is 100
+      marketplaceIds: this.config.marketplace,
+      createdAfter: start.toISOString(),
+      createdBefore: end.toISOString(),
+      fulfillmentStatuses: 'UNSHIPPED,PARTIALLY_SHIPPED,SHIPPED',
+      maxResultsPerPage: Math.min(maxResults, 100), // Amazon limit is 100
+      includedData: 'FULFILLMENT,PROCEEDS,PACKAGES,BUYER,RECIPIENT'
     };
 
     const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
@@ -780,7 +782,7 @@ class AmazonSPAPI {
     const accessToken = await this.getAccessToken();
 
     const method = 'GET';
-    const path = `/orders/v0/orders/${orderId}/orderItems`;
+    const path = `/orders/2026-01-01/orders/${orderId}?includedData=PROCEEDS,FULFILLMENT`;
     const queryParams = {};
 
     const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';

@@ -3,72 +3,50 @@ import { SPAPIClient } from '$lib/amazon/sp-api-client';
 import { db } from '$lib/supabase/supabaseServer';
 import { env } from '$env/dynamic/private';
 
-interface AmazonOrder {
-  AmazonOrderId: string;
-  SellerOrderId?: string;
-  PurchaseDate: string;
-  LastUpdateDate: string;
-  OrderStatus: string;
-  FulfillmentChannel?: string;
-  SalesChannel?: string;
-  OrderTotal?: {
-    CurrencyCode: string;
-    Amount: string;
+// Define loose interface for v2026 response
+interface AmazonOrderV2026 {
+  orderId: string;
+  orderAliases?: { alias: string; aliasType: string }[];
+  createdTime: string;
+  lastUpdatedTime: string;
+  fulfillment?: {
+    fulfillmentStatus?: string;
+    fulfilledBy?: string;
+    fulfillmentServiceLevel?: string;
+    shipByWindow?: {
+      earliestDateTime?: string;
+      latestDateTime?: string;
+    };
+    deliverByWindow?: {
+      earliestDateTime?: string;
+      latestDateTime?: string;
+    };
+    packing?: {
+      giftOption?: boolean;
+    };
   };
-  NumberOfItemsShipped?: number;
-  NumberOfItemsUnshipped?: number;
-  PaymentMethod?: string;
-  OrderType?: string;
-  MarketplaceId?: string;
-  BuyerEmail?: string;
-  BuyerInfo?: {
-    BuyerEmail?: string;
-    BuyerName?: string;
+  salesChannel?: {
+    marketplaceId?: string;
+    marketplaceName?: string;
   };
-  ShipmentServiceLevelCategory?: string;
-  EarliestShipDate?: string;
-  LatestShipDate?: string;
-  EarliestDeliveryDate?: string;
-  LatestDeliveryDate?: string;
-  IsBusinessOrder?: boolean;
-  IsPrime?: boolean;
-  IsPremiumOrder?: boolean;
-  IsGlobalExpressEnabled?: boolean;
-  IsReplacementOrder?: boolean;
-  IsSoldByAB?: boolean;
-  AutomatedShippingSettings?: {
-    HasAutomatedShippingSettings?: boolean;
-    AutomatedCarrier?: string;
-    AutomatedShipMethod?: string;
+  proceeds?: {
+    grandTotal?: {
+      amount: string;
+      currencyCode: string;
+    };
   };
-}
-
-interface AmazonOrderItem {
-  ASIN: string;
-  SellerSKU?: string;
-  OrderItemId: string;
-  Title?: string;
-  QuantityOrdered: number;
-  QuantityShipped?: number;
-  ItemPrice?: {
-    CurrencyCode: string;
-    Amount: string;
+  buyer?: {
+    buyerEmail?: string;
+    buyerName?: string;
   };
-  ItemTax?: {
-    CurrencyCode: string;
-    Amount: string;
-  };
-  ShippingPrice?: {
-    CurrencyCode: string;
-    Amount: string;
-  };
-  PromotionDiscount?: {
-    CurrencyCode: string;
-    Amount: string;
-  };
-  IsGift?: boolean;
-  ConditionId?: string;
-  ConditionSubtypeId?: string;
+  programs?: string[];
+  packages?: {
+    carrier?: string;
+    shippingService?: string;
+  }[];
+  associatedOrders?: { associationType: string }[];
+  orderItems?: any[];
+  [key: string]: any;
 }
 
 class TokenBucket {
@@ -92,10 +70,8 @@ class TokenBucket {
         this.tokens -= cost;
         return;
       }
-      // Wait for enough tokens
       const missing = cost - this.tokens;
       const waitTime = Math.ceil(missing / this.refillRate);
-      // Clamp to min 50ms to avoid busy waiting
       await new Promise(resolve => setTimeout(resolve, Math.max(50, waitTime)));
     }
   }
@@ -109,23 +85,7 @@ class TokenBucket {
   }
 }
 
-async function runPool<T>(
-  items: T[],
-  worker: (item: T, idx: number) => Promise<void>,
-  concurrency: number
-) {
-  let i = 0;
-  const runners = Array.from({ length: concurrency }, async () => {
-    while (true) {
-      const idx = i++;
-      if (idx >= items.length) return;
-      await worker(items[idx], idx);
-    }
-  });
-  await Promise.all(runners);
-}
-
-// Global instance to reuse between requests (preserves LWA token cache)
+// Global instance 
 let spApiClientInstance: SPAPIClient | null = null;
 
 function getSpApiClient() {
@@ -145,8 +105,67 @@ function getSpApiClient() {
   return spApiClientInstance;
 }
 
+const mapStatus = (status: string | undefined): string => {
+  if (!status) return 'Unknown';
+  switch (status) {
+    case 'CANCELLED': return 'Canceled';
+    case 'SHIPPED': return 'Shipped';
+    case 'UNSHIPPED': return 'Unshipped';
+    case 'PARTIALLY_SHIPPED': return 'PartiallyShipped';
+    case 'PENDING': return 'Pending';
+    case 'UNFULFILLABLE': return 'Unfulfillable';
+    case 'INVOICE_UNCONFIRMED': return 'InvoiceUnconfirmed';
+    case 'PENDING_AVAILABILITY': return 'PendingAvailability';
+    default: return status;
+  }
+};
+
+const mapFulfillmentChannel = (channel: string | undefined): string | undefined => {
+  if (channel === 'MERCHANT') return 'MFN';
+  if (channel === 'AMAZON') return 'AFN';
+  return channel;
+};
+
+// Helper to extract amounts from the proceeds breakdown structure based on user mapping rules
+const extractMoney = (item: any, type: string, subtype?: string) => {
+  if (!item.proceeds?.breakdowns || !Array.isArray(item.proceeds.breakdowns)) return null;
+
+  // If looking for a main breakdown type (e.g. ITEM price, SHIPPING price, DISCOUNT)
+  // Rule: orderItems[].proceeds.breakdowns[].subtotal where type == X
+  if (!subtype) {
+    const breakdown = item.proceeds.breakdowns.find((b: any) => b.type === type);
+    if (breakdown?.subtotal) {
+      return {
+        amount: parseFloat(breakdown.subtotal.amount),
+        currency: breakdown.subtotal.currencyCode
+      };
+    }
+    return null;
+  }
+
+  // If looking for a detailed breakdown (e.g. TAX -> ITEM, TAX -> SHIPPING)
+  // Rule: orderItems[].proceeds.breakdowns[].detailedBreakdowns[].value where type == TAX AND subtype == ITEM
+  // This implies checking ALL breakdown's detailedBreakdowns, or the breakdown that CONTAINS the detailedBreakdown?
+  // Usually tax is under the relevant breakdown (e.g. ITEM tax under ITEM breakdown), or under a TAX breakdown?
+  // The user rule says: "orderItems[].proceeds.breakdowns[].detailedBreakdowns[].value type == TAX AND subtype == ITEM"
+  // This suggests we scan all breakdowns for any detailedBreakdown matching the criteria.
+
+  for (const breakdown of item.proceeds.breakdowns) {
+    if (breakdown.detailedBreakdowns && Array.isArray(breakdown.detailedBreakdowns)) {
+      const detailed = breakdown.detailedBreakdowns.find((d: any) => d.type === type && d.subtype === subtype);
+      if (detailed?.value) {
+        return {
+          amount: parseFloat(detailed.value.amount),
+          currency: detailed.value.currencyCode
+        };
+      }
+    }
+  }
+
+  return null;
+};
+
 export async function GET({ url, request, locals }: { url: URL; request: Request; locals: App.Locals }) {
-  // Check authentication: either logged in user session OR cron secret
   const session = await locals.getSession();
   const authHeader = request.headers.get('Authorization');
   const cronSecret = env.CRON_SECRET;
@@ -156,15 +175,12 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
-  // Determine if we should stream or wait for completion
   const shouldStream = url.searchParams.get('stream') !== 'false' && request.headers.get('accept') !== 'application/json';
 
   const runSync = async (send: (data: any) => void) => {
     try {
-      // Initialize Amazon SP-API client
       const spApiClient = getSpApiClient();
 
-      // Calculate date range
       const dateParam = url.searchParams.get('date');
       const viewParam = url.searchParams.get('view') || 'daily';
       let targetDate: Date;
@@ -191,90 +207,94 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
       console.log(`Fetching Amazon orders for ${startDate.toISOString()} to ${endDate.toISOString()}`);
       send({ type: 'status', message: 'Fetching orders...' });
 
-      let allOrders: AmazonOrder[] = [];
+      let allOrders: AmazonOrderV2026[] = [];
       let nextToken: string | undefined;
 
-      // Rate limiter for getOrders: 0.0167 rps (1 per 60s), burst 20
       const getOrdersLimiter = new TokenBucket(20, 0.0167);
 
       do {
         if (getOrdersLimiter.tokens < 1) {
-          send({ type: 'status', message: 'Rate limit reached for getOrders; waiting for refill...' });
+          send({ type: 'status', message: 'Rate limit reached, waiting...' });
         }
         await getOrdersLimiter.consume(1);
 
-        const queryParams: Record<string, string> = nextToken
-          ? { NextToken: nextToken }
-          : {
-            MarketplaceIds: 'A1F83G8C2ARO7P', // UK Marketplace
-            CreatedAfter: startDate.toISOString(),
-            CreatedBefore: endDate.toISOString(),
-            MaxResultsPerPage: '100'
-          };
+        const queryParams: Record<string, string> = {
+          marketplaceIds: 'A1F83G8C2ARO7P',
+          createdAfter: startDate.toISOString(),
+          createdBefore: endDate.toISOString(),
+          maxResultsPerPage: '50',
+          fulfillmentStatuses: 'UNSHIPPED,PARTIALLY_SHIPPED,SHIPPED,CANCELLED,PENDING',
+          includedData: 'FULFILLMENT,PROCEEDS,PACKAGES,BUYER,RECIPIENT,PROMOTION' // Added PROMOTION per requirements
+        };
+
+        if (nextToken) {
+          queryParams.paginationToken = nextToken;
+        }
 
         const response = await spApiClient.request(
           'GET',
-          '/orders/v0/orders',
+          '/orders/2026-01-01/orders',
           {
             queryParams,
-            // Use a dedicated rate limiter for orders to avoid polluting item sync
             rateLimiter: RateLimiters.listings
           }
         );
 
-        if (response.data?.payload?.Orders) {
-          allOrders = allOrders.concat(response.data.payload.Orders);
+        if (response.data?.orders) {
+          allOrders = allOrders.concat(response.data.orders);
           send({ type: 'progress', ordersFound: allOrders.length });
         }
 
-        nextToken = response.data?.payload?.NextToken;
+        nextToken = response.data?.pagination?.nextToken;
 
       } while (nextToken);
 
       console.log(`Fetched ${allOrders.length} orders.`);
 
       if (allOrders.length === 0) {
-        send({ type: 'complete', message: 'No orders found for yesterday', count: 0 });
+        send({ type: 'complete', message: 'No orders found', count: 0 });
         return;
       }
 
-      // Transform orders for Supabase
-      const ordersToUpsert = allOrders.map(order => ({
-        amazon_order_id: order.AmazonOrderId,
-        seller_order_id: order.SellerOrderId,
-        purchase_date: order.PurchaseDate,
-        last_update_date: order.LastUpdateDate,
-        order_status: order.OrderStatus,
-        fulfillment_channel: order.FulfillmentChannel,
-        sales_channel: order.SalesChannel,
-        order_total: order.OrderTotal ? parseFloat(order.OrderTotal.Amount) : null,
-        currency_code: order.OrderTotal?.CurrencyCode,
-        number_of_items_shipped: order.NumberOfItemsShipped,
-        number_of_items_unshipped: order.NumberOfItemsUnshipped,
-        payment_method: order.PaymentMethod,
-        order_type: order.OrderType,
-        marketplace_id: order.MarketplaceId,
-        buyer_email: order.BuyerInfo?.BuyerEmail || order.BuyerEmail,
-        buyer_name: order.BuyerInfo?.BuyerName,
-        shipment_service_level_category: order.ShipmentServiceLevelCategory,
-        earliest_ship_date: order.EarliestShipDate,
-        latest_ship_date: order.LatestShipDate,
-        earliest_delivery_date: order.EarliestDeliveryDate,
-        latest_delivery_date: order.LatestDeliveryDate,
-        is_business_order: order.IsBusinessOrder,
-        is_prime: order.IsPrime,
-        is_premium_order: order.IsPremiumOrder,
-        is_global_express_enabled: order.IsGlobalExpressEnabled,
-        is_replacement_order: order.IsReplacementOrder,
-        is_sold_by_ab: order.IsSoldByAB,
-        automated_carrier: order.AutomatedShippingSettings?.AutomatedCarrier,
-        automated_ship_method: order.AutomatedShippingSettings?.AutomatedShipMethod,
-        raw_data: order,
-        updated_at: new Date().toISOString()
-      }));
+      const ordersToUpsert = allOrders.map((order) => {
+        // Calculate total shipping price (revenue) from items to use as a proxy for shipping cost (if actual cost is missing)
+        // This ensures the "Shipping Cost" field in the dashboard is populated with the amount charged to the customer.
+        const totalShippingPrice = order.orderItems?.reduce((sum: number, item: any) => {
+          const shipping = extractMoney(item, 'SHIPPING');
+          return sum + (shipping?.amount ?? 0);
+        }, 0) ?? 0;
 
+        return {
+          amazon_order_id: order.orderId,
+          seller_order_id: order.orderAliases?.find((a: any) => a.aliasType === 'SELLER_ORDER_ID')?.alias,
+          purchase_date: order.createdTime,
+          last_update_date: order.lastUpdatedTime,
+          order_status: mapStatus(order.fulfillment?.fulfillmentStatus),
+          fulfillment_channel: mapFulfillmentChannel(order.fulfillment?.fulfilledBy),
+          sales_channel: order.salesChannel?.marketplaceName,
+          order_total: order.proceeds?.grandTotal ? parseFloat(order.proceeds.grandTotal.amount) : null,
+          currency_code: order.proceeds?.grandTotal?.currencyCode,
+          shipping_cost: totalShippingPrice > 0 ? totalShippingPrice : null,
+          order_type: order.programs?.includes('PREORDER') ? 'Preorder' : 'StandardOrder',
+          marketplace_id: order.salesChannel?.marketplaceId,
+          buyer_email: order.buyer?.buyerEmail,
+          buyer_name: order.buyer?.buyerName,
+          shipment_service_level_category: order.fulfillment?.fulfillmentServiceLevel,
+          earliest_ship_date: order.fulfillment?.shipByWindow?.earliestDateTime,
+          latest_ship_date: order.fulfillment?.shipByWindow?.latestDateTime,
+          earliest_delivery_date: order.fulfillment?.deliverByWindow?.earliestDateTime,
+          latest_delivery_date: order.fulfillment?.deliverByWindow?.latestDateTime,
+          is_business_order: order.programs?.includes('AMAZON_BUSINESS') || false,
+          is_prime: order.programs?.includes('PRIME') || false,
+          is_premium_order: order.programs?.includes('PREMIUM') || false,
+          is_replacement_order: order.associatedOrders?.some((o: any) => o.associationType === 'REPLACEMENT_ORIGINAL_ID'),
+          automated_carrier: order.packages?.[0]?.carrier,
+          automated_ship_method: order.packages?.[0]?.shippingService,
+          raw_data: order,
+          updated_at: new Date().toISOString()
+        };
+      });
 
-      // Upsert to Supabase in chunks
       const chunkSize = 500;
       let totalUpserted = 0;
 
@@ -285,7 +305,7 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
           .upsert(chunk, { onConflict: 'amazon_order_id', count: 'exact' });
 
         if (result.error) {
-          console.error('Error upserting orders to Supabase:', result.error);
+          console.error('Error upserting orders:', result.error);
           send({ type: 'error', error: result.error.message });
           return;
         }
@@ -295,11 +315,75 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
         }
       }
 
-      console.log(`Upserted ${totalUpserted} orders to Supabase.`);
+      let allItems: any[] = [];
+      let totalItemsUpserted = 0;
+
+      allOrders.forEach(order => {
+        if (order.orderItems && Array.isArray(order.orderItems)) {
+          order.orderItems.forEach(item => {
+            // Apply Mapping logic
+            const itemPrice = extractMoney(item, 'ITEM');
+            const shippingPrice = extractMoney(item, 'SHIPPING');
+            const promotionDiscount = extractMoney(item, 'DISCOUNT');
+            const itemTax = extractMoney(item, 'TAX', 'ITEM');
+
+            // Other fields based on user request:
+            // IsGift -> Order.orderItems[].fulfillment.packing.giftOption
+            // BuyerInfo.GiftMessageText -> Order.orderItems[].fulfillment.packing.giftMessage
+
+            allItems.push({
+              amazon_order_item_id: item.orderItemId,
+              amazon_order_id: order.orderId,
+              asin: item.product?.asin,
+              seller_sku: item.product?.sellerSku,
+              title: item.product?.title,
+              quantity_ordered: item.quantityOrdered,
+              quantity_shipped: item.fulfillment?.quantityFulfilled ?? 0,
+
+              item_price_amount: itemPrice?.amount ?? null,
+              item_price_currency: itemPrice?.currency ?? null,
+
+              item_tax_amount: itemTax?.amount ?? null,
+              item_tax_currency: itemTax?.currency ?? null,
+
+              shipping_price_amount: shippingPrice?.amount ?? null,
+              shipping_price_currency: shippingPrice?.currency ?? null,
+
+              promotion_discount_amount: promotionDiscount?.amount ?? null,
+              promotion_discount_currency: promotionDiscount?.currency ?? null,
+
+              // Mapped fields
+              is_gift: item?.fulfillment?.packing?.giftOption ?? false,
+              condition_id: item.product?.condition?.conditionType,
+              condition_subtype_id: item.product?.condition?.conditionSubtype,
+
+              // Additional useful fields if schema supports (mapped to raw_data for now unless explicit columns exist)
+              raw_data: item,
+              updated_at: new Date().toISOString()
+            });
+          });
+        }
+      });
+
+      if (allItems.length > 0) {
+        for (let i = 0; i < allItems.length; i += chunkSize) {
+          const chunk = allItems.slice(i, i + chunkSize);
+          const result = await db
+            .from('amazon_order_items')
+            .upsert(chunk, { onConflict: 'amazon_order_item_id', count: 'exact' });
+
+          if (result.error) {
+            console.error('Error upserting order items:', result.error);
+          } else if (result.count !== null) {
+            totalItemsUpserted += result.count;
+          }
+        }
+        send({ type: 'progress', message: `Synced ${totalItemsUpserted} items.` });
+      }
 
       send({
         type: 'complete',
-        message: `Successfully synced ${allOrders.length} orders (Upserted: ${totalUpserted})`,
+        message: `Successfully synced ${allOrders.length} orders and ${totalItemsUpserted} items.`,
       });
 
     } catch (error: any) {
@@ -329,7 +413,6 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
       }
     });
   } else {
-    // Collect all events and return as JSON
     const events: any[] = [];
     const send = (data: any) => events.push(data);
     await runSync(send);

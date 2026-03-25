@@ -3,23 +3,37 @@ import { SPAPIClient } from '$lib/amazon/sp-api-client';
 import { db } from '$lib/supabase/supabaseServer';
 import { env } from '$env/dynamic/private';
 
-interface AmazonOrder {
-  amazon_order_id: string;
-  last_update_date: string;
-  // Add other fields if needed for processing
-}
+// Helper to extract amounts from the proceeds breakdown structure based on user mapping rules
+const extractMoney = (item: any, type: string, subtype?: string) => {
+  if (!item.proceeds?.breakdowns || !Array.isArray(item.proceeds.breakdowns)) return null;
 
-interface AmazonOrderItem {
-  // ... define fields we insert
-  amazon_order_item_id: string;
-  amazon_order_id: string;
-  asin: string;
-  seller_sku?: string;
-  title?: string;
-  quantity_ordered: number;
-  // ... complete this from existing code
-}
+  if (!subtype) {
+    const breakdown = item.proceeds.breakdowns.find((b: any) => b.type === type);
+    if (breakdown?.subtotal) {
+      return {
+        amount: parseFloat(breakdown.subtotal.amount),
+        currency: breakdown.subtotal.currencyCode
+      };
+    }
+    return null;
+  }
 
+  for (const breakdown of item.proceeds.breakdowns) {
+    if (breakdown.detailedBreakdowns && Array.isArray(breakdown.detailedBreakdowns)) {
+      const detailed = breakdown.detailedBreakdowns.find((d: any) => d.type === type && d.subtype === subtype);
+      if (detailed?.value) {
+        return {
+          amount: parseFloat(detailed.value.amount),
+          currency: detailed.value.currencyCode
+        };
+      }
+    }
+  }
+
+  return null;
+};
+
+// Simple pool for concurrent requests
 async function runPool<T>(
   items: T[],
   worker: (item: T, idx: number) => Promise<void>,
@@ -36,7 +50,7 @@ async function runPool<T>(
   await Promise.all(runners);
 }
 
-// Global instance to reuse between requests
+// Global instance 
 let spApiClientInstance: SPAPIClient | null = null;
 function getSpApiClient() {
   if (!spApiClientInstance) {
@@ -56,7 +70,6 @@ function getSpApiClient() {
 }
 
 export async function GET({ url, request, locals }: { url: URL; request: Request; locals: App.Locals }) {
-  // Check authentication: either logged in user session OR cron secret
   const session = await locals.getSession();
   const authHeader = request.headers.get('Authorization');
   const cronSecret = env.CRON_SECRET;
@@ -66,14 +79,13 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
-  // Determine if we should stream or wait for completion
   const shouldStream = url.searchParams.get('stream') !== 'false' && request.headers.get('accept') !== 'application/json';
 
   const runSync = async (send: (data: any) => void) => {
     try {
       const spApiClient = getSpApiClient();
 
-      // Calculate date range from params or defaults
+      // Determine date range for finding missing items
       const dateParam = url.searchParams.get('date');
       const viewParam = url.searchParams.get('view') || 'daily';
       let targetDate: Date;
@@ -97,7 +109,7 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
       console.log(`Searching DB for orders needing item sync between ${startDate.toISOString()} and ${endDate.toISOString()}`);
       send({ type: 'status', message: 'Checking database for orders...' });
 
-      // Fetch recent orders from DB
+      // Fetch orders in range
       const { data: dbOrders, error: dbOrdersError } = await db
         .from('amazon_orders')
         .select('amazon_order_id, last_update_date, purchase_date')
@@ -111,10 +123,8 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
         return;
       }
 
-      // Check which of these have items
+      // Identify orders missing items
       const orderIds = dbOrders.map(o => o.amazon_order_id);
-
-      // Fetch existing items to see which orders already have them
       const { data: existingItemsData, error: existingItemsError } = await db
         .from('amazon_order_items')
         .select('amazon_order_id')
@@ -127,14 +137,13 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
         existingItemsData.forEach(i => ordersWithItems.add(i.amazon_order_id));
       }
 
-      // Filter orders that need item sync
       let ordersToSyncItems = dbOrders.filter(o => !ordersWithItems.has(o.amazon_order_id));
 
-      // Limit to prevent timeouts on Netlify/Pipedream (avoid >30s execution)
-      const MAX_ITEMS_PER_RUN = 5;
+      // Limit concurrent processing
+      const MAX_ITEMS_PER_RUN = 10;
       const totalPending = ordersToSyncItems.length;
       if (ordersToSyncItems.length > MAX_ITEMS_PER_RUN) {
-        console.log(`Limiting sync to ${MAX_ITEMS_PER_RUN} items (out of ${totalPending} pending) to prevent timeout.`);
+        console.log(`Limiting sync to ${MAX_ITEMS_PER_RUN} items (out of ${totalPending} pending).`);
         ordersToSyncItems = ordersToSyncItems.slice(0, MAX_ITEMS_PER_RUN);
       }
 
@@ -149,77 +158,105 @@ export async function GET({ url, request, locals }: { url: URL; request: Request
       let itemsSynced = 0;
       let ordersProcessed = 0;
 
-      const processOrder = async (order: { amazon_order_id: string }) => {
-        const maxRetries = 5;
+      const processOrder = async (order: { amazon_order_id: string }, idx: number) => {
+        const maxRetries = 3;
         let attempt = 0;
         let success = false;
 
-        try {
-          while (attempt < maxRetries && !success) {
-            try {
-              const response = await spApiClient.request(
-                'GET',
-                `/orders/v0/orders/${order.amazon_order_id}/orderItems`,
-                { rateLimiter: RateLimiters.default }
-              );
-              const items: any[] = response.data?.payload?.OrderItems || [];
+        // Rate limit: GetOrder is 0.5 RPS (2s per request ideally, but burst allows faster).
+        // With pool of 3, we might hit limits. Spacing out initial requests helps.
+        await new Promise(r => setTimeout(r, idx * 500));
 
-              if (items.length > 0) {
-                const itemsToUpsert = items.map(item => ({
-                  amazon_order_item_id: item.OrderItemId,
+        while (attempt < maxRetries && !success) {
+          try {
+            // Use GetOrder v2026 to get items inside order object
+            const response = await spApiClient.request(
+              'GET',
+              `/orders/2026-01-01/orders/${order.amazon_order_id}`,
+              {
+                queryParams: {
+                  includedData: 'FULFILLMENT,PROCEEDS,PACKAGES,BUYER,RECIPIENT,PROMOTION'
+                },
+                rateLimiter: RateLimiters.default // Should be fine for GetOrder
+              }
+            );
+
+            // The response IS the order object (unlike ListOrders)
+            const orderData = response.data;
+            const items = orderData?.orderItems || [];
+
+            if (items.length > 0) {
+              const itemsToUpsert = items.map((item: any) => {
+                const itemPrice = extractMoney(item, 'ITEM');
+                const shippingPrice = extractMoney(item, 'SHIPPING');
+                const promotionDiscount = extractMoney(item, 'DISCOUNT');
+                const itemTax = extractMoney(item, 'TAX', 'ITEM');
+
+                return {
+                  amazon_order_item_id: item.orderItemId,
                   amazon_order_id: order.amazon_order_id,
-                  asin: item.ASIN,
-                  seller_sku: item.SellerSKU,
-                  title: item.Title,
-                  quantity_ordered: item.QuantityOrdered,
-                  quantity_shipped: item.QuantityShipped,
-                  item_price_amount: item.ItemPrice ? parseFloat(item.ItemPrice.Amount) : null,
-                  item_price_currency: item.ItemPrice?.CurrencyCode,
-                  item_tax_amount: item.ItemTax ? parseFloat(item.ItemTax.Amount) : null,
-                  item_tax_currency: item.ItemTax?.CurrencyCode,
-                  shipping_price_amount: item.ShippingPrice ? parseFloat(item.ShippingPrice.Amount) : null,
-                  shipping_price_currency: item.ShippingPrice?.CurrencyCode,
-                  promotion_discount_amount: item.PromotionDiscount ? parseFloat(item.PromotionDiscount.Amount) : null,
-                  promotion_discount_currency: item.PromotionDiscount?.CurrencyCode,
-                  is_gift: item.IsGift === true || String(item.IsGift) === 'true',
-                  condition_id: item.ConditionId,
-                  condition_subtype_id: item.ConditionSubtypeId,
+                  asin: item.product?.asin,
+                  seller_sku: item.product?.sellerSku,
+                  title: item.product?.title,
+                  quantity_ordered: item.quantityOrdered,
+                  quantity_shipped: item.fulfillment?.quantityFulfilled ?? 0,
+
+                  item_price_amount: itemPrice?.amount ?? null,
+                  item_price_currency: itemPrice?.currency ?? null,
+
+                  item_tax_amount: itemTax?.amount ?? null,
+                  item_tax_currency: itemTax?.currency ?? null,
+
+                  shipping_price_amount: shippingPrice?.amount ?? null,
+                  shipping_price_currency: shippingPrice?.currency ?? null,
+
+                  promotion_discount_amount: promotionDiscount?.amount ?? null,
+                  promotion_discount_currency: promotionDiscount?.currency ?? null,
+
+                  is_gift: item?.fulfillment?.packing?.giftOption ?? false,
+                  condition_id: item.product?.condition?.conditionType,
+                  condition_subtype_id: item.product?.condition?.conditionSubtype,
+
                   raw_data: item,
                   updated_at: new Date().toISOString()
-                }));
+                };
+              });
 
-                const { error: itemsError } = await db
-                  .from('amazon_order_items')
-                  .upsert(itemsToUpsert, { onConflict: 'amazon_order_item_id' });
+              const { error: itemsError } = await db
+                .from('amazon_order_items')
+                .upsert(itemsToUpsert, { onConflict: 'amazon_order_item_id' });
 
-                if (itemsError) {
-                  console.error(`Error upserting items for order ${order.amazon_order_id}:`, itemsError);
-                } else {
-                  itemsSynced += items.length;
-                }
-              }
-              success = true;
-            } catch (err: any) {
-              if (err?.response?.status === 429 || err?.message?.includes('Throttled') || err?.message?.includes('TooManyRequests')) {
-                attempt++;
-                const delay = Math.min(15000, Math.pow(2, attempt) * 500 + Math.random() * 500);
-                console.log(`Throttled for order ${order.amazon_order_id}, retrying in ${delay.toFixed(0)}ms (attempt ${attempt}/${maxRetries})`);
-                await new Promise(r => setTimeout(r, delay));
+              if (itemsError) {
+                console.error(`Error upserting items for order ${order.amazon_order_id}:`, itemsError);
               } else {
-                console.error(`Failed to fetch items for order ${order.amazon_order_id}:`, err);
-                break;
+                itemsSynced += items.length;
               }
+            } else {
+              console.log(`No items found in response for order ${order.amazon_order_id}`);
+            }
+            success = true;
+          } catch (err: any) {
+            if (err?.response?.status === 429 || err?.message?.includes('Throttled')) {
+              attempt++;
+              const delay = Math.min(10000, Math.pow(2, attempt) * 1000);
+              console.log(`Throttled for order ${order.amazon_order_id}, retrying in ${delay}ms...`);
+              await new Promise(r => setTimeout(r, delay));
+            } else if (err?.response?.status === 404) {
+              console.error(`Order not found: ${order.amazon_order_id}`);
+              success = true;
+            } else {
+              console.error(`Failed to fetch items for order ${order.amazon_order_id}:`, err?.message || err);
+              attempt++;
+              await new Promise(r => setTimeout(r, 1000));
             }
           }
-        } finally {
-          ordersProcessed++;
-          send({ type: 'progress', ordersProcessed, totalOrders: ordersToSyncItems.length, itemsSynced });
         }
+        ordersProcessed++;
+        send({ type: 'progress', ordersProcessed, totalOrders: ordersToSyncItems.length, itemsSynced });
       };
 
-      // Processing pool
       if (ordersToSyncItems.length > 0) {
-        await runPool(ordersToSyncItems, processOrder, 5); // Conservative concurrency
+        await runPool(ordersToSyncItems, processOrder, 2); // Concurrency 2 to be safe with 0.5 RPS limit
       }
 
       send({

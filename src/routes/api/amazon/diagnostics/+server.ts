@@ -353,7 +353,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
     const accessToken = report.oauth.details.access_token;
 
     // Test different endpoints
-    report.endpoints.orders = await testSpApiEndpoint('/orders/v0/orders?MarketplaceIds=A1F83G8C2ARO7P&CreatedAfter=2024-01-01T00:00:00Z', accessToken);
+    report.endpoints.orders = await testSpApiEndpoint('/orders/2026-01-01/orders?marketplaceIds=A1F83G8C2ARO7P&createdAfter=2024-01-01T00:00:00Z', accessToken);
     report.endpoints.pricing = await testSpApiEndpoint('/products/pricing/v0/price?MarketplaceId=A1F83G8C2ARO7P&Skus=TEST-SKU-123', accessToken);
     report.endpoints.inventory = await testSpApiEndpoint('/fba/inventory/v1/summaries?granularityType=Marketplace&granularityId=A1F83G8C2ARO7P&marketplaceIds=A1F83G8C2ARO7P', accessToken);
     report.endpoints.listings = await testSpApiEndpoint('/listings/2021-08-01/items?marketplaceIds=A1F83G8C2ARO7P&pageSize=10', accessToken);
@@ -383,7 +383,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
         report.oauth.details = { ...report.oauth.details, access_token: accessToken };
 
         // Test endpoints with fresh token
-        report.endpoints.orders = await testSpApiEndpoint('/orders/v0/orders?MarketplaceIds=A1F83G8C2ARO7P&CreatedAfter=2024-01-01T00:00:00Z', accessToken);
+        report.endpoints.orders = await testSpApiEndpoint('/orders/2026-01-01/orders?marketplaceIds=A1F83G8C2ARO7P&createdAfter=2024-01-01T00:00:00Z', accessToken);
         report.endpoints.pricing = await testSpApiEndpoint('/products/pricing/v0/price?MarketplaceId=A1F83G8C2ARO7P&Skus=TEST-SKU-123', accessToken);
         report.endpoints.inventory = await testSpApiEndpoint('/fba/inventory/v1/summaries?granularityType=Marketplace&granularityId=A1F83G8C2ARO7P&marketplaceIds=A1F83G8C2ARO7P', accessToken);
         report.endpoints.listings = await testSpApiEndpoint('/listings/2021-08-01/items?marketplaceIds=A1F83G8C2ARO7P&pageSize=10', accessToken);
