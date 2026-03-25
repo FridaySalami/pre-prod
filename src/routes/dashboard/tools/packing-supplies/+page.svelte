@@ -915,6 +915,25 @@
 		})
 		.reduce((acc: number, inv: any) => acc + (Number(inv.total_cost_raw) || 0), 0);
 
+	$: monthlySpendStats = (data.history || [])
+		.reduce((acc: any[], inv: any) => {
+			const date = new Date(inv.invoice_date);
+			const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+			const monthName = date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+			let entry = acc.find((e) => e.key === key);
+			if (!entry) {
+				entry = { key, monthName, totalExVat: 0, totalIncVat: 0, count: 0 };
+				acc.push(entry);
+			}
+
+			entry.totalExVat += Number(inv.total_cost_raw || 0);
+			entry.totalIncVat += Number(inv.total_cost || 0);
+			entry.count += 1;
+			return acc;
+		}, [])
+		.sort((a: any, b: any) => b.key.localeCompare(a.key));
+
 	function getPriceComparison(supplyId: string, currentPrice: number, currentDate: string) {
 		const history = data.history || [];
 		// Find the most recent invoice BEFORE this one that contains this supply
@@ -2117,6 +2136,54 @@
 						<span class="text-2xl font-bold">{(data.history || []).length}</span>
 					</div>
 				</div>
+
+				{#if monthlySpendStats.length > 0}
+					<div class="bg-card/20 rounded-xl overflow-hidden p-4 border border-blue-100/50">
+						<div class="flex items-center gap-2 mb-4">
+							<Activity class="h-4 w-4 text-blue-500" />
+							<span class="text-sm font-bold text-muted-foreground uppercase tracking-widest"
+								>Monthly Spend Breakdown</span
+							>
+						</div>
+						<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+							{#each monthlySpendStats as stat}
+								<div
+									class="bg-background border rounded-lg p-3 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-colors"
+								>
+									<div
+										class="text-xs font-black uppercase text-muted-foreground tracking-wider mb-2"
+									>
+										{stat.monthName}
+									</div>
+									<div class="flex flex-col gap-1">
+										<div>
+											<span class="text-[10px] text-muted-foreground font-semibold uppercase block"
+												>Ex VAT</span
+											>
+											<div class="text-base font-bold text-foreground">
+												£{stat.totalExVat.toLocaleString(undefined, {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})}
+											</div>
+										</div>
+										<div class="border-t border-dashed pt-1 mt-1">
+											<span class="text-[10px] text-muted-foreground font-semibold uppercase block"
+												>Inc VAT</span
+											>
+											<div class="text-xs font-bold text-muted-foreground">
+												£{stat.totalIncVat.toLocaleString(undefined, {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})}
+											</div>
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
 
 				<!-- Filters -->
 				<div class="flex flex-wrap items-center gap-4 bg-muted/30 p-4 rounded-xl border">
