@@ -156,18 +156,6 @@
 			requiredRole: 'user'
 		},
 		{
-			title: 'Analytics',
-			url: '/analytics',
-			icon: 'analytics',
-			requiredRole: 'user'
-		},
-		{
-			title: 'Monthly Analytics',
-			url: '/analytics/monthly',
-			icon: 'trending_up',
-			requiredRole: 'user'
-		},
-		{
 			title: 'Amazon Orders',
 			url: '/dashboard/amazon/orders',
 			icon: 'shopping_cart',
@@ -189,16 +177,17 @@
 			icon: 'inventory_2',
 			requiredRole: 'user'
 		},
+		
+		{
+			title: 'Buy Box Monitor',
+			url: '/buy-box-monitor',
+			icon: 'insights',
+			requiredRole: 'user'
+		},
 		{
 			title: 'Holiday Calendar',
 			url: '/holiday-calendar',
 			icon: 'date_range',
-			requiredRole: 'user'
-		},
-		{
-			title: 'Buy Box Manager',
-			url: '/buy-box-manager',
-			icon: 'manage_search',
 			requiredRole: 'user'
 		},
 		{
@@ -215,16 +204,6 @@
 		},
 		{
 			type: 'section',
-			title: 'Continuous Improvement'
-		},
-		{
-			title: 'Kaizen Projects',
-			url: '/kaizen-projects',
-			icon: 'assignment',
-			requiredRole: 'user'
-		},
-		{
-			type: 'section',
 			title: 'Documentation'
 		},
 		{
@@ -232,6 +211,7 @@
 			url: '/documentation',
 			icon: 'description',
 			requiredRole: 'user'
+
 		}
 	];
 

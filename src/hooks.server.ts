@@ -43,6 +43,7 @@ const ROUTE_PROTECTION = {
     '/api/daily-report', // Public for Make.com integration
     '/api/product-lookup', // Public for internal product lookups
     '/api/product-lookup/test', // Public for testing
+    '/api/buybox-batch', // Public for automated Buy Box price checking
     '/api/debug-linnworks', // Temporary public for debugging
     '/api/debug-linnworks-v2', // Temporary public for debugging
     '/api/debug-linnworks-v3', // Temporary public for debugging
@@ -125,7 +126,8 @@ export const handle: Handle = async ({ event, resolve }) => {
         remove: (key, options) => event.cookies.delete(key, { ...options, path: '/' }),
       },
     }
-  );
+  ) as any;
+  // cast to any to satisfy local typing differences between environments
 
   // Create admin client for logging operations (no cookie handling needed)
   const adminClient = createServerClient(
@@ -283,8 +285,8 @@ export const handle: Handle = async ({ event, resolve }) => {
         if (pathname.startsWith('/api/')) {
           // Log security violation
           await logSecurityEvent(adminClient, 'UNAUTHORIZED_ACCESS_ATTEMPT', {
-            userId: session.user.id,
-            userEmail: session.user.email,
+            userId: session!.user.id,
+            userEmail: session!.user.email,
             attemptedPath: pathname,
             userRole: userRole,
             requiredRole: routeType,
@@ -309,8 +311,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 
       // Log admin/manager access for audit trail
       await logSecurityEvent(adminClient, 'PRIVILEGED_ACCESS', {
-        userId: session.user.id,
-        userEmail: session.user.email,
+        userId: session!.user.id,
+        userEmail: session!.user.email,
         accessedPath: pathname,
         userRole: userRole,
         ipAddress: event.getClientAddress(),

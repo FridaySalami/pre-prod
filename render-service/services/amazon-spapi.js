@@ -315,6 +315,61 @@ class AmazonSPAPI {
   }
 
   /**
+   * Get listing offers for multiple SKUs (batch processing)
+   * can process up to 20 items per request
+   * Endpoint: /batches/products/pricing/v0/listingOffers
+   */
+  async getListingOffersBatch(skus) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'POST';
+    const path = '/batches/products/pricing/v0/listingOffers';
+
+    // Prepare request body
+    const requestBody = {
+      requests: skus.map(sku => ({
+        uri: `/products/pricing/v0/listings/${encodeURIComponent(sku)}/offers`,
+        method: 'GET',
+        queryParams: {
+          MarketplaceId: this.config.marketplace,
+          ItemCondition: 'New',
+          CustomerType: 'Consumer'
+        }
+      }))
+    };
+
+    const bodyString = JSON.stringify(requestBody);
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(bodyString).digest('hex'),
+      'content-type': 'application/json'
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, {}, headers, bodyString);
+
+    const url = `https://sellingpartnerapi-eu.amazon.com${path}`;
+
+    try {
+      console.log(`📡 Listing Offers Batch Request for ${skus.length} SKUs at ${new Date().toISOString()}`);
+      
+      const response = await axios.post(url, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+
+      console.log(`✅ Listing Offers Batch Response received for ${skus.length} SKUs`);
+      return response.data;
+    } catch (error) {
+      console.error(`Listing Offers Batch API error:`, error.response?.data || error.message);
+      throw new Error(`LISTING_OFFERS_BATCH_ERROR: ${error.message}`);
+    }
+  }
+
+  /**
    * Transform SP-API pricing response into our database format
    */
   async transformPricingData(pricingData, asin, sku, runId, productTitle = null) {

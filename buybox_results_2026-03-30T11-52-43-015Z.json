@@ -1,0 +1,53 @@
+{
+  "success": true,
+  "results": [
+    {
+      "sku": "ACC01 - 001",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    },
+    {
+      "sku": "ACC01 - 001 uk shipping",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    },
+    {
+      "sku": "ACC01 - 002 Prime",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    },
+    {
+      "sku": "ACC01 - 003 Prime",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    },
+    {
+      "sku": "ACC01 - 004",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    },
+    {
+      "sku": "ACC01 - 005 Prime",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    },
+    {
+      "sku": "ACC02 - 001",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    },
+    {
+      "sku": "ACC02 - 001 uk shipping",
+      "status": "error",
+      "error": "$errorResponse.Message",
+      "data": null
+    }
+  ]
+}

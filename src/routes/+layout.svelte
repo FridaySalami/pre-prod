@@ -480,6 +480,12 @@
 						</div>
 					</div>
 				{/if}
+				<nav class="main-nav">
+					<a href="/buy-box-monitor" class="main-nav-link">
+						<i class="material-icons-outlined" style="font-size:18px;vertical-align:middle;">insights</i>
+						<span style="margin-left:6px;">Buy Box Monitor</span>
+					</a>
+				</nav>
 				{@render children()}
 			</div>
 

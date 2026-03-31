@@ -1,0 +1,109 @@
+{
+  "success": true,
+  "results": [
+    {
+      "sku": "ACC01 - 001",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 11.16,
+        "lowestPrice": 11.16,
+        "currency": "GBP",
+        "offerCount": 2,
+        "isWinner": true,
+        "ourPrice": 11.16
+      }
+    },
+    {
+      "sku": "ACC01 - 001 uk shipping",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 11.16,
+        "lowestPrice": 11.16,
+        "currency": "GBP",
+        "offerCount": 2,
+        "isWinner": true,
+        "ourPrice": 11.16
+      }
+    },
+    {
+      "sku": "ACC01 - 002 Prime",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 24.6,
+        "lowestPrice": 24.6,
+        "currency": "GBP",
+        "offerCount": 1,
+        "isWinner": true,
+        "ourPrice": 24.6
+      }
+    },
+    {
+      "sku": "ACC01 - 003 Prime",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 71.32,
+        "lowestPrice": 71.32,
+        "currency": "GBP",
+        "offerCount": 1,
+        "isWinner": true,
+        "ourPrice": 71.32
+      }
+    },
+    {
+      "sku": "ACC01 - 004",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 18.19,
+        "lowestPrice": 18.19,
+        "currency": "GBP",
+        "offerCount": 2,
+        "isWinner": true,
+        "ourPrice": 18.19
+      }
+    },
+    {
+      "sku": "ACC01 - 005 Prime",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 11.83,
+        "lowestPrice": 11.83,
+        "currency": "GBP",
+        "offerCount": 1,
+        "isWinner": true,
+        "ourPrice": 11.83
+      }
+    },
+    {
+      "sku": "ACC02 - 001",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 7.98,
+        "lowestPrice": 8.25,
+        "currency": "GBP",
+        "offerCount": 11,
+        "isWinner": false,
+        "ourPrice": 8.62
+      }
+    },
+    {
+      "sku": "ACC02 - 001 uk shipping",
+      "status": "success",
+      "error": null,
+      "data": {
+        "buyBoxPrice": 7.98,
+        "lowestPrice": 8.25,
+        "currency": "GBP",
+        "offerCount": 11,
+        "isWinner": false,
+        "ourPrice": 8.62
+      }
+    }
+  ]
+}

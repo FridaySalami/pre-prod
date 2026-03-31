@@ -1,1052 +1,292 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { fade } from 'svelte/transition';
-	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
-	import { browser } from '$app/environment';
-	import type {
-		SkuAsinMapping,
-		BuyBoxResponse,
-		CompetitiveAsin,
-		CompetitorBuyBoxInfo
-	} from '$lib/types/buybox';
+  import { 
+    ShieldAlert, ShieldCheck, TrendingUp, AlertCircle, RefreshCw, 
+    Database, Search, Filter, ExternalLink, Info
+  } from 'lucide-svelte';
+  import { formatDistanceToNow, isAfter, subMinutes } from 'date-fns';
+  import { 
+    Badge, 
+    Card, CardContent, CardHeader, CardTitle, 
+    Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+  } from '$lib/shadcn/components/ui/index.js';
+  import type { PageData } from './$types';
 
-	// Search and results state
-	let searchQuery = '';
-	let searchResults: SkuAsinMapping[] = [];
-	let isLoading = false;
-	let errorMessage = '';
-	let resultCount = 0;
-	let selectedProduct: SkuAsinMapping | null = null;
-	let buyBoxInfo: BuyBoxResponse | null = null;
-	let isBuyBoxLoading = false;
-	let buyBoxError = '';
+  let { data }: { data: any } = $props();
 
-	// Competitive analysis state
-	let competitors: CompetitiveAsin[] = [];
-	let competitorBuyBoxData: CompetitorBuyBoxInfo[] = [];
-	let isLoadingCompetitors = false;
-	let competitorError = '';
-	let showAddCompetitorForm = false;
-	let showCompetitorsList = false; // Collapsed by default
-	let isRefreshingPricing = false; // For refresh pricing functionality
-	let lastPricingUpdate: Date | null = null; // Track when pricing was last updated
-	let newCompetitorAsin = '';
-	let newCompetitorType = 'direct_competitor';
-	let newCompetitorNotes = '';
-	let isAddingCompetitor = false;
+  let filterStatus = $state('ALL');
+  let searchQuery = $state('');
 
-	// Pagination
-	let currentPage = 1;
-	let itemsPerPage = 10;
+  let currentStatus = $derived(data?.currentStatus || []);
+  
+  let filteredStatusList = $derived(
+    currentStatus.filter((item: any) => {
+      const matchesSearch = !searchQuery || 
+        item.sku.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        item.asin.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (filterStatus === 'ALL') return matchesSearch;
+      if (filterStatus === 'WINNING') return matchesSearch && item.status === 'WINNING';
+      if (filterStatus === 'LOSING') return matchesSearch && item.status === 'LOSING';
+      if (filterStatus === 'NO_FEATURED_OFFER') return matchesSearch && (item.status === 'SUPPRESSED' || item.status === 'NO_FEATURED_OFFER' || item.status === 'OUT_OF_STOCK');
+      return matchesSearch;
+    })
+  );
 
-	// Initialize from URL params if any
-	onMount(() => {
-		if (browser) {
-			const urlParams = new URLSearchParams(window.location.search);
-			const urlQuery = urlParams.get('query');
-			if (urlQuery) {
-				searchQuery = urlQuery;
-				handleSearch();
-			}
-		}
-	});
+  let stats = $derived(data?.stats || { total: 0, winning: 0, losing: 0, suppressed: 0, atRisk: 0 });
+  let lastRun = $derived(data?.lastRun);
 
-	// Search function
-	async function handleSearch(): Promise<void> {
-		if (!searchQuery.trim()) return;
+  let isStale = $derived(lastRun ? isAfter(subMinutes(new Date(), 75), new Date(lastRun.started_at)) : true);
 
-		isLoading = true;
-		errorMessage = '';
+  function formatCurrency(val: number | null, curr = 'GBP') {
+    if (val === null || val === undefined) return '—';
+    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: curr }).format(val);
+  }
 
-		try {
-			// Update URL with search query
-			if (browser) {
-				const url = new URL(window.location.href);
-				url.searchParams.set('query', searchQuery);
-				window.history.replaceState({}, '', url);
-			}
+  function getStatusStyle(status: string) {
+    switch (status) {
+      case 'WINNING': return 'bg-green-50 text-green-700 border-green-200';
+      case 'LOSING': return 'bg-red-50 text-red-700 border-red-200';
+      case 'SUPPRESSED': 
+      case 'NO_FEATURED_OFFER': return 'bg-amber-50 text-amber-700 border-amber-200';
+      default: return 'bg-slate-50 text-slate-600 border-slate-200';
+    }
+  }
 
-			// Fetch results from API
-			const response = await fetch(
-				`/api/buy-box-monitor/search?query=${encodeURIComponent(searchQuery)}&page=${currentPage}&limit=${itemsPerPage}`
-			);
-			const data = await response.json();
-
-			if (!response.ok) {
-				throw new Error(data.error || 'Failed to search products');
-			}
-
-			searchResults = data.results as SkuAsinMapping[];
-			resultCount = data.total;
-
-			// Clear previous selection
-			selectedProduct = null;
-			buyBoxInfo = null;
-		} catch (error: unknown) {
-			console.error('Search error:', error);
-			errorMessage = error instanceof Error ? error.message : 'An error occurred while searching';
-			searchResults = [];
-			resultCount = 0;
-		} finally {
-			isLoading = false;
-		}
-	}
-
-	// Function to check Buy Box ownership for a specific product
-	async function checkBuyBox(product: SkuAsinMapping): Promise<void> {
-		selectedProduct = product;
-		isBuyBoxLoading = true;
-		buyBoxError = '';
-		buyBoxInfo = null;
-
-		try {
-			const response = await fetch(
-				`/api/buy-box-monitor/check?asin=${encodeURIComponent(product.asin1 || '')}`
-			);
-			const data = await response.json();
-
-			if (!response.ok) {
-				throw new Error(data.error || 'Failed to check Buy Box');
-			}
-
-			buyBoxInfo = data as BuyBoxResponse;
-
-			// After getting buy box info, load competitors
-			await loadCompetitors(product.asin1 || '');
-		} catch (error: unknown) {
-			console.error('Buy Box check error:', error);
-			buyBoxError = error instanceof Error ? error.message : 'Failed to check Buy Box ownership';
-		} finally {
-			isBuyBoxLoading = false;
-		}
-	}
-
-	// Load competitors for the selected ASIN
-	async function loadCompetitors(asin: string): Promise<void> {
-		if (!asin) return;
-
-		isLoadingCompetitors = true;
-		competitorError = '';
-
-		try {
-			const response = await fetch(
-				`/api/buy-box-monitor/competitors?asin=${encodeURIComponent(asin)}`
-			);
-			const data = await response.json();
-
-			if (!response.ok) {
-				throw new Error(data.error || 'Failed to load competitors');
-			}
-
-			competitors = data.competitors || [];
-
-			// Check buy box for all competitors
-			await checkCompetitorBuyBoxes(asin);
-		} catch (error: unknown) {
-			console.error('Error loading competitors:', error);
-			competitorError = error instanceof Error ? error.message : 'Failed to load competitors';
-		} finally {
-			isLoadingCompetitors = false;
-		}
-	}
-
-	// Check buy box status for all competitor ASINs
-	async function checkCompetitorBuyBoxes(primaryAsin: string): Promise<void> {
-		if (competitors.length === 0) return;
-
-		const competitorChecks = competitors.map(async (competitor) => {
-			try {
-				const response = await fetch(
-					`/api/buy-box-monitor/check?asin=${encodeURIComponent(competitor.competitive_asin)}`
-				);
-				const data = await response.json();
-
-				if (response.ok) {
-					console.log(`Buy box data for ${competitor.competitive_asin}:`, data);
-					return {
-						...data,
-						asin: competitor.competitive_asin,
-						competitiveRelationship: competitor
-					} as CompetitorBuyBoxInfo;
-				}
-			} catch (error) {
-				console.error(`Error checking competitor ${competitor.competitive_asin}:`, error);
-			}
-			return null;
-		});
-
-		const results = await Promise.all(competitorChecks);
-		competitorBuyBoxData = results.filter((result) => result !== null) as CompetitorBuyBoxInfo[];
-		lastPricingUpdate = new Date(); // Track when pricing was updated
-		console.log('Final competitive buy box data:', competitorBuyBoxData);
-	}
-
-	// Add a new competitor
-	async function addCompetitor(): Promise<void> {
-		if (!selectedProduct?.asin1 || !newCompetitorAsin.trim()) return;
-
-		isAddingCompetitor = true;
-
-		try {
-			const response = await fetch('/api/buy-box-monitor/competitors', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					primaryAsin: selectedProduct.asin1,
-					competitiveAsin: newCompetitorAsin.trim(),
-					relationshipType: newCompetitorType,
-					notes: newCompetitorNotes.trim() || null
-				})
-			});
-
-			const data = await response.json();
-
-			if (!response.ok) {
-				throw new Error(data.error || 'Failed to add competitor');
-			}
-
-			// Reset form
-			newCompetitorAsin = '';
-			newCompetitorNotes = '';
-			newCompetitorType = 'direct_competitor';
-			showAddCompetitorForm = false;
-
-			// Reload competitors
-			await loadCompetitors(selectedProduct.asin1);
-		} catch (error: unknown) {
-			console.error('Error adding competitor:', error);
-			competitorError = error instanceof Error ? error.message : 'Failed to add competitor';
-		} finally {
-			isAddingCompetitor = false;
-		}
-	}
-
-	// Remove a competitor
-	async function removeCompetitor(competitorId: string): Promise<void> {
-		if (!selectedProduct?.asin1) return;
-
-		try {
-			const response = await fetch(
-				`/api/buy-box-monitor/competitors?id=${encodeURIComponent(competitorId)}`,
-				{
-					method: 'DELETE'
-				}
-			);
-
-			const data = await response.json();
-
-			if (!response.ok) {
-				throw new Error(data.error || 'Failed to remove competitor');
-			}
-
-			// Reload competitors
-			await loadCompetitors(selectedProduct.asin1);
-		} catch (error: unknown) {
-			console.error('Error removing competitor:', error);
-			competitorError = error instanceof Error ? error.message : 'Failed to remove competitor';
-		}
-	}
-
-	// Refresh competitive pricing data
-	async function refreshCompetitivePricing(): Promise<void> {
-		if (!selectedProduct?.asin1 || competitors.length === 0) return;
-
-		isRefreshingPricing = true;
-		competitorError = '';
-
-		try {
-			// Re-fetch current buy box data for all competitors
-			await checkCompetitorBuyBoxes(selectedProduct.asin1);
-		} catch (error: unknown) {
-			console.error('Error refreshing pricing:', error);
-			competitorError =
-				error instanceof Error ? error.message : 'Failed to refresh competitive pricing';
-		} finally {
-			isRefreshingPricing = false;
-		}
-	}
-
-	// Handle pagination
-	function changePage(newPage: number): void {
-		if (newPage < 1) newPage = 1;
-		currentPage = newPage;
-		handleSearch();
-	}
+  function getPriceGap(ours: number, winning: number) {
+    if (!ours || !winning) return null;
+    return ours - winning;
+  }
 </script>
 
-<svelte:head>
-	<title>Buy Box Monitor | Dashboard</title>
-</svelte:head>
+<div class="bg-slate-50/50 min-h-screen">
+  <div class="container py-6 space-y-6">
+    <!-- Compact Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+          <ShieldCheck class="text-indigo-600" size={24} />
+          Buy Box Monitor
+        </h1>
+        <div class="flex items-center gap-2 mt-1">
+          <span class="text-xs font-medium text-slate-500 uppercase tracking-wider">Top 100 Performers</span>
+          <span class="w-1 h-1 bg-slate-300 rounded-full"></span>
+          <span class="text-xs text-slate-400">
+            {#if lastRun}
+              Updated {formatDistanceToNow(new Date(lastRun.started_at))} ago
+            {:else}
+              No data
+            {/if}
+          </span>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-2">
+        {#if isStale}
+          <Badge variant="destructive" class="animate-pulse py-0.5 px-2 text-[10px]">STALE DATA</Badge>
+        {/if}
+        <button 
+          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 active:scale-95 transition-all text-slate-700"
+          onclick={() => window.location.reload()}
+        >
+          <RefreshCw size={14} class={isStale ? 'text-red-500' : 'text-indigo-500'} /> 
+          Refresh
+        </button>
+      </div>
+    </div>
 
-<div class="container mx-auto px-4 py-8">
-	<div class="mb-8">
-		<div class="flex justify-between items-center mb-2">
-			<h1 class="text-3xl font-bold">Buy Box Monitor</h1>
-			<div>
-				<a
-					href="/buy-box-monitor/jobs"
-					class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-				>
-					View Jobs
-				</a>
-			</div>
-		</div>
-		<p class="text-gray-600 mb-6">Search for products by SKU to check Buy Box ownership status</p>
+    <!-- Compact Stats Bar -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <Card class="shadow-sm border-slate-200 overflow-hidden">
+        <div class="h-1 bg-green-500 w-full"></div>
+        <CardContent class="p-3">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Winning</p>
+          <div class="flex items-end justify-between mt-1">
+            <span class="text-2xl font-bold text-slate-900">{stats.winning}</span>
+            <span class="text-xs font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+              {stats.total > 0 ? Math.round((stats.winning / stats.total) * 100) : 0}%
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
-		<!-- Search Form -->
-		<div class="bg-white rounded-lg shadow-md p-6 mb-6">
-			<div class="flex flex-col md:flex-row gap-4">
-				<div class="flex-grow">
-					<input
-						type="text"
-						bind:value={searchQuery}
-						placeholder="Enter SKU, item name or ASIN..."
-						class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						on:keydown={(e) => e.key === 'Enter' && handleSearch()}
-					/>
-				</div>
-				<button
-					on:click={handleSearch}
-					class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-					disabled={isLoading}
-				>
-					{#if isLoading}
-						<span class="inline-block animate-spin mr-2">⟳</span>Searching...
-					{:else}
-						Search
-					{/if}
-				</button>
-			</div>
-		</div>
+      <Card class="shadow-sm border-slate-200 overflow-hidden">
+        <div class="h-1 bg-red-500 w-full"></div>
+        <CardContent class="p-3">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Losing</p>
+          <div class="flex items-end justify-between mt-1">
+            <span class="text-2xl font-bold text-slate-900">{stats.losing}</span>
+            <span class="text-xs font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+              Box Lost
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
-		<!-- Results Section -->
-		{#if errorMessage}
-			<div
-				class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6"
-				role="alert"
-				transition:fade
-			>
-				<p>{errorMessage}</p>
-			</div>
-		{/if}
+      <Card class="shadow-sm border-slate-200 overflow-hidden">
+        <div class="h-1 bg-amber-500 w-full"></div>
+        <CardContent class="p-3">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Suppressed</p>
+          <div class="flex items-end justify-between mt-1">
+            <span class="text-2xl font-bold text-slate-900">{stats.suppressed}</span>
+            <span class="text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+              Action
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
-		{#if searchResults.length > 0}
-			<div class="bg-white rounded-lg shadow-md overflow-hidden">
-				<div class="px-6 py-4 border-b border-gray-200">
-					<h2 class="text-xl font-semibold">Search Results</h2>
-					<p class="text-sm text-gray-600">Found {resultCount} products matching your search</p>
-				</div>
+      <Card class="shadow-sm border-slate-200 overflow-hidden">
+        <div class="h-1 bg-indigo-500 w-full"></div>
+        <CardContent class="p-3">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Revenue At Risk</p>
+          <div class="flex items-end justify-between mt-1">
+            <span class="text-2xl font-bold text-slate-900">{stats.atRisk}</span>
+            <span class="text-xs font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+              Top Items
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
 
-				<div class="overflow-x-auto">
-					<table class="min-w-full divide-y divide-gray-200">
-						<thead class="bg-gray-50">
-							<tr>
-								<th
-									scope="col"
-									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>SKU</th
-								>
-								<th
-									scope="col"
-									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Item Name</th
-								>
-								<th
-									scope="col"
-									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>ASIN</th
-								>
-								<th
-									scope="col"
-									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Price</th
-								>
-								<th
-									scope="col"
-									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Status</th
-								>
-								<th
-									scope="col"
-									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-									>Actions</th
-								>
-							</tr>
-						</thead>
-						<tbody class="bg-white divide-y divide-gray-200">
-							{#each searchResults as product}
-								<tr class={selectedProduct?.id === product.id ? 'bg-blue-50' : ''}>
-									<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"
-										>{product.seller_sku}</td
-									>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-										>{product.item_name || 'N/A'}</td
-									>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-										{#if product.asin1}
-											<a
-												href={`https://www.amazon.co.uk/dp/${product.asin1}`}
-												target="_blank"
-												rel="noopener noreferrer"
-												class="text-blue-600 hover:text-blue-800 hover:underline"
-											>
-												{product.asin1}
-											</a>
-										{:else}
-											N/A
-										{/if}
-									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-										{product.price ? `£${product.price.toFixed(2)}` : 'N/A'}
-									</td>
-									<td class="px-6 py-4 whitespace-nowrap">
-										<span
-											class={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                      ${
-												product.status === 'active'
-													? 'bg-green-100 text-green-800'
-													: product.status === 'inactive'
-														? 'bg-red-100 text-red-800'
-														: 'bg-gray-100 text-gray-800'
-											}`}
-										>
-											{product.status || 'Unknown'}
-										</span>
-									</td>
-									<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-										<button
-											on:click={() => checkBuyBox(product)}
-											class="text-blue-600 hover:text-blue-900 mr-3 font-medium"
-											disabled={!product.asin1 || isBuyBoxLoading}
-										>
-											Check Buy Box
-										</button>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
+    <!-- Main Data Section -->
+    <Card class="border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
+      <CardHeader class="border-b bg-white py-3 px-4">
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+          <div class="flex items-center gap-2">
+            <CardTitle class="text-sm font-bold text-slate-700 uppercase tracking-tight">Marketplace Intelligence</CardTitle>
+            <Badge variant="outline" class="text-[10px] font-mono text-slate-500">{filteredStatusList.length} SKUs shown</Badge>
+          </div>
+          
+          <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+            <div class="relative w-full sm:w-64">
+              <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input 
+                type="text" 
+                placeholder="Search SKU or ASIN..." 
+                bind:value={searchQuery}
+                class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50/50 outline-none transition-all"
+              />
+            </div>
+            
+            <div class="relative w-full sm:w-44">
+              <Filter class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select 
+                bind:value={filterStatus}
+                class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50/50 outline-none appearance-none transition-all cursor-pointer"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="WINNING">Winning Only</option>
+                <option value="LOSING">Losing Only</option>
+                <option value="NO_FEATURED_OFFER">Suppressed/OOS</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
 
-				<!-- Pagination -->
-				{#if resultCount > itemsPerPage}
-					<div
-						class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between"
-					>
-						<div>
-							<p class="text-sm text-gray-700">
-								Showing <span class="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> to
-								<span class="font-medium">{Math.min(currentPage * itemsPerPage, resultCount)}</span>
-								of <span class="font-medium">{resultCount}</span> results
-							</p>
-						</div>
-						<div class="flex-1 flex justify-end">
-							<button
-								on:click={() => changePage(currentPage - 1)}
-								disabled={currentPage <= 1}
-								class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 {currentPage <=
-								1
-									? 'opacity-50 cursor-not-allowed'
-									: ''}"
-							>
-								Previous
-							</button>
-							<button
-								on:click={() => changePage(currentPage + 1)}
-								disabled={currentPage * itemsPerPage >= resultCount}
-								class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 {currentPage *
-									itemsPerPage >=
-								resultCount
-									? 'opacity-50 cursor-not-allowed'
-									: ''}"
-							>
-								Next
-							</button>
-						</div>
-					</div>
-				{/if}
-			</div>
-		{/if}
-
-		<!-- Buy Box Details -->
-		{#if selectedProduct && buyBoxInfo}
-			<div class="mt-8 bg-white rounded-lg shadow-md overflow-hidden" transition:fade>
-				<div class="px-6 py-4 border-b border-gray-200 bg-blue-50">
-					<h2 class="text-xl font-semibold">Buy Box Analysis</h2>
-					<p class="text-sm text-gray-600">
-						Product: {selectedProduct.item_name} ({selectedProduct.seller_sku})
-					</p>
-				</div>
-
-				<div class="p-6">
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-						<div>
-							<h3 class="text-lg font-medium mb-2">Product Details</h3>
-							<dl class="grid grid-cols-3 gap-2 text-sm">
-								<dt class="font-medium text-gray-500">ASIN:</dt>
-								<dd class="col-span-2">
-									<a
-										href={`https://www.amazon.co.uk/dp/${selectedProduct.asin1}`}
-										target="_blank"
-										rel="noopener noreferrer"
-										class="text-blue-600 hover:text-blue-800 hover:underline"
-									>
-										{selectedProduct.asin1}
-									</a>
-								</dd>
-
-								<dt class="font-medium text-gray-500">SKU:</dt>
-								<dd class="col-span-2">{selectedProduct.seller_sku}</dd>
-
-								<dt class="font-medium text-gray-500">Your Price:</dt>
-								<dd class="col-span-2">
-									{selectedProduct.price ? `£${selectedProduct.price.toFixed(2)}` : 'N/A'}
-								</dd>
-							</dl>
-						</div>
-
-						<div>
-							<h3 class="text-lg font-medium mb-2">Buy Box Status</h3>
-							<dl class="grid grid-cols-3 gap-2 text-sm">
-								<dt class="font-medium text-gray-500">Buy Box Owner:</dt>
-								<dd
-									class="col-span-2 font-medium {buyBoxInfo.hasBuyBox
-										? 'text-green-600'
-										: 'text-red-600'}"
-								>
-									{buyBoxInfo.buyBoxOwner || 'Unknown'}
-								</dd>
-
-								<dt class="font-medium text-gray-500">You Own Buy Box:</dt>
-								<dd class="col-span-2">
-									<span
-										class={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                    ${buyBoxInfo.hasBuyBox ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-									>
-										{buyBoxInfo.hasBuyBox ? 'Yes' : 'No'}
-									</span>
-								</dd>
-
-								<dt class="font-medium text-gray-500">Buy Box Price:</dt>
-								<dd class="col-span-2">
-									{#if buyBoxInfo.buyBoxPrice && buyBoxInfo.buyBoxPrice > 0}
-										<span class="font-medium">£{buyBoxInfo.buyBoxPrice.toFixed(2)}</span>
-										<span class="text-sm text-gray-500 ml-2">(Competitor)</span>
-									{:else}
-										<span class="text-orange-600 font-medium">No Competition Found</span>
-									{/if}
-								</dd>
-
-								<dt class="font-medium text-gray-500">Price Difference:</dt>
-								<dd class="col-span-2">
-									{#if buyBoxInfo.buyBoxPrice && buyBoxInfo.buyBoxPrice > 0 && selectedProduct.price}
-										<span
-											class={(buyBoxInfo.priceDifference || 0) > 0
-												? 'text-red-600'
-												: (buyBoxInfo.priceDifference || 0) < 0
-													? 'text-green-600'
-													: 'text-gray-600'}
-										>
-											{(buyBoxInfo.priceDifference || 0) > 0 ? '+' : ''}£{(
-												buyBoxInfo.priceDifference || 0
-											).toFixed(2)}
-											({Math.abs(buyBoxInfo.priceDifferencePercent || 0).toFixed(2)}%)
-										</span>
-									{:else if !buyBoxInfo.buyBoxPrice || buyBoxInfo.buyBoxPrice <= 0}
-										<span class="text-orange-600">No competitor to compare</span>
-									{:else}
-										N/A
-									{/if}
-								</dd>
-							</dl>
-						</div>
-					</div>
-
-					{#if buyBoxInfo.competitorInfo && buyBoxInfo.competitorInfo.length > 0}
-						<div class="mt-6">
-							<h3 class="text-lg font-medium mb-2">Competitor Analysis</h3>
-							<div class="overflow-x-auto">
-								<table class="min-w-full divide-y divide-gray-200">
-									<thead class="bg-gray-50">
-										<tr>
-											<th
-												scope="col"
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-												>Seller</th
-											>
-											<th
-												scope="col"
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-												>Price</th
-											>
-											<th
-												scope="col"
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-												>Condition</th
-											>
-											<th
-												scope="col"
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-												>Fulfillment</th
-											>
-											<th
-												scope="col"
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-												>Buy Box</th
-											>
-										</tr>
-									</thead>
-									<tbody class="bg-white divide-y divide-gray-200">
-										{#each buyBoxInfo.competitorInfo as competitor}
-											<tr class={competitor.sellerName === 'Your Store' ? 'bg-yellow-50' : ''}>
-												<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-													{competitor.sellerName}
-													{#if competitor.sellerName === 'Your Store'}
-														<span class="text-yellow-500 ml-1" title="Your Listing">★</span>
-													{/if}
-												</td>
-												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-													>£{competitor.price.toFixed(2)}</td
-												>
-												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-													>{competitor.condition}</td
-												>
-												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-													{competitor.fulfillmentType === 'FBA' ? 'Amazon (FBA)' : 'Merchant'}
-												</td>
-												<td class="px-6 py-4 whitespace-nowrap">
-													<span
-														class={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                            ${competitor.hasBuyBox ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}
-													>
-														{competitor.hasBuyBox ? 'Yes' : 'No'}
-													</span>
-												</td>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-								<div class="mt-2 text-xs text-gray-500 italic px-6 py-2">
-									<span class="text-yellow-500 mr-1">★</span> Indicates your own listing
-								</div>
-							</div>
-						</div>
-					{/if}
-
-					<!-- Recommendations Section -->
-					{#if buyBoxInfo.recommendations && buyBoxInfo.recommendations.length > 0}
-						<div class="mt-6">
-							<h3 class="text-lg font-medium mb-2">Recommendations</h3>
-							<div class="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-								<ul class="list-disc pl-5 space-y-2 text-sm">
-									{#each buyBoxInfo.recommendations as recommendation}
-										<li class="text-gray-700">{recommendation}</li>
-									{/each}
-								</ul>
-							</div>
-						</div>
-					{/if}
-				</div>
-			</div>
-
-			<!-- Competitive Analysis Section -->
-			<div class="mt-8 bg-white rounded-lg shadow-md overflow-hidden" transition:fade>
-				<div class="px-6 py-4 border-b border-gray-200 bg-purple-50">
-					<div class="flex justify-between items-center">
-						<div>
-							<h2 class="text-xl font-semibold">Competitive Analysis</h2>
-							<p class="text-sm text-gray-600">
-								Monitor competitor ASINs for: {selectedProduct.item_name}
-							</p>
-						</div>
-						<div class="flex gap-2">
-							{#if competitors.length > 0}
-								<button
-									on:click={refreshCompetitivePricing}
-									disabled={isRefreshingPricing || isLoadingCompetitors}
-									class="bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 disabled:opacity-50 text-xs flex items-center gap-1"
-									title="Refresh live pricing data"
-								>
-									{#if isRefreshingPricing}
-										<span class="inline-block animate-spin">⟳</span>
-									{:else}
-										<span>🔄</span>
-									{/if}
-									Refresh
-								</button>
-							{/if}
-							<button
-								on:click={() => (showAddCompetitorForm = !showAddCompetitorForm)}
-								class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 text-sm"
-								disabled={isLoadingCompetitors}
-							>
-								{showAddCompetitorForm ? 'Cancel' : '+ Add Competitor'}
-							</button>
-						</div>
-					</div>
-				</div>
-
-				<div class="p-6">
-					<!-- Add Competitor Form -->
-					{#if showAddCompetitorForm}
-						<div class="mb-6 p-4 border border-purple-200 rounded-lg bg-purple-50" transition:fade>
-							<h4 class="font-medium mb-3">Add Competitive ASIN</h4>
-							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-								<div>
-									<label
-										for="competitor-asin-input"
-										class="block text-sm font-medium text-gray-700 mb-1"
-									>
-										Competitor ASIN
-									</label>
-									<input
-										id="competitor-asin-input"
-										type="text"
-										bind:value={newCompetitorAsin}
-										placeholder="B0123456789"
-										class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-									/>
-								</div>
-								<div>
-									<label
-										for="relationship-type-select"
-										class="block text-sm font-medium text-gray-700 mb-1"
-									>
-										Relationship Type
-									</label>
-									<select
-										id="relationship-type-select"
-										bind:value={newCompetitorType}
-										class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-									>
-										<option value="direct_competitor">Direct Competitor</option>
-										<option value="alternative">Alternative Product</option>
-										<option value="substitute">Substitute Product</option>
-										<option value="related">Related Product</option>
-									</select>
-								</div>
-							</div>
-							<div class="mt-3">
-								<label
-									for="competitor-notes-textarea"
-									class="block text-sm font-medium text-gray-700 mb-1"
-								>
-									Notes (Optional)
-								</label>
-								<textarea
-									id="competitor-notes-textarea"
-									bind:value={newCompetitorNotes}
-									placeholder="Why is this a competitor? Any specific notes..."
-									rows="2"
-									class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-								></textarea>
-							</div>
-							<div class="mt-4 flex gap-3">
-								<button
-									on:click={addCompetitor}
-									disabled={!newCompetitorAsin.trim() || isAddingCompetitor}
-									class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 text-sm"
-								>
-									{#if isAddingCompetitor}
-										<span class="inline-block animate-spin mr-2">⟳</span>Adding...
-									{:else}
-										Add Competitor
-									{/if}
-								</button>
-								<button
-									on:click={() => {
-										showAddCompetitorForm = false;
-										newCompetitorAsin = '';
-										newCompetitorNotes = '';
-									}}
-									class="border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 text-sm"
-								>
-									Cancel
-								</button>
-							</div>
-						</div>
-					{/if}
-
-					<!-- Competitor Error -->
-					{#if competitorError}
-						<div class="mb-6 bg-red-100 border-l-4 border-red-500 text-red-700 p-4" transition:fade>
-							<p>{competitorError}</p>
-						</div>
-					{/if}
-
-					<!-- Loading State -->
-					{#if isLoadingCompetitors}
-						<div class="text-center py-8">
-							<div
-								class="animate-spin inline-block w-6 h-6 border-4 border-purple-600 border-t-transparent rounded-full mb-4"
-							></div>
-							<p class="text-purple-600">Loading competitive analysis...</p>
-						</div>
-					{/if}
-
-					<!-- Competitors List -->
-					{#if competitors.length > 0 && !isLoadingCompetitors}
-						<div class="mb-6">
-							<button
-								on:click={() => (showCompetitorsList = !showCompetitorsList)}
-								class="flex items-center justify-between w-full text-left font-medium mb-3 hover:text-purple-600 transition-colors"
-							>
-								<span>Tracked Competitors ({competitors.length})</span>
-								<svg
-									class="w-5 h-5 transform transition-transform {showCompetitorsList
-										? 'rotate-180'
-										: ''}"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M19 9l-7 7-7-7"
-									></path>
-								</svg>
-							</button>
-
-							{#if showCompetitorsList}
-								<div class="space-y-3" transition:fade>
-									{#each competitors as competitor}
-										<div
-											class="border border-gray-200 rounded-lg p-3 flex justify-between items-center"
-										>
-											<div class="flex-1">
-												<div class="flex items-center gap-3">
-													<a
-														href={`https://www.amazon.co.uk/dp/${competitor.competitive_asin}`}
-														target="_blank"
-														rel="noopener noreferrer"
-														class="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-													>
-														{competitor.competitive_asin}
-													</a>
-													<span class="px-2 py-1 bg-gray-100 text-gray-800 text-xs rounded-full">
-														{competitor.relationship_type.replace('_', ' ')}
-													</span>
-												</div>
-
-												<!-- Product Title Display -->
-												{#if competitor.competitive_product_title && !competitor.competitive_product_title.startsWith('Product ')}
-													<p
-														class="text-sm text-gray-700 mt-1 font-medium break-words leading-tight"
-													>
-														{competitor.competitive_product_title}
-													</p>
-												{:else}
-													<div class="flex items-center gap-2 mt-1">
-														<p class="text-sm text-gray-500 italic">Product title not available</p>
-														<button
-															class="text-xs text-blue-600 hover:text-blue-800 underline"
-															on:click={() =>
-																window.open(
-																	`https://www.amazon.co.uk/dp/${competitor.competitive_asin}`,
-																	'_blank'
-																)}
-														>
-															View on Amazon
-														</button>
-													</div>
-												{/if}
-
-												{#if competitor.notes}
-													<p class="text-sm text-gray-600 mt-1">{competitor.notes}</p>
-												{/if}
-												<p class="text-xs text-gray-500 mt-1">
-													Added {new Date(competitor.created_at).toLocaleDateString()}
-												</p>
-											</div>
-											<button
-												on:click={() => removeCompetitor(competitor.id)}
-												class="text-red-600 hover:text-red-800 text-sm ml-4"
-												title="Remove competitor"
-											>
-												✕
-											</button>
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/if}
-
-					<!-- Competitive Buy Box Analysis -->
-					{#if competitorBuyBoxData.length > 0}
-						<div>
-							<div class="flex justify-between items-center mb-3">
-								<div>
-									<h4 class="font-medium">Competitive Buy Box Analysis</h4>
-									{#if lastPricingUpdate}
-										<p class="text-xs text-gray-500 mt-1">
-											Last updated: {lastPricingUpdate.toLocaleTimeString()} on {lastPricingUpdate.toLocaleDateString()}
-										</p>
-									{/if}
-								</div>
-								<button
-									on:click={refreshCompetitivePricing}
-									disabled={isRefreshingPricing}
-									class="bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 disabled:opacity-50 text-sm flex items-center gap-2"
-									title="Refresh live pricing data for all competitors"
-								>
-									{#if isRefreshingPricing}
-										<span class="inline-block animate-spin">⟳</span>Refreshing...
-									{:else}
-										<span>🔄</span>Refresh Pricing
-									{/if}
-								</button>
-							</div>
-							<div class="overflow-x-auto">
-								<table class="min-w-full divide-y divide-gray-200">
-									<thead class="bg-gray-50">
-										<tr>
-											<th
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												ASIN
-											</th>
-											<th
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												Product Title
-											</th>
-											<th
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												Relationship
-											</th>
-											<th
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												Buy Box Price
-											</th>
-											<th
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												Buy Box Owner
-											</th>
-											<th
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												Price vs. Yours
-											</th>
-											<th
-												class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-											>
-												Status
-											</th>
-										</tr>
-									</thead>
-									<tbody class="bg-white divide-y divide-gray-200">
-										{#each competitorBuyBoxData as competitorData}
-											{@const title =
-												competitorData.competitiveRelationship.competitive_product_title}
-											<tr>
-												<td class="px-6 py-4 whitespace-nowrap text-sm">
-													<a
-														href={`https://www.amazon.co.uk/dp/${competitorData.asin}`}
-														target="_blank"
-														rel="noopener noreferrer"
-														class="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-													>
-														{competitorData.asin}
-													</a>
-												</td>
-												<td class="px-6 py-4 text-sm text-gray-900 max-w-xs">
-													{#if title && !title.startsWith('Product ')}
-														<div class="break-words leading-tight" {title}>
-															{title}
-														</div>
-													{:else}
-														<div class="text-gray-500 italic" title="Product title not available">
-															Title not available
-														</div>
-													{/if}
-												</td>
-												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-													{competitorData.competitiveRelationship.relationship_type.replace(
-														'_',
-														' '
-													)}
-												</td>
-												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-													{competitorData.buyBoxPrice
-														? `£${competitorData.buyBoxPrice.toFixed(2)}`
-														: 'No Buy Box'}
-												</td>
-												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-													{competitorData.buyBoxOwner || 'Unknown'}
-												</td>
-												<td class="px-6 py-4 whitespace-nowrap text-sm">
-													{#if competitorData.buyBoxPrice && selectedProduct?.price}
-														{@const priceDiff = competitorData.buyBoxPrice - selectedProduct.price}
-														<span
-															class={priceDiff > 0
-																? 'text-green-600'
-																: priceDiff < 0
-																	? 'text-red-600'
-																	: 'text-gray-600'}
-														>
-															{priceDiff > 0 ? '+' : ''}{priceDiff.toFixed(2)}
-														</span>
-													{:else}
-														N/A
-													{/if}
-												</td>
-												<td class="px-6 py-4 whitespace-nowrap">
-													<span
-														class={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-														${competitorData.hasBuyBox ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-													>
-														{competitorData.hasBuyBox ? 'Has Buy Box' : 'No Buy Box'}
-													</span>
-												</td>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
-						</div>
-					{/if}
-
-					{#if competitors.length === 0 && !isLoadingCompetitors}
-						<div class="text-center py-8">
-							<p class="text-gray-500 mb-4">No competitors tracked for this ASIN yet.</p>
-							<button
-								on:click={() => (showAddCompetitorForm = true)}
-								class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
-							>
-								Add Your First Competitor
-							</button>
-						</div>
-					{/if}
-				</div>
-			</div>
-		{/if}
-
-		{#if buyBoxError}
-			<div
-				class="mt-6 bg-red-100 border-l-4 border-red-500 text-red-700 p-4"
-				role="alert"
-				transition:fade
-			>
-				<p>{buyBoxError}</p>
-			</div>
-		{/if}
-
-		{#if isBuyBoxLoading}
-			<div class="mt-6 bg-blue-50 p-6 rounded-lg shadow-md text-center" transition:fade>
-				<div
-					class="animate-spin inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mb-4"
-				></div>
-				<p class="text-blue-600">Checking Buy Box status...</p>
-			</div>
-		{/if}
-	</div>
+      <div class="overflow-x-auto">
+        <Table>
+          <TableHeader class="bg-slate-50/50">
+            <TableRow class="hover:bg-transparent border-b">
+              <TableHead class="w-12 text-[10px] font-bold text-slate-500 uppercase text-center px-4">Rank</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase">Product Identification</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase">Status</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Our Price</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Winning</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-center">Price Gap</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Next Best</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right px-4">Last Activity</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {#each filteredStatusList as item, i}
+              <TableRow class="group h-12 border-b-slate-100 hover:bg-slate-50/80 transition-colors {item.is_winner === false ? 'bg-red-50/30' : ''}">
+                <TableCell class="text-center px-4">
+                  <span class="text-xs font-bold text-slate-400">#{item.rank || '—'}</span>
+                </TableCell>
+                
+                <TableCell>
+                  <div class="flex flex-col">
+                    <span class="text-xs font-semibold text-slate-700 truncate max-w-[180px]" title={item.product_name}>{item.sku}</span>
+                    <a 
+                      href="https://sellercentral.amazon.co.uk/myinventory/inventory?searchTerm={item.asin}" 
+                      target="_blank" 
+                      class="text-[10px] text-indigo-500 hover:text-indigo-700 font-mono flex items-center gap-0.5 mt-0.5 group-hover:underline"
+                    >
+                      {item.asin}
+                      <ExternalLink size={8} class="opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </a>
+                  </div>
+                </TableCell>
+                
+                <TableCell>
+                  <Badge variant="outline" class="text-[9px] font-bold px-1.5 py-0 h-4 border-slate-300 {getStatusStyle(item.status)}">
+                    {item.status.replace(/_/g, ' ')}
+                  </Badge>
+                </TableCell>
+                
+                <TableCell class="text-right font-medium text-xs text-slate-700 whitespace-nowrap">
+                  {formatCurrency(item.our_price)}
+                </TableCell>
+                
+                <TableCell class="text-right font-medium text-xs text-slate-900 border-l border-slate-50 whitespace-nowrap">
+                  {formatCurrency(item.buy_box_price)}
+                </TableCell>
+                
+                <TableCell class="text-center border-x border-slate-50">
+                  {@const gap = getPriceGap(item.our_price, item.buy_box_price)}
+                  {#if gap !== null}
+                    <div class="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full {gap > 0 ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100'}">
+                      {gap > 0 ? '+' : ''}{formatCurrency(gap)}
+                    </div>
+                  {:else}
+                    <span class="text-slate-300 font-serif">—</span>
+                  {/if}
+                </TableCell>
+                
+                <TableCell class="text-right font-bold text-xs text-indigo-600 bg-indigo-50/30 whitespace-nowrap">
+                  {formatCurrency(item.competitor_price)}
+                </TableCell>
+                
+                <TableCell class="text-right px-4 whitespace-nowrap">
+                  <span class="text-[10px] text-slate-400 tabular-nums">
+                    {item.last_changed_at ? formatDistanceToNow(new Date(item.last_changed_at)) + ' ago' : 'static'}
+                  </span>
+                </TableCell>
+              </TableRow>
+            {:else}
+              <TableRow>
+                <TableCell colspan="8" class="text-center py-16">
+                  <div class="flex flex-col items-center gap-2">
+                    <div class="bg-slate-100 p-3 rounded-full">
+                      <Search size={24} class="text-slate-400" />
+                    </div>
+                    <p class="text-sm font-medium text-slate-500">No results found for your search criteria</p>
+                    <button class="text-xs text-indigo-600 font-semibold" onclick={() => {searchQuery = ''; filterStatus = 'ALL'}}>Clear all filters</button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            {/each}
+          </TableBody>
+        </Table>
+      </div>
+    </Card>
+    
+    <div class="flex items-center justify-between text-[10px] text-slate-400 px-1 italic">
+      <div class="flex items-center gap-1">
+        <Info size={10} />
+        Prices include shipping per Amazon Landed Price calculation.
+      </div>
+      <div>
+        Monitoring {stats.total} Top Sellers
+      </div>
+    </div>
+  </div>
 </div>
+
+<style>
+  :global(.container) {
+    max-width: 1100px;
+  }
+</style>

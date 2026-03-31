@@ -2,8 +2,6 @@
 
 /**
  * Amazon SP-API Helper Functions
- * 
- * Production-ready functions for your SvelteKit app
  */
 
 const https = require('https');
@@ -57,7 +55,6 @@ class AmazonSPAPI {
             const response = JSON.parse(data);
             if (res.statusCode === 200) {
               this.cachedToken = response.access_token;
-              // Cache for 55 minutes (tokens expire in 1 hour)
               this.tokenExpiry = Date.now() + (55 * 60 * 1000);
               resolve(response.access_token);
             } else {
@@ -126,16 +123,16 @@ class AmazonSPAPI {
   }
 
   // Make SP-API request
-  async makeRequest(path, queryParams = {}) {
+  async makeRequest(path, queryParams = {}, method = 'GET', body = null) {
     const accessToken = await this.getAccessToken();
     const querystring = new URLSearchParams(queryParams).toString();
-    const method = 'GET';
-    const payload = '';
+    const payload = body ? JSON.stringify(body) : '';
 
     const headers = {
       'host': this.host,
       'x-amz-access-token': accessToken,
-      'user-agent': 'MyApp/1.0'
+      'user-agent': 'MyApp/1.0',
+      'content-type': 'application/json'
     };
 
     const awsHeaders = this.createSignature(method, path, querystring, headers, payload);
@@ -167,136 +164,102 @@ class AmazonSPAPI {
       });
 
       req.on('error', reject);
+      if (payload) req.write(payload);
       req.end();
     });
   }
 
-  // Get item offers (WORKING ENDPOINT!)
-  async getItemOffers(asin, itemCondition = 'New') {
-    const path = `/products/pricing/v0/items/${asin}/offers`;
-    const params = {
-      MarketplaceId: this.marketplaceId,
-      ItemCondition: itemCondition
+  /**
+   * Get Listing Offers Batch (v0)
+   */
+  async getListingOffersBatch(skus) {
+    const path = '/batches/products/pricing/v0/listingOffers';
+    const body = {
+      requests: skus.map(sku => ({
+        uri: `/products/pricing/v0/listings/${encodeURIComponent(sku)}/offers`,
+        method: 'GET',
+        MarketplaceId: this.marketplaceId,
+        ItemCondition: 'New',
+        CustomerType: 'Consumer'
+      }))
     };
-
-    return this.makeRequest(path, params);
+    return this.makeRequest(path, {}, 'POST', body);
   }
 
-  // Get multiple item offers
-  async getMultipleItemOffers(asins, itemCondition = 'New') {
-    const results = [];
-
-    for (const asin of asins) {
-      try {
-        const offers = await this.getItemOffers(asin, itemCondition);
-        results.push({
-          asin,
-          success: true,
-          data: offers
-        });
-      } catch (error) {
-        results.push({
-          asin,
-          success: false,
-          error: error.message
-        });
-      }
-
-      // Rate limiting - wait 100ms between requests
-      await new Promise(resolve => setTimeout(resolve, 100));
+  // Extract useful pricing info from Listing Batch response
+  extractListingBatchPricing(itemResponse) {
+    const body = itemResponse.body || {};
+    const payload = body.payload || {};
+    const identifier = payload.Identifier || {};
+    const summary = payload.Summary || {};
+    const offers = payload.Offers || [];
+    
+    // Normalize status from {statusCode: 200, reasonPhrase: 'OK'} or raw 200
+    let status = itemResponse.status;
+    if (status && typeof status === 'object') {
+      status = status.statusCode;
     }
 
-    return results;
-  }
+    const sku = identifier.SellerSKU;
+    const asin = identifier.ASIN || summary.ASIN;
 
-  // Extract useful pricing info from offers response
-  extractPricingInfo(offersResponse) {
-    const payload = offersResponse.payload;
-    const offers = payload.Offers || [];
-
-    if (offers.length === 0) {
-      return {
-        asin: payload.ASIN,
-        hasOffers: false,
-        buyboxPrice: null,
-        lowestPrice: null,
-        offerCount: 0
+    if (status !== 200 && status !== "Success") {
+      if (payload.errors) {
+        return { 
+          sku,
+          asin,
+          success: false, 
+          error: `${status}: ${payload.errors.map(e => e.message).join(', ')}` 
+        };
+      }
+      return { 
+        sku,
+        asin,
+        success: false, 
+        error: status 
       };
     }
 
-    const prices = offers
-      .filter(offer => offer.ListingPrice && offer.ListingPrice.Amount)
-      .map(offer => parseFloat(offer.ListingPrice.Amount));
+    // Our Merchant ID / Seller ID
+    const YOUR_SELLER_ID = this.sellerId;
 
-    const buyboxOffer = offers.find(offer => offer.IsBuyBoxWinner);
+    // Normalize Price Data (since LandingPrice might be missing if shipping not calculated)
+    const getLanded = (o) => {
+      const price = o.ListingPrice?.Amount ? parseFloat(o.ListingPrice.Amount) : 0;
+      const shipping = o.Shipping?.Amount ? parseFloat(o.Shipping.Amount) : 0;
+      return price + shipping;
+    };
+
+    // Check Buy Box Prices in Summary
+    const bbPrices = summary.BuyBoxPrices || [];
+    const mainBB = bbPrices[0]; // Usually just one for New condition
+    
+    // Find our offer if present. MyOffer: true isn't always reliable in batches
+    const ourOffer = offers.find(o => o.MyOffer === true || o.SellerId === YOUR_SELLER_ID);
+    const isWinner = !!(ourOffer && ourOffer.IsBuyBoxWinner);
+
+    // Extract next best price (first offer that isn't the Buy Box winner AND isn't our own offer)
+    const otherCompetitiveOffers = offers
+      .filter(o => !o.IsBuyBoxWinner && o.SellerId !== YOUR_SELLER_ID)
+      .sort((a, b) => getLanded(a) - getLanded(b));
+    
+    const nextBestPrice = otherCompetitiveOffers[0] ? getLanded(otherCompetitiveOffers[0]) : null;
+    const lowestPrice = summary.LowestPrices?.[0] ? getLanded(summary.LowestPrices[0]) : null;
 
     return {
-      asin: payload.ASIN,
-      hasOffers: true,
-      buyboxPrice: buyboxOffer ? parseFloat(buyboxOffer.ListingPrice.Amount) : null,
-      lowestPrice: prices.length > 0 ? Math.min(...prices) : null,
-      highestPrice: prices.length > 0 ? Math.max(...prices) : null,
-      averagePrice: prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : null,
-      offerCount: offers.length,
-      currency: offers[0].ListingPrice.CurrencyCode,
-      lastUpdated: new Date().toISOString()
+      sku,
+      asin,
+      success: true,
+      buyBoxPrice: mainBB ? getLanded(mainBB) : null,
+      lowestPrice: lowestPrice,
+      nextBestPrice: nextBestPrice,
+      ourPrice: ourOffer ? getLanded(ourOffer) : null,
+      isWinner,
+      currency: mainBB?.LandedPrice?.CurrencyCode || summary.LowestPrices?.[0]?.LandedPrice?.CurrencyCode || 'GBP',
+      offerCount: summary.TotalOfferCount || offers.length,
+      offers: offers 
     };
   }
 }
 
-// Demo usage
-async function demo() {
-  require('dotenv').config();
-
-  const api = new AmazonSPAPI({
-    clientId: process.env.AMAZON_CLIENT_ID,
-    clientSecret: process.env.AMAZON_CLIENT_SECRET,
-    refreshToken: process.env.AMAZON_REFRESH_TOKEN,
-    awsAccessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID,
-    awsSecretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY,
-    awsRegion: process.env.AMAZON_AWS_REGION,
-    marketplaceId: process.env.AMAZON_MARKETPLACE_ID,
-    sellerId: process.env.AMAZON_SELLER_ID
-  });
-
-  console.log('🚀 TESTING AMAZON SP-API HELPER FUNCTIONS');
-  console.log('='.repeat(50));
-
-  try {
-    // Test with multiple ASINs
-    const testAsins = ['B00A2KD8NY', 'B07P6Y8L3F', 'B08N5WRWNW'];
-
-    console.log('📦 Testing multiple products...\n');
-
-    const results = await api.getMultipleItemOffers(testAsins.slice(0, 2)); // Test 2 to avoid rate limits
-
-    results.forEach((result, index) => {
-      console.log(`Product ${index + 1}: ${result.asin}`);
-      if (result.success) {
-        const pricing = api.extractPricingInfo(result.data);
-        console.log(`  ✅ Success!`);
-        console.log(`  💰 Buybox Price: £${pricing.buyboxPrice || 'N/A'}`);
-        console.log(`  📊 Price Range: £${pricing.lowestPrice} - £${pricing.highestPrice}`);
-        console.log(`  🏪 Offers: ${pricing.offerCount}`);
-        console.log(`  💱 Currency: ${pricing.currency}`);
-      } else {
-        console.log(`  ❌ Failed: ${result.error}`);
-      }
-      console.log('');
-    });
-
-    console.log('✅ Live Amazon data access confirmed!');
-    console.log('🎯 You can now build your dashboard with real pricing data.');
-
-  } catch (error) {
-    console.log(`❌ Demo failed: ${error.message}`);
-  }
-}
-
-// Export for use in SvelteKit
 module.exports = { AmazonSPAPI };
-
-// Run demo if called directly
-if (require.main === module) {
-  demo();
-}
