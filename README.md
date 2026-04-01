@@ -14,6 +14,22 @@ npx sv create
 npx sv create my-app
 ```
 
+## Automation & Monitoring
+
+This project uses a centralized Node-based orchestrator to manage hourly and weekly tasks.
+
+### Running the Orchestrator
+Instead of individual Windows Task Manager entries, run the single orchestrator:
+
+- **Windows**: Use [scripts/run-orchestrator.bat](scripts/run-orchestrator.bat)
+- **Manual Node**: `node scripts/orchestrator.js`
+
+### Current Jobs
+- **Buy Box Monitor**: Runs every hour (`0 * * * *`)
+- **Weekly Comparison**: Runs every Monday at 9AM (`0 9 * * 1`)
+
+Logs are stored in the `/logs/` directory at the project root for review.
+
 ## Developing
 
 Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
