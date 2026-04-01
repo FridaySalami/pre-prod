@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Buy Box Viewer",
+  "version": "1.0.0",
+  "description": "View Amazon product pages in a side panel from Buy Box Manager",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "sidePanel",
+    "tabs",
+    "debugger"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://localhost:5173/*",
+    "https://operations.chefstorecookbook.com/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://localhost:5173/*",
+        "https://operations.chefstorecookbook.com/*"
+      ],
+      "js": [
+        "content-script.js"
+      ]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Buy Box Viewer"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}

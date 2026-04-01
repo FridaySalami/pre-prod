@@ -1,0 +1,4 @@
+SKU,Title,Stock Level,Retail Price,Purchase Price,Tracked,Weight,Depth,Height,Width
+TEST001,Test Product 1,10,19.99,12.50,true,1.5,10.0,15.0,8.0
+TEST002,Test Product 2,5,29.99,18.75,false,2.2,12.0,18.0,10.0
+TEST003,Test Product 3,0,9.99,6.25,true,0.8,5.0,8.0,6.0

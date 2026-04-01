@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buy Box Monitoring Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      color: white;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .header p {
+      font-size: 1.1rem;
+      opacity: 0.9;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      transition: transform 0.2s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .stat-number {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .stat-label {
+      color: #666;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-success {
+      color: #10b981;
+    }
+
+    .stat-warning {
+      color: #f59e0b;
+    }
+
+    .stat-danger {
+      color: #ef4444;
+    }
+
+    .stat-info {
+      color: #3b82f6;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      background: white;
+      padding: 15px 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .refresh-btn {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .refresh-btn:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+    }
+
+    .refresh-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .auto-refresh {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .auto-refresh input[type="checkbox"] {
+      transform: scale(1.2);
+    }
+
+    .last-update {
+      color: #666;
+      font-size: 0.9rem;
+    }
+
+    .asin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+    }
+
+    .asin-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: all 0.2s ease;
+      border-left: 4px solid #e5e7eb;
+    }
+
+    .asin-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .asin-card.success {
+      border-left-color: #10b981;
+    }
+
+    .asin-card.warning {
+      border-left-color: #f59e0b;
+    }
+
+    .asin-card.danger {
+      border-left-color: #ef4444;
+    }
+
+    .asin-header {
+      display: flex;
+      justify-content: between;
+      align-items: flex-start;
+      margin-bottom: 15px;
+    }
+
+    .asin-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 5px;
+      line-height: 1.3;
+    }
+
+    .asin-code {
+      color: #666;
+      font-size: 0.9rem;
+      font-family: monospace;
+    }
+
+    .status-badge {
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: auto;
+    }
+
+    .status-badge.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-badge.warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-badge.danger {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .asin-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail-label {
+      font-size: 0.8rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+
+    .detail-value {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .price {
+      color: #10b981;
+      font-family: monospace;
+    }
+
+    .competitor-count {
+      color: #f59e0b;
+    }
+
+    .buy-box-winner {
+      color: #3b82f6;
+      font-size: 0.85rem;
+      word-break: break-all;
+    }
+
+    .asin-footer {
+      padding-top: 15px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: #666;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: white;
+      font-size: 1.1rem;
+    }
+
+    .error {
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .no-data {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .updating {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 10px;
+      }
+
+      .header h1 {
+        font-size: 2rem;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .asin-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .controls {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎯 Buy Box Monitoring Dashboard</h1>
+      <p>Real-time ASIN monitoring and buy box status tracking</p>
+    </div>
+
+    <div class="stats-grid" id="statsGrid">
+      <!-- Stats will be populated here -->
+    </div>
+
+    <div class="controls">
+      <div class="auto-refresh">
+        <input type="checkbox" id="autoRefresh" checked>
+        <label for="autoRefresh">Auto-refresh (30s)</label>
+      </div>
+
+      <button class="refresh-btn" id="refreshBtn" onclick="loadDashboard()">
+        🔄 Refresh Now
+      </button>
+
+      <div class="last-update" id="lastUpdate">
+        Never updated
+      </div>
+    </div>
+
+    <div id="errorMessage" class="error" style="display: none;"></div>
+
+    <div id="loading" class="loading">
+      ⏳ Loading buy box data...
+    </div>
+
+    <div class="asin-grid" id="asinGrid" style="display: none;">
+      <!-- ASIN cards will be populated here -->
+    </div>
+
+    <div id="noData" class="no-data" style="display: none;">
+      <h3>No monitoring data available</h3>
+      <p>Start the monitoring job to see real-time buy box status</p>
+    </div>
+  </div>
+
+  <script>
+    let autoRefreshInterval;
+    let isLoading = false;
+
+    // Initialize dashboard
+    document.addEventListener('DOMContentLoaded', function () {
+      loadDashboard();
+      setupAutoRefresh();
+    });
+
+    // Setup auto-refresh
+    function setupAutoRefresh() {
+      const autoRefreshCheckbox = document.getElementById('autoRefresh');
+
+      autoRefreshCheckbox.addEventListener('change', function () {
+        if (this.checked) {
+          startAutoRefresh();
+        } else {
+          stopAutoRefresh();
+        }
+      });
+
+      // Start auto-refresh by default
+      if (autoRefreshCheckbox.checked) {
+        startAutoRefresh();
+      }
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh(); // Clear any existing interval
+      autoRefreshInterval = setInterval(loadDashboard, 30000); // 30 seconds
+    }
+
+    function stopAutoRefresh() {
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+      }
+    }
+
+    // Load dashboard data
+    async function loadDashboard() {
+      if (isLoading) return;
+
+      isLoading = true;
+      const refreshBtn = document.getElementById('refreshBtn');
+      const loading = document.getElementById('loading');
+      const errorMessage = document.getElementById('errorMessage');
+      const asinGrid = document.getElementById('asinGrid');
+      const noData = document.getElementById('noData');
+
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = '🔄 Loading...';
+      loading.style.display = 'block';
+      errorMessage.style.display = 'none';
+      asinGrid.style.display = 'none';
+      noData.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/buybox-status/dashboard');
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to load dashboard data');
+        }
+
+        // Update stats
+        updateStats(result.summary);
+
+        // Update ASIN grid
+        if (result.data && result.data.length > 0) {
+          updateAsinGrid(result.data);
+          asinGrid.style.display = 'grid';
+        } else {
+          noData.style.display = 'block';
+        }
+
+        // Update last update time
+        document.getElementById('lastUpdate').textContent =
+          `Last updated: ${new Date().toLocaleTimeString()}`;
+
+      } catch (error) {
+        console.error('Error loading dashboard:', error);
+        errorMessage.textContent = `Error: ${error.message}`;
+        errorMessage.style.display = 'block';
+      } finally {
+        isLoading = false;
+        loading.style.display = 'none';
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 Refresh Now';
+      }
+    }
+
+    // Update statistics cards
+    function updateStats(summary) {
+      const statsGrid = document.getElementById('statsGrid');
+
+      statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-number stat-info">${summary.total_asins || 0}</div>
+                    <div class="stat-label">Total ASINs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number stat-success">${summary.has_buy_box || 0}</div>
+                    <div class="stat-label">Has Buy Box</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number stat-danger">${summary.lost_buy_box || 0}</div>
+                    <div class="stat-label">Lost Buy Box</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number stat-warning">${summary.warnings || 0}</div>
+                    <div class="stat-label">Warnings</div>
+                </div>
+            `;
+    }
+
+    // Update ASIN grid
+    function updateAsinGrid(data) {
+      const asinGrid = document.getElementById('asinGrid');
+
+      asinGrid.innerHTML = data.map(asin => `
+                <div class="asin-card ${asin.status}">
+                    <div class="asin-header">
+                        <div>
+                            <div class="asin-title">${truncateText(asin.title || asin.asin, 40)}</div>
+                            <div class="asin-code">${asin.asin}${asin.sku ? ` • ${asin.sku}` : ''}</div>
+                        </div>
+                        <div class="status-badge ${asin.status}">
+                            ${getStatusText(asin.status, asin.has_buy_box)}
+                        </div>
+                    </div>
+                    
+                    <div class="asin-details">
+                        <div class="detail-item">
+                            <div class="detail-label">Current Price</div>
+                            <div class="detail-value price">
+                                ${asin.current_price ? `$${parseFloat(asin.current_price).toFixed(2)}` : 'N/A'}
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Our Price</div>
+                            <div class="detail-value price">
+                                ${asin.our_price ? `$${parseFloat(asin.our_price).toFixed(2)}` : 'N/A'}
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Competitors</div>
+                            <div class="detail-value competitor-count">${asin.competitor_count || 0}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Buy Box Winner</div>
+                            <div class="detail-value buy-box-winner">
+                                ${truncateText(asin.buy_box_winner || 'Unknown', 20)}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="asin-footer">
+                        <span>Priority: ${asin.priority || 5}</span>
+                        <span>Alerts (24h): ${asin.alert_count_24h || 0}</span>
+                        <span>${formatTimeAgo(asin.last_checked)}</span>
+                    </div>
+                </div>
+            `).join('');
+    }
+
+    // Helper functions
+    function getStatusText(status, hasBuyBox) {
+      switch (status) {
+        case 'success': return hasBuyBox ? '✅ HAS BOX' : '✅ OK';
+        case 'warning': return '⚠️ WARNING';
+        case 'danger': return '❌ LOST BOX';
+        default: return '❓ UNKNOWN';
+      }
+    }
+
+    function truncateText(text, maxLength) {
+      if (!text) return '';
+      return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    function formatTimeAgo(dateString) {
+      if (!dateString) return 'Never checked';
+
+      const now = new Date();
+      const date = new Date(dateString);
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMins / 60);
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      return `${diffDays}d ago`;
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'r' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        loadDashboard();
+      }
+    });
+  </script>
+</body>
+
+</html>

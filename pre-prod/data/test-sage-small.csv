@@ -1,0 +1,4 @@
+StockItems.Code,BinItems.BinName,StockItems.StandardCost,StockItems.TaxRate,StockItemPrices.Price,ProductGroups.Code,StockItems.BOMItemTypeID,SYSCompanies.CompanyName,PLSupplierAccounts.SupplierAccountNumber
+TEST001,550,10.50,20,15.75,TEST GROUP,0,Test Company Ltd,SUP001
+TEST002,550,25.30,20,38.00,TEST GROUP,0,Test Company Ltd,SUP002
+TEST003,550,5.25,0,7.95,TEST GROUP,0,Test Company Ltd,SUP001

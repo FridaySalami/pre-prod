@@ -1,0 +1,136 @@
+✅ Amazon SP-API client initialized with Supabase client
+✅ Cost calculator initialized
+✅ Single ASIN: Amazon SP-API client initialized
+✅ Single ASIN: Cost calculator initialized
+✅ Live Pricing API: Services initialized successfully
+[CostCalculator] Warning: No Supabase client provided, cost calculations will be unavailable
+✅ Batch Price Update: Amazon SP-API initialized
+✅ Amazon SP-API client initialized for testing
+✅ All routes and services loaded successfully
+🚀 Buy Box Render Service started on port 3001
+📊 Ready to process up to 3,477 ASINs
+⏰ Estimated max processing time: 2-3 hours
+🔗 Health check: /health
+📈 Service info: /
+🌍 Environment: production
+2025-09-24T12:19:19.763Z - GET /
+2025-09-24T12:19:25.252Z - GET /test-competitive-pricing/sample
+2025-09-24T12:19:34.023Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 2 ASINs
+📋 ASINs: B0D45C1HQP, B0D3LZHNGZ
+🔬 Test type: both
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B0D45C1HQP...
+📡 SP-API Request for B0D45C1HQP at 2025-09-24T12:19:34.379Z
+✅ SP-API Response received for B0D45C1HQP at 2025-09-24T12:19:34.566Z
+📡 Current API: Fetching B0D3LZHNGZ...
+📡 SP-API Request for B0D3LZHNGZ at 2025-09-24T12:19:36.669Z
+SP-API error for ASIN B0D3LZHNGZ: {
+  errors: [
+    {
+      code: 'QuotaExceeded',
+      message: 'You exceeded your quota for the requested resource.',
+      details: ''
+    }
+  ]
+}
+❌ Current API test failed: RATE_LIMITED
+🚀 Testing batch API (getCompetitivePricing)...
+📡 Batch API: Fetching 2 ASINs in one request...
+📡 Batch Competitive Pricing Request for 2 Asins at 2025-09-24T12:19:36.717Z
+📋 Items: B0D45C1HQP, B0D3LZHNGZ
+Batch Competitive Pricing API error for Asins B0D45C1HQP, B0D3LZHNGZ: {
+  errors: [
+    {
+      code: 'Unauthorized',
+      message: 'Access to requested resource is denied.',
+      details: ''
+    }
+  ]
+}
+❌ Batch API test failed: ACCESS_DENIED
+🎯 Test completed for 2 ASINs
+2025-09-24T12:20:42.485Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 9 ASINs
+📋 ASINs: B0BGPMD867, B0B46GGBBP, B0DVS6YBJW, B09RQS4SBQ, B0B8XHPF85, B004BTED72, B0DPLFN2WF, B0F7MNF5WY, B0DPJ458LV
+🔬 Test type: batch
+🚀 Testing batch API (getCompetitivePricing)...
+📡 Batch API: Fetching 9 ASINs in one request...
+📡 Batch Competitive Pricing Request for 9 Asins at 2025-09-24T12:20:42.485Z
+📋 Items: B0BGPMD867, B0B46GGBBP, B0DVS6YBJW, B09RQS4SBQ, B0B8XHPF85 ... (+4 more)
+Batch Competitive Pricing API error for Asins B0BGPMD867, B0B46GGBBP, B0DVS6YBJW, B09RQS4SBQ, B0B8XHPF85, B004BTED72, B0DPLFN2WF, B0F7MNF5WY, B0DPJ458LV: {
+  errors: [
+    {
+      code: 'Unauthorized',
+      message: 'Access to requested resource is denied.',
+      details: ''
+    }
+  ]
+}
+❌ Batch API test failed: ACCESS_DENIED
+🎯 Test completed for 9 ASINs
+2025-09-24T12:20:52.274Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 3 ASINs
+📋 ASINs: B0BGPMD867, B0B46GGBBP, B0DVS6YBJW
+🔬 Test type: current
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B0BGPMD867...
+📡 SP-API Request for B0BGPMD867 at 2025-09-24T12:20:52.274Z
+✅ SP-API Response received for B0BGPMD867 at 2025-09-24T12:20:52.426Z
+📡 Current API: Fetching B0B46GGBBP...
+📡 SP-API Request for B0B46GGBBP at 2025-09-24T12:20:54.529Z
+✅ SP-API Response received for B0B46GGBBP at 2025-09-24T12:20:54.611Z
+📡 Current API: Fetching B0DVS6YBJW...
+📡 SP-API Request for B0DVS6YBJW at 2025-09-24T12:20:56.714Z
+✅ SP-API Response received for B0DVS6YBJW at 2025-09-24T12:20:56.800Z
+✅ Current API completed in 6627ms
+🎯 Test completed for 3 ASINs
+2025-09-24T12:21:13.404Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 3 ASINs
+📋 ASINs: B09RQS4SBQ, B0B8XHPF85, B004BTED72
+🔬 Test type: current
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B09RQS4SBQ...
+📡 SP-API Request for B09RQS4SBQ at 2025-09-24T12:21:13.404Z
+✅ SP-API Response received for B09RQS4SBQ at 2025-09-24T12:21:13.524Z
+📡 Current API: Fetching B0B8XHPF85...
+📡 SP-API Request for B0B8XHPF85 at 2025-09-24T12:21:15.627Z
+✅ SP-API Response received for B0B8XHPF85 at 2025-09-24T12:21:15.731Z
+📡 Current API: Fetching B004BTED72...
+📡 SP-API Request for B004BTED72 at 2025-09-24T12:21:17.833Z
+✅ SP-API Response received for B004BTED72 at 2025-09-24T12:21:17.915Z
+✅ Current API completed in 6612ms
+🎯 Test completed for 3 ASINs
+2025-09-24T12:21:27.538Z - POST /test-competitive-pricing/compare
+🧪 Starting API comparison test for 3 ASINs
+📋 ASINs: B0DPLFN2WF, B0F7MNF5WY, B0DPJ458LV
+🔬 Test type: current
+🔍 Testing current API (getItemOffers)...
+📡 Current API: Fetching B0DPLFN2WF...
+📡 SP-API Request for B0DPLFN2WF at 2025-09-24T12:21:27.538Z
+✅ SP-API Response received for B0DPLFN2WF at 2025-09-24T12:21:27.670Z
+📡 Current API: Fetching B0F7MNF5WY...
+📡 SP-API Request for B0F7MNF5WY at 2025-09-24T12:21:29.772Z
+✅ SP-API Response received for B0F7MNF5WY at 2025-09-24T12:21:29.839Z
+📡 Current API: Fetching B0DPJ458LV...
+📡 SP-API Request for B0DPJ458LV at 2025-09-24T12:21:31.942Z
+✅ SP-API Response received for B0DPJ458LV at 2025-09-24T12:21:32.044Z
+✅ Current API completed in 6608ms
+🎯 Test completed for 3 ASINs
+2025-09-24T12:44:05.724Z - GET /api/monitoring-job/status
+2025-09-24T12:44:05.730Z - GET /api/monitoring-job/statistics
+2025-09-24T12:44:05.732Z - GET /api/monitoring-job/logs
+2025-09-24T12:44:05.733Z - GET /api/monitoring-job/active-configs
+2025-09-24T12:44:10.969Z - GET /api/monitoring-job/status
+2025-09-24T12:44:10.976Z - GET /api/monitoring-job/statistics
+2025-09-24T12:44:10.978Z - GET /api/monitoring-job/logs
+2025-09-24T12:44:10.979Z - GET /api/monitoring-job/active-configs
+2025-09-24T12:44:24.929Z - POST /api/monitoring-job/start
+2025-09-24T12:44:32.675Z - POST /api/monitoring-job/run-cycle
+2025-09-24T12:44:35.753Z - GET /api/monitoring-job/status
+2025-09-24T12:44:35.764Z - GET /api/monitoring-job/statistics
+2025-09-24T12:44:35.794Z - GET /api/monitoring-job/logs
+2025-09-24T12:44:35.797Z - GET /api/monitoring-job/active-configs
+2025-09-24T12:49:14.884Z - GET /api/monitoring-job/status
+2025-09-24T12:49:21.488Z - GET /
+🛑 SIGTERM received, shutting down gracefully...

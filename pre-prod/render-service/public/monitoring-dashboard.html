@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Buy Box Monitoring Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2em;
+    }
+
+    .section {
+      margin-bottom: 2em;
+    }
+
+    button {
+      padding: 0.5em 1em;
+      margin-right: 1em;
+    }
+
+    #status {
+      margin-top: 1em;
+    }
+
+    pre {
+      background: #f4f4f4;
+      padding: 1em;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Buy Box Monitoring Dashboard</h1>
+
+  <div class="section">
+    <h2>Monitoring Job Control</h2>
+    <button id="startJobBtn">Start Monitoring Job</button>
+    <button id="stopJobBtn">Stop Monitoring Job</button>
+    <button id="statusBtn">Get Status</button>
+    <button id="manualCheckBtn">Manual ASIN Check</button>
+  </div>
+
+  <div class="section">
+    <h2>SQS Notification System</h2>
+    <button id="setupSqsBtn">Setup SQS Notifications</button>
+    <button id="startPollingBtn">Start SQS Polling</button>
+    <button id="checkConfigBtn">Check Notification Config</button>
+    <button id="getStatsBtn">Get SQS Stats</button>
+  </div>
+
+  <div class="section">
+    <h2>System Control</h2>
+    <button id="resetLogsBtn" style="background-color: #ff6b6b; color: white;">Reset Logs</button>
+    <button id="viewLogsBtn">View Recent Logs</button>
+    <div id="status"></div>
+    <pre id="output"></pre>
+  </div>
+
+  <script>
+    async function callApi(path, method = 'GET', body = null) {
+      const options = { method };
+      if (body) {
+        options.headers = { 'Content-Type': 'application/json' };
+        options.body = JSON.stringify(body);
+      }
+      const res = await fetch(path, options);
+      return res.json();
+    }
+    document.getElementById('setupSqsBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Setting up SQS notifications...';
+      const result = await callApi('/api/monitoring-job/setup-sqs-notifications', 'POST');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.success ? '✅ SQS setup complete' : '❌ SQS setup failed';
+    };
+    document.getElementById('startPollingBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Starting SQS polling...';
+      const result = await callApi('/api/monitoring-job/start-sqs-polling', 'POST');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.success ? '✅ Polling started' : '❌ Polling failed';
+    };
+    document.getElementById('checkConfigBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Checking notification config...';
+      const result = await callApi('/api/monitoring-job/notification-config');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.configured ? '✅ Configured' : '⚠️ Not configured';
+    };
+    document.getElementById('getStatsBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Getting SQS stats...';
+      const result = await callApi('/api/monitoring-job/sqs-stats');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.success ? '✅ Stats loaded' : '❌ Failed to load stats';
+    };
+
+    // Monitoring Job Controls
+    document.getElementById('startJobBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Starting monitoring job...';
+      const result = await callApi('/api/monitoring-job/start', 'POST');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.success ? '✅ Job started' : '❌ Job start failed';
+    };
+
+    document.getElementById('stopJobBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Stopping monitoring job...';
+      const result = await callApi('/api/monitoring-job/stop', 'POST');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.success ? '✅ Job stopped' : '❌ Job stop failed';
+    };
+
+    document.getElementById('statusBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Getting job status...';
+      const result = await callApi('/api/monitoring-job/status');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.success ? '✅ Status loaded' : '❌ Status failed';
+    };
+
+    document.getElementById('manualCheckBtn').onclick = async () => {
+      const asin = prompt('Enter ASIN to check manually:');
+      if (asin) {
+        document.getElementById('status').textContent = `Manual check for ${asin}...`;
+        const result = await callApi('/api/monitoring-job/manual-check', 'POST', { asin });
+        document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+        document.getElementById('status').textContent = result.success ? '✅ Manual check complete' : '❌ Manual check failed';
+      }
+    };
+
+    // System Controls
+    document.getElementById('viewLogsBtn').onclick = async () => {
+      document.getElementById('status').textContent = 'Loading recent logs...';
+      const result = await callApi('/api/monitoring-job/logs');
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('status').textContent = result.success ? '✅ Logs loaded' : '❌ Failed to load logs';
+    };
+
+    document.getElementById('resetLogsBtn').onclick = async () => {
+      if (confirm('Are you sure you want to reset all logs? This cannot be undone.')) {
+        document.getElementById('status').textContent = 'Resetting logs...';
+        // This would need a reset endpoint - for now just show message
+        document.getElementById('output').textContent = '{"message": "Reset functionality would clear all logs and statistics"}';
+        document.getElementById('status').textContent = '⚠️ Reset endpoint not implemented yet';
+      }
+    };
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SPAPIEnhancedAccess",
+      "Effect": "Allow",
+      "Action": [
+        "execute-api:Invoke",
+        "execute-api:ManageConnections"
+      ],
+      "Resource": [
+        "arn:aws:execute-api:eu-west-1:*:*/*/GET/reports/*",
+        "arn:aws:execute-api:eu-west-1:*:*/POST/reports/*",
+        "arn:aws:execute-api:eu-west-1:*:*/GET/sales/*",
+        "arn:aws:execute-api:eu-west-1:*:*/POST/sales/*",
+        "arn:aws:execute-api:eu-west-1:*:*/GET/brandAnalytics/*",
+        "arn:aws:execute-api:eu-west-1:*:*/POST/brandAnalytics/*",
+        "arn:aws:execute-api:eu-west-1:*:*/GET/fba/*",
+        "arn:aws:execute-api:eu-west-1:*:*/GET/finances/*",
+        "arn:aws:execute-api:eu-west-1:*:*/GET/catalog/*"
+      ]
+    }
+  ]
+}

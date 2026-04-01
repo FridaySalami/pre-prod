@@ -1,0 +1,11 @@
+StockItems.Code,BinItems.BinName,StockItems.StandardCost,StockItems.TaxRate,StockItemPrices.Price,ProductGroups.Code,StockItems.BOMItemTypeID,SYSCompanies.CompanyName,PLSupplierAccounts.SupplierAccountNumber
+TEST001,550,10.50,20,15.75,TEST GROUP,0,Test Company Ltd,SUP001
+TEST002,550,25.30,20,38.00,TEST GROUP,0,Test Company Ltd,SUP002
+TEST003,550,5.25,0,7.95,TEST GROUP,0,Test Company Ltd,SUP001
+TEST004,551,12.75,20,19.25,FOOD ITEMS,0,Test Company Ltd,SUP003
+TEST005,552,8.90,20,13.45,BEVERAGES,0,Test Company Ltd,SUP001
+TEST006,553,45.20,20,67.80,EQUIPMENT,0,Test Company Ltd,SUP004
+TEST007,554,3.25,0,4.95,SUPPLIES,0,Test Company Ltd,SUP002
+TEST008,555,22.50,20,33.75,CLEANING,0,Test Company Ltd,SUP005
+TEST009,556,15.80,20,23.70,PACKAGING,0,Test Company Ltd,SUP003
+TEST010,557,7.45,20,11.20,DISPOSABLES,0,Test Company Ltd,SUP001

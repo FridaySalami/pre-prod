@@ -1,0 +1,558 @@
+// @ts-nocheck
+/**
+ * Amazon Listings API Service - Server-side ES Module Version
+ * Simplified version for SvelteKit server context
+ * Handles price updates via Amazon SP-API Listings API v2021-08-01
+ */
+
+// Import environment variables using SvelteKit's static private env
+import {
+  AMAZON_CLIENT_ID,
+  AMAZON_CLIENT_SECRET,
+  AMAZON_REFRESH_TOKEN,
+  AMAZON_AWS_ACCESS_KEY_ID,
+  AMAZON_AWS_SECRET_ACCESS_KEY,
+  AMAZON_REGION,
+  AMAZON_MARKETPLACE_ID
+} from '$env/static/private';
+
+/**
+ * @typedef {Object} AmazonAPIConfig
+ * @property {string} [environment] - Environment (sandbox or production)
+ * @property {string} [clientId] - Amazon client ID
+ * @property {string} [clientSecret] - Amazon client secret
+ * @property {string} [refreshToken] - Amazon refresh token
+ * @property {string} [awsAccessKeyId] - AWS access key ID
+ * @property {string} [awsSecretAccessKey] - AWS secret access key
+ * @property {string} [awsRegion] - AWS region
+ * @property {string} [marketplaceId] - Amazon marketplace ID
+ */
+
+/**
+ * Amazon Listings API class for server-side use
+ */
+class AmazonListingsAPI {
+  /**
+   * @param {AmazonAPIConfig} config - Configuration options
+   */
+  constructor(config = {}) {
+    console.log('🏗️ Initializing AmazonListingsAPI with config:', {
+      environment: config.environment || 'production',
+      hasClientId: !!config.clientId || !!AMAZON_CLIENT_ID,
+      hasRefreshToken: !!config.refreshToken || !!AMAZON_REFRESH_TOKEN,
+      hasAwsCredentials: !!(AMAZON_AWS_ACCESS_KEY_ID && AMAZON_AWS_SECRET_ACCESS_KEY)
+    });
+
+    // Debug: Log actual environment variable availability
+    console.log('🔍 Environment Variables Debug:', {
+      AMAZON_CLIENT_ID: !!AMAZON_CLIENT_ID,
+      AMAZON_CLIENT_SECRET: !!AMAZON_CLIENT_SECRET,
+      AMAZON_REFRESH_TOKEN: !!AMAZON_REFRESH_TOKEN,
+      AMAZON_AWS_ACCESS_KEY_ID: !!AMAZON_AWS_ACCESS_KEY_ID,
+      AMAZON_AWS_SECRET_ACCESS_KEY: !!AMAZON_AWS_SECRET_ACCESS_KEY,
+      CLIENT_ID_VALUE: AMAZON_CLIENT_ID ? `${AMAZON_CLIENT_ID.substring(0, 10)}...` : 'undefined'
+    });
+
+    this.config = {
+      endpoint: config.environment === 'sandbox'
+        ? 'https://sellingpartnerapi-eu.amazon.com'
+        : 'https://sellingpartnerapi-eu.amazon.com',
+      clientId: config.clientId || AMAZON_CLIENT_ID,
+      clientSecret: config.clientSecret || AMAZON_CLIENT_SECRET,
+      refreshToken: config.refreshToken || AMAZON_REFRESH_TOKEN,
+      awsAccessKeyId: config.awsAccessKeyId || AMAZON_AWS_ACCESS_KEY_ID,
+      awsSecretAccessKey: config.awsSecretAccessKey || AMAZON_AWS_SECRET_ACCESS_KEY,
+      awsRegion: config.awsRegion || AMAZON_REGION || 'eu-west-1',
+      marketplaceId: config.marketplaceId || AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P', // UK marketplace
+      maxRetries: 3,
+      retryDelay: 1000,
+      environment: config.environment || 'production'
+    };
+
+    // Validate credentials on initialization
+    this.validateCredentials();
+
+    this.accessToken = null;
+    this.tokenExpiry = null;
+    console.log('✅ AmazonListingsAPI initialized successfully');
+  }
+
+  /**
+   * Validate that required credentials are present
+   */
+  validateCredentials() {
+    const requiredCredentials = [
+      { key: 'clientId', name: 'AMAZON_CLIENT_ID', value: this.config.clientId },
+      { key: 'clientSecret', name: 'AMAZON_CLIENT_SECRET', value: this.config.clientSecret },
+      { key: 'refreshToken', name: 'AMAZON_REFRESH_TOKEN', value: this.config.refreshToken }
+    ];
+
+    const missingCredentials = requiredCredentials.filter(cred => !cred.value).map(cred => cred.name);
+
+    if (missingCredentials.length > 0) {
+      const errorMessage = `Missing required Amazon API credentials: ${missingCredentials.join(', ')}. Please configure these environment variables.`;
+      console.error('❌ Amazon API Credentials Validation Failed:', errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    console.log('✅ Amazon API credentials validation passed');
+  }
+
+  /**
+   * Update price for a product - PRODUCTION VERSION WITH REAL API CALLS
+   * @param {string} asin - The ASIN to update
+   * @param {number} newPrice - The new price
+   * @param {number} [currentPrice] - The current price (for logging purposes)
+   * @returns {Promise<{success: boolean, status: number, data?: any, error?: string, environment: string, asin: string, newPrice: number, message: string, isSimulation?: boolean}>} Update result
+   */
+  async updatePrice(asin, newPrice, currentPrice = null) {
+    console.log(`🎯 Starting price update for ASIN: ${asin} to £${newPrice}`);
+
+    try {
+      console.log('🎯 MATCH BUY BOX - Price Update Details:');
+      console.log(`   🔸 ASIN: ${asin}`);
+      console.log(`   🔸 Current price: ${currentPrice !== null ? `£${currentPrice.toFixed(2)}` : 'Unknown'}`);
+      console.log(`   🔸 Setting new price: £${newPrice.toFixed(2)}`);
+      console.log(`   🔸 Price change: ${currentPrice !== null ? `£${(newPrice - currentPrice).toFixed(2)} (${newPrice > currentPrice ? '+' : ''}${(((newPrice - currentPrice) / currentPrice) * 100).toFixed(1)}%)` : 'N/A'}`);
+      console.log(`   🔸 Environment: ${this.config.environment}`);
+
+      // Check if we have the required API credentials
+      if (!this.config.clientId || !this.config.clientSecret || !this.config.refreshToken) {
+        const missingCredentials = [];
+        if (!this.config.clientId) missingCredentials.push('AMAZON_CLIENT_ID');
+        if (!this.config.clientSecret) missingCredentials.push('AMAZON_CLIENT_SECRET');
+        if (!this.config.refreshToken) missingCredentials.push('AMAZON_REFRESH_TOKEN');
+
+        const errorMessage = `Missing required Amazon API credentials: ${missingCredentials.join(', ')}. Please configure these environment variables.`;
+        console.error('❌ Amazon API Error:', errorMessage);
+
+        return {
+          success: false,
+          status: 500,
+          error: errorMessage,
+          environment: this.config.environment,
+          asin: asin,
+          newPrice: newPrice,
+          message: `Failed to update price for ASIN ${asin}: Missing API credentials`,
+          isSimulation: false
+        };
+      }
+
+      // REAL AMAZON API CALL
+      console.log('🔄 Making REAL Amazon SP-API call...');
+
+      // Get access token
+      const token = await this.getAccessToken();
+
+      // Format price to ensure it's a proper decimal string
+      const formattedPrice = newPrice.toFixed(2);
+
+      console.log(`🔍 Request details:`, {
+        asin,
+        marketplaceId: this.config.marketplaceId,
+        formattedPrice,
+        endpoint: `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`
+      });
+
+      // Try Method 1: Standard PATCH with purchasable_offer
+      console.log('🔄 Attempting Method 1: Standard PATCH approach...');
+      let success = await this.tryStandardPatch(asin, formattedPrice, token);
+      if (success) return success;
+
+      // Try Method 2: Alternative patch path
+      console.log('🔄 Attempting Method 2: Alternative patch path...');
+      success = await this.tryAlternativePatch(asin, formattedPrice, token);
+      if (success) return success;
+
+      // Try Method 3: GET product type first, then PATCH
+      console.log('🔄 Attempting Method 3: Get product type and retry...');
+      success = await this.tryWithProductType(asin, formattedPrice, token);
+      if (success) return success;
+
+      // If all methods fail, return an error
+      throw new Error('All price update methods failed. This may require manual update in Amazon Seller Central.');
+
+    } catch (error) {
+      console.error('❌ Price update failed:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        status: 500,
+        error: errorMessage,
+        environment: this.config.environment,
+        asin: asin,
+        newPrice: newPrice,
+        message: `Failed to update price for ASIN ${asin}: ${errorMessage}`,
+        isSimulation: false
+      };
+    }
+  }
+
+  /**
+   * Try standard PATCH method - SIMPLIFIED FOR PRICE UPDATE ONLY
+   */
+  async tryStandardPatch(asin, formattedPrice, token) {
+    try {
+      // For price updates only, we use a much simpler patch operation
+      const requestBody = {
+        productType: "PRODUCT",
+        patches: [
+          {
+            op: "replace",
+            path: "/attributes/purchasable_offer",
+            value: [
+              {
+                marketplace_id: this.config.marketplaceId,
+                currency: "GBP",
+                our_price: [
+                  {
+                    schedule: [
+                      {
+                        value_with_tax: formattedPrice
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+
+      console.log(`📤 Method 1 Request body:`, JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(
+        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-amz-access-token': token,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+
+      const result = await response.json();
+      console.log(`📥 Method 1 Response: ${response.status}`, result);
+
+      if (response.ok) {
+        return this.createSuccessResult(asin, formattedPrice, result, response.status);
+      }
+      return null;
+    } catch (error) {
+      console.log(`❌ Method 1 failed:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Try alternative patch path - DIRECT PRICE PATH
+   */
+  async tryAlternativePatch(asin, formattedPrice, token) {
+    try {
+      // Try targeting the specific price field directly
+      const requestBody = {
+        productType: "PRODUCT",
+        patches: [
+          {
+            op: "replace",
+            path: "/attributes/purchasable_offer/0/our_price/0/schedule/0/value_with_tax",
+            value: formattedPrice
+          }
+        ]
+      };
+
+      console.log(`📤 Method 2 Request body:`, JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(
+        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-amz-access-token': token,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+
+      const result = await response.json();
+      console.log(`📥 Method 2 Response: ${response.status}`, result);
+
+      if (response.ok) {
+        return this.createSuccessResult(asin, formattedPrice, result, response.status);
+      }
+      return null;
+    } catch (error) {
+      console.log(`❌ Method 2 failed:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Try with minimal price-only update - NO PRODUCT TYPE REQUIRED
+   */
+  async tryWithProductType(asin, formattedPrice, token) {
+    try {
+      // Method 3: Try the absolute minimal approach for existing listings
+      // Many times, you don't need productType for simple price updates
+      const requestBody = {
+        patches: [
+          {
+            op: "replace",
+            path: "/attributes/purchasable_offer",
+            value: [
+              {
+                marketplace_id: this.config.marketplaceId,
+                currency: "GBP",
+                our_price: [
+                  {
+                    schedule: [
+                      {
+                        value_with_tax: formattedPrice
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+
+      console.log(`📤 Method 3 Request body (minimal):`, JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(
+        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-amz-access-token': token,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+
+      const result = await response.json();
+      console.log(`📥 Method 3 Response: ${response.status}`, result);
+
+      if (response.ok) {
+        return this.createSuccessResult(asin, formattedPrice, result, response.status);
+      }
+
+      // If that fails, try getting the existing listing first to understand its structure
+      console.log(`🔍 Method 3B: Getting existing listing structure for ${asin}...`);
+      const getResponse = await fetch(
+        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-amz-access-token': token,
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      if (getResponse.ok) {
+        const itemData = await getResponse.json();
+        console.log(`📥 Existing listing structure:`, JSON.stringify(itemData, null, 2));
+
+        // This will help us understand what fields are required and what the current structure looks like
+        return null; // Don't try another update, just gather info
+      }
+
+      return null;
+    } catch (error) {
+      console.log(`❌ Method 3 failed:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Create a success result object
+   */
+  createSuccessResult(asin, newPrice, result, status) {
+    const successResult = {
+      success: true,
+      status: status,
+      data: result,
+      environment: this.config.environment,
+      asin: asin,
+      newPrice: parseFloat(newPrice),
+      message: `Price update submitted successfully for ASIN ${asin}. New price: £${newPrice}`,
+      isSimulation: false
+    };
+
+    console.log('✅ REAL API - Price update completed successfully:', successResult);
+    return successResult;
+  }
+    try {
+      // First, try to get the item to find its product type
+      console.log(`� Getting item details for ${asin}...`);
+      const getResponse = await fetch(
+        `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-amz-access-token': token,
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      if (getResponse.ok) {
+        const itemData = await getResponse.json();
+        console.log(`📥 Item data:`, JSON.stringify(itemData, null, 2));
+
+        // Extract product type if available
+        const productType = itemData.productType || "PRODUCT";
+        console.log(`🏷️ Detected product type: ${productType}`);
+
+        // Now try to update with the correct product type
+        const requestBody = {
+          productType: productType,
+          patches: [
+            {
+              op: "replace",
+              path: "/attributes/purchasable_offer",
+              value: [
+                {
+                  marketplace_id: this.config.marketplaceId,
+                  currency: "GBP",
+                  our_price: [
+                    {
+                      schedule: [
+                        {
+                          value_with_tax: formattedPrice
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        };
+
+        console.log(`📤 Method 3 Request body:`, JSON.stringify(requestBody, null, 2));
+
+        const response = await fetch(
+          `${this.config.endpoint}/listings/2021-08-01/items/${this.config.marketplaceId}/${asin}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'x-amz-access-token': token,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+          }
+        );
+
+        const result = await response.json();
+        console.log(`📥 Method 3 Response: ${response.status}`, result);
+
+        if (response.ok) {
+          return this.createSuccessResult(asin, formattedPrice, result, response.status);
+        }
+      }
+      return null;
+    } catch (error) {
+      console.log(`❌ Method 3 failed:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Create a success result object
+   */
+  createSuccessResult(asin, newPrice, result, status) {
+    const successResult = {
+      success: true,
+      status: status,
+      data: result,
+      environment: this.config.environment,
+      asin: asin,
+      newPrice: parseFloat(newPrice),
+      message: `Price update submitted successfully for ASIN ${asin}. New price: £${newPrice}`,
+      isSimulation: false
+    };
+
+    console.log('✅ REAL API - Price update completed successfully:', successResult);
+    return successResult;
+  }
+
+  /**
+   * Get access token using refresh token - PRODUCTION VERSION
+   * @returns {Promise<string>} Access token
+   */
+  async getAccessToken() {
+    console.log('🔑 Getting access token...');
+
+    if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry) {
+      console.log('✅ Using cached access token');
+      return this.accessToken;
+    }
+
+    // Check if we have the required credentials
+    if (!this.config.clientId || !this.config.clientSecret || !this.config.refreshToken) {
+      const missingCredentials = [];
+      if (!this.config.clientId) missingCredentials.push('AMAZON_CLIENT_ID');
+      if (!this.config.clientSecret) missingCredentials.push('AMAZON_CLIENT_SECRET');
+      if (!this.config.refreshToken) missingCredentials.push('AMAZON_REFRESH_TOKEN');
+
+      const errorMessage = `Cannot obtain access token: Missing required credentials: ${missingCredentials.join(', ')}`;
+      console.error('❌ Amazon OAuth Error:', errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    try {
+      const response = await fetch('https://api.amazon.com/auth/o2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: this.config.refreshToken,
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token request failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      this.accessToken = data.access_token;
+      this.tokenExpiry = Date.now() + ((data.expires_in - 60) * 1000); // Subtract 60 seconds for safety
+
+      console.log('✅ Real access token obtained successfully');
+      return this.accessToken;
+
+    } catch (error) {
+      console.error('❌ Failed to get access token:', error);
+      throw error;
+    }
+  }
+}
+
+// Export as ES module default
+export default AmazonListingsAPI;
+
+// Also export as named export for compatibility
+export { AmazonListingsAPI };
+
+console.log('📦 Amazon Listings API Server module loaded');

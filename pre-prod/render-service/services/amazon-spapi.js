@@ -1,0 +1,1205 @@
+/**
+ * Amazon SP-API Integration for Buy Box Monitoring
+ * 
+ * This module handles real Amazon SP-API calls to get competitive pricing data
+ * and transforms it into the format expected by our database schema.
+ */
+
+const axios = require('axios');
+const crypto = require('crypto');
+const CostCalculator = require('./cost-calculator');
+
+class AmazonSPAPI {
+  constructor(supabaseClient) {
+    this.config = {
+      clientId: process.env.AMAZON_CLIENT_ID,
+      clientSecret: process.env.AMAZON_CLIENT_SECRET,
+      refreshToken: process.env.AMAZON_REFRESH_TOKEN,
+      marketplace: process.env.AMAZON_MARKETPLACE_ID || 'A1F83G8C2ARO7P', // UK marketplace
+      endpoint: 'https://sellingpartnerapi-eu.amazon.com',
+      region: 'eu-west-1',
+      accessKeyId: process.env.AMAZON_AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AMAZON_AWS_SECRET_ACCESS_KEY
+    };
+
+    // Validate required config
+    const required = ['clientId', 'clientSecret', 'refreshToken', 'accessKeyId', 'secretAccessKey'];
+    for (const key of required) {
+      if (!this.config[key]) {
+        throw new Error(`Missing required Amazon SP-API configuration: ${key}`);
+      }
+    }
+
+    this.accessToken = null;
+    this.tokenExpiry = null;
+
+    // Initialize cost calculator
+    this.costCalculator = new CostCalculator(supabaseClient);
+  }
+
+  /**
+   * Get access token for SP-API calls
+   */
+  async getAccessToken() {
+    // Check if we have a valid token
+    if (this.accessToken && this.tokenExpiry && new Date() < this.tokenExpiry) {
+      return this.accessToken;
+    }
+
+    try {
+      const response = await axios.post('https://api.amazon.com/auth/o2/token', {
+        grant_type: 'refresh_token',
+        refresh_token: this.config.refreshToken,
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret
+      }, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      this.accessToken = response.data.access_token;
+      // Token expires in 1 hour, refresh 5 minutes early
+      this.tokenExpiry = new Date(Date.now() + (response.data.expires_in - 300) * 1000);
+
+      return this.accessToken;
+    } catch (error) {
+      console.error('Failed to get Amazon access token:', error.response?.data || error.message);
+      throw new Error('Failed to authenticate with Amazon SP-API');
+    }
+  }
+
+  /**
+   * Create AWS signature for SP-API request
+   */
+  createSignature(method, path, queryParams, headers, body) {
+    const service = 'execute-api';
+    const host = 'sellingpartnerapi-eu.amazon.com';
+    const region = this.config.region;
+
+    // Create canonical request
+    const canonicalUri = path;
+    const canonicalQueryString = Object.keys(queryParams)
+      .sort()
+      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key])}`)
+      .join('&');
+
+    const canonicalHeaders = Object.keys(headers)
+      .sort()
+      .map(key => `${key.toLowerCase()}:${headers[key]}`)
+      .join('\n') + '\n';
+
+    const signedHeaders = Object.keys(headers)
+      .sort()
+      .map(key => key.toLowerCase())
+      .join(';');
+
+    const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
+
+    const canonicalRequest = [
+      method,
+      canonicalUri,
+      canonicalQueryString,
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash
+    ].join('\n');
+
+    // Create string to sign
+    const algorithm = 'AWS4-HMAC-SHA256';
+    const amzDate = headers['x-amz-date'];
+    const dateStamp = amzDate.substr(0, 8);
+    const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+    const stringToSign = [
+      algorithm,
+      amzDate,
+      credentialScope,
+      crypto.createHash('sha256').update(canonicalRequest).digest('hex')
+    ].join('\n');
+
+    // Calculate signature
+    const kDate = crypto.createHmac('sha256', `AWS4${this.config.secretAccessKey}`).update(dateStamp).digest();
+    const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
+    const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
+    const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
+    const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+
+    // Create authorization header
+    const authorizationHeader = `${algorithm} Credential=${this.config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    return {
+      ...headers,
+      'Authorization': authorizationHeader
+    };
+  }
+
+  /**
+   * Get competitive pricing data for an ASIN
+   */
+  async getCompetitivePricing(asin) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'GET';
+    const path = `/products/pricing/v0/items/${asin}/offers`;
+    const queryParams = {
+      MarketplaceId: this.config.marketplace,
+      ItemCondition: 'New'
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update('').digest('hex')
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, queryParams, headers, '');
+
+    const url = `${this.config.endpoint}${path}?${Object.keys(queryParams)
+      .map(key => `${key}=${encodeURIComponent(queryParams[key])}`)
+      .join('&')}`;
+
+    try {
+      console.log(`📡 SP-API Request for ${asin} at ${new Date().toISOString()}`);
+      const response = await axios.get(url, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+      console.log(`✅ SP-API Response received for ${asin} at ${new Date().toISOString()}`);
+
+      return response.data;
+    } catch (error) {
+      console.error(`SP-API error for ASIN ${asin}:`, error.response?.data || error.message);
+
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ASIN_NOT_FOUND');
+      } else if (error.response?.data?.errors?.[0]?.code === 'QuotaExceeded') {
+        throw new Error('RATE_LIMITED');
+      } else {
+        throw new Error(`SP_API_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Get competitive pricing data for multiple ASINs/SKUs (batch processing)
+   * Can process up to 20 items per request
+   */
+  async getCompetitivePricingBatch(items, itemType = 'Asin') {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'POST';
+    const path = '/products/pricing/v0/competitive-price';
+
+    // Prepare request body
+    const requestBody = {
+      Asins: itemType === 'Asin' ? items : undefined,
+      Skus: itemType === 'Sku' ? items : undefined,
+      MarketplaceId: this.config.marketplace,
+      ItemType: itemType,
+      CustomerType: 'Consumer'
+    };
+
+    const bodyString = JSON.stringify(requestBody);
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(bodyString).digest('hex'),
+      'content-type': 'application/json'
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, {}, headers, bodyString);
+
+    const url = `${this.config.endpoint}${path}`;
+
+    try {
+      console.log(`📡 Batch Competitive Pricing Request for ${items.length} ${itemType}s at ${new Date().toISOString()}`);
+      console.log(`📋 Items: ${items.slice(0, 5).join(', ')}${items.length > 5 ? ` ... (+${items.length - 5} more)` : ''}`);
+
+      const response = await axios.post(url, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+
+      console.log(`✅ Batch Competitive Pricing Response received for ${items.length} ${itemType}s at ${new Date().toISOString()}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Batch Competitive Pricing API error for ${itemType}s ${items.join(', ')}:`, error.response?.data || error.message);
+
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ITEMS_NOT_FOUND');
+      } else if (error.response?.data?.errors?.[0]?.code === 'QuotaExceeded') {
+        throw new Error('RATE_LIMITED');
+      } else {
+        throw new Error(`BATCH_COMPETITIVE_PRICING_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Get competitive summary data for ASINs (v2022-05-01 endpoint)
+   * More detailed competitive analysis but slower (0.033 req/sec)
+   */
+  async getCompetitiveSummary(asins, itemType = 'Asin') {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'POST';
+    const path = '/products/pricing/2022-05-01/competitive-summary';
+
+    // Prepare request body
+    const requestBody = {
+      requests: asins.map(asin => ({
+        uri: `/products/pricing/2022-05-01/items/${asin}/competitive-summary`,
+        method: 'GET',
+        MarketplaceId: this.config.marketplace
+      }))
+    };
+
+    const bodyString = JSON.stringify(requestBody);
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(bodyString).digest('hex'),
+      'content-type': 'application/json'
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, {}, headers, bodyString);
+
+    const url = `${this.config.endpoint}${path}`;
+
+    try {
+      console.log(`📊 Competitive Summary Request for ${asins.length} ASINs at ${new Date().toISOString()}`);
+      console.log(`📋 ASINs: ${asins.slice(0, 3).join(', ')}${asins.length > 3 ? ` ... (+${asins.length - 3} more)` : ''}`);
+
+      const response = await axios.post(url, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+
+      console.log(`✅ Competitive Summary Response received for ${asins.length} ASINs`);
+      return response.data;
+    } catch (error) {
+      console.error(`Competitive Summary API error for ASINs ${asins.join(', ')}:`, error.response?.data || error.message);
+
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ASINS_NOT_FOUND');
+      } else if (error.response?.data?.errors?.[0]?.code === 'QuotaExceeded') {
+        throw new Error('RATE_LIMITED');
+      } else {
+        throw new Error(`COMPETITIVE_SUMMARY_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Transform SP-API pricing response into our database format
+   */
+  async transformPricingData(pricingData, asin, sku, runId, productTitle = null) {
+    try {
+      const offers = pricingData?.payload?.Offers || [];
+
+      if (offers.length === 0) {
+        throw new Error('No offers found for ASIN');
+      }
+
+      // Get your seller ID for comparison
+      const yourSellerId = process.env.YOUR_SELLER_ID || process.env.AMAZON_SELLER_ID;
+
+      // Get SKU-specific pricing from our listings data FIRST (before using it)
+      const { SupabaseService } = require('./supabase-client');
+      const skuPricingData = await SupabaseService.getSkuPricing(sku);
+
+      // Find Buy Box winner
+      const buyBoxOffer = offers.find(offer => offer.IsBuyBoxWinner === true);
+
+      // Find YOUR current offer from competitive pricing - enhanced for multi-SKU scenarios
+      let yourOfferFromApi = offers.find(offer => offer.SellerId === yourSellerId);
+
+      // If you have multiple SKUs for the same ASIN, try to match by fulfillment type from amazon_listings
+      const yourOffers = offers.filter(offer => offer.SellerId === yourSellerId);
+      if (yourOffers.length > 1) {
+        console.log(`🔍 Multiple offers found for your seller ID (${yourOffers.length} SKUs for same ASIN)`);
+
+        // Enhanced matching logic - prioritize SKU name over potentially outdated database shipping group
+        const skuNameLower = sku.toLowerCase();
+        const isPrimeFromSku = skuNameLower.includes('prime') || skuNameLower.includes('fba');
+        const isStandardFromSku = skuNameLower.includes('standard') || skuNameLower.includes('merchant');
+
+        console.log(`🔍 SKU Analysis: "${sku}" -> Prime from name: ${isPrimeFromSku}, Standard from name: ${isStandardFromSku}`);
+
+        // Log all your offers for better debugging
+        yourOffers.forEach((offer, index) => {
+          console.log(`📋 Your Offer ${index + 1}: £${offer.ListingPrice?.Amount}, Prime: ${offer.PrimeInformation?.IsPrime}, FBA: ${offer.IsFulfilledByAmazon}, Channel: ${offer.FulfillmentChannel}`);
+        });
+
+        // Primary matching: Use SKU name as most reliable indicator
+        if (isPrimeFromSku) {
+          const primeOffer = yourOffers.find(offer =>
+            offer.IsFulfilledByAmazon === true ||
+            offer.PrimeInformation?.IsPrime === true ||
+            offer.FulfillmentChannel === 'AMAZON'
+          );
+          if (primeOffer) {
+            yourOfferFromApi = primeOffer;
+            console.log(`✅ SKU NAME MATCH: "${sku}" matched to Prime offer: £${primeOffer.ListingPrice?.Amount}`);
+          } else {
+            console.warn(`⚠️ SKU "${sku}" suggests Prime but no Prime offer found - using fallback logic`);
+          }
+        } else if (isStandardFromSku) {
+          const standardOffer = yourOffers.find(offer =>
+            offer.IsFulfilledByAmazon === false ||
+            offer.PrimeInformation?.IsPrime === false ||
+            offer.FulfillmentChannel === 'MERCHANT'
+          );
+          if (standardOffer) {
+            yourOfferFromApi = standardOffer;
+            console.log(`✅ SKU NAME MATCH: "${sku}" matched to Standard offer: £${standardOffer.ListingPrice?.Amount}`);
+          }
+        } else {
+          // Fallback to database shipping group if SKU name is ambiguous
+          if (skuPricingData && skuPricingData.shippingGroup) {
+            const shippingGroup = skuPricingData.shippingGroup.toLowerCase();
+            console.log(`📋 SKU "${sku}" shipping group from database: "${skuPricingData.shippingGroup}" (fallback matching)`);
+
+            if (shippingGroup.includes('prime') || shippingGroup.includes('fba') || shippingGroup.includes('nationwide prime')) {
+              const primeOffer = yourOffers.find(offer =>
+                offer.IsFulfilledByAmazon === true ||
+                offer.PrimeInformation?.IsPrime === true ||
+                offer.FulfillmentChannel === 'AMAZON'
+              );
+              if (primeOffer) {
+                yourOfferFromApi = primeOffer;
+                console.log(`✅ DATABASE MATCH: "${sku}" (${skuPricingData.shippingGroup}) to Prime offer: £${primeOffer.ListingPrice?.Amount}`);
+              }
+            } else if (shippingGroup.includes('standard') || shippingGroup.includes('uk shipping') || shippingGroup.includes('merchant')) {
+              const standardOffer = yourOffers.find(offer =>
+                offer.IsFulfilledByAmazon === false ||
+                offer.PrimeInformation?.IsPrime === false ||
+                offer.FulfillmentChannel === 'MERCHANT'
+              );
+              if (standardOffer) {
+                yourOfferFromApi = standardOffer;
+                console.log(`✅ DATABASE MATCH: "${sku}" (${skuPricingData.shippingGroup}) to Standard offer: £${standardOffer.ListingPrice?.Amount}`);
+              }
+            } else {
+              console.warn(`⚠️ Unknown shipping group "${skuPricingData.shippingGroup}" for SKU "${sku}" - using first offer`);
+            }
+          } else {
+            console.warn(`⚠️ No shipping group data found for SKU "${sku}" - using first offer`);
+          }
+        }
+
+        // Final fallback - use first offer if no match found
+        if (!yourOfferFromApi && yourOffers.length > 0) {
+          yourOfferFromApi = yourOffers[0];
+          console.warn(`⚠️ No specific match found for "${sku}" - using first available offer: £${yourOfferFromApi.ListingPrice?.Amount}`);
+        }
+      }
+
+      // Prioritize live SP-API data over cached database data for accuracy
+      let yourCurrentPrice;
+      const apiPrice = yourOfferFromApi?.ListingPrice?.Amount || 0;
+      const dbPrice = skuPricingData?.price || 0;
+
+      if (apiPrice > 0) {
+        // Use live API price when available (most accurate)
+        yourCurrentPrice = apiPrice;
+        console.log(`Using live SP-API pricing for ${sku}: £${yourCurrentPrice}`);
+
+        // Log price discrepancy if database price differs significantly
+        if (dbPrice > 0 && Math.abs(apiPrice - dbPrice) > 0.01) {
+          console.warn(`⚠️ Price mismatch for ${sku}: API=£${apiPrice}, DB=£${dbPrice}, Diff=£${(apiPrice - dbPrice).toFixed(2)}`);
+        }
+
+        // Log SKU-specific matching info
+        if (yourOffers && yourOffers.length > 1) {
+          console.log(`📊 SKU Match Result: "${sku}" matched to £${apiPrice} (out of ${yourOffers.length} possible offers)`);
+        }
+      } else if (dbPrice > 0) {
+        // Fall back to database price only if API doesn't have pricing
+        yourCurrentPrice = dbPrice;
+        console.log(`Using fallback DB pricing for ${sku}: £${yourCurrentPrice} (no API price available)`);
+      } else {
+        yourCurrentPrice = 0;
+        console.warn(`⚠️ No pricing data available for ${sku} from either API or database`);
+      }
+
+      // Get all competitor prices for analysis
+      const competitorPrices = offers
+        .filter(offer => !offer.IsBuyBoxWinner)
+        .map(offer => ({
+          sellerId: offer.SellerId,
+          price: offer.ListingPrice?.Amount || 0,
+          shipping: offer.Shipping?.Amount || 0,
+          total: (offer.ListingPrice?.Amount || 0) + (offer.Shipping?.Amount || 0)
+        }));
+
+      // Calculate metrics
+      const lowestCompetitorPrice = competitorPrices.length > 0
+        ? Math.min(...competitorPrices.map(p => p.total))
+        : null;
+
+      // Buy Box pricing - handle no competition scenario
+      const buyBoxPrice = buyBoxOffer?.ListingPrice?.Amount || null;
+      const buyBoxShipping = buyBoxOffer?.Shipping?.Amount || 0;
+      const buyBoxTotal = buyBoxPrice ? buyBoxPrice + buyBoxShipping : null;
+
+      // Your current shipping (use API data for shipping costs)
+      const yourCurrentShipping = yourOfferFromApi?.Shipping?.Amount || 0;
+      const yourCurrentTotal = yourCurrentPrice + yourCurrentShipping;
+
+      // Determine winner status and opportunity
+      const isWinner = buyBoxOffer?.SellerId === yourSellerId;
+      const isOpportunity = lowestCompetitorPrice && buyBoxTotal > lowestCompetitorPrice * 0.95; // 5% margin
+
+      // Calculate price gap (real gap between your SKU price and Buy Box price)
+      const priceGap = buyBoxPrice ? yourCurrentPrice - buyBoxPrice : 0;
+
+      console.log(`Buy Box analysis for ${asin}: Your ID: ${yourSellerId}, Buy Box Owner: ${buyBoxOffer?.SellerId}, Winner: ${isWinner}`);
+
+      // 🚨 ENHANCED BUY BOX DEBUGGING - Prime vs Non-Prime Analysis
+      console.log(`\n🔍 PRIME BUY BOX ANALYSIS for ${asin}:`);
+
+      // Analyze your offer
+      const yourIsPrime = yourOfferFromApi?.PrimeInformation?.IsPrime === true || yourOfferFromApi?.IsFulfilledByAmazon === true;
+      const buyBoxIsPrime = buyBoxOffer?.PrimeInformation?.IsPrime === true || buyBoxOffer?.IsFulfilledByAmazon === true;
+
+      console.log(`📦 Your Offer: £${yourCurrentPrice}, Prime: ${yourIsPrime}, FBA: ${yourOfferFromApi?.IsFulfilledByAmazon}`);
+      console.log(`🏆 Buy Box Winner: £${buyBoxPrice}, Prime: ${buyBoxIsPrime}, FBA: ${buyBoxOffer?.IsFulfilledByAmazon}`);
+
+      // Check if you're the lowest Prime offer
+      const primeOffers = offers.filter(offer =>
+        offer.PrimeInformation?.IsPrime === true || offer.IsFulfilledByAmazon === true
+      );
+      const nonPrimeOffers = offers.filter(offer =>
+        offer.PrimeInformation?.IsPrime !== true && offer.IsFulfilledByAmazon !== true
+      );
+
+      console.log(`🎯 Prime offers: ${primeOffers.length}, Non-Prime offers: ${nonPrimeOffers.length}`);
+
+      if (primeOffers.length > 0) {
+        const lowestPrimePrice = Math.min(...primeOffers.map(o => o.ListingPrice?.Amount || Infinity));
+        const yourPrimePosition = primeOffers.find(o => o.SellerId === yourSellerId);
+
+        if (yourPrimePosition && yourCurrentPrice === lowestPrimePrice) {
+          console.log(`🥇 YOU ARE THE LOWEST PRIME OFFER at £${yourCurrentPrice}!`);
+          console.log(`🌟 Prime customers likely see YOU as Buy Box winner`);
+          console.log(`📱 Website (showing Prime view) vs API (generic view) discrepancy explained`);
+        } else if (yourIsPrime) {
+          console.log(`🥈 You have Prime but not lowest Prime price. Lowest Prime: £${lowestPrimePrice}`);
+        }
+      }
+
+      if (nonPrimeOffers.length > 0) {
+        const lowestNonPrimePrice = Math.min(...nonPrimeOffers.map(o => o.ListingPrice?.Amount || Infinity));
+        console.log(`💰 Lowest Non-Prime price: £${lowestNonPrimePrice}`);
+      }
+
+      // API vs Website discrepancy warning
+      if (!isWinner && yourIsPrime && !buyBoxIsPrime) {
+        console.log(`\n⚠️  POTENTIAL API vs WEBSITE DISCREPANCY DETECTED:`);
+        console.log(`   📊 API shows: Non-Prime seller ${buyBoxOffer?.SellerId} winning at £${buyBoxPrice}`);
+        console.log(`   🌐 Website might show: You (Prime) winning for Prime customers`);
+        console.log(`   🎯 Reason: Amazon shows different Buy Box to Prime vs non-Prime customers`);
+      }
+
+      // Enhanced Buy Box debugging - check if multiple sellers have same price
+      const yourOfferPrice = yourOfferFromApi?.ListingPrice?.Amount;
+      const buyBoxOfferPrice = buyBoxOffer?.ListingPrice?.Amount;
+      const samePriceOffers = offers.filter(offer => offer.ListingPrice?.Amount === buyBoxOfferPrice);
+
+      if (samePriceOffers.length > 1 && yourOfferPrice === buyBoxOfferPrice) {
+        console.log(`⚠️ POTENTIAL BUY BOX ROTATION: ${samePriceOffers.length} sellers with same price £${buyBoxOfferPrice}`);
+        console.log(`🔄 Buy Box may rotate between: ${samePriceOffers.map(o => o.SellerId).join(', ')}`);
+        console.log(`📱 Website view might differ from API due to real-time rotation or geographic factors`);
+      }
+
+      console.log(`Price Gap Debug - Your: ${yourCurrentPrice} (${typeof yourCurrentPrice}), BuyBox: ${buyBoxPrice} (${typeof buyBoxPrice}), Gap: ${priceGap} (${typeof priceGap})`);
+      console.log(`Pricing for ${asin}: Your Price: £${yourCurrentPrice}, Buy Box Price: £${buyBoxPrice || 'No Buy Box'}, Gap: £${priceGap.toFixed(2)}`);
+
+      // Filter out our own offers - we only want competitor data
+      const YOUR_SELLER_ID = process.env.AMAZON_SELLER_ID || 'A2D8NG39VURSL3';
+      console.log(`🔍 Filtering offers for seller ID: ${YOUR_SELLER_ID}`);
+      console.log(`📋 All offer seller IDs:`, offers.map(o => o.SellerId));
+
+      const competitorOffers = offers.filter(offer => {
+        const isCompetitor = offer.SellerId !== YOUR_SELLER_ID;
+        console.log(`   Seller ${offer.SellerId}: ${isCompetitor ? 'COMPETITOR' : 'YOUR OFFER'} (${offer.SellerId === YOUR_SELLER_ID ? 'FILTERED OUT' : 'KEPT'})`);
+        return isCompetitor;
+      });
+
+      console.log(`🏷️ ASIN ${asin}: Raw offers from Amazon SP-API:`, offers.length);
+      console.log(`👥 Competitor offers (excluding your seller ID ${YOUR_SELLER_ID}):`, competitorOffers.length);
+
+      // Build normalized offers for child table (competitors only)
+      const offersNormalized = competitorOffers.map(offer => ({
+        run_id: runId,
+        asin,
+        sku,
+        seller_id: offer.SellerId || null,
+        seller_name: offer.SellerName || null,
+        listing_price: offer.ListingPrice?.Amount ?? 0,
+        shipping: offer.Shipping?.Amount ?? 0,
+        // Note: 'total' is a generated column - don't include it in insert
+        is_buybox_winner: offer.IsBuyBoxWinner === true,
+        is_prime: offer.PrimeInformation?.IsOfferPrime === true,
+        is_fba: offer.IsFulfilledByAmazon === true,
+        fulfillment_channel: offer.IsFulfilledByAmazon ? 'FBA' : 'FBM',
+        condition: offer.ItemCondition || 'New',
+        captured_at: new Date().toISOString(),
+        raw_offer: offer
+      }));
+
+      if (competitorOffers.length > 0) {
+        console.log(`🔍 Sample competitor offer structure:`, competitorOffers[0] ? {
+          SellerId: competitorOffers[0].SellerId,
+          SellerName: competitorOffers[0].SellerName || 'Not provided',
+          IsBuyBoxWinner: competitorOffers[0].IsBuyBoxWinner,
+          SubCondition: competitorOffers[0].SubCondition,
+          PrimeInformation: competitorOffers[0].PrimeInformation,
+          ShippingTime: competitorOffers[0].ShippingTime
+        } : 'No competitor offers');
+      } else {
+        console.log(`📭 No competitor offers found for ASIN ${asin} (you are the only seller)`);
+      }
+
+      // Calculate offer counts for stock tracking
+      const totalOffersCount = offers.length;
+      const yourOffersCount = offers.length - competitorOffers.length;
+
+      console.log(`📊 Full response summary:`, {
+        totalOffers: totalOffersCount,
+        yourOffers: yourOffersCount,
+        competitorOffers: competitorOffers.length,
+        competitorSellerIds: competitorOffers.map(o => o.SellerId),
+        buyBoxWinners: offers.filter(o => o.IsBuyBoxWinner).length
+      });
+      console.log(`🎯 Normalized offers created:`, offersNormalized.length);
+      if (offersNormalized.length > 0) {
+        console.log(`📋 Sample offer data:`, {
+          asin: offersNormalized[0].asin,
+          seller_id: offersNormalized[0].seller_id,
+          price: offersNormalized[0].listing_price,
+          is_buybox: offersNormalized[0].is_buybox_winner
+        });
+      }
+
+      const summary = {
+        run_id: runId,
+        asin: asin,
+        sku: sku,
+        item_name: productTitle, // Re-added for better UX - product titles shown immediately
+
+        // Essential pricing fields
+        price: yourCurrentPrice || 0, // Always use your current price, don't fallback to buyBoxPrice
+        is_winner: isWinner,
+        competitor_id: buyBoxOffer?.SellerId || null,
+        competitor_name: buyBoxOffer?.SellerName || 'Unknown',
+        competitor_price: buyBoxPrice, // This will be null when no competition
+        opportunity_flag: isOpportunity,
+
+        // Stock tracking fields
+        total_offers: totalOffersCount,
+        your_offers_count: yourOffersCount,
+        total_offers_count: totalOffersCount, // For consistency with API response field names
+
+        captured_at: new Date().toISOString(),
+        merchant_token: yourSellerId,
+        buybox_merchant_token: buyBoxOffer?.SellerId || null,
+
+        // Enhanced pricing clarity fields
+        your_current_price: yourCurrentPrice,
+        your_current_shipping: yourCurrentShipping,
+        your_current_total: yourCurrentTotal,
+        buybox_price: buyBoxPrice, // This will be null when no competition
+        buybox_shipping: buyBoxShipping,
+        buybox_total: buyBoxTotal, // This will be null when no competition
+        price_gap: parseFloat(priceGap.toFixed(2)),
+        price_gap_percentage: yourCurrentPrice > 0 ? parseFloat(((priceGap / yourCurrentPrice) * 100).toFixed(2)) : 0,
+        pricing_status: isWinner ? 'winning_buybox' : (priceGap > 0 ? 'priced_above_buybox' : 'priced_below_buybox'),
+        your_offer_found: !!yourOfferFromApi
+      };
+
+      return { summary, offers: offersNormalized };
+    } catch (error) {
+      console.error('Error transforming pricing data:', error);
+      throw new Error(`Failed to transform pricing data: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get Buy Box data for a single ASIN with intelligent retry
+   */
+  async getBuyBoxData(asin, sku, runId, rateLimiter = null) {
+    const maxRetries = 3; // Maximum number of retries for rate limiting (3 total attempts)
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Fetching Buy Box data for ASIN: ${asin}, SKU: ${sku}${attempt > 0 ? ` (retry ${attempt}/${maxRetries})` : ''}`);
+
+        // Get product title from sku_asin_mapping table
+        let productTitle = null;
+        try {
+          const { SupabaseService } = require('./supabase-client');
+          productTitle = await SupabaseService.getProductTitle(sku, asin);
+          console.log(`Product title for ${sku}/${asin}: ${productTitle || 'Not found'}`);
+        } catch (titleError) {
+          console.warn(`Failed to fetch product title for ${sku}/${asin}:`, titleError.message);
+          // Fallback to placeholder
+          productTitle = `Product ${asin}`;
+        }
+
+        const pricingData = await this.getCompetitivePricing(asin);
+        const transformed = await this.transformPricingData(pricingData, asin, sku, runId, productTitle);
+
+        // Enrich with cost calculator data for margin analysis (summary only)
+        const enrichedSummary = await this.costCalculator.enrichBuyBoxData(transformed.summary);
+
+        // Notify rate limiter of success
+        if (rateLimiter) {
+          rateLimiter.onRequestSuccess();
+        }
+
+        console.log(`Successfully processed ASIN ${asin}: Buy Box owned by ${enrichedSummary.competitor_name || 'Unknown'}, margin: ${enrichedSummary.margin_percent_at_buybox_price || 0}%`);
+
+        return { summary: enrichedSummary, offers: transformed.offers };
+
+      } catch (error) {
+        lastError = error;
+
+        // If this is a rate limiting error and we have retries left
+        if (error.message === 'RATE_LIMITED' && attempt < maxRetries) {
+          if (rateLimiter) {
+            rateLimiter.onRateLimited();
+            await rateLimiter.sleepForRetry(); // Sleep for the retry delay
+          } else {
+            // Fallback sleep if no rate limiter
+            console.log(`😴 Rate limited, sleeping 4s before retry ${attempt + 1}/${maxRetries}...`);
+            await new Promise(resolve => setTimeout(resolve, 4000));
+          }
+          continue; // Try again
+        }
+
+        // If not a rate limiting error, or we're out of retries, break
+        break;
+      }
+    }
+
+    // If we get here, all retries failed
+    if (lastError?.message === 'RATE_LIMITED' && rateLimiter) {
+      rateLimiter.onRateLimited(); // Record the final failure
+    }
+
+    console.error(`Failed to get Buy Box data for ASIN ${asin} after ${maxRetries + 1} attempts:`, lastError);
+    throw lastError;
+  }
+
+  /**
+   * Get orders data for sales analysis
+   */
+  async getOrders(startDate, endDate = null, maxResults = 50) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'GET';
+    const path = '/orders/2026-01-01/orders';
+
+    // Set date range (default to last 30 days if no endDate provided)
+    const start = startDate instanceof Date ? startDate : new Date(startDate);
+    const end = endDate ? (endDate instanceof Date ? endDate : new Date(endDate)) : new Date();
+
+    const queryParams = {
+      marketplaceIds: this.config.marketplace,
+      createdAfter: start.toISOString(),
+      createdBefore: end.toISOString(),
+      fulfillmentStatuses: 'UNSHIPPED,PARTIALLY_SHIPPED,SHIPPED',
+      maxResultsPerPage: Math.min(maxResults, 100), // Amazon limit is 100
+      includedData: 'FULFILLMENT,PROCEEDS,PACKAGES,BUYER,RECIPIENT'
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update('').digest('hex')
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, queryParams, headers, '');
+
+    const url = `${this.config.endpoint}${path}?${Object.keys(queryParams)
+      .map(key => `${key}=${encodeURIComponent(queryParams[key])}`)
+      .join('&')}`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Orders API error:`, error.response?.data || error.message);
+
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else {
+        throw new Error(`ORDERS_API_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Get order items for a specific order (to get SKU sales data)
+   */
+  async getOrderItems(orderId) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'GET';
+    const path = `/orders/2026-01-01/orders/${orderId}?includedData=PROCEEDS,FULFILLMENT`;
+    const queryParams = {};
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update('').digest('hex')
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, queryParams, headers, '');
+
+    const url = `${this.config.endpoint}${path}`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error(`Order Items API error for order ${orderId}:`, error.response?.data || error.message);
+
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else {
+        throw new Error(`ORDER_ITEMS_API_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Get sales data for a specific SKU or ASIN over a date range
+   */
+  async getSalesDataBySkuOrAsin(skuOrAsin, startDate, endDate = null, maxOrders = 100) {
+    try {
+      console.log(`📊 Getting sales data for ${skuOrAsin} from ${startDate} to ${endDate || 'now'}`);
+
+      // Get orders in the date range
+      const ordersResponse = await this.getOrders(startDate, endDate, maxOrders);
+      const orders = ordersResponse?.payload?.Orders || [];
+
+      if (orders.length === 0) {
+        return {
+          sku_or_asin: skuOrAsin,
+          date_range: { start: startDate, end: endDate },
+          total_quantity_sold: 0,
+          total_revenue: 0,
+          total_orders: 0,
+          orders: [],
+          summary: 'No orders found in date range'
+        };
+      }
+
+      console.log(`Found ${orders.length} orders, checking for SKU/ASIN ${skuOrAsin}...`);
+
+      let totalQuantity = 0;
+      let totalRevenue = 0;
+      let matchingOrders = [];
+
+      // Check each order for our SKU/ASIN
+      for (const order of orders) {
+        try {
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          const orderItemsResponse = await this.getOrderItems(order.AmazonOrderId);
+          const orderItems = orderItemsResponse?.payload?.OrderItems || [];
+
+          // Find items matching our SKU/ASIN
+          const matchingItems = orderItems.filter(item =>
+            item.SellerSKU === skuOrAsin ||
+            item.ASIN === skuOrAsin
+          );
+
+          if (matchingItems.length > 0) {
+            for (const item of matchingItems) {
+              const quantity = parseInt(item.QuantityOrdered) || 0;
+              const itemPrice = parseFloat(item.ItemPrice?.Amount) || 0;
+
+              totalQuantity += quantity;
+              totalRevenue += itemPrice;
+
+              matchingOrders.push({
+                order_id: order.AmazonOrderId,
+                order_date: order.PurchaseDate,
+                sku: item.SellerSKU,
+                asin: item.ASIN,
+                product_name: item.Title,
+                quantity: quantity,
+                unit_price: itemPrice / quantity,
+                total_price: itemPrice,
+                currency: item.ItemPrice?.CurrencyCode || 'GBP'
+              });
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to get order items for ${order.AmazonOrderId}:`, error.message);
+          continue;
+        }
+      }
+
+      const salesSummary = {
+        sku_or_asin: skuOrAsin,
+        date_range: {
+          start: startDate,
+          end: endDate || new Date().toISOString().split('T')[0]
+        },
+        total_quantity_sold: totalQuantity,
+        total_revenue: parseFloat(totalRevenue.toFixed(2)),
+        total_orders: matchingOrders.length,
+        average_order_value: matchingOrders.length > 0 ? parseFloat((totalRevenue / matchingOrders.length).toFixed(2)) : 0,
+        orders: matchingOrders,
+        summary: `Found ${totalQuantity} units sold across ${matchingOrders.length} orders, total revenue: £${totalRevenue.toFixed(2)}`
+      };
+
+      console.log(`📈 Sales Summary for ${skuOrAsin}: ${totalQuantity} units, £${totalRevenue.toFixed(2)} revenue`);
+
+      return salesSummary;
+
+    } catch (error) {
+      console.error('Error getting sales data:', error);
+      throw new Error(`Failed to get sales data: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get product details including title from Amazon Catalog Items API
+   */
+  async getCatalogItem(asin) {
+    const accessToken = await this.getAccessToken();
+
+    const method = 'GET';
+    const path = `/catalog/v0/items/${asin}`;
+    const queryParams = {
+      MarketplaceId: this.config.marketplace
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update('').digest('hex')
+    };
+
+    // Create signed headers
+    const signedHeaders = this.createSignature(method, path, queryParams, headers, '');
+
+    const url = `${this.config.endpoint}${path}?${Object.keys(queryParams)
+      .map(key => `${key}=${encodeURIComponent(queryParams[key])}`)
+      .join('&')}`;
+
+    try {
+      const response = await axios.get(url, {
+        headers: signedHeaders,
+        timeout: 30000 // 30 second timeout
+      });
+
+      // Extract title from response
+      const catalogData = response.data;
+      let title = null;
+
+      // The structure varies, but title is usually in AttributeSets
+      if (catalogData?.AttributeSets?.[0]?.Title) {
+        title = catalogData.AttributeSets[0].Title;
+      } else if (catalogData?.payload?.AttributeSets?.[0]?.Title) {
+        title = catalogData.payload.AttributeSets[0].Title;
+      } else if (catalogData?.Identifiers?.MarketplaceASIN?.Title) {
+        title = catalogData.Identifiers.MarketplaceASIN.Title;
+      }
+
+      return {
+        asin: asin,
+        title: title,
+        fullResponse: catalogData
+      };
+
+    } catch (error) {
+      console.error(`Catalog API error for ASIN ${asin}:`, error.response?.data || error.message);
+
+      // Check for specific error types
+      if (error.response?.status === 429) {
+        throw new Error('RATE_LIMITED');
+      } else if (error.response?.status === 403) {
+        throw new Error('ACCESS_DENIED');
+      } else if (error.response?.status === 404) {
+        throw new Error('ASIN_NOT_FOUND');
+      } else {
+        throw new Error(`CATALOG_API_ERROR: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Update product price using Amazon Feeds API
+   * Single SKU price update with comprehensive error handling
+   */
+  async updatePrice(asin, newPrice, currentPrice = null, sku = null) {
+    console.log(`🎯 Starting price update for ASIN: ${asin} to £${newPrice}`);
+
+    try {
+      const accessToken = await this.getAccessToken();
+      const finalSku = sku || asin;
+
+      console.log('🎯 Price Update Details:');
+      console.log(`   🔸 ASIN: ${asin}`);
+      console.log(`   🔸 SKU: ${finalSku}`);
+      console.log(`   🔸 Current price: ${currentPrice !== null ? `£${currentPrice.toFixed(2)}` : 'Unknown'}`);
+      console.log(`   🔸 New price: £${newPrice.toFixed(2)}`);
+
+      // Step 1: Create feed document
+      console.log('📄 Step 1: Creating feed document...');
+      const feedDocument = await this.createFeedDocument(accessToken);
+      console.log('✅ Feed document created:', feedDocument.feedDocumentId);
+
+      // Step 2: Upload pricing data (JSON format)
+      console.log('📤 Step 2: Uploading pricing data...');
+      await this.uploadPricingData(feedDocument.url, asin, finalSku, newPrice);
+      console.log('✅ Pricing data uploaded successfully');
+
+      // Step 3: Submit feed
+      console.log('🚀 Step 3: Submitting feed...');
+      const feed = await this.submitFeed(accessToken, feedDocument.feedDocumentId);
+      console.log('✅ Feed submitted:', feed.feedId);
+
+      // Step 4: Log to database (optional - catches errors gracefully)
+      try {
+        await this.logPriceUpdate(asin, finalSku, newPrice, currentPrice, feed);
+      } catch (logError) {
+        console.warn('⚠️ Failed to log price update to database:', logError.message);
+      }
+
+      return {
+        success: true,
+        status: 200,
+        data: feed,
+        asin: asin,
+        sku: finalSku,
+        newPrice: parseFloat(newPrice.toFixed(2)),
+        currentPrice: currentPrice,
+        feedId: feed.feedId,
+        message: `Price update feed submitted successfully for ASIN ${asin} (SKU: ${finalSku}). New price: £${newPrice.toFixed(2)}`,
+        feedStatus: 'SUBMITTED',
+        feedType: 'JSON_LISTINGS_FEED',
+        nextSteps: 'Feed is being processed by Amazon. Check status in 5-15 minutes using the Feed Status API.',
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ Price update failed:', error);
+      return {
+        success: false,
+        status: 500,
+        error: error.message,
+        asin: asin,
+        sku: sku || asin,
+        newPrice: newPrice,
+        currentPrice: currentPrice,
+        message: `Failed to update price for ASIN ${asin}: ${error.message}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Create feed document for price updates
+   */
+  async createFeedDocument(accessToken) {
+    const method = 'POST';
+    const path = '/feeds/2021-06-30/documents';
+    const requestBody = {
+      contentType: 'application/json; charset=utf-8'
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(JSON.stringify(requestBody)).digest('hex')
+    };
+
+    const signedHeaders = this.createSignature(method, path, {}, headers, JSON.stringify(requestBody));
+
+    try {
+      const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('❌ Feed document creation failed:', error.response?.data);
+      if (error.response?.data?.errors) {
+        console.error('📋 Amazon API errors:', JSON.stringify(error.response.data.errors, null, 2));
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Upload pricing data to Amazon
+   */
+  async uploadPricingData(uploadUrl, asin, sku, price) {
+    const jsonData = {
+      "header": {
+        "sellerId": process.env.AMAZON_SELLER_ID || "A2D8NG39VURSL3",
+        "version": "2.0"
+      },
+      "messages": [
+        {
+          "messageId": 1,
+          "sku": sku,
+          "operationType": "PARTIAL_UPDATE",
+          "productType": "GROCERY", // Default - should be detected dynamically in production
+          "attributes": {
+            "purchasable_offer": [
+              {
+                "marketplace_id": this.config.marketplace,
+                "currency": "GBP",
+                "our_price": [
+                  {
+                    "schedule": [
+                      {
+                        "value_with_tax": price.toFixed(2)
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    };
+
+    const response = await axios.put(uploadUrl, jsonData, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    });
+
+    if (!response.status === 200) {
+      throw new Error(`Failed to upload pricing data: ${response.status}`);
+    }
+  }
+
+  /**
+   * Submit feed to Amazon
+   */
+  async submitFeed(accessToken, feedDocumentId) {
+    const method = 'POST';
+    const path = '/feeds/2021-06-30/feeds';
+    const requestBody = {
+      feedType: 'JSON_LISTINGS_FEED',
+      marketplaceIds: [this.config.marketplace],
+      inputFeedDocumentId: feedDocumentId
+    };
+
+    const amzDate = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
+    const headers = {
+      'host': 'sellingpartnerapi-eu.amazon.com',
+      'x-amz-access-token': accessToken,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': crypto.createHash('sha256').update(JSON.stringify(requestBody)).digest('hex')
+    };
+
+    const signedHeaders = this.createSignature(method, path, {}, headers, JSON.stringify(requestBody));
+
+    try {
+      const response = await axios.post(`${this.config.endpoint}${path}`, requestBody, {
+        headers: signedHeaders,
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('❌ Feed submission failed:', error.response?.data);
+      if (error.response?.data?.errors) {
+        console.error('📋 Amazon feed submission errors:', JSON.stringify(error.response.data.errors, null, 2));
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Log price update to database (optional logging)
+   */
+  async logPriceUpdate(asin, sku, newPrice, currentPrice, feedResult) {
+    try {
+      const { SupabaseService } = require('./supabase-client');
+
+      await SupabaseService.client
+        .from('price_updates')
+        .insert({
+          asin: asin,
+          sku: sku,
+          old_price: currentPrice,
+          new_price: newPrice,
+          feed_id: feedResult.feedId,
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+          source: 'sp-api-feeds'
+        });
+
+      console.log('💾 Price update logged to database');
+    } catch (error) {
+      console.warn('⚠️ Database logging failed:', error.message);
+      // Don't throw - this is optional logging
+    }
+  }
+}
+
+module.exports = { AmazonSPAPI };

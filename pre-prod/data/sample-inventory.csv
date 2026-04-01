@@ -1,0 +1,4 @@
+SKU,Stock Level,Depth,Height,Width,Purchase Price,Retail Price,Title,Tracked,Weight
+TEST001,100,10,5,8,15.99,29.99,Sample Product 1,Yes,0.5
+TEST002,50,12,6,10,25.00,49.99,Sample Product 2,No,0.8
+TEST003,75,8,4,6,8.50,19.99,Sample Product 3,Yes,0.3
