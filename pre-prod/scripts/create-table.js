@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://gvowfbrpmotcfxfzzhxf.supabase.co';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2b3dmYnJwbW90Y2Z4Znp6aHhmIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MDMxNzQ2OSwiZXhwIjoyMDU1ODkzNDY5fQ.tzqrQxoPFcwI3BUwcspBrDs9_EJB1GnpElstac70bTk';
+const supabaseServiceKey = process.env.PRIVATE_SUPABASE_SERVICE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -67,3 +67,4 @@ async function createTable() {
 }
 
 createTable();
+

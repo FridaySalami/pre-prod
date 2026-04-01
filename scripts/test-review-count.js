@@ -12,7 +12,7 @@ import { CatalogService } from './src/lib/amazon/catalog-service.js';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://tqwqqnqlnqxrgcjrbqtx.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxd3FxbnFsbnF4cmdjanJicXR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU5MTk3NzYsImV4cCI6MjA1MTQ5NTc3Nn0.tLB7nhrCHi21kl0L5aNL6aE_kJhBs2RGhFfSBBWXF3g';
+const SUPABASE_KEY = process.env.PRIVATE_SUPABASE_SERVICE_KEY;
 
 // Test ASIN from screenshot - Bisto Gravy
 const TEST_ASIN = 'B00DYQ6IVW';
@@ -168,3 +168,4 @@ async function testReviewCount() {
 
 // Run the test
 testReviewCount().catch(console.error);
+

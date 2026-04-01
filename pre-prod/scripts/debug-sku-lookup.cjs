@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
   'https://wzkynqgtxmvnkpuwnaqt.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6a3lucWd0eG12bmtwdXduYXF0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczMzMyNTk5MiwiZXhwIjoyMDQ4OTAxOTkyfQ.zJIV8i3LcnhKafKRXgLNq1lUKxb4FhbgDnWLV3wGjMY'
+  process.env.PRIVATE_SUPABASE_SERVICE_KEY
 );
 
 async function debugSKULookup() {
@@ -45,3 +45,4 @@ async function debugSKULookup() {
 }
 
 debugSKULookup().catch(console.error);
+
