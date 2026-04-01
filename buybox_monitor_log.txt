@@ -1133,4 +1133,25 @@ Mapping result for SKU: SEE09 - 001 (ASIN: undefined) - Success: true
  M a p p i n g   r e s u l t   f o r   S K U :   S U G 1 6   -   0 0 2   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
  M a p p i n g   r e s u l t   f o r   S K U :   O I L 0 2 I   -   0 0 1   O n e   d a y   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
  M a p p i n g   r e s u l t   f o r   S K U :   H O N 2 7 C   -   0 0 2   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ C h e c k i n g   b a t c h   o f   2 0   S K U s . . .  
+ M a p p i n g   r e s u l t   f o r   S K U :   B u n d l e   -   0 0 9   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   C R U S H A 0 0 4   -   0 0 1   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   V I N 1 7   -   0 0 1   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   V E G 1 5 E   -   0 0 1   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   C A L 2 8 A B   -   0 0 1   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   T A R 1 0 B   -   0 1 0   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   B u n d l e   -   2 1 6   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   C R I 1 0   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   E L S I N 0 0 1   -   0 0 7   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   V E G 0 1 E   -   0 0 1   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   V I N 6 0   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   T A T E C A 0 0 1   -   0 0 2   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   B A K 2 4   -   0 0 2   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   O R I 3 0 0 C   -   0 1 5   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   B A K 3 0   -   0 0 1   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   S O S 0 6 D   -   0 0 1   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   C O N 1 2 A   -   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   O I L 2 8   -   0 0 1   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   B A K 2 4   -   0 0 4   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
+ M a p p i n g   r e s u l t   f o r   S K U :   F O L 0 5   -   0 0 2   P r i m e   ( A S I N :   u n d e f i n e d )   -   S u c c e s s :   t r u e  
  
