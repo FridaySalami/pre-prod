@@ -37,12 +37,12 @@ async function runMonitor() {
   console.log(`[${new Date().toISOString()}] Starting Listing Batch Buy Box check (Run ID: ${runId})`);
 
   try {
-    // 1. Fetch Top 100 SKUs
+    // 1. Fetch SKUs to monitor
     let { data: topSkus, error: skuError } = await supabase
       .from('monitored_top_100_skus')
       .select('*')
       .order('rank', { ascending: true })
-      .limit(100);
+      .limit(300); // Increased from 100 to handle the expanded list
 
     if (skuError || !topSkus || topSkus.length === 0) {
       throw new Error(skuError?.message || 'No monitored SKUs found in table.');

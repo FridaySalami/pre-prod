@@ -125,24 +125,24 @@
       <Card class="shadow-sm border-slate-200 overflow-hidden">
         <div class="h-1 bg-amber-500 w-full"></div>
         <CardContent class="p-3">
-          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Suppressed</p>
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Suppressed / No Buy Box</p>
           <div class="flex items-end justify-between mt-1">
             <span class="text-2xl font-bold text-slate-900">{stats.suppressed}</span>
             <span class="text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
-              Action
+              Action Needed
             </span>
           </div>
         </CardContent>
       </Card>
 
       <Card class="shadow-sm border-slate-200 overflow-hidden">
-        <div class="h-1 bg-indigo-500 w-full"></div>
+        <div class="h-1 bg-slate-400 w-full"></div>
         <CardContent class="p-3">
-          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Revenue At Risk</p>
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Losing / Out of Stock</p>
           <div class="flex items-end justify-between mt-1">
             <span class="text-2xl font-bold text-slate-900">{stats.atRisk}</span>
-            <span class="text-xs font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
-              Top Items
+            <span class="text-xs font-medium text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded">
+              Total Issues
             </span>
           </div>
         </CardContent>
@@ -191,10 +191,11 @@
             <TableRow class="hover:bg-transparent border-b">
               <TableHead class="w-12 text-[10px] font-bold text-slate-500 uppercase text-center px-4">Rank</TableHead>
               <TableHead class="text-[10px] font-bold text-slate-500 uppercase">Product Identification</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase">Status</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase px-2 w-[100px]">Status</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">30d Sales</TableHead>
               <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Our Price</TableHead>
               <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Winning</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-center">Price Gap</TableHead>
+              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-center w-[110px] px-2">Price Gap</TableHead>
               <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Next Best</TableHead>
               <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right px-4">Last Activity</TableHead>
             </TableRow>
@@ -207,23 +208,35 @@
                 </TableCell>
                 
                 <TableCell>
-                  <div class="flex flex-col">
-                    <span class="text-xs font-semibold text-slate-700 truncate max-w-[180px]" title={item.product_name}>{item.sku}</span>
-                    <a 
-                      href="https://sellercentral.amazon.co.uk/myinventory/inventory?searchTerm={item.asin}" 
-                      target="_blank" 
-                      class="text-[10px] text-indigo-500 hover:text-indigo-700 font-mono flex items-center gap-0.5 mt-0.5 group-hover:underline"
-                    >
-                      {item.asin}
-                      <ExternalLink size={8} class="opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </a>
+                  <div class="flex flex-col min-w-[200px] py-1">
+                    <span class="text-[11px] font-bold text-slate-900 leading-tight mb-1" title={item.product_name}>
+                      {item.product_name || item.sku}
+                    </span>
+                    <div class="flex flex-wrap items-center gap-2 mt-0.5">
+                      <span class="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 rounded whitespace-nowrap">{item.sku}</span>
+                      <a 
+                        href="https://sellercentral.amazon.co.uk/myinventory/inventory?searchTerm={item.asin}" 
+                        target="_blank" 
+                        class="text-[9px] text-indigo-500 hover:text-indigo-700 font-mono flex items-center gap-0.5 group-hover:underline whitespace-nowrap"
+                      >
+                        {item.asin}
+                        <ExternalLink size={8} class="opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </a>
+                    </div>
                   </div>
                 </TableCell>
                 
                 <TableCell>
-                  <Badge variant="outline" class="text-[9px] font-bold px-1.5 py-0 h-4 border-slate-300 {getStatusStyle(item.status)}">
+                  <Badge variant="outline" class="text-[9px] font-bold px-1.5 py-0 h-4 border-slate-300 whitespace-nowrap {getStatusStyle(item.status)}">
                     {item.status.replace(/_/g, ' ')}
                   </Badge>
+                </TableCell>
+                
+                <TableCell class="text-right font-bold text-[10px] text-slate-800 tabular-nums">
+                  <div class="flex items-center justify-end gap-1">
+                    <TrendingUp size={10} class="text-indigo-400" />
+                    {item.sales30d || 0}
+                  </div>
                 </TableCell>
                 
                 <TableCell class="text-right font-medium text-xs text-slate-700 whitespace-nowrap">

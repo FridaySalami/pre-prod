@@ -1,0 +1,8 @@
+[STDOUT] [2026-04-01T16:00:03.808Z] Navigating to https://ship.amazon.co.uk/tracking?duration=custom&durationStart=2026-03-30&durationEnd=2026-04-01
+[STDOUT] [2026-04-01T16:00:04.399Z] Navigating to https://ship.amazon.co.uk/tracking?duration=custom&durationStart=2026-03-30&durationEnd=2026-04-01
+[STDERR] [2026-04-01T16:00:06.100Z] FATAL ERROR: AUTH_REQUIRED: Please log in via the web dashboard first to refresh cookies.
+[2026-04-01T16:00:06.117Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 6.08s
+
+[STDERR] [2026-04-01T16:00:06.534Z] FATAL ERROR: AUTH_REQUIRED: Please log in via the web dashboard first to refresh cookies.
+[2026-04-01T16:00:06.550Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 6.51s
+

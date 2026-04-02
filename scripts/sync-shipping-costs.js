@@ -153,53 +153,53 @@ async function processShippingFile(buffer) {
 async function runAutomation() {
     let browser;
     try {
-        const authFile = path.join(process.cwd(), '.auth', 'amazon-shipping.json');
+        const authFile = path.join(__dirname, '..', '.auth', 'amazon-shipping.json');
         
+        console.log(`Checking for auth file at: ${authFile}`);
+        if (!fs.existsSync(authFile)) {
+            throw new Error('NO_AUTH_FILE: Please run "node scripts/manual-auth-shipping.js" one time as a manual login first.');
+        }
+
         browser = await chromium.launch({
-            headless: true, // Run headless for automation
+            headless: true, 
             channel: 'chrome' 
         });
 
         const options = {
             viewport: { width: 1280, height: 720 },
-            acceptDownloads: true
+            acceptDownloads: true,
+            storageState: authFile
         };
-
-        if (fs.existsSync(authFile)) {
-            options.storageState = authFile;
-        }
 
         const context = await browser.newContext(options);
         const page = await context.newPage();
 
         const today = new Date();
         const pastDate = new Date();
-        pastDate.setDate(today.getDate() - 2); 
+        pastDate.setDate(today.getDate() - 3); // Changed to last 3 days for better coverage
 
         const toDateStr = (d) => d.toISOString().split('T')[0];
         const url = `https://ship.amazon.co.uk/tracking?duration=custom&durationStart=${toDateStr(pastDate)}&durationEnd=${toDateStr(today)}`;
         
         console.log(`Navigating to ${url}`);
-        await page.goto(url, { waitUntil: 'networkidle' });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        if (page.url().includes('signin')) {
-            throw new Error('AUTH_REQUIRED: Please log in via the web dashboard first to refresh cookies.');
+        if (page.url().includes('signin') || page.url().includes('ap/signin')) {
+            throw new Error('AUTH_EXPIRED: Please run "node scripts/manual-auth-shipping.js" again to refresh your session cookies.');
         }
 
-        // Wait for survey modal (common blocker)
-        try {
-            const survey = page.locator('text=satisfied are you with Amazon Shipping');
-            if (await survey.isVisible({ timeout: 5000 })) {
-                await page.locator('button[aria-label*="Close"]').first().click({ force: true }).catch(() => {});
-            }
-        } catch(e) {}
-
-        // Select All and Export
-        await page.waitForSelector('input[type="checkbox"]', { timeout: 10000 });
-        await page.locator('input[type="checkbox"]').first().click({ force: true });
+        console.log('Page loaded. Checking for survey/blockers...');
         
-        await page.getByRole('button', { name: /actions/i }).click();
+        // Finalize by attempting to click "Select All"
+        const checkbox = page.locator('input[type="checkbox"]').first();
+        await checkbox.waitFor({ state: 'visible', timeout: 30000 });
+        await checkbox.click({ force: true });
         
+        console.log('Opening Actions menu...');
+        const actionsBtn = page.getByRole('button', { name: /actions/i }).first();
+        await actionsBtn.click();
+        
+        console.log('Starting export download...');
         const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
         await page.locator('text=/Export.*shipments.*Excel/i').first().click();
         
