@@ -63,17 +63,20 @@ export const load: PageServerLoad = async () => {
   console.log(`Total rows processed across daily batches: ${totalRows}`);
   console.log(`Unique SKUs with sales: ${Object.keys(salesMap).length}`);
 
-  // Step 2: Fetch product titles from our existing catalog cache to avoid expensive joins
+  // Step 2: Fetch product titles from our existing catalog cache via ASIN
   const { data: catalog } = await supabaseAdmin
     .from('amazon_catalog_cache')
-    .select('seller_sku, product_name')
-    .in('seller_sku', (monitored || []).map(m => m.sku));
+    .select('asin, title')
+    .in('asin', (monitored || []).map(m => m.asin).filter(Boolean));
 
-  const catalogMap = new Map(catalog?.map(c => [c.seller_sku?.trim(), c.product_name]) || []);
+  const catalogMap = new Map(catalog?.map(c => [c.asin, c.title]) || []);
 
   // Step 3: Manual join for dashboard
   const currentStatus = (monitored || []).map(m => {
     const skuKey = m.sku?.trim();
+    const currentItem = current?.find(c => c.sku?.trim() === skuKey);
+    const asin = currentItem?.asin || m.asin;
+    
     let sales = 0;
     if (skuKey) {
       sales = salesMap[skuKey] || 0;
@@ -84,10 +87,29 @@ export const load: PageServerLoad = async () => {
       }
     }
 
+    // Determine the best name:
+    // 1. Catalog Cache (via ASIN)
+    // 2. Monitored Table specifically seeded name (IF NOT JUST THE SKU)
+    // 3. Current Table name (IF NOT JUST THE SKU)
+    // 4. SKU as fallback
+    let displayName = catalogMap.get(asin);
+    
+    if (!displayName) {
+      // If we don't have a catalog name, check if the stored product_name is better than just the SKU
+      if (m.product_name && m.product_name !== m.sku) {
+        displayName = m.product_name;
+      } else if (currentItem?.product_name && currentItem.product_name !== m.sku) {
+        displayName = currentItem.product_name;
+      } else {
+        displayName = skuKey;
+      }
+    }
+
     return {
       ...m,
-      product_name: catalogMap.get(skuKey) || m.product_name || skuKey, // Use title from cache
-      ...(current?.find(c => c.sku?.trim() === skuKey) || { status: 'PENDING' }),
+      product_name: displayName,
+      asin: asin || 'PENDING_FETCH',
+      ...(currentItem || { status: 'PENDING' }),
       sales30d: sales
     };
   })

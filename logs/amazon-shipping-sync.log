@@ -6,3 +6,13 @@
 [STDERR] [2026-04-01T16:00:06.534Z] FATAL ERROR: AUTH_REQUIRED: Please log in via the web dashboard first to refresh cookies.
 [2026-04-01T16:00:06.550Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 6.51s
 
+[STDOUT] [2026-04-02T16:00:03.672Z] Checking for auth file at: C:\Users\JackW.la\pre-prod\.auth\amazon-shipping.json
+[STDOUT] [2026-04-02T16:00:04.876Z] Navigating to https://ship.amazon.co.uk/tracking?duration=custom&durationStart=2026-03-30&durationEnd=2026-04-02
+[STDERR] [2026-04-02T16:00:05.861Z] FATAL ERROR: AUTH_EXPIRED: Please run "node scripts/manual-auth-shipping.js" again to refresh your session cookies.
+[2026-04-02T16:00:05.873Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 5.85s
+
+[STDOUT] [2026-04-03T16:00:01.637Z] Checking for auth file at: C:\Users\JackW.la\pre-prod\.auth\amazon-shipping.json
+[STDOUT] [2026-04-03T16:00:02.720Z] Navigating to https://ship.amazon.co.uk/tracking?duration=custom&durationStart=2026-03-31&durationEnd=2026-04-03
+[STDERR] [2026-04-03T16:00:03.571Z] FATAL ERROR: AUTH_EXPIRED: Please run "node scripts/manual-auth-shipping.js" again to refresh your session cookies.
+[2026-04-03T16:00:03.585Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 3.55s
+

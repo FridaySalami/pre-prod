@@ -11,7 +11,8 @@
 		Upload,
 		Mail,
 		ChevronDown,
-		X
+		X,
+		AlertTriangle
 	} from 'lucide-svelte';
 	import { showToast } from '$lib/stores/toastStore';
 	import { onDestroy } from 'svelte';
@@ -92,6 +93,11 @@
 
 		totalCost = enrichedItems.reduce((sum: number, i: any) => sum + i._calculated.totalCost, 0);
 
+		// Check if any item has 0 product cost (material cost)
+		const hasZeroProductCost = (order.amazon_order_items || []).some((item: any) => {
+			return !item.costs || Number(item.costs.materialTotalCost) <= 0;
+		});
+
 		const isCanceled = order.order_status === 'Canceled';
 		const orderRevenue = isCanceled ? 0 : parseFloat(order.order_total) || 0;
 		const startProfit = isCanceled ? 0 : orderRevenue - totalCost;
@@ -119,7 +125,8 @@
 				totalCost,
 				profit: startProfit,
 				orderRevenue,
-				shippingDisplay
+				shippingDisplay,
+				hasZeroProductCost
 			}
 		};
 	}
@@ -537,6 +544,7 @@
 
 	let showProfitStats = false;
 	let openCostBreakdownId: string | null = null;
+	let filterZeroCostOnly = false;
 
 	function handleWindowClick(event: MouseEvent) {
 		if (openCostBreakdownId && !(event.target as Element).closest('.cost-breakdown-popup')) {
@@ -592,10 +600,12 @@
 		return breakdown;
 	}
 
-	$: sortedOrders = [...filteredOrders].sort((a, b) => {
-		// Use cached values for sorting
-		let aValue: any;
-		let bValue: any;
+	$: sortedOrders = [...filteredOrders]
+		.filter((o) => !filterZeroCostOnly || o._calculated.hasZeroProductCost)
+		.sort((a, b) => {
+			// Use cached values for sorting
+			let aValue: any;
+			let bValue: any;
 
 		if (sortColumn === 'order_total') {
 			aValue = a._calculated.orderRevenue;
@@ -1523,9 +1533,24 @@
 	</div>
 
 	<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-		<div class="flex flex-col space-y-1.5 p-6">
-			<h3 class="text-2xl font-semibold leading-none tracking-tight">Recent Orders</h3>
-			<p class="text-sm text-muted-foreground">A list of recent orders from Amazon.</p>
+		<div class="flex flex-row items-center justify-between p-6">
+			<div class="flex flex-col space-y-1.5">
+				<h3 class="text-2xl font-semibold leading-none tracking-tight">Recent Orders</h3>
+				<p class="text-sm text-muted-foreground">A list of recent orders from Amazon.</p>
+			</div>
+			<div class="flex items-center gap-2 rounded-md border bg-muted p-1">
+				<button
+					class="rounded-sm px-3 py-1 text-sm font-medium transition-all {filterZeroCostOnly
+						? 'bg-red-100 text-red-700 shadow-sm'
+						: 'text-muted-foreground hover:bg-background/50'}"
+					onclick={() => (filterZeroCostOnly = !filterZeroCostOnly)}
+				>
+					<div class="flex items-center gap-1">
+						<AlertTriangle class="h-3.5 w-3.5" />
+						<span>Missing Costs</span>
+					</div>
+				</button>
+			</div>
 		</div>
 		<div class="p-6 pt-0">
 			<div class="relative w-full overflow-auto">
@@ -1727,14 +1752,24 @@
 										: 'hover:bg-muted/50'}
 								<tr class="border-b transition-colors data-[state=selected]:bg-muted {rowClass}">
 									<td class="p-4 align-middle font-medium">
-										<a
-											href={`https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}`}
-											target="_blank"
-											rel="noopener noreferrer"
-											class="text-blue-600 hover:underline"
-										>
-											{order.amazon_order_id}
-										</a>
+										<div class="flex items-center gap-2">
+											{#if order._calculated.hasZeroProductCost && order.order_status !== 'Canceled' && order.order_status !== 'Pending'}
+												<div
+													class="flex items-center justify-center text-red-600 animate-pulse"
+													title="Critical: One or more products in this order have 0 cost recorded. Please update product costs for accurate analysis."
+												>
+													<AlertTriangle class="h-5 w-5 fill-red-50 text-red-600" />
+												</div>
+											{/if}
+											<a
+												href={`https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}`}
+												target="_blank"
+												rel="noopener noreferrer"
+												class="text-blue-600 hover:underline"
+											>
+												{order.amazon_order_id}
+											</a>
+										</div>
 									</td>
 									<td class="p-4 align-middle">{formatDate(order.purchase_date)}</td>
 									<td class="p-4 align-middle">
