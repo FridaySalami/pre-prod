@@ -5,15 +5,11 @@
 	import {
 		format,
 		addDays,
-		isWeekend,
 		startOfMonth,
 		startOfWeek,
 		endOfMonth,
 		endOfWeek,
 		eachDayOfInterval,
-		isSameMonth,
-		isSameDay,
-		isWithinInterval,
 		startOfDay,
 		endOfDay,
 		addMonths,
@@ -21,13 +17,12 @@
 	} from 'date-fns';
 	import { supabase } from '$lib/supabase/supabaseClient';
 	import {
-		ChevronLeft,
-		ChevronRight,
 		RefreshCw,
 		Package,
 		PoundSterling,
 		Truck,
 		Wind,
+		AlertCircle,
 		CloudRain
 	} from 'lucide-svelte';
 	import { getHoursByRoleForDate } from '$lib/services/employeeHoursService';
@@ -40,9 +35,11 @@
 		Alert,
 		AlertTitle,
 		AlertDescription,
-		Badge
+		Badge,
+		Button
 	} from '$lib/shadcn/components';
 	import DocumentationLink from '$lib/components/DocumentationLink.svelte';
+	import HolidayCalendarWidget from '$lib/components/HolidayCalendarWidget.svelte';
 
 	let holidays: any[] = [];
 	let pendingHolidays: any[] = [];
@@ -54,24 +51,6 @@
 	$: startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
 	$: endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
 	$: calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
-
-	function getHolidaysForDay(day: Date, holidays: any[]) {
-		return holidays.filter((h) => {
-			if (!h.from_date || !h.to_date) return false;
-			const start = startOfDay(new Date(h.from_date));
-			const end = endOfDay(new Date(h.to_date));
-			const current = startOfDay(day);
-
-			const inRange = isWithinInterval(current, { start, end });
-			if (!inRange) return false;
-
-			if (h.dates_to_exclude) {
-				const dayStr = format(current, 'yyyy-MM-dd');
-				if (h.dates_to_exclude.includes(dayStr)) return false;
-			}
-			return true;
-		});
-	}
 
 	function getConflicts(pendingHoliday: any) {
 		if (!pendingHoliday || !holidays.length) return [];
@@ -106,16 +85,6 @@
 	}
 	function goToToday() {
 		calendarDate = new Date();
-	}
-
-	function getStatusStyles(status: string) {
-		const s = status?.toLowerCase() || '';
-		if (s === 'accepted') return 'bg-green-50 text-green-800 border-green-100';
-		if (s.includes('rejected') || s.includes('declined'))
-			return 'bg-red-50 text-red-800 border-red-100';
-		if (s.includes('withdrawn') || s.includes('cancelled') || s.includes('removed'))
-			return 'bg-gray-50 text-gray-600 border-gray-100 decoration-line-through';
-		return 'bg-yellow-50 text-yellow-800 border-yellow-100';
 	}
 
 	// Add authentication check
@@ -311,6 +280,23 @@
 	let dataLoaded = false;
 	let retryCount = 0;
 
+	let unmappedOrdersCount = 0;
+
+	// Fetch unmapped orders count from Supabase
+	async function fetchUnmappedOrders() {
+		try {
+			const { count, error } = await supabase
+				.from('unmapped_orders')
+				.select('*', { count: 'exact', head: true });
+			
+			if (!error) {
+				unmappedOrdersCount = count || 0;
+			}
+		} catch (e) {
+			console.error('Error fetching unmapped orders:', e);
+		}
+	}
+
 	// Fetch pending holidays for tracked employees
 	async function fetchPendingHolidays() {
 		try {
@@ -406,7 +392,8 @@
 				fetchUpcomingLeave(),
 				fetchWeather(),
 				fetchYesterdayMetrics(),
-				fetchPendingHolidays()
+				fetchPendingHolidays(),
+				fetchUnmappedOrders()
 			]);
 
 			// Data loaded successfully
@@ -1600,425 +1587,210 @@
 		</div>
 
 		<!-- Full Width Layout -->
-		<div class="space-y-8">
-			<div class="space-y-8">
-				<!-- Performance Metrics (Full Width - Compact) -->
-				<Card>
-					<CardContent class="p-6">
-						{#if isLoading.metrics}
-							<div class="space-y-4">
-								<Skeleton class="h-4 w-full" />
-								<Skeleton class="h-4 w-3/4" />
-								<Skeleton class="h-4 w-1/2" />
+		<div class="space-y-6">
+			<!-- TOP ROW: Critical System Status Alerts -->
+			{#if unmappedOrdersCount > 0}
+				<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+					<div 
+						class="col-span-1 rounded-lg border p-3 flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-4 duration-500
+						{unmappedOrdersCount > 20 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-amber-50 border-amber-200 text-amber-900'}"
+					>
+						<div class="flex items-center gap-3">
+							<div class="p-2 rounded-full {unmappedOrdersCount > 20 ? 'bg-red-100' : 'bg-amber-100'}">
+								<AlertCircle class="w-5 h-5 {unmappedOrdersCount > 20 ? 'text-red-600' : 'text-amber-600'}" />
 							</div>
-						{:else}
-							<div
-								class="grid grid-cols-1 lg:grid-cols-3 gap-8 divide-y lg:divide-y-0 lg:divide-x divide-slate-100"
-							>
-								<!-- B2C Amazon Fulfillment (1.x series) -->
-								<div class="lg:pr-8">
-									<div class="flex items-center justify-between mb-4">
-										<div class="flex items-center gap-2">
-											<div class="p-1.5 bg-blue-50 rounded-md">
-												<Package class="w-4 h-4 text-blue-700" />
-											</div>
-											<h3 class="text-sm font-semibold text-blue-800 uppercase tracking-wide">
-												Fulfillment
-											</h3>
-										</div>
-										<Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-5">
-											{format(addDays(today, -1), 'do MMM')}
-										</Badge>
-									</div>
-									<div class="grid grid-cols-4 gap-4">
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Packed
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.shipmentsPacked}
-											</div>
-										</div>
-
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Hours
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.actualHoursWorked.toFixed(1)}<span
-													class="text-xs font-normal text-slate-400 ml-0.5">h</span
-												>
-											</div>
-										</div>
-
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Efficiency
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.laborEfficiency.toFixed(1)}<span
-													class="text-xs font-normal text-slate-400 ml-0.5">/hr</span
-												>
-											</div>
-										</div>
-
-										{#if metrics.laborUtilization > 0}
-											<div>
-												<div
-													class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-												>
-													Util %
-												</div>
-												<div class="text-lg font-bold text-slate-900">
-													{metrics.laborUtilization.toFixed(0)}<span
-														class="text-xs font-normal text-slate-400 ml-0.5">%</span
-													>
-												</div>
-											</div>
-										{/if}
-									</div>
-								</div>
-
-								<!-- B2C Amazon Financials (2.0 series) -->
-								<div class="pt-6 lg:pt-0 lg:px-8">
-									<div class="flex items-center gap-2 mb-4">
-										<div class="p-1.5 bg-green-50 rounded-md">
-											<PoundSterling class="w-4 h-4 text-green-700" />
-										</div>
-										<h3 class="text-sm font-semibold text-green-800 uppercase tracking-wide">
-											Financials
-										</h3>
-									</div>
-									<div class="grid grid-cols-3 gap-4">
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Total Sales
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												£{metrics.totalSales.toLocaleString('en-GB', {
-													minimumFractionDigits: 0,
-													maximumFractionDigits: 0
-												})}
-											</div>
-										</div>
-
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Amazon
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												£{metrics.amazonSales.toLocaleString('en-GB', {
-													minimumFractionDigits: 0,
-													maximumFractionDigits: 0
-												})}
-											</div>
-										</div>
-
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Other
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												£{(metrics.ebaySales + metrics.shopifySales).toLocaleString('en-GB', {
-													minimumFractionDigits: 0,
-													maximumFractionDigits: 0
-												})}
-											</div>
-										</div>
-									</div>
-								</div>
-
-								<!-- Orders (2.1 series) -->
-								<div class="pt-6 lg:pt-0 lg:pl-8">
-									<div class="flex items-center gap-2 mb-4">
-										<div class="p-1.5 bg-orange-50 rounded-md">
-											<Truck class="w-4 h-4 text-orange-700" />
-										</div>
-										<h3 class="text-sm font-semibold text-orange-800 uppercase tracking-wide">
-											Orders
-										</h3>
-									</div>
-									<div class="grid grid-cols-4 gap-4">
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Total
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksTotalOrders}
-											</div>
-										</div>
-
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Amazon
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksAmazonOrders}
-											</div>
-										</div>
-
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												eBay
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksEbayOrders}
-											</div>
-										</div>
-
-										<div>
-											<div
-												class="text-[11px] text-slate-600 mb-0.5 font-bold uppercase tracking-wider"
-											>
-												Shopify
-											</div>
-											<div class="text-lg font-bold text-slate-900">
-												{metrics.linnworksShopifyOrders}
-											</div>
-										</div>
-									</div>
-								</div>
-							</div>
-						{/if}
-					</CardContent>
-				</Card>
-
-				<!-- Holiday Calendar Widget (Full Width) -->
-				<Card class="h-[800px]">
-					<CardHeader class="py-3 px-4 border-b">
-						<div class="flex items-center justify-between">
-							<div class="flex items-center gap-6">
-								<CardTitle>Holiday Calendar</CardTitle>
-								<div class="hidden md:flex items-center gap-3">
-									<div class="flex items-center gap-1.5 text-xs text-slate-600">
-										<div
-											class="w-2.5 h-2.5 rounded-[2px] bg-green-50 border border-green-200"
-										></div>
-										<span class="font-medium">Approved</span>
-									</div>
-									<div class="flex items-center gap-1.5 text-xs text-slate-600">
-										<div
-											class="w-2.5 h-2.5 rounded-[2px] bg-yellow-50 border border-yellow-200"
-										></div>
-										<span class="font-medium">Pending</span>
-									</div>
-									<div class="flex items-center gap-1.5 text-xs text-slate-600">
-										<div class="w-2.5 h-2.5 rounded-[2px] bg-red-50 border border-red-200"></div>
-										<span class="font-medium">Rejected</span>
-									</div>
-									<div class="flex items-center gap-1.5 text-xs text-slate-600">
-										<div class="w-2.5 h-2.5 rounded-[2px] bg-gray-50 border border-gray-200"></div>
-										<span class="font-medium">Cancelled</span>
-									</div>
-								</div>
-							</div>
-							<div class="flex items-center gap-1 bg-gray-50 rounded-md p-1 border">
-								<button
-									class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
-									onclick={previousMonth}
-								>
-									<ChevronLeft class="w-4 h-4 text-gray-600" />
-								</button>
-								<button
-									class="px-2 py-0.5 text-xs font-semibold min-w-[90px] text-center"
-									onclick={goToToday}
-								>
-									{format(calendarDate, 'MMMM yyyy')}
-								</button>
-								<button
-									class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
-									onclick={nextMonth}
-								>
-									<ChevronRight class="w-4 h-4 text-gray-600" />
-								</button>
+							<div>
+								<div class="text-[10px] font-bold uppercase tracking-widest opacity-70">Unmapped Orders</div>
+								<div class="text-xl font-black leading-none">{unmappedOrdersCount}</div>
 							</div>
 						</div>
-					</CardHeader>
-					<div class="flex flex-col h-[calc(800px-57px)]">
-						<div class="grid grid-cols-7 border-b bg-gray-50/50">
-							{#each ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as day}
-								<div
-									class="py-2 text-center text-sm font-semibold text-gray-500 uppercase tracking-wider"
-								>
-									{day}
-								</div>
-							{/each}
-						</div>
-						<div class="grid grid-cols-7 auto-rows-fr h-full bg-gray-100 gap-px">
-							{#each calendarDays as day}
-								{@const isCurrentMonth = isSameMonth(day, calendarDate)}
-								{@const isToday = isSameDay(day, new Date())}
-								{@const dayHolidays = getHolidaysForDay(day, holidays)}
-
-								<div
-									class="bg-white p-2 relative h-full flex flex-col {isCurrentMonth
-										? ''
-										: 'bg-gray-50/50 text-gray-300'}"
-								>
-									<div class="flex justify-between items-start mb-1">
-										<span
-											class="text-sm font-medium rounded-full w-7 h-7 flex items-center justify-center {isToday
-												? 'bg-blue-600 text-white'
-												: isCurrentMonth
-													? 'text-gray-700'
-													: 'text-gray-400'}"
-										>
-											{format(day, 'd')}
-										</span>
-									</div>
-									<div class="flex-1 overflow-hidden flex flex-col gap-1">
-										{#each dayHolidays.slice(0, 5) as holiday}
-											{@const nameParts = holiday.employee_name.split(' ')}
-											{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
-											{@const displayName =
-												nameParts.length > 1
-													? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}`
-													: nameParts[0]}
-											<div
-												class="px-1.5 py-1 text-xs rounded border truncate leading-tight {getStatusStyles(
-													holiday.status
-												)}"
-												title="{holiday.employee_name}{isHalfDay ? ' (Half Day)' : ''}"
-											>
-												{displayName}{isHalfDay ? ' (Half Day)' : ''}
-											</div>
-										{/each}
-										{#if dayHolidays.length > 5}
-											<div class="text-xs text-gray-400 pl-1 leading-none">
-												+{dayHolidays.length - 5}
-											</div>
-										{/if}
-									</div>
-								</div>
-							{/each}
-						</div>
+						<Button 
+							size="sm" 
+							variant="ghost" 
+							class="h-8 px-3 font-bold text-[11px] {unmappedOrdersCount > 20 ? 'hover:bg-red-100' : 'hover:bg-amber-100'}"
+							onclick={() => goto('/dashboard/amazon/unmapped')}
+						>
+							FIX NOW
+						</Button>
 					</div>
-				</Card>
+				</div>
+			{/if}
 
-				<!-- Pending Holiday Approvals -->
-				{#if pendingHolidays.length > 0}
-					<Card class="mt-4">
-						<CardHeader>
-							<CardTitle class="text-base font-semibold flex items-center gap-2">
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									width="18"
-									height="18"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									class="text-yellow-600"
-								>
-									<circle cx="12" cy="12" r="10"></circle>
-									<line x1="12" y1="8" x2="12" y2="12"></line>
-									<line x1="12" y1="16" x2="12.01" y2="16"></line>
-								</svg>
-								Pending Holiday Approvals
-								<Badge variant="secondary" class="ml-auto">{pendingHolidays.length}</Badge>
-							</CardTitle>
-						</CardHeader>
-						<CardContent>
-							<div class="space-y-3">
-								{#each pendingHolidays as holiday}
-									{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
-									{@const fromDate = new Date(holiday.from_date)}
-									{@const toDate = new Date(holiday.to_date)}
-									{@const isSameDay =
-										format(fromDate, 'yyyy-MM-dd') === format(toDate, 'yyyy-MM-dd')}
-									{@const conflicts = getConflicts(holiday)}
-									<div
-										class="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
-									>
-										<div class="flex-1 min-w-0">
-											<div class="flex items-baseline gap-2 flex-wrap">
-												<span class="font-semibold text-gray-900">{holiday.employee_name}</span>
-												{#if isHalfDay}
-													<Badge variant="outline" class="text-xs">Half Day</Badge>
-												{/if}
-											</div>
-											<div class="text-sm text-gray-600 mt-1">
-												{#if isSameDay}
-													{format(fromDate, 'EEE, d MMM yyyy')}
-												{:else}
-													{format(fromDate, 'EEE, d MMM yyyy')} → {format(
-														toDate,
-														'EEE, d MMM yyyy'
-													)}
-												{/if}
-												<span class="text-gray-400 mx-2">·</span>
-												<span class="font-medium">{holiday.duration} {holiday.units}</span>
-											</div>
-											{#if holiday.notes}
-												<div class="text-sm text-gray-500 mt-1 italic">"{holiday.notes}"</div>
-											{/if}
+			<div class="grid grid-cols-12 gap-8">
+				<!-- Left Column: Holiday Calendar (Col 8) -->
+				<div class="col-span-8 space-y-8">
+					<HolidayCalendarWidget 
+						{holidays} 
+						{calendarDate} 
+						{calendarDays} 
+						onNextMonth={nextMonth} 
+						onPrevMonth={previousMonth} 
+						onGoToToday={goToToday} 
+					/>
+				</div>
 
-											{#if conflicts.length > 0}
-												<div class="mt-2 pt-2 border-t border-yellow-200/60">
-													<span class="text-xs font-medium text-yellow-800 uppercase tracking-wider"
-														>Overlaps with:</span
-													>
-													<div class="flex flex-wrap gap-1 mt-1">
-														{#each conflicts as conflict}
-															{@const isApproved = conflict.status
-																?.toLowerCase()
-																.includes('accepted')}
-															<span
-																class="inline-flex items-center px-1.5 py-0.5 rounded text-xs border {isApproved
-																	? 'bg-red-50 text-red-700 border-red-200'
-																	: 'bg-orange-50 text-orange-700 border-orange-200'}"
-															>
-																{conflict.employee_name} ({isApproved ? 'Approved' : 'Pending'})
-															</span>
-														{/each}
-													</div>
+				<!-- Right Column: Metrics and Pending (Col 4) -->
+				<div class="col-span-4 space-y-6">
+					<!-- Performance Metrics (Compact) -->
+					<Card>
+						<CardContent class="p-4">
+							{#if isLoading.metrics}
+								<div class="space-y-4">
+									<Skeleton class="h-12 w-full" />
+									<Skeleton class="h-12 w-full" />
+									<Skeleton class="h-12 w-full" />
+								</div>
+							{:else}
+								<div class="space-y-6 divide-y divide-slate-100">
+									<!-- Fulfillment -->
+									<div class="space-y-3">
+										<div class="flex items-center justify-between">
+											<div class="flex items-center gap-2">
+												<div class="p-1 bg-blue-50 rounded">
+													<Package class="w-3.5 h-3.5 text-blue-700" />
 												</div>
-											{:else}
-												<div class="mt-2 pt-1">
-													<span class="text-xs text-green-600 flex items-center gap-1">
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															width="12"
-															height="12"
-															viewBox="0 0 24 24"
-															fill="none"
-															stroke="currentColor"
-															stroke-width="2"
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															><polyline points="20 6 9 17 4 12"></polyline></svg
-														>
-														No conflicts found
-													</span>
-												</div>
-											{/if}
+												<span class="text-[10px] font-bold text-blue-800 uppercase tracking-tight">Fulfillment</span>
+											</div>
+											<Badge variant="secondary" class="text-[9px] px-1 py-0 h-4">{format(addDays(today, -1), 'do MMM')}</Badge>
+										</div>
+										<div class="grid grid-cols-3 gap-2">
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Packed</div>
+												<div class="text-base font-bold text-slate-900 leading-none">{metrics.shipmentsPacked}</div>
+											</div>
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Eff</div>
+												<div class="text-base font-bold text-slate-900 leading-none">{metrics.laborEfficiency.toFixed(1)}</div>
+											</div>
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Util</div>
+												<div class="text-base font-bold text-slate-900 leading-none">{metrics.laborUtilization.toFixed(0)}%</div>
+											</div>
 										</div>
 									</div>
-								{/each}
-							</div>
+
+									<!-- Financials -->
+									<div class="pt-4 space-y-3">
+										<div class="flex items-center gap-2">
+											<div class="p-1 bg-green-50 rounded">
+												<PoundSterling class="w-3.5 h-3.5 text-green-700" />
+											</div>
+											<span class="text-[10px] font-bold text-green-800 uppercase tracking-tight">Financials</span>
+										</div>
+										<div class="grid grid-cols-3 gap-2">
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Total</div>
+												<div class="text-base font-bold text-slate-900 leading-none">£{(metrics.totalSales / 1000).toFixed(1)}k</div>
+											</div>
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Amz</div>
+												<div class="text-base font-bold text-slate-900 leading-none">£{(metrics.amazonSales / 1000).toFixed(1)}k</div>
+											</div>
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Oth</div>
+												<div class="text-base font-bold text-slate-900 leading-none">£{((metrics.ebaySales + metrics.shopifySales) / 1000).toFixed(1)}k</div>
+											</div>
+										</div>
+									</div>
+
+									<!-- Orders -->
+									<div class="pt-4 space-y-3">
+										<div class="flex items-center gap-2">
+											<div class="p-1 bg-orange-50 rounded">
+												<Truck class="w-3.5 h-3.5 text-orange-700" />
+											</div>
+											<span class="text-[10px] font-bold text-orange-800 uppercase tracking-tight">Orders</span>
+										</div>
+										<div class="grid grid-cols-3 gap-2">
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Total</div>
+												<div class="text-base font-bold text-slate-900 leading-none">{metrics.linnworksTotalOrders}</div>
+											</div>
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Amz</div>
+												<div class="text-base font-bold text-slate-900 leading-none">{metrics.linnworksAmazonOrders}</div>
+											</div>
+											<div>
+												<div class="text-[9px] text-slate-500 uppercase font-medium">Oth</div>
+												<div class="text-base font-bold text-slate-900 leading-none">{metrics.linnworksEbayOrders + metrics.linnworksShopifyOrders}</div>
+											</div>
+										</div>
+									</div>
+								</div>
+							{/if}
 						</CardContent>
 					</Card>
-				{/if}
+
+					<!-- Pending Holiday Approvals -->
+					{#if pendingHolidays.length > 0}
+						<Card>
+							<CardHeader class="py-3 px-4 border-b">
+								<CardTitle class="text-sm font-bold flex items-center gap-2 uppercase tracking-wider text-slate-700">
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+									Pending Approvals
+									<Badge variant="secondary" class="ml-auto bg-amber-100 text-amber-900 border-amber-200">{pendingHolidays.length}</Badge>
+								</CardTitle>
+							</CardHeader>
+							<CardContent class="p-0">
+								<div class="divide-y divide-slate-100">
+									{#each pendingHolidays as holiday}
+										{@const isHalfDay = parseFloat(holiday.duration) === 0.5}
+										{@const fromDate = new Date(holiday.from_date)}
+										{@const toDate = new Date(holiday.to_date)}
+										{@const isSameDay = format(fromDate, 'yyyy-MM-dd') === format(toDate, 'yyyy-MM-dd')}
+										{@const conflicts = getConflicts(holiday)}
+										<div class="p-3 hover:bg-slate-50 transition-colors">
+											<div class="flex items-center justify-between mb-1">
+												<div class="flex items-center gap-2">
+													<span class="font-bold text-slate-900">{holiday.employee_name}</span>
+													{#if isHalfDay}
+														<Badge variant="outline" class="text-[9px] h-4 py-0 px-1 uppercase font-bold text-slate-500">Half Day</Badge>
+													{/if}
+												</div>
+												<div class="text-xs font-bold text-slate-500">
+													{holiday.duration} {holiday.units}
+												</div>
+											</div>
+											
+											<div class="flex items-center gap-3 text-xs text-slate-500">
+												<div class="flex items-center gap-1.5">
+													{#if isSameDay}
+														{format(fromDate, 'EEE, d MMM')}
+													{:else}
+														{format(fromDate, 'd MMM')} → {format(toDate, 'd MMM')}
+													{/if}
+												</div>
+												
+												{#if conflicts.length > 0}
+													<div class="flex flex-col gap-1 w-full mt-2 bg-red-50 p-2 rounded border border-red-100">
+														<div class="flex items-center gap-1 text-red-600 font-bold">
+															<Wind class="w-3 h-3" />
+															{conflicts.length} Conflict{conflicts.length > 1 ? 's' : ''}
+														</div>
+														{#each conflicts.slice(0, 2) as conflict}
+															<div class="text-[10px] text-red-800 flex justify-between">
+																<span>{conflict.employee_name || 'Staff Member'}</span>
+																<span>({format(new Date(conflict.from_date), 'd/MM')} - {format(new Date(conflict.to_date), 'd/MM')})</span>
+															</div>
+														{/each}
+														{#if conflicts.length > 2}
+															<div class="text-[10px] text-red-500 italic">+{conflicts.length - 2} more...</div>
+														{/if}
+													</div>
+												{:else}
+													<div class="flex items-center gap-1 text-emerald-600 font-bold">
+														<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+														Clear
+													</div>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								</div>
+							</CardContent>
+						</Card>
+					{/if}
+				</div>
 			</div>
 		</div>
 	</div>
@@ -2090,231 +1862,15 @@
 
 	/* Dashboard Container */
 	.dashboard-container {
-		padding: 32px;
-		max-width: 100%;
+		padding: 1.5rem;
+		max-width: 1600px;
 		margin: 0 auto;
-		font-family: var(--font-sans);
-		color: var(--neutral-900);
-	}
-
-	/* Header */
-	.dashboard-header {
-		margin-bottom: 32px;
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-end;
-		border-bottom: 1px solid var(--neutral-200);
-		padding-bottom: 20px;
-	}
-
-	.dashboard-header h1 {
-		font-size: 1.875rem; /* 30px */
-		font-weight: 600;
-		color: var(--neutral-900);
-		margin: 0;
-		letter-spacing: -0.025em;
-	}
-
-	.date-display {
-		color: #6b7280;
-		font-size: 1rem;
-		font-weight: 500;
-	}
-
-	/* Grid Layout */
-	.dashboard-grid {
-		display: grid;
-		grid-template-columns: 1fr 380px;
-		gap: 32px;
-		align-items: start;
-	}
-
-	/* Leave List */
-	.leave-list-container {
-		display: flex;
-		flex-direction: column;
-		gap: 16px;
-	}
-
-	.leave-section {
-		background: var(--neutral-50);
-		border-radius: 8px;
-		padding: 12px 16px;
-	}
-
-	.leave-date-header {
-		font-weight: 600;
-		color: var(--neutral-900);
-		margin-bottom: 8px;
-		font-size: 0.9375rem;
-	}
-
-	.leave-staff-list.simple {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.leave-staff-item.simple {
-		font-size: 0.9375rem;
-		padding: 2px 0;
-		color: #4b5563;
-	}
-
-	/* Weather Widget */
-	.weather-content {
-		padding: 4px 0;
-	}
-
-	.weather-main {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 24px;
-	}
-
-	.weather-icon-temp {
-		display: flex;
-		align-items: center;
-		gap: 16px;
-	}
-
-	.weather-icon {
-		width: 64px;
-		height: 64px;
-		filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
-	}
-
-	.weather-temp {
-		font-size: 2.5rem;
-		font-weight: 600;
-		color: var(--neutral-900);
-		line-height: 1;
-	}
-
-	.weather-condition {
-		color: #6b7280;
-		font-size: 1rem;
-		margin-top: 4px;
-	}
-
-	.weather-updated {
-		font-size: 0.75rem;
-		color: #9ca3af;
-		text-align: right;
-	}
-
-	.weather-details {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 16px;
-		background: var(--neutral-50);
-		border-radius: 12px;
-		padding: 16px;
-		margin-bottom: 24px;
-	}
-
-	.detail-label {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #6b7280;
-		margin-bottom: 4px;
-	}
-
-	.detail-value {
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--neutral-900);
-	}
-
-	.high-low {
-		font-size: 0.875rem;
-		margin-top: 6px;
-		font-weight: 500;
-	}
-
-	.high {
-		color: #ef4444;
-		margin-right: 8px;
-	}
-	.low {
-		color: #3b82f6;
-	}
-
-	/* Tomorrow Forecast */
-	.tomorrow-forecast {
-		background: #fff;
-		border: 1px solid var(--neutral-200);
-		border-radius: 12px;
-		padding: 16px;
-	}
-
-	.tomorrow-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 12px;
-		font-size: 0.9375rem;
-		font-weight: 600;
-		color: var(--neutral-900);
-	}
-
-	.tomorrow-content {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.tomorrow-icon-temp {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.tomorrow-icon {
-		width: 40px;
-		height: 40px;
-	}
-
-	.tomorrow-condition {
-		font-size: 0.9375rem;
-		color: #4b5563;
-	}
-
-	.tomorrow-temps {
-		text-align: right;
-		font-size: 0.9375rem;
-		font-weight: 500;
-	}
-
-	.tomorrow-high {
-		color: #ef4444;
-	}
-	.tomorrow-low {
-		color: #3b82f6;
-	}
-
-	.tomorrow-rain {
-		color: #6b7280;
-		font-size: 0.875rem;
-		margin-top: 4px;
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 4px;
 	}
 
 	/* Responsive */
 	@media (max-width: 640px) {
 		.dashboard-container {
-			padding: 16px;
-		}
-
-		.dashboard-header {
-			flex-direction: column;
-			align-items: flex-start;
-			gap: 8px;
+			padding: 1rem;
 		}
 	}
 </style>
