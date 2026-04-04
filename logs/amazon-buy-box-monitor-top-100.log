@@ -14249,3 +14249,229 @@
 [STDOUT] [2026-04-04T13:01:27.369Z] [2026-04-04T13:01:27.369Z] Run completed. Success: 210, Error: 0
 [2026-04-04T13:01:27.386Z] [FINISH] Amazon Buy Box Monitor (Top 100) - SUCCESS - Duration: 87.36s
 
+[STDOUT] [2026-04-04T14:00:00.412Z] [2026-04-04T14:00:00.409Z] Starting Listing Batch Buy Box check (Run ID: 114)
+[STDOUT] [2026-04-04T14:00:00.495Z] Retrieved 210 SKUs to monitor.
+[STDOUT] [2026-04-04T14:00:00.495Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:01.283Z] Mapping result for SKU: OIL02H - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:01.429Z] Mapping result for SKU: Chef William - 001 Uk shipping (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:01.550Z] Mapping result for SKU: BAK01B - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:01.646Z] Mapping result for SKU: OSPRIO019 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:01.757Z] Mapping result for SKU: OIL02I - 001 One day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:01.866Z] Mapping result for SKU: CAL02 - 011 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:01.987Z] Mapping result for SKU: ACC01 - 001 uk shipping (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.087Z] Mapping result for SKU: ACC01 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.183Z] Mapping result for SKU: CAL03 - 010 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.381Z] Mapping result for SKU: MONINS27 - 003 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.474Z] Mapping result for SKU: ELSIN001 - 006 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.569Z] Mapping result for SKU: CHO31B - 014 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.665Z] Mapping result for SKU: CHO31B - 016 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.758Z] Mapping result for SKU: HON27C - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.868Z] Mapping result for SKU: CRI35 - 002  One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:02.962Z] Mapping result for SKU: OIL02H - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:03.065Z] Mapping result for SKU: CAL03A - 012 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:03.169Z] Mapping result for SKU: UHT31B - 003 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:03.268Z] Mapping result for SKU: GRA05 - 004 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:03.371Z] Mapping result for SKU: HON27C - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:09.465Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:09.805Z] Mapping result for SKU: FRU60B - 003 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:09.912Z] Mapping result for SKU: ELSIN001 - 005 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.006Z] Mapping result for SKU: CRI10 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.099Z] Mapping result for SKU: ORI09C - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.178Z] Mapping result for SKU: Chef William - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.313Z] Mapping result for SKU: BUT25D (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.409Z] Mapping result for SKU: CRI50 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.491Z] Mapping result for SKU: WRA02 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.574Z] Mapping result for SKU: ESS13 - 010 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.678Z] Mapping result for SKU: BAR29 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.776Z] Mapping result for SKU: Bundle - 215 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:10.946Z] Mapping result for SKU: VIN22B (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.063Z] Mapping result for SKU: WRA01 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.209Z] Mapping result for SKU: SPI56A - 001 uk shipping (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.310Z] Mapping result for SKU: TAYLOR010 - 004 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.392Z] Mapping result for SKU: FAT00C - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.477Z] Mapping result for SKU: PAS03 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.566Z] Mapping result for SKU: MONINS34 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.656Z] Mapping result for SKU: TAYLOR012 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:11.748Z] Mapping result for SKU: Bundle - 203 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:17.845Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:18.115Z] Mapping result for SKU: Bundle - 216 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.212Z] Mapping result for SKU: CAL32A - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.276Z] Mapping result for SKU: UHT03B - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.338Z] Mapping result for SKU: LIO02 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.410Z] Mapping result for SKU: HOT04B - 005 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.477Z] Mapping result for SKU: VEG01E - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.539Z] Mapping result for SKU: OIL02H - 001 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.609Z] Mapping result for SKU: CHO30A - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.733Z] Mapping result for SKU: TAYLOR010 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.803Z] Mapping result for SKU: TAYLOR001 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.888Z] Mapping result for SKU: PAS03 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:18.953Z] Mapping result for SKU: UHT31C - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.011Z] Mapping result for SKU: CRI10  - 003 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.072Z] Mapping result for SKU: CAL03 - 013 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.148Z] Mapping result for SKU: DRI12 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.245Z] Mapping result for SKU: FLORA004 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.320Z] Mapping result for SKU: CAL01 - 015 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.386Z] Mapping result for SKU: CRI50 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.446Z] Mapping result for SKU: CRI39 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:19.510Z] Mapping result for SKU: CAMBR008 - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:25.584Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:25.868Z] Mapping result for SKU: MONINS30 - 006 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:25.967Z] Mapping result for SKU: HEI44 - 001 - Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.037Z] Mapping result for SKU: CATER003 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.113Z] Mapping result for SKU: MED07E - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.184Z] Mapping result for SKU: CRUSHA004 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.256Z] Mapping result for SKU: DRIPINE001 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.327Z] Mapping result for SKU: SWE62 - 005 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.396Z] Mapping result for SKU: CRI70 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.511Z] Mapping result for SKU: VIN16B - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.581Z] Mapping result for SKU: SUG16 - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:26.657Z] Mapping result for SKU: BAK24 - 004 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.028Z] Mapping result for SKU: BAK24 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.149Z] Mapping result for SKU: MUSTAR03 - 001 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.249Z] Mapping result for SKU: ELSIN001 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.334Z] Mapping result for SKU: HEI04 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.400Z] Mapping result for SKU: VIN60 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.469Z] Mapping result for SKU: CON12A - Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.548Z] Mapping result for SKU: FOL05 - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.626Z] Mapping result for SKU: MUFFIN024A - 001 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:27.698Z] Mapping result for SKU: FOL07 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:33.826Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:34.161Z] Mapping result for SKU: BUNDLE001 - 002 uk shipping (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.271Z] Mapping result for SKU: JUS01A - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.334Z] Mapping result for SKU: KY-B3GZ-JQ9Y (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.396Z] Mapping result for SKU: CRUSHA003 - 003 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.462Z] Mapping result for SKU: CRUSHA001 - 003 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.521Z] Mapping result for SKU: OIL28 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.580Z] Mapping result for SKU: UHT31B - 008 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.694Z] Mapping result for SKU: FRU18G - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.770Z] Mapping result for SKU: COL09 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.836Z] Mapping result for SKU: SPI71 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.895Z] Mapping result for SKU: CRI10 uk shipping (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:34.951Z] Mapping result for SKU: CAL03P (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.017Z] Mapping result for SKU: BAR30 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.080Z] Mapping result for SKU: HEI44 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.142Z] Mapping result for SKU: PAS06 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.204Z] Mapping result for SKU: ELSIN001 - 007 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.267Z] Mapping result for SKU: CORESA009 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.323Z] Mapping result for SKU: UHT31B - 008 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.415Z] Mapping result for SKU: ALP01 - 011 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:35.483Z] Mapping result for SKU: TATECA002 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:41.551Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:41.846Z] Mapping result for SKU: CAL04D - 003 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:41.941Z] Mapping result for SKU: KETTLE001 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.007Z] Mapping result for SKU: OIL03 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.084Z] Mapping result for SKU: MED60A - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.145Z] Mapping result for SKU: MED07D - 004 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.202Z] Mapping result for SKU: CLE04 - 003 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.271Z] Mapping result for SKU: PIC05A - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.331Z] Mapping result for SKU: Bundle - 195 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.401Z] Mapping result for SKU: SEE09 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.465Z] Mapping result for SKU: OSPRIO019 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.527Z] Mapping result for SKU: BAK13 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.593Z] Mapping result for SKU: VIN22B Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.653Z] Mapping result for SKU: SOS06D - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.719Z] Mapping result for SKU: CAL04 - 009 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.815Z] Mapping result for SKU: TATECA001 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.874Z] Mapping result for SKU: MED07D - 004 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:42.938Z] Mapping result for SKU: DRI12 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:43.022Z] Mapping result for SKU: NAPKIN103 - 001 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:43.085Z] Mapping result for SKU: TAR10B - 010 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:43.173Z] Mapping result for SKU: PAS70A - 005 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:49.241Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:49.543Z] Mapping result for SKU: MONINT03 - 004 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:49.630Z] Mapping result for SKU: BAK30 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:49.697Z] Mapping result for SKU: TATESO001B - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:49.760Z] Mapping result for SKU: POW01 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:49.827Z] Mapping result for SKU: BUNDLE007 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:49.887Z] Mapping result for SKU: CRI71 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:49.949Z] Mapping result for SKU: OLI07A - 003 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.017Z] Mapping result for SKU: COR20A - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.084Z] Mapping result for SKU: ORI60 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.147Z] Mapping result for SKU: ALP09A - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.217Z] Mapping result for SKU: ACC01 - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.287Z] Mapping result for SKU: KETTLE003 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.347Z] Mapping result for SKU: VIN17 - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.410Z] Mapping result for SKU: VIN17 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.477Z] Mapping result for SKU: TATECA001 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.538Z] Mapping result for SKU: JUS04 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.599Z] Mapping result for SKU: CAL03A - 010 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.657Z] Mapping result for SKU: OIL02I - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.723Z] Mapping result for SKU: VIN10 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:50.788Z] Mapping result for SKU: VEG15E - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:56.853Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:00:57.136Z] Mapping result for SKU: MAY22 - 003 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.265Z] Mapping result for SKU: Bundle - 009 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.344Z] Mapping result for SKU: CRI30 - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.418Z] Mapping result for SKU: CLE06A - 005 uk shipping (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.490Z] Mapping result for SKU: CAL03 - 011 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.576Z] Mapping result for SKU: SOUTHD003 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.649Z] Mapping result for SKU: COR20A - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.733Z] Mapping result for SKU: BUNDLE001 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.805Z] Mapping result for SKU: JAM03B - 009 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.896Z] Mapping result for SKU: CAL01 - 014 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:57.970Z] Mapping result for SKU: PAS06 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.043Z] Mapping result for SKU: BAR29 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.113Z] Mapping result for SKU: Bundle - 124 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.197Z] Mapping result for SKU: ORI300C - 015 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.332Z] Mapping result for SKU: PRETZEL001 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.421Z] Mapping result for SKU: PAS66 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.494Z] Mapping result for SKU: GAR02A - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.566Z] Mapping result for SKU: TATESO002B - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.636Z] Mapping result for SKU: STO19 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:00:58.704Z] Mapping result for SKU: HEI02 - 004 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:04.790Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:01:05.055Z] Mapping result for SKU: CORESA008 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.148Z] Mapping result for SKU: ACC02 - 005 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.208Z] Mapping result for SKU: FAT03C - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.272Z] Mapping result for SKU: UHT31B - 005 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.377Z] Mapping result for SKU: EAGERT001 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.452Z] Mapping result for SKU: DES03 - 007 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.549Z] Mapping result for SKU: MCD05 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.609Z] Mapping result for SKU: JAM03C - 006 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.679Z] Mapping result for SKU: GLA01 - 005 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.742Z] Mapping result for SKU: FRU19A (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.810Z] Mapping result for SKU: KZ-ITK0-EINK uk shipping (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.871Z] Mapping result for SKU: CAL32A - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.931Z] Mapping result for SKU: DRIMIX001-002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:05.990Z] Mapping result for SKU: UHT03B - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:06.063Z] Mapping result for SKU: CAL09 - 002 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:06.132Z] Mapping result for SKU: PIC05A - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:06.196Z] Mapping result for SKU: CHO31B - 017 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:06.260Z] Mapping result for SKU: ALP09A - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:06.322Z] Mapping result for SKU: UHT31B - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:06.412Z] Mapping result for SKU: CHU36 - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:12.482Z] Checking batch of 20 SKUs...
+[STDOUT] [2026-04-04T14:01:12.743Z] Mapping result for SKU: OSPRIO007 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:12.834Z] Mapping result for SKU: CAL28AB - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:12.905Z] Mapping result for SKU: FIL01B - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:12.986Z] Mapping result for SKU: DEC23 - 006 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.062Z] Mapping result for SKU: TAR02 - 002 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.139Z] Mapping result for SKU: CER05A - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.209Z] Mapping result for SKU: JUI01 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.280Z] Mapping result for SKU: SUG16 - 003 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.352Z] Mapping result for SKU: TAR11 - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.428Z] Mapping result for SKU: CHO33B - 011 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.512Z] Mapping result for SKU: ESS18 - 003 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.625Z] Mapping result for SKU: MCD05E (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.701Z] Mapping result for SKU: CAL52A (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.794Z] Mapping result for SKU: GLA03 - 005 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.882Z] Mapping result for SKU: GHE01C (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:13.964Z] Mapping result for SKU: CAP02B Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:14.032Z] Mapping result for SKU: BRE04D - 001 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:14.115Z] Mapping result for SKU: VIN61 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:14.231Z] Mapping result for SKU: BUT25 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:14.295Z] Mapping result for SKU: SUG16 - 008 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:20.372Z] Checking batch of 10 SKUs...
+[STDOUT] [2026-04-04T14:01:20.597Z] Mapping result for SKU: UHT03 - 004 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:20.712Z] Mapping result for SKU: PANKO004 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:20.806Z] Mapping result for SKU: FAT03C - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:20.883Z] Mapping result for SKU: Alexander Bundle - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:20.960Z] Mapping result for SKU: POT04 - 001 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:21.061Z] Mapping result for SKU: MUFFIN024 - 003 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:21.147Z] Mapping result for SKU: CAL08A - 007 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:21.226Z] Mapping result for SKU: CON01E - 002 Prime (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:21.313Z] Mapping result for SKU: CALCRI002 - 001 One Day (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:21.394Z] Mapping result for SKU: VIN24 (ASIN: undefined) - Success: true
+[STDOUT] [2026-04-04T14:01:27.574Z] [2026-04-04T14:01:27.574Z] Run completed. Success: 210, Error: 0
+[2026-04-04T14:01:27.592Z] [FINISH] Amazon Buy Box Monitor (Top 100) - SUCCESS - Duration: 87.57s
+

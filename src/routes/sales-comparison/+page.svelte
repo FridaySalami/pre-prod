@@ -2,6 +2,34 @@
 	import { enhance } from '$app/forms';
 	import type { ActionData, PageData } from './$types';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import {
+		Card,
+		CardContent,
+		CardHeader,
+		CardTitle,
+		Button,
+		Badge,
+		Skeleton
+	} from '$lib/shadcn/components';
+	import {
+		TrendingUp,
+		TrendingDown,
+		FileSpreadsheet,
+		Mail,
+		RefreshCw,
+		Calendar,
+		ArrowRight,
+		Upload,
+		Database,
+		AlertCircle,
+		CheckCircle2,
+		Info,
+		ChevronUp,
+		ChevronDown,
+		Activity,
+		Zap
+	} from 'lucide-svelte';
+	import KPICard from '$lib/components/KPICard.svelte';
 
 	export let form: ActionData;
 	export let data: PageData;
@@ -1008,161 +1036,116 @@
 	{/if}
 
 	{#if form?.success && form.analysis}
-		<div class="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
-			<h3 class="text-sm font-medium text-blue-900 mb-3">Report Titles (for Email)</h3>
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-				<div>
-					<label for="oldReportTitle" class="block text-xs font-medium text-blue-700 mb-1">
-						Baseline Report Title
-					</label>
-					<input
-						type="text"
-						id="oldReportTitle"
-						bind:value={oldReportName}
-						class="block w-full rounded-md border-blue-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-						placeholder="e.g. Last Week"
-					/>
+		<Card class="mb-8 border-blue-100 bg-blue-50/30">
+			<CardHeader class="pb-3">
+				<CardTitle class="text-sm font-semibold text-blue-900 flex items-center gap-2">
+					<Info size={16} /> Report Titles (for Email Distribution)
+				</CardTitle>
+			</CardHeader>
+			<CardContent>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label for="oldReportTitle" class="text-xs font-bold text-blue-700 uppercase tracking-wider">
+							Baseline Report Title
+						</label>
+						<input
+							type="text"
+							id="oldReportTitle"
+							bind:value={oldReportName}
+							class="block w-full rounded-md border-blue-200 bg-white/80 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+							placeholder="e.g. Last Week"
+						/>
+					</div>
+					<div class="space-y-1.5">
+						<label for="newReportTitle" class="text-xs font-bold text-blue-700 uppercase tracking-wider">
+							Current Report Title
+						</label>
+						<input
+							type="text"
+							id="newReportTitle"
+							bind:value={newReportName}
+							class="block w-full rounded-md border-blue-200 bg-white/80 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+							placeholder="e.g. This Week"
+						/>
+					</div>
 				</div>
-				<div>
-					<label for="newReportTitle" class="block text-xs font-medium text-blue-700 mb-1">
-						Current Report Title
-					</label>
-					<input
-						type="text"
-						id="newReportTitle"
-						bind:value={newReportName}
-						class="block w-full rounded-md border-blue-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-						placeholder="e.g. This Week"
-					/>
-				</div>
-			</div>
-		</div>
+			</CardContent>
+		</Card>
 
-		<div class="flex justify-end mb-4 space-x-4">
-			<button
+		<div class="flex flex-wrap justify-end mb-8 gap-3">
+			<Button
+				variant="outline"
 				on:click={openEmailModal}
 				disabled={emailLoading}
-				class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+				class="bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
 			>
-				<svg class="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-					/>
-				</svg>
-				Email Multiple
-			</button>
+				<Mail class="mr-2 h-4 w-4" />
+				Manage Recipients
+			</Button>
 
-			<button
+			<Button
 				on:click={sendEmail}
 				disabled={emailLoading}
-				class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+				class="bg-blue-600 hover:bg-blue-700 text-white"
 			>
 				{#if emailLoading}
-					<svg
-						class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-						></circle>
-						<path
-							class="opacity-75"
-							fill="currentColor"
-							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-						></path>
-					</svg>
+					<RefreshCw class="mr-2 h-4 w-4 animate-spin" />
 					Sending...
 				{:else}
-					<svg class="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-						/>
-					</svg>
-					Email Report
+					<Mail class="mr-2 h-4 w-4" />
+					Send PDF Report
 				{/if}
-			</button>
+			</Button>
 
 			{#if form.excelReport}
-				<button
+				<Button
 					on:click={downloadExcel}
-					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+					class="bg-emerald-600 hover:bg-emerald-700 text-white"
 				>
-					<svg class="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-						/>
-					</svg>
-					Download Excel Report
-				</button>
+					<FileSpreadsheet class="mr-2 h-4 w-4" />
+					Export to Excel
+				</Button>
 			{/if}
 		</div>
 
 		<div class="space-y-8">
 			<!-- Summary Cards -->
-			<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-				<div class="bg-white overflow-hidden shadow rounded-lg">
-					<div class="px-4 py-5 sm:p-6">
-						<dt class="text-sm font-medium text-gray-500 truncate">Previous Total Sales</dt>
-						<dd class="mt-1 text-3xl font-semibold text-gray-900">
-							£{form.analysis.summary.total_old_sales.toLocaleString('en-GB', {
-								minimumFractionDigits: 2,
-								maximumFractionDigits: 2
-							})}
-						</dd>
-					</div>
-				</div>
-				<div class="bg-white overflow-hidden shadow rounded-lg">
-					<div class="px-4 py-5 sm:p-6">
-						<dt class="text-sm font-medium text-gray-500 truncate">Current Total Sales</dt>
-						<dd class="mt-1 text-3xl font-semibold text-gray-900">
-							£{form.analysis.summary.total_new_sales.toLocaleString('en-GB', {
-								minimumFractionDigits: 2,
-								maximumFractionDigits: 2
-							})}
-						</dd>
-					</div>
-				</div>
-				<div class="bg-white overflow-hidden shadow rounded-lg">
-					<div class="px-4 py-5 sm:p-6">
-						<dt class="text-sm font-medium text-gray-500 truncate">Net Change</dt>
-						<dd
-							class="mt-1 text-3xl font-semibold {form.analysis.summary.total_change >= 0
-								? 'text-green-600'
-								: 'text-red-600'}"
-						>
-							{form.analysis.summary.total_change >= 0
-								? '+'
-								: ''}£{form.analysis.summary.total_change.toLocaleString('en-GB', {
-								minimumFractionDigits: 2,
-								maximumFractionDigits: 2
-							})}
-						</dd>
-					</div>
-				</div>
-				<div class="bg-white overflow-hidden shadow rounded-lg">
-					<div class="px-4 py-5 sm:p-6">
-						<dt class="text-sm font-medium text-gray-500 truncate">% Change</dt>
-						<dd
-							class="mt-1 text-3xl font-semibold {form.analysis.summary.total_change_percent >= 0
-								? 'text-green-600'
-								: 'text-red-600'}"
-						>
-							{form.analysis.summary.total_change_percent >= 0
-								? '+'
-								: ''}{form.analysis.summary.total_change_percent.toFixed(1)}%
-						</dd>
-					</div>
-				</div>
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+				<KPICard
+					title="Baseline Revenue"
+					value={`£${form.analysis.summary.total_old_sales.toLocaleString('en-GB', {
+						minimumFractionDigits: 2,
+						maximumFractionDigits: 2
+					})}`}
+					icon={Database}
+					color="info"
+				/>
+				<KPICard
+					title="Current Revenue"
+					value={`£${form.analysis.summary.total_new_sales.toLocaleString('en-GB', {
+						minimumFractionDigits: 2,
+						maximumFractionDigits: 2
+					})}`}
+					trend={form.analysis.summary.total_change_percent}
+					trendText="vs baseline"
+					icon={TrendingUp}
+					color={form.analysis.summary.total_change_percent >= 0 ? 'success' : 'error'}
+				/>
+				<KPICard
+					title="Net Change"
+					value={`${form.analysis.summary.total_change >= 0 ? '+' : ''}£${form.analysis.summary.total_change.toLocaleString('en-GB', {
+						minimumFractionDigits: 2,
+						maximumFractionDigits: 2
+					})}`}
+					icon={Activity}
+					color={form.analysis.summary.total_change >= 0 ? 'success' : 'error'}
+				/>
+				<KPICard
+					title="Sales Velocity"
+					value={`${form.analysis.summary.total_change_percent >= 0 ? '+' : ''}${form.analysis.summary.total_change_percent.toFixed(1)}%`}
+					icon={Zap}
+					color={form.analysis.summary.total_change_percent >= 0 ? 'success' : 'error'}
+				/>
 			</div>
 
 			<!-- New Top Line Analysis (Top Movers) -->
