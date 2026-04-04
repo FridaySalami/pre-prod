@@ -673,3 +673,6 @@
 [STDOUT] [2026-04-04T13:15:00.261Z] Keep this window open to maintain the schedule.
 [STDOUT] [2026-04-04T13:15:02.195Z] [2026-04-04T13:15:02.195Z] Job completed successfully.
 [STDOUT] [2026-04-04T13:15:02.206Z] [2026-04-04T13:15:02.207Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-04T13:35:00.018Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-04T13:35:00.031Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.01s
+

@@ -6,6 +6,19 @@
 	import { showToast } from '$lib/stores/toastStore';
 	import ShipmentChart from '$lib/components/ShipmentChart.svelte';
 	import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
+	import KPICard from '$lib/components/KPICard.svelte';
+	import {
+		TrendingUp,
+		Package,
+		DollarSign,
+		Users,
+		Clock,
+		Zap,
+		Activity,
+		AlertCircle
+	} from 'lucide-svelte';
+	import { formatNumber } from '$lib/utils/utils';
+	import { formatCurrency } from '$lib/utils/format';
 
 	// Start with session as undefined (unknown)
 	let session: any = undefined;
@@ -248,6 +261,62 @@
 	// Enhanced loading features
 	let showDataPreview = false;
 	let shipmentChartRef: any; // Reference to the ShipmentChart component
+
+	// KPI Calculation Helpers
+	function calculateTotalSales(dataSource: any) {
+		if (!dataSource?.financial?.data?.summary?.totalSales) return 0;
+		return dataSource.financial.data.summary.totalSales;
+	}
+
+	function calculateTotalOrders(dataSource: any) {
+		if (!dataSource?.linnworks?.data?.summary?.totalOrders) return 0;
+		return dataSource.linnworks.data.summary.totalOrders;
+	}
+
+	function calculateLaborEfficiency(orders: number, hours: any) {
+		if (!orders || !hours?.data) return 0;
+		const totalHours = hours.data.reduce((sum: number, h: any) => sum + (h.hours_worked || 0), 0);
+		return totalHours > 0 ? orders / totalHours : 0;
+	}
+
+	function calculateUtilization(used: any, scheduled: any) {
+		if (!used?.data || !scheduled?.data) return 0;
+		const totalUsed = used.data.reduce((sum: number, h: any) => sum + (h.hours_worked || 0), 0);
+		const totalScheduled = scheduled.data.reduce(
+			(sum: number, h: any) => sum + (h.scheduled_hours || 0),
+			0
+		);
+		return totalScheduled > 0 ? (totalUsed / totalScheduled) * 100 : 0;
+	}
+
+	// Derived KPIs for current week
+	$: currentSales = calculateTotalSales(dataSourceStates.currentWeek);
+	$: previousSales = calculateTotalSales(dataSourceStates.previousWeek);
+	$: salesTrend =
+		previousSales > 0 ? Math.round(((currentSales - previousSales) / previousSales) * 100) : 0;
+
+	$: currentOrders = calculateTotalOrders(dataSourceStates.currentWeek);
+	$: previousOrders = calculateTotalOrders(dataSourceStates.previousWeek);
+	$: ordersTrend =
+		previousOrders > 0 ? Math.round(((currentOrders - previousOrders) / previousOrders) * 100) : 0;
+
+	$: currentEfficiency = calculateLaborEfficiency(
+		currentOrders,
+		dataSourceStates.employeeHours.current
+	);
+	$: previousEfficiency = calculateLaborEfficiency(
+		previousOrders,
+		dataSourceStates.employeeHours.previous
+	);
+	$: efficiencyTrend =
+		previousEfficiency > 0
+			? Math.round(((currentEfficiency - previousEfficiency) / previousEfficiency) * 100)
+			: 0;
+
+	$: currentUtilization = calculateUtilization(
+		dataSourceStates.employeeHours.current,
+		dataSourceStates.scheduledHours.current
+	);
 
 	// Animate progress bars smoothly
 	function animateProgress(metric: string, targetValue: number, duration: number = 300) {
@@ -1186,33 +1255,22 @@
 	// Progressive state transitions
 	function evaluateProgressiveState() {
 		const critical = checkCriticalDataLoaded();
-		const important = checkImportantDataLoaded();
 		const background = checkBackgroundDataLoaded();
 
-		console.log('🎯 Progressive state evaluation:', { critical, important, background });
+		console.log('🎯 Progressive state evaluation:', { critical, background });
 
-		if (!critical) {
-			if (loadingState === 'LOADING_CRITICAL') {
-				// Still waiting for critical data
-				return;
-			}
-		} else if (critical && loadingState === 'LOADING_CRITICAL') {
+		if (critical && loadingState === 'LOADING_CRITICAL') {
 			// Critical data loaded - show partial dashboard
 			console.log('🚀 Critical data loaded - showing partial dashboard');
 			loadingState = 'SHOWING_PARTIAL';
 			criticalDataLoaded = true;
-			// Banner shows the status, no need for toast
-			console.log('✅ Dashboard ready with essential data');
+		}
 
-			// Continue loading background data
-			loadingState = 'LOADING_BACKGROUND';
-		} else if (background && loadingState === 'LOADING_BACKGROUND') {
+		if (background && (loadingState === 'LOADING_BACKGROUND' || loadingState === 'SHOWING_PARTIAL')) {
 			// All background data loaded - dashboard fully ready
 			console.log('✅ All data loaded - dashboard fully enhanced');
 			loadingState = 'READY';
 			backgroundDataLoaded = true;
-			// Banner shows the status, no need for toast
-			console.log('✅ Dashboard fully loaded with all comparisons');
 		}
 	}
 
@@ -1292,6 +1350,44 @@
 
 	<!-- Main Dashboard Content -->
 	<div class="dashboard-container">
+		<!-- Operations KPI Hub -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+			<KPICard
+				title="Weekly Revenue"
+				value={formatCurrency(currentSales)}
+				trend={salesTrend}
+				trendText="vs last week"
+				icon={DollarSign}
+				color={salesTrend >= 0 ? 'success' : 'error'}
+				loading={loadingState === 'LOADING_CRITICAL'}
+			/>
+			<KPICard
+				title="Total Shipments"
+				value={formatNumber(currentOrders)}
+				trend={ordersTrend}
+				trendText="vs last week"
+				icon={Package}
+				color={ordersTrend >= 0 ? 'primary' : 'warning'}
+				loading={loadingState === 'LOADING_CRITICAL'}
+			/>
+			<KPICard
+				title="Labor Efficiency"
+				value={`${formatNumber(currentEfficiency)}/hr`}
+				trend={efficiencyTrend}
+				trendText="vs last week"
+				icon={Zap}
+				color={currentEfficiency >= 35 ? 'success' : currentEfficiency >= 25 ? 'warning' : 'error'}
+				loading={loadingState === 'LOADING_CRITICAL'}
+			/>
+			<KPICard
+				title="Labor Utilization"
+				value={`${formatNumber(currentUtilization)}%`}
+				icon={Activity}
+				color={currentUtilization > 100 ? 'warning' : 'info'}
+				loading={loadingState === 'LOADING_CRITICAL'}
+			/>
+		</div>
+
 		<!-- Persistent Status Container -->
 		<div class="status-container">
 			{#if loadingState === 'SHOWING_PARTIAL'}
