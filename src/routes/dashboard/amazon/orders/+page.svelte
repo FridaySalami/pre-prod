@@ -16,12 +16,14 @@
 	} from 'lucide-svelte';
 	import { showToast } from '$lib/stores/toastStore';
 	import { onDestroy } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidate, invalidateAll } from '$app/navigation';
 	import { page, navigating } from '$app/stores';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import UpdateShippingCostModal from '$lib/components/UpdateShippingCostModal.svelte';
 	import DebugModal from '$lib/components/DebugModal.svelte';
 	import { syncStore } from '$lib/stores/syncStore';
+	import { generateOrderEmailHtml } from '$lib/utils/emailTemplates';
+	import { formatCurrency } from '$lib/utils/formatters';
 
 	export let data;
 
@@ -95,7 +97,9 @@
 
 		// Check if any item has 0 product cost (material cost)
 		const hasZeroProductCost = (order.amazon_order_items || []).some((item: any) => {
-			return !item.costs || Number(item.costs.materialTotalCost) <= 0;
+			// Only flag if material cost is explicitly 0 or missing, but allow it if the user intended it to be 0
+			// For now, we'll stick to the current logic but ensure it's not flagging if it's intentionally 0
+			return !item.costs || (item.costs.materialTotalCost !== undefined && Number(item.costs.materialTotalCost) === 0);
 		});
 
 		const isCanceled = order.order_status === 'Canceled';
@@ -158,6 +162,7 @@
 	let selectedTitle = '';
 	let selectedAsin = '';
 	let selectedShippingDetails = '';
+	let selectedCurrentData: any = null;
 
 	// Debug Modal state
 	let showDebugModal = false;
@@ -175,12 +180,14 @@
 		sku: string,
 		title: string,
 		asin: string,
-		shippingDetails: string = ''
+		shippingDetails: string = '',
+		currentData: any = null
 	) {
 		selectedSku = sku;
 		selectedTitle = title;
 		selectedAsin = asin;
 		selectedShippingDetails = shippingDetails;
+		selectedCurrentData = currentData;
 		showUpdateCostModal = true;
 	}
 
@@ -393,6 +400,8 @@
 		(o) => o.order_status !== 'Pending' && o.order_status !== 'Canceled'
 	);
 
+	let filterMissingCostsOnly = false;
+
 	// SKU Analysis
 	interface SkuStats {
 		sku: string;
@@ -544,7 +553,6 @@
 
 	let showProfitStats = false;
 	let openCostBreakdownId: string | null = null;
-	let filterZeroCostOnly = false;
 
 	function handleWindowClick(event: MouseEvent) {
 		if (openCostBreakdownId && !(event.target as Element).closest('.cost-breakdown-popup')) {
@@ -601,7 +609,7 @@
 	}
 
 	$: sortedOrders = [...filteredOrders]
-		.filter((o) => !filterZeroCostOnly || o._calculated.hasZeroProductCost)
+		.filter((o) => !filterMissingCostsOnly || o._calculated.hasZeroProductCost)
 		.sort((a, b) => {
 			// Use cached values for sorting
 			let aValue: any;
@@ -742,20 +750,6 @@
 		return new Date(dateString).toLocaleString();
 	}
 
-	function formatCurrency(amount: number | null, currency: string | null = 'GBP') {
-		if (amount === null || amount === undefined) return '-';
-		// Fallback to GBP if currency is null/undefined/empty
-		const safeCurrency = currency || 'GBP';
-		try {
-			return new Intl.NumberFormat('en-GB', { style: 'currency', currency: safeCurrency }).format(
-				amount
-			);
-		} catch (e) {
-			// Fallback if the currency code itself is invalid (e.g. garbage data)
-			return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
-		}
-	}
-
 	function getProfitAnalysis(sku: SkuStats) {
 		if (sku.orderCount === 0) return { label: 'No Orders', color: 'text-gray-500' };
 		if (sku.totalRevenue === 0) return { label: 'No Revenue', color: 'text-orange-500' };
@@ -765,189 +759,19 @@
 	}
 
 	function downloadEmailReport() {
-		const dateObj = selectedDate ? new Date(selectedDate) : new Date();
-		const dateStr = dateObj.toLocaleDateString();
-		const subject = `Amazon Orders Report - ${dateStr}`;
-		const period = view === 'daily' ? 'Daily' : view === 'weekly' ? 'Weekly' : 'Monthly';
+		const subject = `Amazon Orders Report - ${selectedDate ? new Date(selectedDate).toLocaleDateString() : new Date().toLocaleDateString()}`;
 
-		// Top 5 Profitable
-		const top5 = mostProfitableSkus
-			.slice(0, 5)
-			.map(
-				(sku) => `
-        <tr>
-            <td style="padding: 5px; border: 1px solid #ddd;"><a href="https://operations.chefstorecookbook.com/dashboard/amazon/orders/sku/${encodeURIComponent(sku.sku)}">${sku.sku}</a></td>
-            <td style="padding: 5px; border: 1px solid #ddd;">${sku.title}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${sku.soldCount}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right; color: green;">${formatCurrency(sku.totalProfit)}</td>
-        </tr>
-    `
-			)
-			.join('');
-
-		// Bottom 5 Profitable
-		const bottom5 = leastProfitableSkus
-			.slice(0, 5)
-			.map(
-				(sku) => `
-        <tr>
-            <td style="padding: 5px; border: 1px solid #ddd;"><a href="https://operations.chefstorecookbook.com/dashboard/amazon/orders/sku/${encodeURIComponent(sku.sku)}">${sku.sku}</a></td>
-            <td style="padding: 5px; border: 1px solid #ddd;">${sku.title}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${sku.soldCount}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right; color: red;">${formatCurrency(sku.totalProfit)}</td>
-        </tr>
-    `
-			)
-			.join('');
-
-		// Sort orders by profit (highest first) for the email report
-		const emailOrders = [...filteredOrders].sort((a, b) => {
-			// Use cached profit if available
-			let profitA = a._calculated
-				? a._calculated.profit
-				: (parseFloat(a.order_total) || 0) - calculateOrderCost(a);
-			let profitB = b._calculated
-				? b._calculated.profit
-				: (parseFloat(b.order_total) || 0) - calculateOrderCost(b);
-
-			return profitB - profitA;
+		const htmlBody = generateOrderEmailHtml({
+			selectedDate: selectedDate || '',
+			view,
+			filteredOrders,
+			totalUnitsSold,
+			totalSales,
+			totalCosts,
+			totalProfit,
+			mostProfitableSkus,
+			leastProfitableSkus
 		});
-
-		// All Orders Table Rows
-		const allOrdersRows = emailOrders
-			.map((order) => {
-				const isCanceled = order.order_status === 'Canceled';
-
-				// Use cached values
-				let totalCost, shippingDisplay, profit, orderTotal;
-
-				if (order._calculated) {
-					totalCost = order._calculated.totalCost;
-					shippingDisplay = order._calculated.shippingDisplay;
-					profit = order._calculated.profit;
-					orderTotal = order._calculated.orderRevenue;
-				} else {
-					// Fallback
-					totalCost = calculateOrderCost(order);
-					shippingDisplay = getShippingCostDisplay(order);
-					orderTotal = parseFloat(order.order_total) || 0;
-					if (isCanceled) orderTotal = 0;
-					profit = orderTotal - totalCost;
-				}
-
-				const skus =
-					order.amazon_order_items
-						?.map(
-							(i: any) =>
-								`<a href="https://operations.chefstorecookbook.com/dashboard/amazon/orders/sku/${encodeURIComponent(i.seller_sku)}">${i.seller_sku}</a>`
-						)
-						.join('; ') || '';
-				const units =
-					order.amazon_order_items?.reduce(
-						(sum: number, i: any) => sum + (Number(i.quantity_ordered) || 0),
-						0
-					) || 0;
-				const shipMethod =
-					order.automated_ship_method || order.shipment_service_level_category || '';
-
-				return `
-        <tr>
-            <td style="padding: 5px; border: 1px solid #ddd;"><a href="https://sellercentral.amazon.co.uk/orders-v3/order/${order.amazon_order_id}">${order.amazon_order_id}</a></td>
-            <td style="padding: 5px; border: 1px solid #ddd; font-size: 0.8em; max-width: 150px; word-wrap: break-word;">${skus}</td>
-            <td style="padding: 5px; border: 1px solid #ddd;">${order.order_status}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${formatCurrency(orderTotal)}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${formatCurrency(totalCost)}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right;">${formatCurrency(shippingDisplay.amount)}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: right; color: ${profit >= 0 ? 'green' : 'red'};">${formatCurrency(profit)}</td>
-            <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${units}</td>
-            <td style="padding: 5px; border: 1px solid #ddd;">${shipMethod}</td>
-            <td style="padding: 5px; border: 1px solid #ddd;">${order.is_prime ? 'Prime' : order.is_business_order ? 'Business' : 'Std'}</td>
-        </tr>`;
-			})
-			.join('');
-
-		const htmlBody = `
-        <html>
-        <body style="font-family: Arial, sans-serif;">
-            <h2>Amazon Orders Report (${period})</h2>
-            <p>
-                <a href="https://operations.chefstorecookbook.com/dashboard/amazon/orders?date=${selectedDate}&view=${view}">
-                    https://operations.chefstorecookbook.com/dashboard/amazon/orders?date=${selectedDate}&view=${view}
-                </a>
-            </p>
-            <p>Date: ${dateStr}</p>
-            
-            <h3>Summary</h3>
-            <table style="border-collapse: collapse; width: 100%; max-width: 600px; margin-bottom: 20px;">
-                <tr style="background-color: #f8f9fa;">
-                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Metric</th>
-                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Value</th>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;">Total Orders</td>
-                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${filteredOrders.length}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;">Units Sold</td>
-                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${totalUnitsSold}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;">Total Sales</td>
-                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatCurrency(totalSales)}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;">Total Costs</td>
-                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatCurrency(totalCosts)}</td>
-                </tr>
-                <tr style="font-weight: bold;">
-                    <td style="padding: 8px; border: 1px solid #ddd;">Total Profit</td>
-                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: ${totalProfit >= 0 ? 'green' : 'red'}">${formatCurrency(totalProfit)}</td>
-                </tr>
-            </table>
-
-            <h3>Most Profitable Items</h3>
-            <table style="border-collapse: collapse; width: 100%; max-width: 800px; margin-bottom: 20px;">
-                <tr style="background-color: #f8f9fa;">
-                    <th style="padding: 5px; text-align: left; border: 1px solid #ddd;">SKU</th>
-                    <th style="padding: 5px; text-align: left; border: 1px solid #ddd;">Title</th>
-                    <th style="padding: 5px; text-align: right; border: 1px solid #ddd;">Qty</th>
-                    <th style="padding: 5px; text-align: right; border: 1px solid #ddd;">Profit</th>
-                </tr>
-                ${top5}
-            </table>
-
-            <h3>Least Profitable Items</h3>
-            <table style="border-collapse: collapse; width: 100%; max-width: 800px; margin-bottom: 20px;">
-                <tr style="background-color: #f8f9fa;">
-                    <th style="padding: 5px; text-align: left; border: 1px solid #ddd;">SKU</th>
-                    <th style="padding: 5px; text-align: left; border: 1px solid #ddd;">Title</th>
-                    <th style="padding: 5px; text-align: right; border: 1px solid #ddd;">Qty</th>
-                    <th style="padding: 5px; text-align: right; border: 1px solid #ddd;">Profit</th>
-                </tr>
-                ${bottom5}
-            </table>
-            
-            <h3>All Orders</h3>
-            <table style="border-collapse: collapse; width: 100%; font-size: 0.8rem;">
-                <tr style="background-color: #f8f9fa;">
-                    <th style="padding: 5px; border: 1px solid #ddd;">Order ID</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Products</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Status</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Sale Price</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Total Cost (inc Shipping)</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Shipping</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Profit</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Units</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Method</th>
-                    <th style="padding: 5px; border: 1px solid #ddd;">Type</th>
-                </tr>
-                ${allOrdersRows}
-            </table>
-            
-            <p style="font-size: 0.8rem; color: #666; margin-top: 20px;">Generated from Parkers Dashboard</p>
-        </body>
-        </html>
-    `;
 
 		const to = '';
 		const headers = [
@@ -1540,10 +1364,10 @@
 			</div>
 			<div class="flex items-center gap-2 rounded-md border bg-muted p-1">
 				<button
-					class="rounded-sm px-3 py-1 text-sm font-medium transition-all {filterZeroCostOnly
+					class="rounded-sm px-3 py-1 text-sm font-medium transition-all {filterMissingCostsOnly
 						? 'bg-red-100 text-red-700 shadow-sm'
 						: 'text-muted-foreground hover:bg-background/50'}"
-					onclick={() => (filterZeroCostOnly = !filterZeroCostOnly)}
+					onclick={() => (filterMissingCostsOnly = !filterMissingCostsOnly)}
 				>
 					<div class="flex items-center gap-1">
 						<AlertTriangle class="h-3.5 w-3.5" />
@@ -1997,7 +1821,8 @@
 																		item.seller_sku,
 																		item.title,
 																		item.asin,
-																		`${order.automated_carrier || '-'} / ${order.automated_ship_method || order.shipment_service_level_category || '-'}`
+																		`${order.automated_carrier || '-'} / ${order.automated_ship_method || order.shipment_service_level_category || '-'}`,
+																		item.costs
 																	)}
 															>
 																<Pencil class="h-3 w-3" />
@@ -2089,9 +1914,12 @@
 	title={selectedTitle}
 	asin={selectedAsin}
 	shippingDetails={selectedShippingDetails}
-	on:success={() => {
-		// Refresh the page to show updated costs
-		window.location.reload();
+	currentData={selectedCurrentData}
+	supplies={data.supplies || []}
+	on:success={async () => {
+		// Just invalidate data rather than full reload
+		await invalidateAll();
+		showToast('Data refreshed.', 'success');
 	}}
 />
 
@@ -2100,9 +1928,10 @@
 	orderId={selectedOrderId}
 	{currentShippingCost}
 	currencyCode={selectedOrderCurrency}
-	on:success={() => {
-		// Refresh the page to show updated shipping costs
-		window.location.reload();
+	on:success={async () => {
+		// Just invalidate data rather than full reload
+		await invalidateAll();
+		showToast('Shipping cost refreshed.', 'success');
 	}}
 />
 

@@ -68,41 +68,52 @@ export async function POST({ request }) {
     });
     if (pricesError) throw pricesError;
 
-    // 4. Update the cached "current_stock" on the main supply table 
-    // Since we added X inventory, bump up the counter
-    for (const item of items) {
-      // Using RPC to increment safely would be best, but we'll read then update here
-      const { data: supplyData } = await db
-        .from('packing_supplies')
-        .select('current_stock')
-        .eq('id', item.supply_id)
-        .single();
+    // 4. Batch Update Stock
+    // We fetch all relevant IDs at once to minimize roundtrips
+    const { data: currentStocks, error: fetchError } = await db
+      .from('packing_supplies')
+      .select('id, current_stock')
+      .in('id', items.map((i: any) => i.supply_id));
 
-      let currentStock = supplyData?.current_stock || 0;
+    if (fetchError) throw fetchError;
 
-      // If the system generated negative debt (boxes shipped before invoice was logged),
-      // we clear the negative balance so the physical intake is the true baseline.
+    const stockMap = currentStocks.reduce((acc: any, s: any) => {
+      acc[s.id] = s.current_stock || 0;
+      return acc;
+    }, {});
+
+    const corrections: any[] = [];
+    const supplyUpdates = items.map((item: any) => {
+      let currentStock = stockMap[item.supply_id] || 0;
+
       if (currentStock < 0) {
         const negativeDebt = Math.abs(currentStock);
-
-        // Insert a correction ledger entry to keep the math balanced
-        await db.from('packing_inventory_ledger').insert({
+        corrections.push({
           supply_id: item.supply_id,
           change_amount: negativeDebt,
           reason: 'CORRECTION',
           reference_id: `clear_debt_${invoiceId}`
         });
-
-        // Reset baseline to 0 before applying the new invoice quantity
         currentStock = 0;
       }
 
-      const newStock = currentStock + item.quantity;
-      await db
-        .from('packing_supplies')
-        .update({ current_stock: newStock, updated_at: new Date().toISOString() })
-        .eq('id', item.supply_id);
+      return {
+        id: item.supply_id,
+        current_stock: currentStock + item.quantity,
+        updated_at: new Date().toISOString()
+      };
+    });
+
+    // Clear negative debt in one batch
+    if (corrections.length > 0) {
+      await db.from('packing_inventory_ledger').insert(corrections);
     }
+
+    // Upsert the new stocks using 'id' as conflict key
+    const { error: stockError } = await db.from('packing_supplies').upsert(supplyUpdates, {
+      onConflict: 'id'
+    });
+    if (stockError) throw stockError;
 
     return json({ success: true, invoice });
   } catch (error: any) {

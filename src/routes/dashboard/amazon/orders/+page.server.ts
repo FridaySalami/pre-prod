@@ -44,12 +44,19 @@ export async function load({ url }) {
     }
   }
 
+  // Fetch and include supplies for the UpdateCostModal
+  const { data: supplies } = await db
+    .from('packing_supplies')
+    .select('*, packing_supplier_prices(*)')
+    .order('name', { ascending: true });
+
   return {
     streamed: {
       orders: fetchOrdersData(startDate!, endDate!, searchParam!)
     },
     date: dateParam || (startDate! ? startDate!.toISOString().split('T')[0] : ''),
-    search: searchParam || ''
+    search: searchParam || '',
+    supplies: supplies || []
   };
 }
 

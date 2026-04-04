@@ -18,6 +18,13 @@
 	} from 'lucide-svelte';
 	import UpdateCostModal from '$lib/components/UpdateCostModal.svelte';
 	import BoxSKUListModal from '$lib/components/BoxSKUListModal.svelte';
+	import { 
+		getEstimatedUnitCost, 
+		getUsage30d as calcUsage30d, 
+		getReorderQty, 
+		getBundleInfo, 
+		getDaysRemaining 
+	} from '$lib/utils/packingSupplies';
 
 	export let data: any = { supplies: [], suppliers: [], history: [] };
 
@@ -515,44 +522,25 @@
 	$: invoiceVAT = Number((invoiceTotalRaw * 0.2).toFixed(2));
 	$: invoiceTotal = Number((invoiceTotalRaw + invoiceVAT).toFixed(2));
 
-	function getEstimatedUnitCost(supply: any) {
-		// 1. Prefer Weighted Average Cost (WAC) from actual invoice history
-		if (data.history && data.history.length > 0) {
-			let totalQty = 0;
-			let totalCost = 0;
+	// Memoized Unit Costs and Usages to avoid repetitive high-cost array filtering
+	$: unitCostCache = (data.supplies || []).reduce((acc: any, supply: any) => {
+		acc[supply.id] = getEstimatedUnitCost(supply, data.history || []);
+		return acc;
+	}, {});
 
-			data.history.forEach((invoice: any) => {
-				const lines = invoice.packing_invoice_lines || [];
-				lines.forEach((line: any) => {
-					if (line.supply_id === supply.id && line.quantity > 0) {
-						totalQty += line.quantity;
-						totalCost += line.quantity * Number(line.unit_price || 0);
-					}
-				});
-			});
+	$: usage30dCache = (data.supplies || []).reduce((acc: any, supply: any) => {
+		acc[supply.id] = calcUsage30d(supply.id, data.usageStats2d, data.usageStats7d);
+		return acc;
+	}, {});
 
-			if (totalQty > 0) {
-				return totalCost / totalQty; // Returns accurate Weighted Average Cost
-			}
-		}
-
-		// 2. Fallback: Average of configured default supplier prices
-		const prices = supply.packing_supplier_prices || [];
-		if (prices.length === 0) return 0;
-		const sum = prices.reduce((acc: number, p: any) => acc + Number(p.default_price || 0), 0);
-		return sum / prices.length;
+	function getUsage30d(supplyId: string) {
+		return usage30dCache[supplyId] || 0;
 	}
 
 	$: totalInventoryValue = data.supplies.reduce((acc: number, supply: any) => {
 		const stock = supply.current_stock || 0;
-		return acc + stock * getEstimatedUnitCost(supply);
+		return acc + stock * (unitCostCache[supply.id] || 0);
 	}, 0);
-
-	function getUsage30d(supplyId: string) {
-		const avg2d = (data.usageStats2d?.[supplyId] || 0) / 2;
-		const avg7d = (data.usageStats7d?.[supplyId] || 0) / 7;
-		return Math.max(avg2d, avg7d) * 30;
-	}
 
 	function getActualUsage(supplyId: string) {
 		return data.usageStats30d?.[supplyId] || 0;
@@ -560,7 +548,7 @@
 
 	$: totalProjectedSpend30d = data.supplies.reduce((acc: number, supply: any) => {
 		const usage30d = getUsage30d(supply.id);
-		const unitCost = getEstimatedUnitCost(supply);
+		const unitCost = unitCostCache[supply.id] || 0;
 		return acc + usage30d * unitCost;
 	}, 0);
 
@@ -697,8 +685,8 @@
 		let valA: any;
 		let valB: any;
 
-		const costA = getEstimatedUnitCost(a);
-		const costB = getEstimatedUnitCost(b);
+		const costA = unitCostCache[a.id] || 0;
+		const costB = unitCostCache[b.id] || 0;
 		const usageA = getUsage30d(a.id);
 		const usageB = getUsage30d(b.id);
 
@@ -754,7 +742,7 @@
 	$: highestUsageBox = [...data.supplies].sort((a, b) => getUsage30d(b.id) - getUsage30d(a.id))[0];
 	$: highestCostDriver = [...data.supplies].sort(
 		(a, b) =>
-			getUsage30d(b.id) * getEstimatedUnitCost(b) - getUsage30d(a.id) * getEstimatedUnitCost(a)
+			getUsage30d(b.id) * (unitCostCache[b.id] || 0) - getUsage30d(a.id) * (unitCostCache[a.id] || 0)
 	)[0];
 
 	// Summary values for Pareto/Stats
@@ -764,12 +752,8 @@
 	// NEW: Operational calculation helpers
 	const TARGET_COVERAGE_DAYS = 30;
 
-	function getReorderQty(supply: any) {
-		const dailyBurn = getUsage30d(supply.id) / 30;
-		if (dailyBurn <= 0) return 0;
-		const needed = dailyBurn * TARGET_COVERAGE_DAYS;
-		const stock = Math.max(0, supply.current_stock || 0);
-		return Math.max(0, Math.ceil(needed - stock));
+	function getReorderQtyLocal(supply: any) {
+		return getReorderQty(supply, getUsage30d(supply.id), TARGET_COVERAGE_DAYS);
 	}
 
 	function getRunOutDate(supply: any) {
@@ -803,8 +787,8 @@
 	}
 
 	function getReorderCost(supply: any) {
-		const qty = getReorderQty(supply);
-		const cost = getEstimatedUnitCost(supply);
+		const qty = getReorderQtyLocal(supply);
+		const cost = unitCostCache[supply.id] || 0;
 		return qty * cost;
 	}
 
@@ -832,14 +816,14 @@
 		if (filterMode === 'all') return true;
 		const dailyBurn = getUsage30d(s.id) / 30;
 		const daysLeft = dailyBurn > 0 ? (s.current_stock || 0) / dailyBurn : 999;
-		const spend = getUsage30d(s.id) * getEstimatedUnitCost(s);
+		const spend = getUsage30d(s.id) * (unitCostCache[s.id] || 0);
 		const usage = getUsage30d(s.id);
-		const reorderQty = getReorderQty(s);
+		const reorderQtyVal = getReorderQtyLocal(s);
 
 		if (filterMode === 'critical') return daysLeft < 7;
 		if (filterMode === 'high-spend') return spend > totalProjectedSpend30d * 0.1; // Top 10% spenders
 		if (filterMode === 'high-usage') return usage > totalBoxesUsed30d * 0.1;
-		if (filterMode === 'reorder') return reorderQty > 0;
+		if (filterMode === 'reorder') return reorderQtyVal > 0;
 
 		return true;
 	});
@@ -849,8 +833,8 @@
 		.map((s) => {
 			const dailyBurn = getUsage30d(s.id) / 30;
 			const daysLeft = dailyBurn > 0 ? (s.current_stock || 0) / dailyBurn : 999;
-			const reorderQty = getReorderQty(s);
-			return { ...s, daysLeft, reorderQty };
+			const reorderQtyVal = getReorderQtyLocal(s);
+			return { ...s, daysLeft, reorderQty: reorderQtyVal };
 		})
 		.filter((s) => s.daysLeft < 14)
 		.sort((a, b) => a.daysLeft - b.daysLeft)
@@ -959,16 +943,6 @@
 		const percent = (diff / prevPrice) * 100;
 
 		return { diff, percent, prevPrice };
-	}
-
-	function getBundleInfo(supply: any, qty: number) {
-		if (!supply) return null;
-		const name = supply.name.toLowerCase();
-		if (name.includes('9x6x6')) return Math.ceil(qty / 120) + ' bundles';
-		if (name.includes('6x6x6')) return Math.ceil(qty / 150) + ' bundles';
-		if (name.includes('12x9x6')) return Math.ceil(qty / 75) + ' bundles';
-		if (supply.type === 'tape') return Math.ceil(qty / 6) + ' packs';
-		return null;
 	}
 
 	function getStockAfter(supplyId: string, invoiceDate: string) {
@@ -1483,7 +1457,7 @@
 										{Math.round(item.daysLeft)}d
 									</span>
 									<span class="text-slate-500 font-bold border-l pl-2 text-[10px]">
-										+{getReorderQty(item)}
+										+{getReorderQtyLocal(item)}
 									</span>
 								</div>
 							</div>
@@ -1782,14 +1756,14 @@
 					</thead>
 					<tbody class="divide-y">
 						{#each filteredSupplies as supply}
-							{@const unitCost = getEstimatedUnitCost(supply)}
+							{@const unitCost = unitCostCache[supply.id] || 0}
 							{@const usage30d = getUsage30d(supply.id)}
 							{@const dailyBurn = usage30d / 30}
 							{@const currentStock = Math.max(0, supply.current_stock || 0)}
 							{@const daysLeft = dailyBurn > 0 ? currentStock / dailyBurn : 999}
 							{@const trend = getUsageTrend(supply.id)}
 							{@const runOutDate = getRunOutDate(supply)}
-							{@const reorderQty = getReorderQty(supply)}
+							{@const reorderQtyVal = getReorderQtyLocal(supply)}
 
 							{@const projectedSpend30d = usage30d * unitCost}
 							{@const impactPercent =
@@ -1798,7 +1772,7 @@
 							{@const paretoIdx = sortedByUsage.findIndex((s) => s.id === supply.id)}
 							{@const cumUsageAtThisPoint = sortedByUsage
 								.slice(0, paretoIdx + 1)
-								.reduce((acc, s) => acc + getUsage30d(s.id) * getEstimatedUnitCost(s), 0)}
+								.reduce((acc, s) => acc + getUsage30d(s.id) * (unitCostCache[s.id] || 0), 0)}
 							{@const cumUsagePercent =
 								totalProjectedSpend30d > 0
 									? (cumUsageAtThisPoint / totalProjectedSpend30d) * 100
@@ -1888,9 +1862,9 @@
 									{/if}
 								</td>
 								<td class="px-4 py-3 text-right">
-									{#if reorderQty > 0}
+									{#if reorderQtyVal > 0}
 										<div class="flex flex-col items-end">
-											<span class="font-black text-primary text-base">+{reorderQty}</span>
+											<span class="font-black text-primary text-base">+{reorderQtyVal}</span>
 											<span class="text-[9px] font-bold text-muted-foreground uppercase"
 												>Cost: £{getReorderCost(supply).toFixed(0)}</span
 											>

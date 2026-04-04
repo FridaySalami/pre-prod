@@ -22,7 +22,24 @@ export async function POST({ request }) {
       return json({ success: false, error: 'SKU is required' }, { status: 400 });
     }
 
-    // 1. Update Inventory
+    // 1. Update SKU-ASIN Mapping
+    const { error: mapError } = await db
+      .from('sku_asin_mapping')
+      .upsert({
+        seller_sku: sku,
+        asin1: asin || null,
+        item_name: title,
+        merchant_shipping_group: merchant_shipping_group || 'Off Amazon',
+        item_note: `${width}x${height}x${depth}`,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'seller_sku' });
+
+    if (mapError) {
+      console.error('Error updating mapping:', mapError);
+      return json({ success: false, error: 'Failed to update mapping: ' + mapError.message }, { status: 500 });
+    }
+
+    // 2. Update Inventory
     const { error: invError } = await db
       .from('inventory')
       .upsert({
@@ -39,23 +56,6 @@ export async function POST({ request }) {
     if (invError) {
       console.error('Error updating inventory:', invError);
       return json({ success: false, error: 'Failed to update inventory: ' + invError.message }, { status: 500 });
-    }
-
-    // 2. Update SKU-ASIN Mapping
-    // Note: sku_asin_mapping might not have an ID, so we rely on seller_sku being unique or primary key
-    const { error: mapError } = await db
-      .from('sku_asin_mapping')
-      .upsert({
-        seller_sku: sku,
-        asin1: asin || null,
-        item_name: title,
-        merchant_shipping_group: merchant_shipping_group || 'Off Amazon',
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'seller_sku' });
-
-    if (mapError) {
-      console.error('Error updating mapping:', mapError);
-      return json({ success: false, error: 'Failed to update mapping: ' + mapError.message }, { status: 500 });
     }
 
     // 3. Update Linnworks Composition Summary
