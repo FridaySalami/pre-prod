@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { 
     ShieldAlert, ShieldCheck, TrendingUp, AlertCircle, RefreshCw, 
     Database, Search, Filter, ExternalLink, Info
@@ -11,15 +11,38 @@
   } from '$lib/shadcn/components/ui/index.js';
   import type { PageData } from './$types';
 
-  let { data }: { data: any } = $props();
+  let { data }: { data: PageData } = $props();
 
   let filterStatus = $state('ALL');
   let searchQuery = $state('');
 
   let currentStatus = $derived(data?.currentStatus || []);
   
-  let filteredStatusList = $derived(
-    currentStatus.filter((item: any) => {
+  // Tiered categorization logic
+  let criticalLosses = $derived(
+    currentStatus.filter((item: any) => 
+      item.rank <= 25 && item.status === 'LOSING'
+    )
+  );
+
+  let suppressedAlerts = $derived(
+    currentStatus.filter((item: any) => 
+      (item.status === 'SUPPRESSED' || item.status === 'NO_FEATURED_OFFER')
+    )
+  );
+
+  let otherIssues = $derived(
+    currentStatus.filter((item: any) => 
+      (item.rank > 25 && item.status === 'LOSING') || item.status === 'OUT_OF_STOCK'
+    )
+  );
+
+  let winningStable = $derived(
+    currentStatus.filter((item: any) => item.status === 'WINNING')
+  );
+
+  let filteredStatusList = $derived.by(() => {
+    const list = currentStatus.filter((item: any) => {
       const matchesSearch = !searchQuery || 
         item.sku.toLowerCase().includes(searchQuery.toLowerCase()) || 
         item.asin.toLowerCase().includes(searchQuery.toLowerCase());
@@ -29,8 +52,9 @@
       if (filterStatus === 'LOSING') return matchesSearch && item.status === 'LOSING';
       if (filterStatus === 'NO_FEATURED_OFFER') return matchesSearch && (item.status === 'SUPPRESSED' || item.status === 'NO_FEATURED_OFFER' || item.status === 'OUT_OF_STOCK');
       return matchesSearch;
-    })
-  );
+    });
+    return list;
+  });
 
   let stats = $derived(data?.stats || { total: 0, winning: 0, losing: 0, suppressed: 0, atRisk: 0 });
   let lastRun = $derived(data?.lastRun);
@@ -53,7 +77,7 @@
   }
 
   function getPriceGap(ours: number, winning: number) {
-    if (!ours || !winning) return null;
+    if (!ours || !winning) return 0;
     return ours - winning;
   }
 </script>
@@ -150,141 +174,233 @@
     </div>
 
     <!-- Main Data Section -->
-    <Card class="border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
-      <CardHeader class="border-b bg-white py-3 px-4">
-        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
-          <div class="flex items-center gap-2">
-            <CardTitle class="text-sm font-bold text-slate-700 uppercase tracking-tight">Marketplace Intelligence</CardTitle>
-            <Badge variant="outline" class="text-[10px] font-mono text-slate-500">{filteredStatusList.length} SKUs shown</Badge>
-          </div>
-          
-          <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-            <div class="relative w-full sm:w-64">
-              <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input 
-                type="text" 
-                placeholder="Search SKU or ASIN..." 
-                bind:value={searchQuery}
-                class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50/50 outline-none transition-all"
-              />
+    <div class="space-y-4">
+      <!-- CRITICAL ALERTS: Top 25 Losses -->
+      {#if criticalLosses.length > 0}
+        <Card class="border-red-200 shadow-lg shadow-red-50 overflow-hidden">
+          <CardHeader class="border-b bg-red-50/50 py-2 px-4 flex-row items-center justify-between">
+            <div class="flex items-center gap-2">
+              <ShieldAlert class="text-red-600 animate-pulse" size={18} />
+              <CardTitle class="text-[11px] font-black text-red-700 uppercase tracking-widest">Critical: Top 25 Sales Losses</CardTitle>
             </div>
-            
-            <div class="relative w-full sm:w-44">
-              <Filter class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <select 
-                bind:value={filterStatus}
-                class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50/50 outline-none appearance-none transition-all cursor-pointer"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="WINNING">Winning Only</option>
-                <option value="LOSING">Losing Only</option>
-                <option value="NO_FEATURED_OFFER">Suppressed/OOS</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-
-      <div class="overflow-x-auto">
-        <Table>
-          <TableHeader class="bg-slate-50/50">
-            <TableRow class="hover:bg-transparent border-b">
-              <TableHead class="w-12 text-[10px] font-bold text-slate-500 uppercase text-center px-4">Rank</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase">Product Identification</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase px-2 w-[100px]">Status</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">30d Sales</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Our Price</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Winning</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-center w-[110px] px-2">Price Gap</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Next Best</TableHead>
-              <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right px-4">Last Activity</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {#each filteredStatusList as item, i}
-              <TableRow class="group h-12 border-b-slate-100 hover:bg-slate-50/80 transition-colors {item.is_winner === false ? 'bg-red-50/30' : ''}">
-                <TableCell class="text-center px-4">
-                  <span class="text-xs font-bold text-slate-400">#{item.rank || '—'}</span>
-                </TableCell>
-                
-                <TableCell>
-                  <div class="flex flex-col min-w-[200px] py-1">
-                    <span class="text-[11px] font-bold text-slate-900 leading-tight mb-1" title={item.product_name}>
-                      {item.product_name || item.sku}
-                    </span>
-                    <div class="flex flex-wrap items-center gap-2 mt-0.5">
-                      <span class="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 rounded whitespace-nowrap">{item.sku}</span>
+            <Badge variant="destructive" class="text-[9px] h-5">{criticalLosses.length} SKUs</Badge>
+          </CardHeader>
+          <div class="overflow-x-auto">
+            <Table>
+              <TableBody>
+                {#each criticalLosses as item}
+                  <TableRow class="h-10 border-b-red-100 bg-red-50/20 hover:bg-red-50/40">
+                    <TableCell class="w-12 text-center text-xs font-bold text-red-600">#{item.rank}</TableCell>
+                    <TableCell class="min-w-[300px]">
+                      <div class="flex flex-col">
+                        <span class="text-[11px] font-bold text-slate-900 truncate max-w-[400px]">{item.product_name || item.sku}</span>
+                        <span class="text-[9px] text-slate-500 font-mono">{item.sku}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell class="text-right">
+                      <div class="flex flex-col items-end">
+                        <span class="text-[9px] text-slate-400 uppercase font-bold">Price Gap</span>
+                        {#if getPriceGap(item.our_price, item.buy_box_price) !== null}
+                          <span class="text-xs font-black text-red-600">
+                            +{formatCurrency(getPriceGap(item.our_price, item.buy_box_price))}
+                          </span>
+                        {:else}
+                          <span class="text-xs font-black text-red-600">N/A</span>
+                        {/if}
+                      </div>
+                    </TableCell>
+                    <TableCell class="text-right w-24">
+                      <div class="flex flex-col items-end">
+                        <span class="text-[9px] text-slate-400 uppercase font-bold">30d Sales</span>
+                        <span class="text-xs font-bold text-slate-700">{item.sales30d || 0}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell class="w-10">
                       <a 
                         href="https://sellercentral.amazon.co.uk/myinventory/inventory?searchTerm={item.asin}" 
-                        target="_blank" 
-                        class="text-[9px] text-indigo-500 hover:text-indigo-700 font-mono flex items-center gap-0.5 group-hover:underline whitespace-nowrap"
+                        target="_blank"
+                        class="p-1 px-2 bg-white border border-red-200 rounded text-red-600 hover:bg-red-50 transition-colors inline-block"
                       >
-                        {item.asin}
-                        <ExternalLink size={8} class="opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <ExternalLink size={12} />
                       </a>
-                    </div>
-                  </div>
-                </TableCell>
-                
-                <TableCell>
-                  <Badge variant="outline" class="text-[9px] font-bold px-1.5 py-0 h-4 border-slate-300 whitespace-nowrap {getStatusStyle(item.status)}">
-                    {item.status.replace(/_/g, ' ')}
-                  </Badge>
-                </TableCell>
-                
-                <TableCell class="text-right font-bold text-[10px] text-slate-800 tabular-nums">
-                  <div class="flex items-center justify-end gap-1">
-                    <TrendingUp size={10} class="text-indigo-400" />
-                    {item.sales30d || 0}
-                  </div>
-                </TableCell>
-                
-                <TableCell class="text-right font-medium text-xs text-slate-700 whitespace-nowrap">
-                  {formatCurrency(item.our_price)}
-                </TableCell>
-                
-                <TableCell class="text-right font-medium text-xs text-slate-900 border-l border-slate-50 whitespace-nowrap">
-                  {formatCurrency(item.buy_box_price)}
-                </TableCell>
-                
-                <TableCell class="text-center border-x border-slate-50">
-                  {@const gap = getPriceGap(item.our_price, item.buy_box_price)}
-                  {#if gap !== null}
-                    <div class="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full {gap > 0 ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100'}">
-                      {gap > 0 ? '+' : ''}{formatCurrency(gap)}
-                    </div>
-                  {:else}
-                    <span class="text-slate-300 font-serif">—</span>
-                  {/if}
-                </TableCell>
-                
-                <TableCell class="text-right font-bold text-xs text-indigo-600 bg-indigo-50/30 whitespace-nowrap">
-                  {formatCurrency(item.competitor_price)}
-                </TableCell>
-                
-                <TableCell class="text-right px-4 whitespace-nowrap">
-                  <span class="text-[10px] text-slate-400 tabular-nums">
-                    {item.last_changed_at ? formatDistanceToNow(new Date(item.last_changed_at)) + ' ago' : 'static'}
-                  </span>
-                </TableCell>
+                    </TableCell>
+                  </TableRow>
+                {/each}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      {/if}
+
+      <!-- PRICE HEALTH: Suppressions & No featured offer -->
+      {#if suppressedAlerts.length > 0}
+        <Card class="border-amber-200 shadow-lg shadow-amber-50 overflow-hidden">
+          <CardHeader class="border-b bg-amber-50/50 py-2 px-4 flex-row items-center justify-between">
+            <div class="flex items-center gap-2">
+              <AlertCircle class="text-amber-600" size={18} />
+              <CardTitle class="text-[11px] font-black text-amber-700 uppercase tracking-widest">Price Health: Buy Box Suppressed</CardTitle>
+            </div>
+            <Badge variant="outline" class="text-[9px] h-5 border-amber-300 text-amber-700 bg-white">{suppressedAlerts.length} SKUs</Badge>
+          </CardHeader>
+          <div class="overflow-x-auto">
+            <Table>
+              <TableBody>
+                {#each suppressedAlerts as item}
+                  <TableRow class="h-10 border-b-amber-100 bg-amber-50/10 hover:bg-amber-50/20">
+                    <TableCell class="w-12 text-center text-xs font-bold text-slate-400">#{item.rank}</TableCell>
+                    <TableCell class="min-w-[300px]">
+                      <div class="flex flex-col">
+                        <span class="text-[11px] font-bold text-slate-900 truncate max-w-[400px]">{item.product_name || item.sku}</span>
+                        <span class="text-[9px] text-slate-500 font-mono">{item.sku}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                       <Badge variant="outline" class="text-[9px] font-bold px-1.5 py-0 h-4 bg-white border-amber-200 text-amber-600 whitespace-nowrap">
+                        {item.status.replace(/_/g, ' ')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell class="text-right w-10">
+                      <a 
+                        href="https://sellercentral.amazon.co.uk/myinventory/inventory?searchTerm={item.asin}" 
+                        target="_blank"
+                        class="p-1 px-2 bg-white border border-amber-200 rounded text-amber-600 hover:bg-amber-50 transition-colors inline-block"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    </TableCell>
+                  </TableRow>
+                {/each}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      {/if}
+
+      <!-- Marketplace Intelligence: Standard View -->
+      <Card class="border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
+        <CardHeader class="border-b bg-white py-3 px-4">
+          <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+            <div class="flex items-center gap-2">
+              <Database class="text-slate-400" size={16} />
+              <CardTitle class="text-sm font-bold text-slate-700 uppercase tracking-tight">Full Inventory Tracking</CardTitle>
+              <Badge variant="outline" class="text-[10px] font-mono text-slate-500">{filteredStatusList.length} SKUs</Badge>
+            </div>
+            
+            <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+              <div class="relative w-full sm:w-64">
+                <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Search SKU or ASIN..." 
+                  bind:value={searchQuery}
+                  class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50/50 outline-none transition-all"
+                />
+              </div>
+              
+              <div class="relative w-full sm:w-44">
+                <Filter class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <select 
+                  bind:value={filterStatus}
+                  class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50/50 outline-none appearance-none transition-all cursor-pointer"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="WINNING">Winning Only</option>
+                  <option value="LOSING">Losing Only</option>
+                  <option value="NO_FEATURED_OFFER">Suppressed/OOS</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+
+        <div class="overflow-x-auto">
+          <Table>
+            <TableHeader class="bg-slate-50/50">
+              <TableRow class="hover:bg-transparent border-b">
+                <TableHead class="w-12 text-[10px] font-bold text-slate-500 uppercase text-center px-4">Rank</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase">Product Identification</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase px-2 w-[100px]">Status</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">30d Sales</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Our Price</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Winning</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-center w-[110px] px-2">Price Gap</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right">Next Best</TableHead>
+                <TableHead class="text-[10px] font-bold text-slate-500 uppercase text-right px-4">Last Activity</TableHead>
               </TableRow>
-            {:else}
-              <TableRow>
-                <TableCell colspan="8" class="text-center py-16">
-                  <div class="flex flex-col items-center gap-2">
-                    <div class="bg-slate-100 p-3 rounded-full">
-                      <Search size={24} class="text-slate-400" />
+            </TableHeader>
+            <TableBody>
+              {#each filteredStatusList as item}
+                <TableRow class="group h-12 border-b-slate-100 hover:bg-slate-50/80 transition-colors {item.status === 'LOSING' ? 'bg-red-50/10' : ''}">
+                  <TableCell class="text-center px-4">
+                    <span class="text-xs font-bold {item.rank <= 25 ? 'text-indigo-600' : 'text-slate-400'}">#{item.rank || '—'}</span>
+                  </TableCell>
+                  
+                  <TableCell>
+                    <div class="flex flex-col min-w-[200px] py-1">
+                      <span class="text-[11px] font-bold text-slate-900 leading-tight mb-1 truncate max-w-[300px]" title={item.product_name}>
+                        {item.product_name || item.sku}
+                      </span>
+                      <div class="flex flex-wrap items-center gap-2 mt-0.5">
+                        <span class="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 rounded whitespace-nowrap">{item.sku}</span>
+                        <a 
+                          href="https://sellercentral.amazon.co.uk/myinventory/inventory?searchTerm={item.asin}" 
+                          target="_blank" 
+                          class="text-[9px] text-indigo-500 hover:text-indigo-700 font-mono flex items-center gap-0.5 group-hover:underline whitespace-nowrap"
+                        >
+                          {item.asin}
+                          <ExternalLink size={8} class="opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </a>
+                      </div>
                     </div>
-                    <p class="text-sm font-medium text-slate-500">No results found for your search criteria</p>
-                    <button class="text-xs text-indigo-600 font-semibold" onclick={() => {searchQuery = ''; filterStatus = 'ALL'}}>Clear all filters</button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            {/each}
-          </TableBody>
-        </Table>
-      </div>
-    </Card>
+                  </TableCell>
+                  
+                  <TableCell>
+                    <Badge variant="outline" class="text-[9px] font-bold px-1.5 py-0 h-4 border-slate-300 whitespace-nowrap {getStatusStyle(item.status)}">
+                      {item.status.replace(/_/g, ' ')}
+                    </Badge>
+                  </TableCell>
+                  
+                  <TableCell class="text-right font-bold text-[10px] text-slate-800 tabular-nums">
+                    <div class="flex items-center justify-end gap-1">
+                      <TrendingUp size={10} class="text-indigo-400" />
+                      {item.sales30d || 0}
+                    </div>
+                  </TableCell>
+                  
+                  <TableCell class="text-right font-medium text-xs text-slate-700 whitespace-nowrap">
+                    {formatCurrency(item.our_price)}
+                  </TableCell>
+                  
+                  <TableCell class="text-right font-medium text-xs text-slate-900 border-l border-slate-50 whitespace-nowrap">
+                    {formatCurrency(item.buy_box_price)}
+                  </TableCell>
+                  
+                  <TableCell class="text-center border-x border-slate-50">
+                    {#if getPriceGap(item.our_price, item.buy_box_price) !== null}
+                      <div class="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full {getPriceGap(item.our_price, item.buy_box_price) > 0 ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100'}">
+                        {getPriceGap(item.our_price, item.buy_box_price) > 0 ? '+' : ''}{formatCurrency(getPriceGap(item.our_price, item.buy_box_price))}
+                      </div>
+                    {:else}
+                      <span class="text-slate-300 font-serif">—</span>
+                    {/if}
+                  </TableCell>
+                  
+                  <TableCell class="text-right font-bold text-xs text-indigo-600 bg-indigo-50/30 whitespace-nowrap">
+                    {formatCurrency(item.competitor_price)}
+                  </TableCell>
+                  
+                  <TableCell class="text-right px-4 whitespace-nowrap">
+                    <span class="text-[10px] text-slate-400 tabular-nums">
+                      {item.last_changed_at ? formatDistanceToNow(new Date(item.last_changed_at)) + ' ago' : 'static'}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              {/each}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    </div>
     
     <div class="flex items-center justify-between text-[10px] text-slate-400 px-1 italic">
       <div class="flex items-center gap-1">

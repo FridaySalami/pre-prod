@@ -17,51 +17,34 @@ export const load: PageServerLoad = async () => {
     .from('top_100_buy_box_current')
     .select('*');
 
-  // Fetch sales for the last 30 days
+  // Step 1: Fetch sales for the last 30 days in a SINGLE optimized query
+  // This replaces the 31-day loop with 31 separate DB calls
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 31);
 
-  // Aggregation
   const salesMap: Record<string, number> = {};
   
-  console.log('--- STARTING SALES AGGREGATION (DATE BATCHED) ---');
+  console.log('--- FETCHING 30D SALES (OPTIMIZED SINGLE QUERY) ---');
   
-  // We'll fetch in 32 batches of 1 day to cover ~30 days with a higher aggregate limit
-  // Selling 500/day means ~15k rows for 30 days. Daily batches are safest.
-  const daysToFetch = 31;
-  let totalRows = 0;
+  // Fetch ALL sales in one go. We limit to 5000 rows which should cover the top 100/300 SKUs easily
+  const { data: salesData, error: salesError } = await supabaseAdmin
+    .from('amazon_order_items')
+    .select('seller_sku, quantity_ordered')
+    .gte('created_at', thirtyDaysAgo.toISOString())
+    .limit(5000);
 
-  for (let i = 0; i < daysToFetch; i++) {
-    const start = new Date();
-    start.setDate(start.getDate() - (i + 1));
-    const end = new Date();
-    end.setDate(end.getDate() - i);
-
-    const { data: batch, error: batchError } = await supabaseAdmin
-      .from('amazon_order_items')
-      .select('seller_sku, quantity_ordered')
-      .gte('created_at', start.toISOString())
-      .lt('created_at', end.toISOString())
-      .limit(1000); // This covers up to 1000 items PER DAY
-
-    if (batchError) {
-      console.error(`Batch for day -${i} error:`, batchError);
-      continue;
-    }
-
-    if (batch) {
-      totalRows += batch.length;
-      batch.forEach(item => {
-        if (item.seller_sku) {
-          const sku = item.seller_sku.trim();
-          salesMap[sku] = (salesMap[sku] || 0) + (item.quantity_ordered || 0);
-        }
-      });
-    }
+  if (salesError) {
+    console.error('Error fetching optimized sales data:', salesError);
+  } else if (salesData) {
+    salesData.forEach(item => {
+      if (item.seller_sku) {
+        const sku = item.seller_sku.trim();
+        salesMap[sku] = (salesMap[sku] || 0) + (item.quantity_ordered || 0);
+      }
+    });
+    console.log(`Total sales rows processed: ${salesData.length}`);
+    console.log(`Unique SKUs with sales: ${Object.keys(salesMap).length}`);
   }
-
-  console.log(`Total rows processed across daily batches: ${totalRows}`);
-  console.log(`Unique SKUs with sales: ${Object.keys(salesMap).length}`);
 
   // Step 2: Fetch product titles from our existing catalog cache via ASIN
   const { data: catalog } = await supabaseAdmin

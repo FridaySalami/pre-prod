@@ -1,172 +1,188 @@
-<!-- CommandMenu.svelte -->
+﻿<!-- CommandMenu.svelte -->
 <script lang="ts">
-	import {
-		Command,
-		CommandEmpty,
-		CommandGroup,
-		CommandInput,
-		CommandItem,
-		CommandList,
-		CommandSeparator,
-		CommandShortcut
-	} from '$lib/components';
-	import { goto } from '$app/navigation';
-	import { createEventDispatcher } from 'svelte';
+import {
+Command,
+CommandEmpty,
+CommandGroup,
+CommandInput,
+CommandItem,
+CommandList,
+CommandSeparator,
+CommandShortcut
+} from '$lib/shadcn/ui/command/index.js';
+import { goto } from '$app/navigation';
+import { createEventDispatcher } from 'svelte';
+import { 
+Home, 
+Clock, 
+LayoutDashboard, 
+ShoppingCart, 
+ReceiptText, 
+Package, 
+BarChart3, 
+Calendar, 
+Calculator, 
+TrendingUp, 
+FileText,
+User,
+Settings,
+Lock
+} from 'lucide-svelte';
 
-	export let open = false;
+let { open = $bindable(false) }: { open: boolean } = $props();
 
-	const dispatch = createEventDispatcher();
+const dispatch = createEventDispatcher();
 
-	// Navigation items with keyboard shortcuts and icons
-	const navigationItems = [
-		{
-			group: 'Navigation',
-			items: [
-				{ name: 'Home', href: '/landing', shortcut: '⌘H', icon: 'home' },
-				{ name: 'Dashboard', href: '/dashboard', shortcut: '⌘D', icon: 'dashboard' },
-				{ name: 'Analytics', href: '/analytics', shortcut: '⌘A', icon: 'analytics' },
-				{
-					name: 'Monthly Analytics',
-					href: '/analytics/monthly',
-					shortcut: '⌘M',
-					icon: 'trending_up'
-				},
-				{ name: 'Schedules', href: '/schedules', shortcut: '⌘S', icon: 'calendar_today' }
-			]
-		},
-		{
-			group: 'Projects & Processes',
-			items: [
-				{ name: 'Kaizen Projects', href: '/kaizen-projects', shortcut: '⌘K', icon: 'assignment' }
-			]
-		},
-		{
-			group: 'Account',
-			items: [
-				{ name: 'Profile', href: '/profile', shortcut: '⌘U', icon: 'person' },
-				{ name: 'Account Settings', href: '/account-settings', shortcut: '⌘,', icon: 'settings' },
-				{ name: 'Change Password', href: '/change-password', shortcut: '', icon: 'lock' }
-			]
-		}
-	];
+// Navigation items synced with AppSidebar.svelte
+const navigationGroups = [
+{
+group: 'General',
+items: [
+{ name: 'Home', href: '/landing', icon: Home },
+]
+},
+{
+group: 'Dashboard',
+items: [
+{ name: 'Employee Hours', href: '/employee-hours', icon: Clock },
+{ name: 'Stats Overview', href: '/dashboard', icon: LayoutDashboard },
+{ name: 'Amazon Orders', href: '/dashboard/amazon/orders', icon: ShoppingCart },
+{ name: 'Dolphin Logs', href: '/dashboard/dolphin-logs', icon: ReceiptText },
+]
+},
+{
+group: 'Core Operations',
+items: [
+{ name: 'Packing Supplies', href: '/dashboard/tools/packing-supplies', icon: Package },
+{ name: 'Buy Box Monitor', href: '/buy-box-monitor', icon: BarChart3 },
+{ name: 'Holiday Calendar', href: '/holiday-calendar', icon: Calendar },
+{ name: 'Pricer Tool', href: '/pricer', icon: Calculator },
+{ name: 'Sales Comparison', href: '/sales-comparison', icon: TrendingUp },
+]
+},
+{
+group: 'Documentation',
+items: [
+{ name: 'User Guide', href: '/documentation', icon: FileText },
+]
+},
+{
+group: 'Account',
+items: [
+{ name: 'Profile', href: '/profile', icon: User },
+{ name: 'Settings', href: '/account-settings', icon: Settings },
+{ name: 'Change Password', href: '/change-password', icon: Lock },
+]
+}
+];
 
-	function handleSelect(href: string) {
-		open = false;
-		goto(href);
-		dispatch('close');
-	}
+function handleSelect(href: string) {
+open = false;
+goto(href);
+dispatch('close');
+}
 
-	function handleOpenChange(newOpen: boolean) {
-		open = newOpen;
-		if (!newOpen) {
-			dispatch('close');
-		}
-	}
+// Keyboard shortcut handling
+function handleKeydown(event: KeyboardEvent) {
+if (event.key === 'Escape') {
+open = false;
+dispatch('close');
+}
 
-	// Keyboard shortcut handling
-	function handleKeydown(event: KeyboardEvent) {
-		// Close on Escape
-		if (event.key === 'Escape') {
-			open = false;
-			dispatch('close');
-		}
-	}
+// Toggle search with Meta+K or Ctrl+K
+if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+event.preventDefault();
+open = !open;
+}
+}
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
 
 {#if open}
-	<div class="command-dropdown">
-		<Command class="rounded-lg border shadow-md bg-white">
-			<CommandInput placeholder="Type a command or search..." class="border-none" />
-			<CommandList class="max-h-80 overflow-y-auto">
-				<CommandEmpty class="">No results found.</CommandEmpty>
+<div 
+class="command-overlay" 
+role="button" 
+tabindex="0"
+onclick={() => { open = false; dispatch('close'); }}
+onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { open = false; dispatch('close'); } }}
+>
+<div 
+class="command-dialog-wrapper" 
+role="none"
+onclick={(e) => e.stopPropagation()}
+>
+<Command class="rounded-xl border shadow-2xl bg-white overflow-hidden w-full max-w-[550px]">
+<div class="flex items-center border-b px-3">
+<CommandInput placeholder="Search navigation..." class="h-12 border-none focus:ring-0 text-sm" />
+</div>
+<CommandList class="max-h-[400px] overflow-y-auto p-2">
+<CommandEmpty class="py-6 text-center text-sm text-slate-500">No results found.</CommandEmpty>
 
-				{#each navigationItems as group}
-					<CommandGroup heading={group.group} class="" value={group.group}>
-						{#each group.items as item}
-							<CommandItem
-								onSelect={() => handleSelect(item.href)}
-								class="flex items-center justify-between cursor-pointer hover:bg-gray-50 px-3 py-2"
-							>
-								<div class="flex items-center gap-2">
-									<i class="material-icons-outlined text-sm text-gray-500">{item.icon}</i>
-									<span class="text-sm">{item.name}</span>
-								</div>
-								{#if item.shortcut}
-									<CommandShortcut class="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded"
-										>{item.shortcut}</CommandShortcut
-									>
-								{/if}
-							</CommandItem>
-						{/each}
-					</CommandGroup>
-					{#if group !== navigationItems[navigationItems.length - 1]}
-						<CommandSeparator class="my-1" />
-					{/if}
-				{/each}
-			</CommandList>
-		</Command>
-	</div>
+{#each navigationGroups as group}
+<CommandGroup heading={group.group} value={group.group} class="px-2 py-1.5">
+{#each group.items as item}
+<CommandItem
+value={item.name}
+onSelect={() => handleSelect(item.href)}
+class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer hover:bg-slate-100 aria-selected:bg-slate-100 transition-colors"
+>
+<item.icon class="w-4 h-4 text-slate-500" />
+<span class="text-sm font-medium text-slate-700">{item.name}</span>
+</CommandItem>
+{/each}
+</CommandGroup>
+{#if group !== navigationGroups[navigationGroups.length - 1]}
+<CommandSeparator class="my-2" />
+{/if}
+{/each}
+</CommandList>
+<div class="flex items-center justify-between px-4 py-2 border-t bg-slate-50/50 text-[10px] text-slate-400">
+<div class="flex gap-3">
+<span class="flex items-center gap-1"><kbd class="bg-white border rounded px-1">↑↓</kbd> Navigate</span>
+<span class="flex items-center gap-1"><kbd class="bg-white border rounded px-1">↵</kbd> Select</span>
+</div>
+<span class="flex items-center gap-1"><kbd class="bg-white border rounded px-1">esc</kbd> Close</span>
+</div>
+</Command>
+</div>
+</div>
 {/if}
 
 <style>
-	/* Command dropdown positioned below button */
-	.command-dropdown {
-		position: fixed;
-		top: 72px; /* Position below header */
-		right: 20px; /* Align with button position */
-		width: 280px; /* Match button width */
-		background: white;
-		border-radius: 8px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-		border: 1px solid #e5e7eb;
-		overflow: hidden;
-		z-index: 1000;
-	}
+/* Modal-style centering for Command Menu */
+.command-overlay {
+position: fixed;
+inset: 0;
+background: rgba(15, 23, 42, 0.4);
+backdrop-filter: blur(4px);
+z-index: 9999;
+display: flex;
+align-items: flex-start;
+justify-content: center;
+padding-top: 20vh;
+}
 
-	/* Make sure Material Icons work properly */
-	:global(.material-icons-outlined) {
-		font-family: 'Material Icons Outlined';
-		font-weight: normal;
-		font-style: normal;
-		font-size: 16px;
-		line-height: 1;
-		letter-spacing: normal;
-		text-transform: none;
-		display: inline-block;
-		white-space: nowrap;
-		word-wrap: normal;
-		direction: ltr;
-		-webkit-font-smoothing: antialiased;
-	}
+.command-dialog-wrapper {
+width: 100%;
+display: flex;
+justify-content: center;
+padding: 0 16px;
+}
 
-	/* Override some command component styles for better dropdown appearance */
-	:global(.command-dropdown .bits-command-input) {
-		border: none !important;
-		border-bottom: 1px solid #e5e7eb !important;
-		border-radius: 0 !important;
-		padding: 12px 16px !important;
-		font-size: 14px !important;
-	}
+:global(.command-dialog-wrapper input) {
+width: 100%;
+background: transparent;
+outline: none;
+border: none !important;
+}
 
-	:global(.command-dropdown .bits-command-group-heading) {
-		font-size: 11px !important;
-		color: #6b7280 !important;
-		font-weight: 600 !important;
-		text-transform: uppercase !important;
-		letter-spacing: 0.05em !important;
-		padding: 8px 16px 4px !important;
-	}
-
-	:global(.command-dropdown .bits-command-item) {
-		border-radius: 0 !important;
-		margin: 0 !important;
-		padding: 8px 16px !important;
-	}
-
-	:global(.command-dropdown .bits-command-separator) {
-		margin: 4px 0 !important;
-		border-color: #f3f4f6 !important;
-	}
+:global(.command-dialog-wrapper [data-command-group-heading]) {
+font-size: 10px;
+font-weight: 700;
+text-transform: uppercase;
+letter-spacing: 0.05em;
+color: #94a3b8;
+padding: 8px 12px 4px;
+}
 </style>
