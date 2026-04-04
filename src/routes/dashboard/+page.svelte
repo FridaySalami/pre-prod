@@ -275,7 +275,14 @@
 
 	function calculateLaborEfficiency(orders: number, hours: any) {
 		if (!orders || !hours?.data) return 0;
-		const totalHours = hours.data.reduce((sum: number, h: any) => sum + (h.hours_worked || 0), 0);
+		// Filter out Sundays (getDay() === 0)
+		const workDayHours = hours.data.filter((h: any) => {
+			if (!h.date) return true;
+			const date = new Date(h.date);
+			return date.getDay() !== 0; // Exclude Sunday
+		});
+
+		const totalHours = workDayHours.reduce((sum: number, h: any) => sum + (h.hours_worked || 0), 0);
 		return totalHours > 0 ? orders / totalHours : 0;
 	}
 
@@ -1374,7 +1381,7 @@
 				title="Labor Efficiency"
 				value={`${formatNumber(currentEfficiency)}/hr`}
 				trend={efficiencyTrend}
-				trendText="vs last week"
+				trendText="vs last week (Excl. Sun)"
 				icon={Zap}
 				color={currentEfficiency >= 35 ? 'success' : currentEfficiency >= 25 ? 'warning' : 'error'}
 				loading={loadingState === 'LOADING_CRITICAL'}
