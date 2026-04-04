@@ -1,9 +1,27 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
 	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
+	import { onMount, getContext } from 'svelte';
 	import { userSession } from '$lib/stores/sessionStore';
 	import { supabase } from '$lib/supabase/supabaseClient';
+	import { syncStore } from '$lib/stores/syncStore';
+	import { 
+		Home, 
+		Clock, 
+		LayoutDashboard, 
+		ShoppingCart, 
+		ReceiptText, 
+		Package, 
+		BarChart3, 
+		Calendar, 
+		Calculator, 
+		TrendingUp, 
+		FileText,
+		LogOut,
+		Search,
+		RefreshCw,
+		History
+	} from 'lucide-svelte';
 
 	// Accept user data as prop from layout
 	interface Props {
@@ -14,9 +32,10 @@
 				role?: string;
 			} | null;
 		} | null;
+		onSearchClick?: () => void;
 	}
 
-	let { user = null }: Props = $props();
+	let { user = null, onSearchClick }: Props = $props();
 
 	let currentPath = $state('');
 	let isMobile = $state(false);
@@ -24,10 +43,8 @@
 	// Get user role for menu filtering
 	const userRole = $derived(user?.profile?.role || 'user');
 
-	// Reactive logging for user role changes
-	$effect(() => {
-		console.log('🔐 AppSidebar user role:', userRole);
-	});
+	// Sidebar state from context to check if collapsed
+	const sidebar = Sidebar.useSidebar();
 
 	// Subscribe to the page store to get the current path
 	page.subscribe((value) => {
@@ -57,7 +74,7 @@
 		const handleClickOutside = (event: MouseEvent) => {
 			if (!isMobile) return;
 
-			const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+			const sidebarElement = document.querySelector('[data-sidebar="sidebar"]');
 			const trigger = document.querySelector('[data-sidebar="trigger"]');
 			const content = document.querySelector('[data-sidebar="content"]');
 
@@ -67,8 +84,8 @@
 
 			// If click is outside sidebar, trigger, and content - close sidebar
 			if (
-				sidebar &&
-				!sidebar.contains(event.target as Node) &&
+				sidebarElement &&
+				!sidebarElement.contains(event.target as Node) &&
 				trigger &&
 				!trigger.contains(event.target as Node) &&
 				content &&
@@ -104,8 +121,8 @@
 	type NavigationItem = {
 		title: string;
 		url: string;
-		icon: string;
-		requiredRole?: 'user' | 'manager' | 'admin'; // Add role requirement
+		icon: any; // Use Lucide component
+		requiredRole?: 'user' | 'manager' | 'admin';
 		children?: NavigationItem[];
 	};
 
@@ -136,7 +153,7 @@
 		{
 			title: 'Home',
 			url: '/landing',
-			icon: 'home',
+			icon: Home,
 			requiredRole: 'user'
 		},
 		{
@@ -146,25 +163,25 @@
 		{
 			title: 'Employee Hours',
 			url: '/employee-hours',
-			icon: 'schedule',
+			icon: Clock,
 			requiredRole: 'user'
 		},
 		{
-			title: 'Dashboard',
+			title: 'Stats Overview',
 			url: '/dashboard',
-			icon: 'dashboard',
+			icon: LayoutDashboard,
 			requiredRole: 'user'
 		},
 		{
 			title: 'Amazon Orders',
 			url: '/dashboard/amazon/orders',
-			icon: 'shopping_cart',
+			icon: ShoppingCart,
 			requiredRole: 'user'
 		},
 		{
 			title: 'Dolphin Logs',
 			url: '/dashboard/dolphin-logs',
-			icon: 'receipt_long',
+			icon: ReceiptText,
 			requiredRole: 'user'
 		},
 		{
@@ -174,32 +191,32 @@
 		{
 			title: 'Packing Supplies',
 			url: '/dashboard/tools/packing-supplies',
-			icon: 'inventory_2',
+			icon: Package,
 			requiredRole: 'user'
 		},
 		
 		{
 			title: 'Buy Box Monitor',
 			url: '/buy-box-monitor',
-			icon: 'insights',
+			icon: BarChart3,
 			requiredRole: 'user'
 		},
 		{
 			title: 'Holiday Calendar',
 			url: '/holiday-calendar',
-			icon: 'date_range',
+			icon: Calendar,
 			requiredRole: 'user'
 		},
 		{
 			title: 'Pricer Tool',
 			url: '/pricer',
-			icon: 'calculate',
+			icon: Calculator,
 			requiredRole: 'user'
 		},
 		{
 			title: 'Sales Comparison',
 			url: '/sales-comparison',
-			icon: 'trending_up', // Sales comparison often involves trends
+			icon: TrendingUp,
 			requiredRole: 'user'
 		},
 		{
@@ -207,11 +224,10 @@
 			title: 'Documentation'
 		},
 		{
-			title: 'Documentation',
+			title: 'User Guide',
 			url: '/documentation',
-			icon: 'description',
+			icon: FileText,
 			requiredRole: 'user'
-
 		}
 	];
 
@@ -251,129 +267,88 @@
 			}
 		}
 
-		// Remove trailing separator if present
-		if (filteredItems.length > 0 && isSeparator(filteredItems[filteredItems.length - 1])) {
-			filteredItems.pop();
-		}
-
 		return filteredItems;
 	});
 
 	async function handleLogout() {
-		console.log('🔴 AppSidebar handleLogout called');
-
 		try {
-			// First, call the server-side logout endpoint for proper session cleanup
-			console.log('🔴 Calling server-side logout endpoint');
-			const response = await fetch('/api/auth/logout', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				}
-			});
-
-			if (response.ok) {
-				console.log('🔴 Server-side logout successful');
-			} else {
-				console.warn('🔴 Server-side logout returned non-OK status:', response.status);
-			}
-
-			// Clear client-side session immediately
-			userSession.set(null);
-			console.log('🔴 Client session cleared in AppSidebar');
-
-			// Clear localStorage
-			if (typeof localStorage !== 'undefined') {
-				Object.keys(localStorage).forEach((key) => {
-					if (key.includes('supabase') || key.includes('sb-')) {
-						console.log(`🔴 Removing localStorage item: ${key}`);
-						localStorage.removeItem(key);
-					}
+			// Trigger a custom event for the layout to handle
+			if (typeof document !== 'undefined') {
+				const event = new CustomEvent('app-logout', { 
+					detail: { originalEvent: null } 
 				});
+				document.dispatchEvent(event);
 			}
-
-			// Clear client-side Supabase session as backup
-			console.log('🔴 Calling client-side Supabase signOut');
-			await supabase.auth.signOut();
-
-			// Navigate to login page
-			console.log('🔴 Navigating to login');
-			window.location.href = '/login?message=logged-out';
-		} catch (error) {
-			console.error('🔴 Error in logout process:', error);
-
-			// Fallback: Even if server logout fails, clear client side and redirect
-			try {
-				userSession.set(null);
-				await supabase.auth.signOut();
-				if (typeof localStorage !== 'undefined') {
-					Object.keys(localStorage).forEach((key) => {
-						if (key.includes('supabase') || key.includes('sb-')) {
-							localStorage.removeItem(key);
-						}
-					});
-				}
-			} catch (fallbackError) {
-				console.error('🔴 Fallback logout also failed:', fallbackError);
-			}
-
-			// Always redirect even if everything fails
-			window.location.href = '/login?message=logout-error';
-		}
-
-		// Close sidebar on mobile after logout
-		if (isMobile && typeof document !== 'undefined') {
-			setTimeout(() => {
-				const trigger = document.querySelector('[data-sidebar="trigger"]') as HTMLButtonElement;
-				if (trigger && document.querySelector('[data-state="open"]')) {
-					trigger.click();
-				}
-			}, 100);
+		} catch (err) {
+			console.error('Error triggering logout:', err);
 		}
 	}
 </script>
 
 <Sidebar.Root
 	collapsible="icon"
-	class="min-h-screen bg-gray-50 border-r border-gray-200"
+	class="bg-white border-r border-gray-200"
 	data-sidebar="sidebar"
 >
-	<Sidebar.Header class="">
-		<div
-			class="flex flex-col items-center px-4 py-3 gap-2 transition-all duration-200 hover:bg-sidebar-accent/50 rounded-lg mx-2"
-		>
-			<div class="app-icon transition-all duration-200 hover:scale-105 hover:shadow-lg">P</div>
-			<div class="app-name group-data-[collapsible=icon]:sr-only text-center">
-				<div class="font-semibold text-sidebar-foreground text-sm leading-tight">
-					Parkers Foodservice
-				</div>
-				<div class="text-xs text-sidebar-foreground/60">Operations Dashboard</div>
+	<Sidebar.Header class="p-4">
+		<div class="flex items-center gap-3 mb-6 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:mb-4 transition-all duration-200">
+			<div class="app-icon shrink-0">P</div>
+			<div class="flex flex-col group-data-[collapsible=icon]:hidden overflow-hidden">
+				<span class="font-bold text-gray-900 leading-tight truncate">Parker's</span>
+				<span class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Ops Dashboard</span>
 			</div>
 		</div>
+
+		<!-- Global Search Button (Internalized) -->
+		<button
+			class="flex items-center gap-3 w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:justify-center"
+			onclick={onSearchClick}
+			title="Search (⌘K)"
+		>
+			<Search class="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
+			<span class="text-sm font-medium group-data-[collapsible=icon]:hidden">Search...</span>
+			<kbd class="ml-auto text-[10px] font-sans bg-white px-1.5 py-0.5 rounded border border-gray-200 group-data-[collapsible=icon]:hidden text-gray-400">⌘K</kbd>
+		</button>
 	</Sidebar.Header>
 
-	<Sidebar.Content class="" data-sidebar="content">
+	<Sidebar.Content class="px-2" data-sidebar="content">
+		<!-- Sync Status (Integrated) -->
+		{#if $syncStore.syncing || $syncStore.status}
+			<div class="mx-2 mb-4 p-2 bg-slate-50 border border-slate-100 rounded-lg group-data-[collapsible=icon]:p-1.5 group-data-[collapsible=icon]:mx-0.5">
+				<div class="flex items-center gap-2">
+					<div class="relative">
+						<RefreshCw class="w-3.5 h-3.5 text-blue-600 {$syncStore.syncing ? 'animate-spin' : ''}" />
+						{#if $syncStore.syncing}
+							<div class="absolute -top-1 -right-1 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+						{/if}
+					</div>
+					<div class="flex flex-col min-w-0 group-data-[collapsible=icon]:hidden">
+						<span class="text-[10px] font-bold text-slate-700 truncate capitalize">{$syncStore.status}</span>
+						{#if $syncStore.duration > 0}
+							<span class="text-[9px] text-slate-400">{$syncStore.duration.toFixed(1)}s elapsed</span>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
+
 		<Sidebar.Group class="">
 			<Sidebar.GroupContent class="">
-				<Sidebar.Menu class="gap-1">
+				<Sidebar.Menu class="gap-0.5">
 					{#each items() as item, index (isSeparator(item) ? `sep-${index}` : isSectionHeader(item) ? `sec-${index}` : item.title)}
 						{#if isSeparator(item)}
-							<div class="separator-container px-3 py-1 group-data-[collapsible=icon]:px-2">
-								<div class="separator-line"></div>
+							<div class="px-3 py-2 group-data-[collapsible=icon]:px-1">
+								<div class="h-px bg-gray-100 w-full"></div>
 							</div>
 						{:else if isSectionHeader(item)}
-							<div class="section-header group-data-[collapsible=icon]:hidden">
+							<div class="px-4 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest group-data-[collapsible=icon]:hidden mt-2">
 								{item.title}
 							</div>
 						{:else}
 							<Sidebar.MenuItem class="">
 								<Sidebar.MenuButton
-									isActive={currentPath === item.url ||
-										(item.url !== '/landing' &&
-											item.url !== '/dashboard' &&
-											currentPath.startsWith(item.url) &&
-											!item.children?.some((c) => currentPath === c.url))}
-									class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground py-2.5 pl-4"
+									isActive={currentPath === item.url || (item.url !== '/landing' && item.url !== '/dashboard' && currentPath.startsWith(item.url))}
+									class="w-full transition-all duration-200 hover:bg-gray-50 py-2 group-data-[collapsible=icon]:justify-center"
 									children={() => {}}
 									tooltipContent={item.title}
 									tooltipContentProps={{}}
@@ -382,57 +357,19 @@
 										<a
 											href={item.url}
 											{...props}
-											class="flex items-center gap-3 w-full group"
+											class="flex items-center gap-3 w-full px-3 relative group"
 											onclick={handleNavClick}
 										>
-											<i
-												class="material-icons-outlined text-[22px] text-gray-500 shrink-0 transition-all duration-200 group-hover:scale-110 group-data-[active=true]:text-primary"
-												>{item.icon}</i
-											>
-											<span
-												class="text-[15px] text-gray-700 group-data-[active=true]:font-semibold group-data-[active=true]:text-primary group-data-[collapsible=icon]:sr-only transition-all duration-200"
-												>{item.title}</span
-											>
-											<!-- Add role indicator for admin/manager items -->
-											{#if item.requiredRole === 'admin'}
-												<span
-													class="ml-auto text-xs opacity-60 group-data-[collapsible=icon]:sr-only"
-													>👑</span
-												>
-											{:else if item.requiredRole === 'manager'}
-												<span
-													class="ml-auto text-xs opacity-60 group-data-[collapsible=icon]:sr-only"
-													>👔</span
-												>
+											<item.icon class="w-[18px] h-[18px] shrink-0 transition-transform group-hover:scale-115 {currentPath === item.url ? 'text-primary' : 'text-gray-500'}" />
+											<span class="text-sm font-medium transition-colors group-data-[collapsible=icon]:hidden {currentPath === item.url ? 'text-primary font-bold' : 'text-gray-700'}">
+												{item.title}
+											</span>
+											{#if currentPath === item.url}
+												<div class="absolute left-0 w-1 h-5 bg-primary rounded-r-md group-data-[collapsible=icon]:h-6"></div>
 											{/if}
 										</a>
 									{/snippet}
 								</Sidebar.MenuButton>
-								{#if isNavigationItem(item) && item.children && item.children.length > 0}
-									<Sidebar.MenuSub class="ml-0 pl-11 border-l border-gray-200">
-										{#each item.children as subItem}
-											<Sidebar.MenuSubItem class="">
-												<Sidebar.MenuSubButton
-													isActive={currentPath === subItem.url}
-													class="text-sm py-2"
-													href={subItem.url}
-													children={() => {}}
-												>
-													{#snippet child({ props }: { props: any })}
-														<a
-															href={subItem.url}
-															{...props}
-															class="block w-full text-gray-600 hover:text-gray-900 transition-colors"
-															onclick={handleNavClick}
-														>
-															{subItem.title}
-														</a>
-													{/snippet}
-												</Sidebar.MenuSubButton>
-											</Sidebar.MenuSubItem>
-										{/each}
-									</Sidebar.MenuSub>
-								{/if}
 							</Sidebar.MenuItem>
 						{/if}
 					{/each}
@@ -441,56 +378,45 @@
 		</Sidebar.Group>
 	</Sidebar.Content>
 
-	<Sidebar.Footer class="">
-		<div class="section-header group-data-[collapsible=icon]:hidden">Account</div>
-		<Sidebar.Menu class="">
-			<Sidebar.MenuItem class="">
-				<Sidebar.MenuButton
-					class="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground py-2.5 pl-4"
-					children={() => {}}
-					tooltipContent="Logout"
-					tooltipContentProps={{}}
-				>
-					{#snippet child({ props }: { props: any })}
-						<button
-							{...props}
-							onclick={handleLogout}
-							class="flex items-center gap-3 w-full text-left hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group transition-all duration-200"
-						>
-							<i
-								class="material-icons-outlined text-[22px] text-gray-500 shrink-0 transition-all duration-200 group-hover:scale-110 group-hover:rotate-12"
-								>logout</i
-							>
-							<span
-								class="text-[15px] text-gray-700 group-data-[collapsible=icon]:sr-only transition-all duration-200"
-								>Logout</span
-							>
-						</button>
-					{/snippet}
-				</Sidebar.MenuButton>
-			</Sidebar.MenuItem>
-		</Sidebar.Menu>
+	<Sidebar.Footer class="p-4 border-t border-gray-100">
+		<div class="flex items-center justify-between group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-4">
+			<button
+				class="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all group relative"
+				onclick={handleLogout}
+				title="Logout"
+			>
+				<LogOut class="w-5 h-5 transition-transform group-hover:-translate-x-1" />
+			</button>
+			
+			<div class="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
+				<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+					{user?.email?.substring(0, 1).toUpperCase() || 'U'}
+				</div>
+				<div class="flex flex-col min-w-0">
+					<span class="text-xs font-bold text-gray-900 truncate tracking-tight">{user?.email?.split('@')[0]}</span>
+					<span class="text-[10px] text-gray-500 lowercase px-1.5 bg-gray-100 rounded-full w-fit">{userRole}</span>
+				</div>
+			</div>
+		</div>
 	</Sidebar.Footer>
 </Sidebar.Root>
 
 <style>
 	.app-icon {
-		width: 28px;
-		height: 28px;
+		width: 32px;
+		height: 32px;
 		background-color: #004225;
 		color: white;
-		border-radius: 8px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-weight: 600;
-		font-size: 16px;
-		letter-spacing: 0.02em;
+		border-radius: 8px;
+		font-weight: 800;
+		font-size: 1.2rem;
 		box-shadow: 0 2px 4px rgba(0, 66, 37, 0.2);
-		flex-shrink: 0;
-		transition: all 0.2s ease-in-out;
 		position: relative;
 		overflow: hidden;
+		transition: all 0.2s ease-in-out;
 	}
 
 	.app-icon::before {
@@ -647,34 +573,5 @@
 		letter-spacing: 1px;
 		padding: 24px 16px 8px 16px;
 		font-weight: 600;
-	}
-
-	/* Separator styles */
-	.separator-container {
-		margin: 4px 0;
-		transition: all 0.2s ease-in-out;
-		position: relative;
-	}
-
-	.separator-line {
-		height: 1px;
-		background-color: rgba(0, 0, 0, 0.05); /* Very subtle */
-		width: 100%;
-	}
-
-	/* Alternative approach - use border instead of background */
-	.separator-line::after {
-		display: none;
-	}
-
-	/* Hide separators when sidebar is collapsed */
-	:global([data-collapsible='icon']) .separator-container {
-		display: none;
-	}
-
-	/* Subtle animation for separators */
-	.separator-container:hover .separator-line {
-		background-color: rgba(148, 163, 184, 0.6);
-		opacity: 1;
 	}
 </style>

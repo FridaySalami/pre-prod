@@ -11,7 +11,7 @@
 	import { page } from '$app/stores';
 	import CommandMenu from '$lib/components/CommandMenu.svelte';
 	import * as Sidebar from '$lib/shadcn/ui/sidebar/index.js';
-	import AppSidebar from '$lib/components/AppSidebar.svelte';
+	import AppSideBarComponent from '$lib/components/AppSidebar.svelte';
 	import { checkRouteAccess } from '$lib/services/routeGuard';
 	import type { Snippet } from 'svelte';
 	import { syncStore } from '$lib/stores/syncStore';
@@ -417,54 +417,8 @@
 
 <div class="app-container" class:has-banner={showPasswordBanner}>
 	<Sidebar.Provider class="" style="">
-		<AppSidebar {user} />
+		<AppSideBarComponent {user} onSearchClick={() => (commandMenuOpen = !commandMenuOpen)} />
 		<main class="sidebar-main">
-			<header class="site-header">
-				<div class="header-left">
-					<Sidebar.Trigger class="" onclick={() => {}} />
-					<button
-						class="restore-window-button"
-						onclick={restoreWindowLayout}
-						title="Restore Original Window Layout"
-						style="display: none;"
-						id="restore-window-btn"
-					>
-						<i class="material-icons-outlined">restore</i>
-					</button>
-				</div>
-				<div class="header-right">
-					{#if $syncStore.syncing || $syncStore.status}
-						<div
-							class="flex items-center gap-3 mr-4 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200"
-						>
-							{#if $syncStore.syncing}
-								<div
-									class="h-3 w-3 animate-spin rounded-full border-2 border-gray-600 border-t-transparent"
-								></div>
-							{/if}
-							<div class="flex flex-col items-end leading-none gap-0.5">
-								<span class="font-medium">{$syncStore.status}</span>
-								{#if $syncStore.duration > 0}
-									<span class="text-[10px] text-gray-500">{$syncStore.duration.toFixed(1)}s</span>
-								{/if}
-							</div>
-						</div>
-					{/if}
-					<!-- Command Menu Button Container -->
-					<div class="command-menu-container">
-						<button
-							class="command-menu-button"
-							onclick={() => (commandMenuOpen = !commandMenuOpen)}
-							title="Search (⌘K)"
-						>
-							<i class="material-icons-outlined">search</i>
-							<span class="command-menu-text">Search</span>
-							<span class="shortcut-hint">⌘K</span>
-						</button>
-					</div>
-				</div>
-			</header>
-
 			<div class="main-content">
 				{#if showPasswordBanner}
 					<div class="password-setup-banner" transition:fade={{ duration: 300 }}>
@@ -482,12 +436,6 @@
 				{/if}
 				{@render children()}
 			</div>
-
-			<footer class="site-footer">
-				<p>
-					Created by Jack Weston | <a href="/release-notes" class="footer-link">Release notes</a>
-				</p>
-			</footer>
 		</main>
 	</Sidebar.Provider>
 
@@ -679,41 +627,6 @@
 		padding-top: 10px;
 		background-color: #f9fafb;
 		width: 100%;
-	}
-
-	/* Footer */
-	.site-footer {
-		background-color: #fff;
-		border-top: 1px solid #e5e7eb;
-		color: #6b7280;
-		font-size: 0.8em;
-		padding: 8px 24px;
-		height: 36px;
-		display: flex;
-		justify-content: flex-end;
-		align-items: center;
-		z-index: 999;
-		width: 100%;
-		position: sticky;
-		bottom: 0;
-	}
-
-	.site-footer p {
-		margin: 0;
-	}
-
-	.footer-link {
-		color: #004225;
-		text-decoration: none;
-		font-weight: 500;
-		padding: 4px 8px;
-		border-radius: 4px;
-		transition: background-color 0.2s ease;
-	}
-
-	.footer-link:hover {
-		background-color: rgba(53, 176, 123, 0.1);
-		text-decoration: none;
 	}
 
 	/* Logout overlay styles */
