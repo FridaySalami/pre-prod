@@ -16,3 +16,17 @@
 [STDERR] [2026-04-03T16:00:03.571Z] FATAL ERROR: AUTH_EXPIRED: Please run "node scripts/manual-auth-shipping.js" again to refresh your session cookies.
 [2026-04-03T16:00:03.585Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 3.55s
 
+[STDOUT] [2026-04-04T16:00:01.923Z] Checking for auth file at: C:\Users\JackW.la\pre-prod\.auth\amazon-shipping.json
+[STDOUT] [2026-04-04T16:00:05.658Z] Navigating to https://ship.amazon.co.uk/tracking?duration=custom&durationStart=2026-04-01&durationEnd=2026-04-04
+[STDOUT] [2026-04-04T16:00:07.206Z] Page loaded. Checking for survey/blockers...
+[STDERR] [2026-04-04T16:00:37.653Z] FATAL ERROR: locator.waitFor: Timeout 30000ms exceeded.
+[STDERR] [2026-04-04T16:00:37.654Z] Call log:
+[STDERR] [2026-04-04T16:00:37.654Z] [2m  - waiting for locator('input[type="checkbox"]').first() to be visible[22m
+[STDERR] [2026-04-04T16:00:37.654Z] [2m    56 × locator resolved to hidden <input class="element" type="checkbox" name="undefined" value="undefined" _ngcontent-xli-21="" id="checkbox-ukhiyz5gp7"/>[22m
+[2026-04-04T16:00:37.664Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 37.65s
+
+[STDOUT] [2026-04-05T16:00:01.511Z] Checking for auth file at: C:\Users\JackW.la\pre-prod\.auth\amazon-shipping.json
+[STDOUT] [2026-04-05T16:00:02.558Z] Navigating to https://ship.amazon.co.uk/tracking?duration=custom&durationStart=2026-04-02&durationEnd=2026-04-05
+[STDERR] [2026-04-05T16:00:03.439Z] FATAL ERROR: AUTH_EXPIRED: Please run "node scripts/manual-auth-shipping.js" again to refresh your session cookies.
+[2026-04-05T16:00:03.452Z] [FINISH] Amazon Shipping Sync - FAILED (exit code 1) - Duration: 3.44s
+

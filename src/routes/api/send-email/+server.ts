@@ -51,7 +51,7 @@ export const POST: RequestHandler = async ({ request }) => {
     }
 
     const { data: emailData, error } = await resend.emails.send({
-      from: 'Acme <onboarding@resend.dev>', // Update this with your verified domain
+      from: 'Amazon Reports <onboarding@resend.dev>', // Update this with your verified domain
       to,
       subject,
       html: finalHtml,

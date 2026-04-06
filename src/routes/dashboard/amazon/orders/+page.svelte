@@ -870,7 +870,7 @@
 
 <svelte:window onclick={handleWindowClick} />
 
-<div class="flex flex-col gap-6 p-6">
+<div class="flex flex-col gap-6 p-4 sm:p-6">
 	<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
 		<div class="flex">
 			<div class="shrink-0">
@@ -879,34 +879,34 @@
 			<div class="ml-3">
 				<p class="text-sm text-yellow-700">
 					<span class="font-medium">Work in Progress</span>
-					- This page is currently under active development. Data and calculations may be subject to verification.
+					- This page is currently under development. Data calculations may be subject to verification.
 				</p>
 			</div>
 		</div>
 	</div>
 
-	<div class="flex items-center justify-between">
+	<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
 		<div>
-			<h1 class="text-3xl font-bold tracking-tight">Amazon Orders</h1>
-			<p class="text-muted-foreground">View your Amazon orders with cost analysis</p>
+			<h1 class="text-2xl sm:text-3xl font-bold tracking-tight">Amazon Orders</h1>
+			<p class="text-muted-foreground text-sm">View your Amazon orders with cost analysis</p>
 		</div>
-		<div class="flex flex-col items-end gap-2">
-			<div class="flex items-center gap-2">
+		<div class="flex flex-col items-stretch lg:items-end gap-3">
+			<div class="flex flex-col md:flex-row items-stretch md:items-center gap-2">
 				<form
 					onsubmit={(e) => {
 						e.preventDefault();
 						performSearch();
 					}}
-					class="flex gap-2"
+					class="flex gap-2 w-full md:w-auto"
 				>
 					<input
 						type="text"
-						placeholder="Search Order ID, SKU, ASIN..."
-						class="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 w-64"
+						placeholder="Search SKU..."
+						class="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 w-full md:w-48 lg:w-64"
 						bind:value={searchTerm}
 					/>
 				</form>
-				<div class="flex items-center rounded-md border bg-muted p-1">
+				<div class="flex items-center rounded-md border bg-muted p-1 self-start md:self-auto">
 					<button
 						class="rounded-sm px-3 py-1 text-sm font-medium transition-all {view === 'daily'
 							? 'bg-background text-foreground shadow-sm'
@@ -926,77 +926,80 @@
 				</div>
 				<input
 					type="date"
-					class="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+					class="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 w-full md:w-auto"
 					bind:value={selectedDate}
 					onchange={() => goto(`?date=${selectedDate}&view=${view}`)}
 				/>
-				<Button variant="outline" onclick={() => goto('/dashboard/tools/upload-shipping')}>
+			</div>
+			
+			<div class="flex flex-wrap items-center justify-start lg:justify-end gap-2">
+				<Button variant="outline" size="sm" onclick={() => goto('/dashboard/tools/upload-shipping')} class="flex-1 sm:flex-none">
 					<Upload class="mr-2 h-4 w-4" />
-					Upload Shipping Costs
+					Shipping
 				</Button>
-				<Button variant="outline" onclick={() => goto('/dashboard/tools/cost-manager')}>
+				<Button variant="outline" size="sm" onclick={() => goto('/dashboard/tools/cost-manager')} class="flex-1 sm:flex-none">
 					<Upload class="mr-2 h-4 w-4" />
-					Cost Manager
+					Costs
 				</Button>
-				<Button variant="outline" onclick={downloadEmailReport}>
+				<Button variant="outline" size="sm" onclick={downloadEmailReport} class="flex-1 sm:flex-none">
 					<Mail class="mr-2 h-4 w-4" />
-					Email Report
+					Email
 				</Button>
-				<Button variant="outline" onclick={syncMissingCarriers} disabled={isSyncingProcessing}>
+				<Button variant="outline" size="sm" onclick={syncMissingCarriers} disabled={isSyncingProcessing} class="flex-1 sm:flex-none">
 					<RefreshCw class="mr-2 h-4 w-4 {isSyncingProcessing ? 'animate-spin' : ''}" />
-					{isSyncingProcessing ? 'Syncing...' : 'Sync All (Test)'}
+					Sync All
 				</Button>
-				<Button variant="outline" onclick={downloadCSV}>
+				<Button variant="outline" size="sm" onclick={downloadCSV} class="flex-1 sm:flex-none">
 					<Download class="mr-2 h-4 w-4" />
-					Export CSV
+					Export
 				</Button>
-				<Button onclick={syncOrders} disabled={$syncStore.syncing}>
+				<Button size="sm" onclick={syncOrders} disabled={$syncStore.syncing} class="flex-1 sm:flex-none">
 					<RefreshCw class="mr-2 h-4 w-4 {$syncStore.syncing ? 'animate-spin' : ''}" />
-					{$syncStore.syncing ? 'Syncing...' : 'Sync Orders'}
+					Sync
 				</Button>
 			</div>
 		</div>
 	</div>
 
-	<div class="grid gap-4 md:grid-cols-5">
-		<div class="rounded-xl border bg-card text-card-foreground shadow">
-			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
-				<h3 class="tracking-tight text-sm font-medium">Total Orders</h3>
+	<div class="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-4 sm:p-6 flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2">
+				<h3 class="tracking-tight text-[10px] sm:text-sm font-medium uppercase text-muted-foreground">Orders</h3>
 			</div>
-			<div class="p-6 pt-0">
-				<div class="text-2xl font-bold">{filteredOrders.length}</div>
-			</div>
-		</div>
-		<div class="rounded-xl border bg-card text-card-foreground shadow">
-			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
-				<h3 class="tracking-tight text-sm font-medium">Units Sold</h3>
-			</div>
-			<div class="p-6 pt-0">
-				<div class="text-2xl font-bold">{totalUnitsSold}</div>
+			<div class="p-4 sm:p-6 pt-0">
+				<div class="text-lg sm:text-2xl font-bold">{filteredOrders.length}</div>
 			</div>
 		</div>
-		<div class="rounded-xl border bg-card text-card-foreground shadow">
-			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
-				<h3 class="tracking-tight text-sm font-medium">Total Sales</h3>
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-4 sm:p-6 flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2">
+				<h3 class="tracking-tight text-[10px] sm:text-sm font-medium uppercase text-muted-foreground">Units</h3>
 			</div>
-			<div class="p-6 pt-0">
-				<div class="text-2xl font-bold">{formatCurrency(totalSales)}</div>
-			</div>
-		</div>
-		<div class="rounded-xl border bg-card text-card-foreground shadow">
-			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
-				<h3 class="tracking-tight text-sm font-medium">Total Costs</h3>
-			</div>
-			<div class="p-6 pt-0">
-				<div class="text-2xl font-bold">{formatCurrency(totalCosts)}</div>
+			<div class="p-4 sm:p-6 pt-0">
+				<div class="text-lg sm:text-2xl font-bold">{totalUnitsSold}</div>
 			</div>
 		</div>
-		<div class="rounded-xl border bg-card text-card-foreground shadow">
-			<div class="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
-				<h3 class="tracking-tight text-sm font-medium">Total Profit</h3>
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-4 sm:p-6 flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2">
+				<h3 class="tracking-tight text-[10px] sm:text-sm font-medium uppercase text-muted-foreground">Sales</h3>
 			</div>
-			<div class="p-6 pt-0">
-				<div class="text-2xl font-bold {totalProfit > 0 ? 'text-green-600' : 'text-red-600'}">
+			<div class="p-4 sm:p-6 pt-0">
+				<div class="text-lg sm:text-2xl font-bold">{formatCurrency(totalSales)}</div>
+			</div>
+		</div>
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-1">
+			<div class="p-4 sm:p-6 flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2">
+				<h3 class="tracking-tight text-[10px] sm:text-sm font-medium uppercase text-muted-foreground">Costs</h3>
+			</div>
+			<div class="p-4 sm:p-6 pt-0">
+				<div class="text-lg sm:text-2xl font-bold">{formatCurrency(totalCosts)}</div>
+			</div>
+		</div>
+		<div class="rounded-xl border bg-card text-card-foreground shadow col-span-2 md:col-span-1">
+			<div class="p-4 sm:p-6 flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2">
+				<h3 class="tracking-tight text-[10px] sm:text-sm font-medium uppercase text-muted-foreground">Profit</h3>
+			</div>
+			<div class="p-4 sm:p-6 pt-0">
+				<div class="text-lg sm:text-2xl font-bold {totalProfit > 0 ? 'text-green-600' : 'text-red-600'}">
 					{totalProfit > 0 ? '+' : ''}{formatCurrency(totalProfit)}
 				</div>
 			</div>
@@ -1356,15 +1359,15 @@
 		</div>
 	</div>
 
-	<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-		<div class="flex flex-row items-center justify-between p-6">
+	<div class="rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden">
+		<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 sm:p-6 gap-4">
 			<div class="flex flex-col space-y-1.5">
-				<h3 class="text-2xl font-semibold leading-none tracking-tight">Recent Orders</h3>
-				<p class="text-sm text-muted-foreground">A list of recent orders from Amazon.</p>
+				<h3 class="text-xl sm:text-2xl font-semibold leading-none tracking-tight text-foreground">Recent Orders</h3>
+				<p class="text-sm text-muted-foreground">Detailed view of Amazon order performance.</p>
 			</div>
 			<div class="flex items-center gap-2 rounded-md border bg-muted p-1">
 				<button
-					class="rounded-sm px-3 py-1 text-sm font-medium transition-all {filterMissingCostsOnly
+					class="rounded-sm px-3 py-1 text-xs sm:text-sm font-medium transition-all {filterMissingCostsOnly
 						? 'bg-red-100 text-red-700 shadow-sm'
 						: 'text-muted-foreground hover:bg-background/50'}"
 					onclick={() => (filterMissingCostsOnly = !filterMissingCostsOnly)}
@@ -1376,10 +1379,10 @@
 				</button>
 			</div>
 		</div>
-		<div class="p-6 pt-0">
+		<div class="p-0 sm:p-6 pt-0">
 			<div class="relative w-full overflow-auto">
 				<table class="w-full caption-bottom text-sm">
-					<thead class="[&_tr]:border-b">
+					<thead class="[&_tr]:border-b bg-muted/30">
 						<tr class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
 							<th
 								class="h-12 px-4 text-left align-middle font-medium text-muted-foreground cursor-pointer hover:text-foreground"

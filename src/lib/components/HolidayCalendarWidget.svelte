@@ -41,9 +41,9 @@
 	}
 </script>
 
-<Card class="flex flex-col h-full overflow-hidden border-none shadow-none">
+<Card class="flex flex-col h-full overflow-hidden border-none shadow-none min-h-[400px] sm:min-h-0">
     <CardHeader class="py-3 px-4 border-b shrink-0">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div class="flex items-center gap-6">
                 <CardTitle class="text-lg">Holiday Calendar</CardTitle>
                 <div class="hidden md:flex items-center gap-3">
@@ -57,15 +57,15 @@
                     </div>
                 </div>
             </div>
-            <div class="flex items-center gap-1 bg-gray-50 rounded-md p-1 border">
+            <div class="flex items-center gap-1 bg-gray-50 rounded-md p-1 border w-full sm:w-auto justify-between sm:justify-start">
                 <button
                     class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
                     onclick={onPrevMonth}
                 >
-                    <ChevronLeft class="w-3.5 h-3.5 text-gray-600" />
+                    <ChevronLeft class="w-4 h-4 sm:w-3.5 sm:h-3.5 text-gray-600" />
                 </button>
                 <button
-                    class="px-2 py-0.5 text-[11px] font-semibold min-w-[80px] text-center"
+                    class="px-2 py-0.5 text-[11px] sm:text-[11px] font-semibold flex-1 sm:min-w-20 text-center"
                     onclick={onGoToToday}
                 >
                     {format(calendarDate, 'MMMM yyyy')}
@@ -74,7 +74,7 @@
                     class="p-1 hover:bg-white rounded hover:shadow-sm transition-all"
                     onclick={onNextMonth}
                 >
-                    <ChevronRight class="w-3.5 h-3.5 text-gray-600" />
+                    <ChevronRight class="w-4 h-4 sm:w-3.5 sm:h-3.5 text-gray-600" />
                 </button>
             </div>
         </div>

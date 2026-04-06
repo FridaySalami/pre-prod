@@ -17,6 +17,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { env } from '$env/dynamic/private';
+import { analyzeSalesData } from '../server/sales-analyzer';
 
 // Lazy-initialize Supabase client
 let supabaseInstance: SupabaseClient | null = null;
@@ -284,6 +285,36 @@ export class SalesProcessor {
       currency_code: sales.orderedProductSales?.currencyCode || 'GBP',
       report_id: reportId
     };
+  }
+
+  /**
+   * Generates analysis data and Excel report from raw Amazon report JSON
+   * This bridges the gap between Amazon's JSON reporting and the XLSX analyzer
+   */
+  async generateAnalysisData(reportData: any) {
+    const asinData = reportData.salesAndTrafficByAsin || [];
+    
+    // Map JSON report format to the flat object format expected by sales-analyzer.ts
+    const mappedData = asinData.map((record: any) => {
+      const sales = record.salesByAsin || {};
+      const traffic = record.trafficByAsin || {};
+      return {
+        'SKU': record.sku || '',
+        'Title': record.title || '',
+        '(Child) ASIN': record.childAsin || '',
+        'Ordered Product Sales': sales.orderedProductSales?.amount || 0,
+        'Units ordered': sales.unitsOrdered || 0,
+        'Sessions – Total': traffic.sessions || 0,
+        'Page views – Total': traffic.pageViews || 0,
+        'Unit Session Percentage': traffic.unitSessionPercentage || 0,
+        'Featured Offer (Buy Box) percentage': traffic.buyBoxPercentage || 0
+      };
+    });
+
+    // We compare today vs an empty set or just use it as 'newData' 
+    // In this context, analyzeSalesData expects old vs new to show changes.
+    // For a daily report, we'll pass the same data as both or just use it to generate the summary.
+    return analyzeSalesData(mappedData, mappedData);
   }
 
   /**

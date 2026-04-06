@@ -419,6 +419,10 @@
 	<Sidebar.Provider class="" style="">
 		<AppSideBarComponent {user} onSearchClick={() => (commandMenuOpen = !commandMenuOpen)} />
 		<main class="sidebar-main">
+			<header class="mobile-header md:hidden">
+				<Sidebar.Trigger class="mobile-trigger" onclick={() => {}} />
+				<div class="mobile-logo">PF Sales</div>
+			</header>
 			<div class="main-content">
 				{#if showPasswordBanner}
 					<div class="password-setup-banner" transition:fade={{ duration: 300 }}>
@@ -489,6 +493,29 @@
 		display: flex;
 		flex-direction: column;
 		min-height: 100vh;
+		min-width: 0; /* Critical for preventing grid/flex blowouts */
+	}
+
+	.mobile-header {
+		display: flex;
+		align-items: center;
+		padding: 0 16px;
+		height: 56px;
+		background-color: white;
+		border-bottom: 1px solid #e5e7eb;
+		position: sticky;
+		top: 0;
+		z-index: 40;
+	}
+
+	:global(.mobile-trigger) {
+		margin-right: 12px;
+	}
+
+	.mobile-logo {
+		font-weight: 700;
+		color: #004225;
+		font-size: 1.1rem;
 	}
 
 	/* Header with gradient background */
@@ -627,6 +654,16 @@
 		padding-top: 10px;
 		background-color: #f9fafb;
 		width: 100%;
+		max-width: 100vw;
+		overflow-x: hidden; /* Desktop safety */
+	}
+
+	@media (max-width: 768px) {
+		.main-content {
+			padding: 12px;
+			padding-top: 8px;
+			overflow-x: auto; /* Allow internal scrolling if sub-components are too wide */
+		}
 	}
 
 	/* Logout overlay styles */

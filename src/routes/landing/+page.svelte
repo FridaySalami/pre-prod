@@ -1533,9 +1533,9 @@
 			</Alert>
 		{/if}
 
-		<div class="dashboard-header flex justify-between items-end mb-8 border-b pb-6">
+		<div class="dashboard-header flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 border-b pb-6 gap-4">
 			<div>
-				<h1 class="text-3xl font-bold tracking-tight text-gray-900 mb-2">
+				<h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 mb-2">
 					Welcome{session?.user?.user_metadata?.name ? ', ' + session.user.user_metadata.name : ''}
 				</h1>
 				<div class="text-gray-500 font-medium">Today is {format(today, 'EEEE, do MMMM yyyy')}</div>
@@ -1544,7 +1544,7 @@
 			<!-- Simplified Weather Content -->
 			{#if weatherData && !isLoading.weather}
 				<div
-					class="flex items-center gap-6 bg-slate-50 px-5 py-3 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md"
+					class="flex items-center gap-4 sm:gap-6 bg-slate-50 px-4 sm:px-5 py-3 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md w-full sm:w-auto overflow-x-auto no-scrollbar"
 				>
 					<div class="flex items-center gap-3 pr-4 border-r border-slate-200">
 						<img
@@ -1616,9 +1616,9 @@
 				</div>
 			{/if}
 
-			<div class="grid grid-cols-12 gap-8">
-				<!-- Left Column: Holiday Calendar (Col 8) -->
-				<div class="col-span-8 space-y-8">
+			<div class="grid grid-cols-12 gap-6 sm:gap-8">
+				<!-- Left Column: Holiday Calendar (Col 12 on Mobile, Col 8 on Desktop) -->
+				<div class="col-span-12 lg:col-span-8 space-y-8 order-2 lg:order-1">
 					<HolidayCalendarWidget 
 						{holidays} 
 						{calendarDate} 
@@ -1629,8 +1629,8 @@
 					/>
 				</div>
 
-				<!-- Right Column: Metrics and Pending (Col 4) -->
-				<div class="col-span-4 space-y-6">
+				<!-- Right Column: Metrics and Pending (Col 12 on Mobile, Col 4 on Desktop) -->
+				<div class="col-span-12 lg:col-span-4 space-y-6 order-1 lg:order-2">
 					<!-- Performance Metrics (Compact) -->
 					<Card>
 						<CardContent class="p-4">

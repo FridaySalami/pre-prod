@@ -1,0 +1,6 @@
+[STDERR] [2026-04-06T08:00:00.102Z] (node:37332) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/JackW.la/pre-prod/scripts/run-weekly-comparison.js is not specified and it doesn't parse as CommonJS.
+[STDERR] [2026-04-06T08:00:00.102Z] Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+[STDERR] [2026-04-06T08:00:00.104Z] To eliminate this warning, add "type": "module" to C:\Users\JackW.la\pre-prod\scripts\package.json.
+[STDERR] [2026-04-06T08:00:00.104Z] (Use `node --trace-warnings ...` to show where the warning was created)
+[2026-04-06T08:00:00.111Z] [FINISH] Weekly Sales Comparison - SUCCESS - Duration: 0.09s
+
