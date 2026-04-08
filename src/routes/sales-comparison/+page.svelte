@@ -695,7 +695,7 @@
 		<div class="border-b border-gray-200 mb-6 overflow-x-auto no-scrollbar">
 			<nav class="-mb-px flex space-x-4 sm:space-x-8 min-w-max" aria-label="Tabs">
 				<button
-					on:click={() => (mode = 'upload')}
+					onclick={() => (mode = 'upload')}
 					class="{mode === 'upload'
 						? 'border-blue-500 text-blue-600'
 						: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
@@ -703,7 +703,7 @@
 					Upload Reports (CSV)
 				</button>
 				<button
-					on:click={() => (mode = 'api')}
+					onclick={() => (mode = 'api')}
 					class="{mode === 'api'
 						? 'border-blue-500 text-blue-600'
 						: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
@@ -751,7 +751,7 @@
 											accept=".csv"
 											required={mode === 'upload'}
 											class="sr-only"
-											on:change={(e) => handleFileSelect(e, 'old')}
+											onchange={(e) => handleFileSelect(e, 'old')}
 										/>
 									</label>
 									<p class="pl-1">or drag and drop</p>
@@ -796,7 +796,7 @@
 											accept=".csv"
 											required={mode === 'upload'}
 											class="sr-only"
-											on:change={(e) => handleFileSelect(e, 'new')}
+											onchange={(e) => handleFileSelect(e, 'new')}
 										/>
 									</label>
 									<p class="pl-1">or drag and drop</p>
@@ -815,21 +815,21 @@
 					>
 					<button
 						type="button"
-						on:click={() => setQuickDate('last-2-weeks')}
+						onclick={() => setQuickDate('last-2-weeks')}
 						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
 					>
 						Full Weeks (Sun-Sat)
 					</button>
 					<button
 						type="button"
-						on:click={() => setQuickDate('last-whole-week')}
+						onclick={() => setQuickDate('last-whole-week')}
 						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
 					>
 						Full Weeks (Mon-Sun)
 					</button>
 					<button
 						type="button"
-						on:click={() => setQuickDate('last-2-days')}
+						onclick={() => setQuickDate('last-2-days')}
 						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
 						title="Compare Yesterday vs Day Before. Note: Yesterday's Buy Box data may be incomplete."
 					>
@@ -837,7 +837,7 @@
 					</button>
 					<button
 						type="button"
-						on:click={() => setQuickDate('last-2-days-offset')}
+						onclick={() => setQuickDate('last-2-days-offset')}
 						class="inline-flex items-center px-3 py-1.5 border border-purple-300 shadow-sm text-xs font-medium rounded text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
 						title="Compare Day Before Yesterday vs Day Before That. Ensures Buy Box data is available."
 					>
@@ -845,14 +845,14 @@
 					</button>
 					<button
 						type="button"
-						on:click={() => setQuickDate('last-mondays')}
+						onclick={() => setQuickDate('last-mondays')}
 						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
 					>
 						Compare Mondays
 					</button>
 					<button
 						type="button"
-						on:click={() => setQuickDate('last-fridays')}
+						onclick={() => setQuickDate('last-fridays')}
 						class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
 					>
 						Compare Fridays
@@ -953,7 +953,7 @@
 				{:else}
 					<button
 						type="button"
-						on:click={handleApiComparison}
+						onclick={handleApiComparison}
 						disabled={loading}
 						class="w-full sm:w-auto inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
@@ -1042,7 +1042,7 @@
 		<div class="flex flex-col sm:flex-row flex-wrap justify-end mb-8 gap-3">
 			<Button
 				variant="outline"
-				on:click={openEmailModal}
+				onclick={openEmailModal}
 				disabled={emailLoading}
 				class="w-full sm:w-auto bg-white border-slate-200 text-slate-700 hover:bg-slate-50 order-2 sm:order-1"
 			>
@@ -1051,7 +1051,7 @@
 			</Button>
 
 			<Button
-				on:click={sendEmail}
+				onclick={sendEmail}
 				disabled={emailLoading}
 				class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white order-1 sm:order-2"
 			>
@@ -1066,7 +1066,7 @@
 
 			{#if form.excelReport}
 				<Button
-					on:click={downloadExcel}
+					onclick={downloadExcel}
 					class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white order-3"
 				>
 					<FileSpreadsheet class="mr-2 h-4 w-4" />
@@ -1272,7 +1272,7 @@
 					null
 						? 'bg-gray-800 text-white border-gray-800'
 						: 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}"
-					on:click={() => (selectedStatus = null)}
+					onclick={() => (selectedStatus = null)}
 				>
 					All
 				</button>
@@ -1282,7 +1282,7 @@
 						option.value
 							? 'ring-2 ring-offset-1 ring-blue-500 ' + option.class
 							: 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}"
-						on:click={() =>
+						onclick={() =>
 							(selectedStatus = selectedStatus === option.value ? null : option.value)}
 					>
 						{option.label}
@@ -1305,7 +1305,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('Product_Title')}
+									onclick={() => sortTable('Product_Title')}
 								>
 									Product / SKU {sortColumn === 'Product_Title'
 										? sortDirection === 'asc'
@@ -1316,7 +1316,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('Old_Sales')}
+									onclick={() => sortTable('Old_Sales')}
 								>
 									Old Sales {sortColumn === 'Old_Sales'
 										? sortDirection === 'asc'
@@ -1327,7 +1327,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('New_Sales')}
+									onclick={() => sortTable('New_Sales')}
 								>
 									New Sales {sortColumn === 'New_Sales'
 										? sortDirection === 'asc'
@@ -1338,7 +1338,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('Sales_Change')}
+									onclick={() => sortTable('Sales_Change')}
 								>
 									Change (£) {sortColumn === 'Sales_Change'
 										? sortDirection === 'asc'
@@ -1349,7 +1349,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('Sales_Change_Percent')}
+									onclick={() => sortTable('Sales_Change_Percent')}
 								>
 									Change (%) {sortColumn === 'Sales_Change_Percent'
 										? sortDirection === 'asc'
@@ -1360,7 +1360,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('Page_Views_Change')}
+									onclick={() => sortTable('Page_Views_Change')}
 								>
 									Page Views (Old → New) {sortColumn === 'Page_Views_Change'
 										? sortDirection === 'asc'
@@ -1371,7 +1371,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('Conversion_Change')}
+									onclick={() => sortTable('Conversion_Change')}
 								>
 									Conversion (Old → New) {sortColumn === 'Conversion_Change'
 										? sortDirection === 'asc'
@@ -1382,7 +1382,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('BuyBox_Change')}
+									onclick={() => sortTable('BuyBox_Change')}
 								>
 									Buy Box (Old → New) {sortColumn === 'BuyBox_Change'
 										? sortDirection === 'asc'
@@ -1393,7 +1393,7 @@
 								<th
 									scope="col"
 									class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-									on:click={() => sortTable('Status')}
+									onclick={() => sortTable('Status')}
 								>
 									Status {sortColumn === 'Status' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
 								</th>
@@ -1415,7 +1415,7 @@
 												type="button"
 												class="text-gray-300 hover:text-blue-600 focus:outline-none transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
 												title="Copy SKU"
-												on:click={() => copySku(product.SKU)}
+												onclick={() => copySku(product.SKU)}
 											>
 												{#if copiedSku === product.SKU}
 													<svg
@@ -1570,7 +1570,7 @@
 			<div
 				class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
 				aria-hidden="true"
-				on:click={() => (showEmailModal = false)}
+				onclick={() => (showEmailModal = false)}
 			></div>
 
 			<span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true"
@@ -1608,13 +1608,13 @@
 						{#if !fetchingUsers && users.length > 0}
 							<div class="mt-2 flex justify-end space-x-2 text-xs">
 								<button
-									on:click={() => (selectedUserEmails = users.map((u) => u.email))}
+									onclick={() => (selectedUserEmails = users.map((u) => u.email))}
 									class="text-indigo-600 hover:text-indigo-800 font-medium"
 								>
 									Select All
 								</button>
 								<button
-									on:click={() => (selectedUserEmails = [])}
+									onclick={() => (selectedUserEmails = [])}
 									class="text-gray-500 hover:text-gray-700 font-medium"
 								>
 									Deselect All
@@ -1655,7 +1655,7 @@
 											<input
 												type="checkbox"
 												checked={selectedUserEmails.includes(user.email)}
-												on:change={() => toggleUserSelection(user.email)}
+												onchange={() => toggleUserSelection(user.email)}
 												class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
 											/>
 											<div class="flex flex-col text-left">
@@ -1668,7 +1668,7 @@
 										<div class="text-center p-4">
 											<p class="text-gray-500">No users found.</p>
 											<button
-												on:click={fetchUsers}
+												onclick={fetchUsers}
 												class="mt-2 text-indigo-600 hover:text-indigo-800 text-sm font-medium"
 											>
 												Retry
@@ -1683,7 +1683,7 @@
 				<div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-2">
 					<button
 						type="button"
-						on:click={sendEmailMultiple}
+						onclick={sendEmailMultiple}
 						disabled={emailLoading || selectedUserEmails.length === 0}
 						class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:w-auto sm:text-sm disabled:opacity-50"
 					>
@@ -1695,7 +1695,7 @@
 					</button>
 					<button
 						type="button"
-						on:click={() => (showEmailModal = false)}
+						onclick={() => (showEmailModal = false)}
 						class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:w-auto sm:text-sm"
 					>
 						Cancel
