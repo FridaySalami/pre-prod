@@ -30,6 +30,25 @@
 	let session = $state<Session | null>(data?.session || null);
 	let user = $state(data?.user || null);
 
+	// EFFECT: Resolve lazy user profile data if it exists
+	$effect(() => {
+		if (data?.lazy?.user instanceof Promise) {
+			data.lazy.user.then((resolvedUser: any) => {
+				if (resolvedUser) {
+					user = resolvedUser;
+
+					// Sync to session Store for client-side state
+					if (browser) {
+						userSession.set(resolvedUser);
+
+						// Also check route access once profile is loaded
+						checkRouteAccess(currentPath, resolvedUser);
+					}
+				}
+			});
+		}
+	});
+
 	// Subscribe to the page store to get the current path
 	let unsubscribePage = page.subscribe((value) => {
 		currentPath = value.url.pathname;

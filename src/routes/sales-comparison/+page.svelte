@@ -11,24 +11,7 @@
 		Badge,
 		Skeleton
 	} from '$lib/shadcn/components';
-	import {
-		TrendingUp,
-		TrendingDown,
-		FileSpreadsheet,
-		Mail,
-		RefreshCw,
-		Calendar,
-		ArrowRight,
-		Upload,
-		Database,
-		AlertCircle,
-		CheckCircle2,
-		Info,
-		ChevronUp,
-		ChevronDown,
-		Activity,
-		Zap
-	} from 'lucide-svelte';
+	import DynamicIcon from '$lib/components/DynamicIcon.svelte';
 	import KPICard from '$lib/components/KPICard.svelte';
 
 	export let form: ActionData;
@@ -944,7 +927,7 @@
 						class="w-full sm:w-auto inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						{#if loading}
-							<RefreshCw class="animate-spin -ml-1 mr-2 h-4 w-4" />
+							<DynamicIcon name="RefreshCw" class="animate-spin -ml-1 mr-2 h-4 w-4" />
 							Analyzing...
 						{:else}
 							Compare (Node)
@@ -958,7 +941,7 @@
 						class="w-full sm:w-auto inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						{#if loading}
-							<RefreshCw class="animate-spin -ml-1 mr-2 h-4 w-4" />
+							<DynamicIcon name="RefreshCw" class="animate-spin -ml-1 mr-2 h-4 w-4" />
 							Analyzing...
 						{:else}
 							Fetch Data & Compare
@@ -1006,7 +989,7 @@
 		<Card class="mb-8 border-blue-100 bg-blue-50/30">
 			<CardHeader class="pb-3">
 				<CardTitle class="text-sm font-semibold text-blue-900 flex items-center gap-2">
-					<Info size={16} /> Report Titles (for Email Distribution)
+					<DynamicIcon name="Info" size={16} /> Report Titles (for Email Distribution)
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
@@ -1046,7 +1029,7 @@
 				disabled={emailLoading}
 				class="w-full sm:w-auto bg-white border-slate-200 text-slate-700 hover:bg-slate-50 order-2 sm:order-1"
 			>
-				<Mail class="mr-2 h-4 w-4" />
+				<DynamicIcon name="Mail" class="mr-2 h-4 w-4" />
 				Manage Recipients
 			</Button>
 
@@ -1056,10 +1039,10 @@
 				class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white order-1 sm:order-2"
 			>
 				{#if emailLoading}
-					<RefreshCw class="mr-2 h-4 w-4 animate-spin" />
+					<DynamicIcon name="RefreshCw" class="mr-2 h-4 w-4 animate-spin" />
 					Sending...
 				{:else}
-					<Mail class="mr-2 h-4 w-4" />
+					<DynamicIcon name="Mail" class="mr-2 h-4 w-4" />
 					Send Email Report
 				{/if}
 			</Button>
@@ -1069,7 +1052,7 @@
 					onclick={downloadExcel}
 					class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white order-3"
 				>
-					<FileSpreadsheet class="mr-2 h-4 w-4" />
+					<DynamicIcon name="FileSpreadsheet" class="mr-2 h-4 w-4" />
 					Export to Excel
 				</Button>
 			{/if}
@@ -1084,7 +1067,7 @@
 						minimumFractionDigits: 2,
 						maximumFractionDigits: 2
 					})}`}
-					icon={Database}
+					icon="Database"
 					color="info"
 				/>
 				<KPICard
@@ -1095,7 +1078,7 @@
 					})}`}
 					trend={form.analysis.summary.total_change_percent}
 					trendText="vs baseline"
-					icon={TrendingUp}
+					icon="TrendingUp"
 					color={form.analysis.summary.total_change_percent >= 0 ? 'success' : 'error'}
 				/>
 				<KPICard
@@ -1104,13 +1087,13 @@
 						minimumFractionDigits: 2,
 						maximumFractionDigits: 2
 					})}`}
-					icon={Activity}
+					icon="Activity"
 					color={form.analysis.summary.total_change >= 0 ? 'success' : 'error'}
 				/>
 				<KPICard
 					title="Sales Velocity"
 					value={`${form.analysis.summary.total_change_percent >= 0 ? '+' : ''}${form.analysis.summary.total_change_percent.toFixed(1)}%`}
-					icon={Zap}
+					icon="Zap"
 					color={form.analysis.summary.total_change_percent >= 0 ? 'success' : 'error'}
 				/>
 			</div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Card, CardContent } from '$lib/shadcn/components';
+	import DynamicIcon from './DynamicIcon.svelte';
 
 	interface Props {
 		title: string;
@@ -7,7 +8,7 @@
 		subValue?: string;
 		trend?: number; // percentage change
 		trendText?: string;
-		icon?: any; // Lucide icon
+		icon?: string; // Change from any to string for dynamic loading
 		color?: 'primary' | 'success' | 'warning' | 'error' | 'info';
 		loading?: boolean;
 	}
@@ -18,7 +19,7 @@
 		subValue,
 		trend,
 		trendText,
-		icon: Icon,
+		icon: iconName,
 		color = 'primary',
 		loading = false
 	}: Props = $props();
@@ -99,9 +100,9 @@
 					{/if}
 				</div>
 
-				{#if Icon}
+				{#if iconName}
 					<div class="p-3 rounded-xl {colorClasses[color]} ring-4 ring-white shadow-sm">
-						<Icon size={20} strokeWidth={2.5} />
+						<DynamicIcon name={iconName} size={20} strokeWidth={2.5} />
 					</div>
 				{/if}
 			</div>
