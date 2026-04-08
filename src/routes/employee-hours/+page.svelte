@@ -90,6 +90,7 @@ const animatedProductivity = tweened(0, { duration: 500, easing: cubicOut });
 // Derived calculations
 let sortedEmployees = $derived.by(() => {
 return [...employees]
+.filter((employee) => employee.name !== 'Marshall Parshotam')
 .map((employee) => ({
 ...employee,
 hours: employeeHours[employee.id] || 0
@@ -172,7 +173,9 @@ employeeHours[id] = val;
 async function saveHours() {
 try {
 saving = true;
-const employeesForSave = employees.map(e => ({ id: e.id, name: e.name, role: e.role || 'Unknown' }));
+const employeesForSave = employees
+.filter(e => e.name !== 'Marshall Parshotam')
+.map(e => ({ id: e.id, name: e.name, role: e.role || 'Unknown' }));
 const result = await saveDailyHours(employeeHours, employeesForSave, selectedDate, 'system');
 if (result.success) {
 saveStatus = 'success';

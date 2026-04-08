@@ -1105,3 +1105,393 @@
 [STDOUT] [2026-04-06T13:15:00.477Z] Keep this window open to maintain the schedule.
 [STDOUT] [2026-04-06T13:15:03.262Z] [2026-04-06T13:15:03.262Z] Job completed successfully.
 [STDOUT] [2026-04-06T13:15:03.279Z] [2026-04-06T13:15:03.279Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T13:35:00.039Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T13:35:00.048Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-06T14:15:00.186Z] [2026-04-06T14:15:00.183Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T14:15:00.225Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T14:15:00.226Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T14:15:00.226Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T14:15:05.059Z] [2026-04-06T14:15:05.059Z] Job completed successfully.
+[STDOUT] [2026-04-06T14:15:05.069Z] [2026-04-06T14:15:05.069Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T14:35:00.044Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T14:35:00.054Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-06T15:15:00.187Z] [2026-04-06T15:15:00.171Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T15:15:00.230Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T15:15:00.230Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T15:15:00.230Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T15:15:04.899Z] [2026-04-06T15:15:04.887Z] Job completed successfully.
+[STDOUT] [2026-04-06T15:15:04.909Z] [2026-04-06T15:15:04.896Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T15:34:59.925Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T15:34:59.936Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.92s
+
+[STDOUT] [2026-04-06T16:15:00.175Z] [2026-04-06T16:15:00.167Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T16:15:00.215Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T16:15:00.215Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T16:15:00.215Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T16:15:05.477Z] [2026-04-06T16:15:05.472Z] Job completed successfully.
+[STDOUT] [2026-04-06T16:15:05.486Z] [2026-04-06T16:15:05.482Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T16:34:59.961Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T16:34:59.972Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.95s
+
+[STDOUT] [2026-04-06T17:15:00.196Z] [2026-04-06T17:15:00.182Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T17:15:00.236Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T17:15:00.237Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T17:15:00.237Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T17:15:04.502Z] [2026-04-06T17:15:04.492Z] Job completed successfully.
+[STDOUT] [2026-04-06T17:15:04.512Z] [2026-04-06T17:15:04.501Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T17:35:00.004Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T17:35:00.013Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.98s
+
+[STDOUT] [2026-04-06T18:15:00.221Z] [2026-04-06T18:15:00.214Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T18:15:00.261Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T18:15:00.261Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T18:15:00.261Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T18:15:05.475Z] [2026-04-06T18:15:05.472Z] Job completed successfully.
+[STDOUT] [2026-04-06T18:15:05.485Z] [2026-04-06T18:15:05.481Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T18:35:00.023Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T18:35:00.032Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.99s
+
+[STDOUT] [2026-04-06T19:15:00.195Z] [2026-04-06T19:15:00.180Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T19:15:00.236Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T19:15:00.236Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T19:15:00.236Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T19:15:05.180Z] [2026-04-06T19:15:05.168Z] Job completed successfully.
+[STDOUT] [2026-04-06T19:15:05.189Z] [2026-04-06T19:15:05.177Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T19:35:00.029Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T19:35:00.037Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.01s
+
+[STDOUT] [2026-04-06T20:15:00.205Z] [2026-04-06T20:15:00.198Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T20:15:00.252Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T20:15:00.252Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T20:15:00.252Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T20:15:04.675Z] [2026-04-06T20:15:04.674Z] Job completed successfully.
+[STDOUT] [2026-04-06T20:15:04.684Z] [2026-04-06T20:15:04.683Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T20:35:00.011Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T20:35:00.023Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.00s
+
+[STDOUT] [2026-04-06T21:15:00.232Z] [2026-04-06T21:15:00.221Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T21:15:00.274Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T21:15:00.275Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T21:15:00.275Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T21:15:05.312Z] [2026-04-06T21:15:05.304Z] Job completed successfully.
+[STDOUT] [2026-04-06T21:15:05.321Z] [2026-04-06T21:15:05.313Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T21:35:00.034Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T21:35:00.042Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.01s
+
+[STDOUT] [2026-04-06T22:15:00.199Z] [2026-04-06T22:15:00.190Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T22:15:00.239Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T22:15:00.239Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T22:15:00.240Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T22:15:04.289Z] [2026-04-06T22:15:04.282Z] Job completed successfully.
+[STDOUT] [2026-04-06T22:15:04.297Z] [2026-04-06T22:15:04.291Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T22:35:00.022Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T22:35:00.031Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.01s
+
+[STDOUT] [2026-04-06T23:15:00.205Z] [2026-04-06T23:15:00.196Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-06T23:15:00.244Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-06T23:15:00.244Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-06T23:15:00.244Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-06T23:15:05.635Z] [2026-04-06T23:15:05.628Z] Job completed successfully.
+[STDOUT] [2026-04-06T23:15:05.644Z] [2026-04-06T23:15:05.637Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-06T23:35:00.028Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-06T23:35:00.037Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.01s
+
+[STDOUT] [2026-04-07T00:15:00.230Z] [2026-04-07T00:15:00.210Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T00:15:00.273Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T00:15:00.273Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T00:15:00.273Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T00:15:04.080Z] [2026-04-07T00:15:04.065Z] Job completed successfully.
+[STDOUT] [2026-04-07T00:15:04.090Z] [2026-04-07T00:15:04.075Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T00:35:00.091Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T00:35:00.102Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.05s
+
+[STDOUT] [2026-04-07T01:15:00.270Z] [2026-04-07T01:15:00.265Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T01:15:00.314Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T01:15:00.315Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T01:15:00.315Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T01:15:03.981Z] [2026-04-07T01:15:03.981Z] Job completed successfully.
+[STDOUT] [2026-04-07T01:15:03.990Z] [2026-04-07T01:15:03.989Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T01:35:00.118Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T01:35:00.129Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.05s
+
+[STDOUT] [2026-04-07T02:15:00.208Z] [2026-04-07T02:15:00.204Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T02:15:00.252Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T02:15:00.252Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T02:15:00.252Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T02:15:04.494Z] [2026-04-07T02:15:04.493Z] Job completed successfully.
+[STDOUT] [2026-04-07T02:15:04.504Z] [2026-04-07T02:15:04.503Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T02:35:00.053Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T02:35:00.062Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-07T03:15:00.194Z] [2026-04-07T03:15:00.188Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T03:15:00.237Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T03:15:00.237Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T03:15:00.237Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T03:15:04.725Z] [2026-04-07T03:15:04.721Z] Job completed successfully.
+[STDOUT] [2026-04-07T03:15:04.735Z] [2026-04-07T03:15:04.731Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T03:35:00.045Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T03:35:00.053Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-07T04:15:00.191Z] [2026-04-07T04:15:00.176Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T04:15:00.230Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T04:15:00.230Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T04:15:00.230Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T04:15:04.649Z] [2026-04-07T04:15:04.638Z] Job completed successfully.
+[STDOUT] [2026-04-07T04:15:04.658Z] [2026-04-07T04:15:04.647Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T04:35:00.039Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T04:35:00.048Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-07T05:15:00.343Z] [2026-04-07T05:15:00.331Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T05:15:00.414Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T05:15:00.414Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T05:15:00.414Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T05:15:05.947Z] [2026-04-07T05:15:05.940Z] Job completed successfully.
+[STDOUT] [2026-04-07T05:15:05.957Z] [2026-04-07T05:15:05.950Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T05:35:00.044Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T05:35:00.053Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-07T06:15:00.196Z] [2026-04-07T06:15:00.193Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T06:15:00.238Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T06:15:00.238Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T06:15:00.238Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T06:15:04.734Z] [2026-04-07T06:15:04.733Z] Job completed successfully.
+[STDOUT] [2026-04-07T06:15:04.742Z] [2026-04-07T06:15:04.742Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T06:35:00.037Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T06:35:00.045Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.02s
+
+[STDOUT] [2026-04-07T07:15:00.214Z] [2026-04-07T07:15:00.196Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T07:15:00.257Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T07:15:00.258Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T07:15:00.258Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T07:15:05.539Z] [2026-04-07T07:15:05.526Z] Job completed successfully.
+[STDOUT] [2026-04-07T07:15:05.547Z] [2026-04-07T07:15:05.535Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T07:35:00.046Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T07:35:00.055Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.02s
+
+[STDOUT] [2026-04-07T08:15:00.191Z] [2026-04-07T08:15:00.187Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T08:15:00.231Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T08:15:00.231Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T08:15:00.231Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T08:15:04.581Z] [2026-04-07T08:15:04.580Z] Job completed successfully.
+[STDOUT] [2026-04-07T08:15:04.589Z] [2026-04-07T08:15:04.588Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T08:35:00.037Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T08:35:00.046Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-07T09:15:00.190Z] [2026-04-07T09:15:00.186Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T09:15:00.226Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T09:15:00.227Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T09:15:00.227Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T09:15:05.259Z] [2026-04-07T09:15:05.258Z] Job completed successfully.
+[STDOUT] [2026-04-07T09:15:05.266Z] [2026-04-07T09:15:05.265Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T09:34:59.915Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T09:34:59.926Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.90s
+
+[STDOUT] [2026-04-07T10:15:00.187Z] [2026-04-07T10:15:00.180Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T10:15:00.232Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T10:15:00.232Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T10:15:00.232Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T10:15:04.667Z] [2026-04-07T10:15:04.663Z] Job completed successfully.
+[STDOUT] [2026-04-07T10:15:04.675Z] [2026-04-07T10:15:04.671Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T10:34:59.961Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T10:34:59.971Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.95s
+
+[STDOUT] [2026-04-07T11:15:00.204Z] [2026-04-07T11:15:00.198Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T11:15:00.247Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T11:15:00.247Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T11:15:00.247Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T11:15:05.000Z] [2026-04-07T11:15:04.997Z] Job completed successfully.
+[STDOUT] [2026-04-07T11:15:05.010Z] [2026-04-07T11:15:05.007Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T11:35:00.001Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T11:35:00.013Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.98s
+
+[STDOUT] [2026-04-07T12:15:00.195Z] [2026-04-07T12:15:00.189Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T12:15:00.239Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T12:15:00.239Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T12:15:00.239Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T12:15:05.664Z] [2026-04-07T12:15:05.662Z] Job completed successfully.
+[STDOUT] [2026-04-07T12:15:05.673Z] [2026-04-07T12:15:05.670Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T12:34:59.996Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T12:35:00.004Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.98s
+
+[STDOUT] [2026-04-07T13:15:00.187Z] [2026-04-07T13:15:00.181Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T13:15:00.231Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T13:15:00.232Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T13:15:00.232Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T13:15:04.342Z] [2026-04-07T13:15:04.340Z] Job completed successfully.
+[STDOUT] [2026-04-07T13:15:04.350Z] [2026-04-07T13:15:04.348Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T13:35:00.011Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T13:35:00.019Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.00s
+
+[STDOUT] [2026-04-07T14:15:00.380Z] [2026-04-07T14:15:00.376Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T14:15:00.453Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T14:15:00.453Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T14:15:00.453Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T14:15:04.154Z] [2026-04-07T14:15:04.155Z] Job completed successfully.
+[STDOUT] [2026-04-07T14:15:04.165Z] [2026-04-07T14:15:04.165Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T14:35:00.019Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T14:35:00.030Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.00s
+
+[STDOUT] [2026-04-07T15:15:00.187Z] [2026-04-07T15:15:00.173Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T15:15:00.232Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T15:15:00.232Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T15:15:00.233Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T15:15:05.576Z] [2026-04-07T15:15:05.566Z] Job completed successfully.
+[STDOUT] [2026-04-07T15:15:05.585Z] [2026-04-07T15:15:05.575Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T15:35:00.023Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T15:35:00.033Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.01s
+
+[STDOUT] [2026-04-07T16:15:00.192Z] [2026-04-07T16:15:00.188Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T16:15:00.235Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T16:15:00.235Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T16:15:00.235Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T16:15:05.771Z] [2026-04-07T16:15:05.770Z] Job completed successfully.
+[STDOUT] [2026-04-07T16:15:05.780Z] [2026-04-07T16:15:05.779Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T16:35:00.043Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T16:35:00.053Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.02s
+
+[STDOUT] [2026-04-07T17:15:00.170Z] [2026-04-07T17:15:00.157Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T17:15:00.214Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T17:15:00.215Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T17:15:00.215Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T17:15:05.478Z] [2026-04-07T17:15:05.468Z] Job completed successfully.
+[STDOUT] [2026-04-07T17:15:05.488Z] [2026-04-07T17:15:05.478Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T17:35:00.011Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T17:35:00.023Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.01s
+
+[STDOUT] [2026-04-07T18:15:00.386Z] [2026-04-07T18:15:00.373Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T18:15:00.454Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T18:15:00.454Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T18:15:00.454Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T18:15:04.775Z] [2026-04-07T18:15:04.766Z] Job completed successfully.
+[STDOUT] [2026-04-07T18:15:04.783Z] [2026-04-07T18:15:04.775Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T18:34:59.937Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T18:34:59.949Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.92s
+
+[STDOUT] [2026-04-07T19:15:00.197Z] [2026-04-07T19:15:00.194Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T19:15:00.236Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T19:15:00.236Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T19:15:00.237Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T19:15:06.012Z] [2026-04-07T19:15:06.012Z] Job completed successfully.
+[STDOUT] [2026-04-07T19:15:06.021Z] [2026-04-07T19:15:06.021Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T19:34:59.981Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T19:34:59.993Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.96s
+
+[STDOUT] [2026-04-07T20:15:00.178Z] [2026-04-07T20:15:00.172Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T20:15:00.221Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T20:15:00.221Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T20:15:00.221Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T20:15:05.694Z] [2026-04-07T20:15:05.691Z] Job completed successfully.
+[STDOUT] [2026-04-07T20:15:05.703Z] [2026-04-07T20:15:05.699Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T20:34:59.990Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T20:35:00.003Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.98s
+
+[STDOUT] [2026-04-07T21:15:00.220Z] [2026-04-07T21:15:00.216Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T21:15:00.263Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T21:15:00.263Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T21:15:00.263Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T21:15:05.283Z] [2026-04-07T21:15:05.282Z] Job completed successfully.
+[STDOUT] [2026-04-07T21:15:05.292Z] [2026-04-07T21:15:05.292Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T21:34:59.999Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T21:35:00.014Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1199.99s
+
+[STDOUT] [2026-04-07T22:15:00.205Z] [2026-04-07T22:15:00.200Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T22:15:00.246Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T22:15:00.246Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T22:15:00.246Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T22:15:05.139Z] [2026-04-07T22:15:05.138Z] Job completed successfully.
+[STDOUT] [2026-04-07T22:15:05.147Z] [2026-04-07T22:15:05.146Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T22:35:00.024Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T22:35:00.033Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.00s
+
+[STDOUT] [2026-04-07T23:15:00.208Z] [2026-04-07T23:15:00.205Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-07T23:15:00.247Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-07T23:15:00.247Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-07T23:15:00.247Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-07T23:15:04.270Z] [2026-04-07T23:15:04.270Z] Job completed successfully.
+[STDOUT] [2026-04-07T23:15:04.279Z] [2026-04-07T23:15:04.279Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-07T23:35:00.064Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-07T23:35:00.075Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.06s
+
+[STDOUT] [2026-04-08T00:15:00.340Z] [2026-04-08T00:15:00.337Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T00:15:00.379Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T00:15:00.379Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T00:15:00.379Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T00:15:04.160Z] [2026-04-08T00:15:04.160Z] Job completed successfully.
+[STDOUT] [2026-04-08T00:15:04.168Z] [2026-04-08T00:15:04.168Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T00:35:00.250Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T00:35:00.262Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.08s
+
+[STDOUT] [2026-04-08T01:15:00.321Z] [2026-04-08T01:15:00.317Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T01:15:00.366Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T01:15:00.367Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T01:15:00.367Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T01:15:04.012Z] [2026-04-08T01:15:04.011Z] Job completed successfully.
+[STDOUT] [2026-04-08T01:15:04.020Z] [2026-04-08T01:15:04.020Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T01:35:00.184Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T01:35:00.196Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.05s
+
+[STDOUT] [2026-04-08T02:15:00.251Z] [2026-04-08T02:15:00.233Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T02:15:00.292Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T02:15:00.293Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T02:15:00.293Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T02:15:04.697Z] [2026-04-08T02:15:04.683Z] Job completed successfully.
+[STDOUT] [2026-04-08T02:15:04.708Z] [2026-04-08T02:15:04.693Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T02:35:00.119Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T02:35:00.131Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.05s
+
+[STDOUT] [2026-04-08T03:15:00.208Z] [2026-04-08T03:15:00.204Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T03:15:00.249Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T03:15:00.250Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T03:15:00.250Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T03:15:03.847Z] [2026-04-08T03:15:03.847Z] Job completed successfully.
+[STDOUT] [2026-04-08T03:15:03.856Z] [2026-04-08T03:15:03.856Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T03:35:00.073Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T03:35:00.086Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.04s
+
+[STDOUT] [2026-04-08T04:15:00.188Z] [2026-04-08T04:15:00.184Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T04:15:00.230Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T04:15:00.231Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T04:15:00.231Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T04:15:04.009Z] [2026-04-08T04:15:04.008Z] Job completed successfully.
+[STDOUT] [2026-04-08T04:15:04.018Z] [2026-04-08T04:15:04.017Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T04:35:00.058Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T04:35:00.070Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.04s
+
+[STDOUT] [2026-04-08T05:15:00.407Z] [2026-04-08T05:15:00.402Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T05:15:00.477Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T05:15:00.477Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T05:15:00.477Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T05:15:05.254Z] [2026-04-08T05:15:05.253Z] Job completed successfully.
+[STDOUT] [2026-04-08T05:15:05.264Z] [2026-04-08T05:15:05.263Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T05:35:00.046Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T05:35:00.056Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.03s
+
+[STDOUT] [2026-04-08T06:15:00.212Z] [2026-04-08T06:15:00.206Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T06:15:00.253Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T06:15:00.254Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T06:15:00.254Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T06:15:05.642Z] [2026-04-08T06:15:05.640Z] Job completed successfully.
+[STDOUT] [2026-04-08T06:15:05.651Z] [2026-04-08T06:15:05.649Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T06:35:00.043Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T06:35:00.052Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.02s
+
+[STDOUT] [2026-04-08T07:15:00.206Z] [2026-04-08T07:15:00.201Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T07:15:00.249Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T07:15:00.249Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T07:15:00.250Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T07:15:05.370Z] [2026-04-08T07:15:05.368Z] Job completed successfully.
+[STDOUT] [2026-04-08T07:15:05.379Z] [2026-04-08T07:15:05.377Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T07:35:00.038Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T07:35:00.047Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.02s
+
+[STDOUT] [2026-04-08T08:15:00.196Z] [2026-04-08T08:15:00.192Z] --- Starting Sync Cycle ---
+[STDOUT] [2026-04-08T08:15:00.239Z] CRON SERVICE ACTIVE
+[STDOUT] [2026-04-08T08:15:00.239Z] Frequency: Every 60 minutes
+[STDOUT] [2026-04-08T08:15:00.239Z] Keep this window open to maintain the schedule.
+[STDOUT] [2026-04-08T08:15:04.992Z] [2026-04-08T08:15:04.991Z] Job completed successfully.
+[STDOUT] [2026-04-08T08:15:05.000Z] [2026-04-08T08:15:04.999Z] Next run in 1 hour...
+[TIMEOUT] [2026-04-08T08:35:00.030Z] Job "Amazon Order Sync" exceeded 1200000ms. Sending SIGTERM...
+[2026-04-08T08:35:00.038Z] [FINISH] Amazon Order Sync - FAILED (signal SIGTERM) - Duration: 1200.02s
+
