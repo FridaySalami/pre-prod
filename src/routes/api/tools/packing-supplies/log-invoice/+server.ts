@@ -49,8 +49,7 @@ export async function POST({ request }) {
     const pricesToUpsert = items.map((item: any) => ({
       supply_id: item.supply_id,
       supplier_id: supplier_id,
-      default_price: item.unit_price,
-      updated_at: new Date().toISOString()
+      default_price: item.unit_price
     }));
 
     // 3. Execute all writes
@@ -68,7 +67,7 @@ export async function POST({ request }) {
     });
     if (pricesError) throw pricesError;
 
-    // 4. Batch Update Stock
+    // 4. Batch Update Stock — use a loop to update individually to avoid partial record wipes
     // We fetch all relevant IDs at once to minimize roundtrips
     const { data: currentStocks, error: fetchError } = await db
       .from('packing_supplies')
@@ -82,38 +81,30 @@ export async function POST({ request }) {
       return acc;
     }, {});
 
-    const corrections: any[] = [];
-    const supplyUpdates = items.map((item: any) => {
-      let currentStock = stockMap[item.supply_id] || 0;
+    // Note: Supabase upsert with 'id' as conflict key REPLACES the whole row unless all columns are sent.
+    // Since our schema has NOT NULL constraints on name, code, and type, we update individually.
+    for (const item of items) {
+      const currentStock = stockMap[item.supply_id] || 0;
+      let newStock = currentStock + item.quantity;
 
       if (currentStock < 0) {
         const negativeDebt = Math.abs(currentStock);
-        corrections.push({
+        await db.from('packing_inventory_ledger').insert({
           supply_id: item.supply_id,
           change_amount: negativeDebt,
           reason: 'CORRECTION',
           reference_id: `clear_debt_${invoiceId}`
         });
-        currentStock = 0;
+        newStock = item.quantity;
       }
 
-      return {
-        id: item.supply_id,
-        current_stock: currentStock + item.quantity,
-        updated_at: new Date().toISOString()
-      };
-    });
+      const { error: singleStockError } = await db
+        .from('packing_supplies')
+        .update({ current_stock: newStock })
+        .eq('id', item.supply_id);
 
-    // Clear negative debt in one batch
-    if (corrections.length > 0) {
-      await db.from('packing_inventory_ledger').insert(corrections);
+      if (singleStockError) throw singleStockError;
     }
-
-    // Upsert the new stocks using 'id' as conflict key
-    const { error: stockError } = await db.from('packing_supplies').upsert(supplyUpdates, {
-      onConflict: 'id'
-    });
-    if (stockError) throw stockError;
 
     return json({ success: true, invoice });
   } catch (error: any) {

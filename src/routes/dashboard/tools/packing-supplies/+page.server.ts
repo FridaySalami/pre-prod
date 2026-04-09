@@ -58,7 +58,7 @@ export async function load({ url }: { url: URL }) {
         )
       `)
       .order('invoice_date', { ascending: false })
-      .limit(15);
+      .limit(200);
 
     if (historyError) {
       console.error('Error fetching history:', historyError);
